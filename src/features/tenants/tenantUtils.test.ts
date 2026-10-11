@@ -57,7 +57,6 @@ function lease(partial: Partial<Lease>): Lease {
     end_date: '2026-06-30',
     status: 'active',
     checkout_date: null,
-    deposit_returned_amount: null,
     notes: null,
     ...ts,
     ...partial,
