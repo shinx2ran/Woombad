@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { Camera, Image as ImageIcon, RefreshCw, ScanLine, Upload } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Badge, Button, useToast } from '../../components/ui'
@@ -10,7 +10,7 @@ import { applyPrefill, diffPrefill, type PrefillDiff, type TenantFormValues } fr
 type ScanState =
   | { status: 'idle' }
   | { status: 'running'; progress: OcrProgress }
-  | { status: 'review'; result: KtpScanResult; diff: PrefillDiff[]; previewUrl: string }
+  | { status: 'review'; result: KtpScanResult; previewUrl: string }
 
 const DOWNLOAD_NOTICE = 'Mengunduh data OCR ±15 MB, hanya sekali.'
 const PHONE_NOTICE = 'Nomor HP tidak ada di KTP, isi manual.'
@@ -39,7 +39,8 @@ function ConfidenceBadge({ keyFields, ocr }: { keyFields: number; ocr: number })
  * "Scan KTP" panel used inside the tenant form. Picks a photo (camera on phones, drag & drop on desktop),
  * runs OCR with a progress bar, then shows the detected fields as a checklist so the user decides which
  * values to apply. Never overwrites typed data silently: fields that already hold a different value start
- * unchecked.
+ * unchecked. The diff is derived from the *latest* form values (also text typed while OCR was running),
+ * while the user's manual check/uncheck choices are kept separately.
  */
 export function KtpScanner({
   current,
@@ -52,6 +53,8 @@ export function KtpScanner({
   const toast = useToast()
   const [state, setState] = useState<ScanState>({ status: 'idle' })
   const [dragging, setDragging] = useState(false)
+  /** manual checkbox overrides, keyed by field; anything not here follows the diff default */
+  const [overrides, setOverrides] = useState<Partial<Record<PrefillDiff['key'], boolean>>>({})
   const cameraRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const previewRef = useRef<string | null>(null)
@@ -70,12 +73,13 @@ export function KtpScanner({
       URL.revokeObjectURL(previewRef.current)
       previewRef.current = null
     }
+    setOverrides({})
     setState({ status: 'running', progress: { phase: 'preprocess', percent: 0, status: 'Memulai…', downloading: false } })
     try {
       const result = await recognizeKtp(file, (progress) => setState({ status: 'running', progress }))
       const previewUrl = URL.createObjectURL(result.image)
       previewRef.current = previewUrl
-      setState({ status: 'review', result, diff: diffPrefill(result.prefill, current), previewUrl })
+      setState({ status: 'review', result, previewUrl })
       if (Object.keys(result.prefill).length === 0) toast.error('Tidak ada data KTP yang terbaca. Coba foto yang lebih jelas.')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Scan KTP gagal.')
@@ -96,16 +100,28 @@ export function KtpScanner({
     if (file) void start(file)
   }
 
+  // Always compare against the form values as they are *now*, so text typed while the scan was running
+  // (or while reviewing) is never overwritten by default.
+  const diff = useMemo<PrefillDiff[]>(() => {
+    if (state.status !== 'review') return []
+    return diffPrefill(state.result.prefill, current).map((d) => {
+      const override = overrides[d.key]
+      return override === undefined ? d : { ...d, apply: override }
+    })
+  }, [state, current, overrides])
+
   const toggle = (key: PrefillDiff['key']) => {
-    if (state.status !== 'review') return
-    setState({ ...state, diff: state.diff.map((d) => (d.key === key ? { ...d, apply: !d.apply } : d)) })
+    const entry = diff.find((d) => d.key === key)
+    if (!entry) return
+    setOverrides((prev) => ({ ...prev, [key]: !entry.apply }))
   }
 
   const apply = () => {
     if (state.status !== 'review') return
-    const applied = state.diff.filter((d) => d.apply).length
-    onApply(applyPrefill(current, state.diff), state.result.image)
+    const applied = diff.filter((d) => d.apply).length
+    onApply(applyPrefill(current, diff), state.result.image)
     toast.success(applied > 0 ? `${applied} data dari KTP diterapkan ke formulir.` : 'Foto KTP disimpan, tidak ada data yang diubah.')
+    setOverrides({})
     setState({ status: 'idle' })
   }
 
@@ -173,11 +189,11 @@ export function KtpScanner({
             </div>
           </div>
 
-          {state.diff.length === 0 ? (
+          {diff.length === 0 ? (
             <p className="rounded-lg bg-white p-3 text-slate-600">Tidak ada data yang terbaca dari foto ini. Coba foto ulang dengan cahaya lebih terang dan tanpa pantulan.</p>
           ) : (
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
-              {state.diff.map((d) => (
+              {diff.map((d) => (
                 <li key={d.key}>
                   <label className="flex cursor-pointer items-start gap-3 px-3 py-2">
                     <input type="checkbox" checked={d.apply} onChange={() => toggle(d.key)} className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
@@ -202,7 +218,15 @@ export function KtpScanner({
           </details>
 
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" icon={<RefreshCw className="h-4 w-4" />} onClick={() => setState({ status: 'idle' })}>
+            <Button
+              type="button"
+              variant="ghost"
+              icon={<RefreshCw className="h-4 w-4" />}
+              onClick={() => {
+                setOverrides({})
+                setState({ status: 'idle' })
+              }}
+            >
               Scan ulang
             </Button>
             <Button type="button" icon={<ImageIcon className="h-4 w-4" />} onClick={apply}>
