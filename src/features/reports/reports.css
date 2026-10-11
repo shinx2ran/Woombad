@@ -1,0 +1,28 @@
+/* Print layout for the Laporan page: hide app chrome and controls, keep KPIs + tables + charts legible. */
+@media print {
+  body.woombad-print-report {
+    background: #fff;
+  }
+  body.woombad-print-report header,
+  body.woombad-print-report aside,
+  body.woombad-print-report nav {
+    display: none !important;
+  }
+  body.woombad-print-report main {
+    padding: 0 !important;
+  }
+  body.woombad-print-report .print-break-inside-avoid {
+    break-inside: avoid;
+  }
+  body.woombad-print-report a {
+    text-decoration: none;
+    color: inherit;
+  }
+  body.woombad-print-report .print-title {
+    display: block;
+  }
+}
+
+.print-title {
+  display: none;
+}
