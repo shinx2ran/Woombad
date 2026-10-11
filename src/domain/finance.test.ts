@@ -231,7 +231,7 @@ describe('summarizeFinance', () => {
     expect(s.expenseCount).toBe(2)
   })
 
-  it('collectionRate can exceed 1 when old invoices are paid in range', () => {
+  it('collectionRate stays within 0..1 when old invoices are paid in range (collected is over the billed set)', () => {
     const invoices = [
       makeInvoice({ id: 'inv-old', total_amount: 1_000_000, due_date: '2026-02-01', status: 'paid' }),
       makeInvoice({ id: 'inv-now', total_amount: 500_000, due_date: '2026-03-01', status: 'paid' }),
@@ -242,8 +242,42 @@ describe('summarizeFinance', () => {
     ]
     const s = summarizeFinance(payments, [], invoices, MARCH)
     expect(s.billed).toBe(500_000)
-    expect(s.collected).toBe(1_500_000)
-    expect(s.collectionRate).toBe(3)
+    expect(s.collected).toBe(500_000)
+    expect(s.collectionRate).toBe(1)
+    // the late payment on the old invoice is still revenue (cash basis)
+    expect(s.revenue).toBe(1_500_000)
+  })
+
+  it('collected/collectionRate definition differs from SPEC 2a (can exceed 1, uses payment date instead of billed set)', () => {
+    const invoices = [
+      makeInvoice({ id: 'A', total_amount: 100, due_date: '2026-03-01', status: 'partial' }),
+      makeInvoice({ id: 'B', total_amount: 100, due_date: '2026-02-01', status: 'paid' }),
+    ]
+    const payments = [
+      makePayment({ invoice_id: 'A', amount: 40, paid_at: '2026-03-05' }),
+      makePayment({ invoice_id: 'B', amount: 100, paid_at: '2026-03-06' }),
+    ]
+    const s = summarizeFinance(payments, [], invoices, MARCH)
+    expect(s.billed).toBe(100)
+    expect(s.collected).toBe(40)
+    expect(s.collectionRate).toBeCloseTo(0.4)
+  })
+
+  it('collected caps each invoice at its total and counts payments made outside the range', () => {
+    const invoices = [
+      makeInvoice({ id: 'over', total_amount: 100, due_date: '2026-03-01', status: 'paid' }),
+      makeInvoice({ id: 'late', total_amount: 200, due_date: '2026-03-10', status: 'paid' }),
+      makeInvoice({ id: 'none', total_amount: 300, due_date: '2026-03-20', status: 'unpaid' }),
+    ]
+    const payments = [
+      makePayment({ invoice_id: 'over', amount: 150, paid_at: '2026-03-01' }), // over-paid: counts 100
+      makePayment({ invoice_id: 'late', amount: 200, paid_at: '2026-04-15' }), // paid after range: still collected for March billing
+      makePayment({ invoice_id: 'none', kind: 'other', amount: 999, paid_at: '2026-03-21' }), // not a rent payment: ignored
+    ]
+    const s = summarizeFinance(payments, [], invoices, MARCH)
+    expect(s.billed).toBe(600)
+    expect(s.collected).toBe(300)
+    expect(s.collectionRate).toBeCloseTo(0.5)
   })
 
   it('void invoices are excluded from billed and outstanding', () => {
@@ -295,6 +329,26 @@ describe('summarizeFinance', () => {
     ]
     const payments = [makePayment({ invoice_id: 'over', amount: 150, paid_at: '2026-01-01' })]
     expect(summarizeFinance(payments, [], invoices, MARCH).outstanding).toBe(100)
+  })
+
+  it('outstanding/outstandingInvoices trust invoices.status instead of deriving from payments (SPEC 2a Piutang)', () => {
+    const invoices = [makeInvoice({ id: 'stale', total_amount: 100, due_date: '2026-03-01', status: 'paid' })]
+    const payments = [makePayment({ invoice_id: 'stale', amount: 40, paid_at: '2026-03-02' })]
+    expect(summarizeFinance(payments, [], invoices, MARCH).outstanding).toBe(60)
+    const items = outstandingInvoices(invoices, payments, '2026-03-15')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ paid: 40, outstanding: 60, daysOverdue: 14 })
+
+    // the reverse: a stale 'unpaid' flag on a fully paid invoice owes nothing
+    const settled = [makeInvoice({ id: 'settled', total_amount: 100, due_date: '2026-03-01', status: 'unpaid' })]
+    const full = [makePayment({ invoice_id: 'settled', amount: 100, paid_at: '2026-03-02' })]
+    expect(summarizeFinance(full, [], settled, MARCH).outstanding).toBe(0)
+    expect(outstandingInvoices(settled, full, '2026-03-15')).toEqual([])
+
+    // void stays excluded even with no payments
+    const voided = [makeInvoice({ id: 'v', total_amount: 100, due_date: '2026-03-01', status: 'void' })]
+    expect(summarizeFinance([], [], voided, MARCH).outstanding).toBe(0)
+    expect(outstandingInvoices(voided, [], '2026-03-15')).toEqual([])
   })
 })
 
@@ -447,9 +501,9 @@ describe('outstandingInvoices', () => {
   it('empty input gives empty array', () => {
     expect(outstandingInvoices([], [], '2026-03-15')).toEqual([])
   })
-  it('includes only unpaid/partial, computes paid/outstanding/daysOverdue and sorts', () => {
+  it('includes only invoices with money owed, computes paid/outstanding/daysOverdue and sorts', () => {
     const invoices = [
-      makeInvoice({ id: 'paid', status: 'paid', due_date: '2026-01-01' }),
+      makeInvoice({ id: 'paid', status: 'paid', due_date: '2026-01-01', total_amount: 1000 }),
       makeInvoice({ id: 'void', status: 'void', due_date: '2026-01-01' }),
       makeInvoice({ id: 'b', invoice_number: 'INV-010', status: 'unpaid', due_date: '2026-03-10', total_amount: 500 }),
       makeInvoice({ id: 'a', invoice_number: 'INV-002', status: 'partial', due_date: '2026-03-10', total_amount: 1000 }),

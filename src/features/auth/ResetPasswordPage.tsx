@@ -20,7 +20,7 @@ export function ResetPasswordPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
-    if (password.length < 6) return setError('Kata sandi minimal 6 karakter.')
+    if (password.length < 8) return setError('Kata sandi minimal 8 karakter.')
     if (password !== confirm) return setError('Konfirmasi kata sandi tidak sama.')
     setSaving(true)
     try {
@@ -55,7 +55,7 @@ export function ResetPasswordPage() {
         <p className="text-sm text-emerald-700">Kata sandi diperbarui. Mengalihkan ke dashboard…</p>
       ) : (
         <form onSubmit={submit} className="space-y-4">
-          <Input label="Kata sandi baru" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required hint="Minimal 6 karakter" />
+          <Input label="Kata sandi baru" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required hint="Minimal 8 karakter" />
           <Input label="Ulangi kata sandi" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <Button type="submit" fullWidth size="lg" loading={saving}>

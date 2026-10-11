@@ -29,8 +29,8 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
   const kosA = newId()
   const kosB = newId()
   db.properties.push(
-    { id: kosA, org_id: DEMO_ORG_ID, name: 'Kos Melati', address: 'Jl. Melati No. 12, Bandung', notes: null, ...ts },
-    { id: kosB, org_id: DEMO_ORG_ID, name: 'Kos Anggrek', address: 'Jl. Anggrek No. 5, Bandung', notes: 'Bangunan baru', ...ts },
+    { id: kosA, org_id: DEMO_ORG_ID, name: 'Kos Melati', address: 'Jl. Melati No. 12, Bandung', notes: null, payment_info: 'BCA 1234567890 a.n. Ibu Sari', ...ts },
+    { id: kosB, org_id: DEMO_ORG_ID, name: 'Kos Anggrek', address: 'Jl. Anggrek No. 5, Bandung', notes: 'Bangunan baru', payment_info: 'BCA 1234567890 a.n. Ibu Sari', ...ts },
   )
 
   const mkRoom = (property_id: string, name: string, floor: string, monthly: number, daily: number): Room => ({
@@ -131,7 +131,7 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
     if (deposit > 0) {
       db.payments.push({
         id: newId(), org_id: DEMO_ORG_ID, property_id: room.property_id, invoice_id: null, lease_id: leaseId,
-        amount: deposit, paid_at: toDateISO(start), method: 'transfer', kind: 'deposit', notes: 'Uang jaminan', created_at: now,
+        amount: deposit, paid_at: toDateISO(start), method: 'transfer', kind: 'deposit', notes: 'Uang jaminan', created_by: null, created_at: now,
       })
     }
     for (let i = 0; i < periods; i++) {
@@ -146,13 +146,13 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
         status = 'paid'
         pays.push({
           id: newId(), org_id: DEMO_ORG_ID, property_id: room.property_id, invoice_id: invoiceId, lease_id: leaseId,
-          amount: total, paid_at: toDateISO(addDays(ps, i % 3)), method: i % 2 ? 'cash' : 'transfer', kind: 'rent', notes: null, created_at: now,
+          amount: total, paid_at: toDateISO(addDays(ps, i % 3)), method: i % 2 ? 'cash' : 'transfer', kind: 'rent', notes: null, created_by: null, created_at: now,
         })
       } else if (i === monthsPaid && tenant.full_name.startsWith('Agus')) {
         status = 'partial'
         pays.push({
           id: newId(), org_id: DEMO_ORG_ID, property_id: room.property_id, invoice_id: invoiceId, lease_id: leaseId,
-          amount: Math.round(total / 2), paid_at: toDateISO(ps), method: 'qris', kind: 'rent', notes: 'DP', created_at: now,
+          amount: Math.round(total / 2), paid_at: toDateISO(ps), method: 'qris', kind: 'rent', notes: 'DP', created_by: null, created_at: now,
         })
       }
       db.invoices.push({
@@ -197,13 +197,13 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
     })
     db.payments.push({
       id: newId(), org_id: DEMO_ORG_ID, property_id: room.property_id, invoice_id: invoiceId, lease_id: leaseId,
-      amount: total, paid_at: toDateISO(s), method: 'cash', kind: 'rent', notes: null, created_at: now,
+      amount: total, paid_at: toDateISO(s), method: 'cash', kind: 'rent', notes: null, created_by: null, created_at: now,
     })
   }
 
   // Expenses: monthly wages + utilities per property, a few maintenance items.
   const mkExpense = (property_id: string | null, category: Expense['category'], amount: number, date: Date, description: string, vendor: string | null = null): Expense => ({
-    id: newId(), org_id: DEMO_ORG_ID, property_id, category, amount, expense_date: toDateISO(date), description, vendor, receipt_path: null, ...ts,
+    id: newId(), org_id: DEMO_ORG_ID, property_id, lease_id: null, category, amount, expense_date: toDateISO(date), description, vendor, receipt_path: null, created_by: null, ...ts,
   })
   for (let i = 5; i >= 0; i--) {
     const m = subMonths(today, i)

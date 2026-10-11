@@ -113,8 +113,23 @@ export function nikInfo(nik: string, now?: Date): { birthDate: string; gender: G
   return { birthDate: iso, gender }
 }
 
-/** DD sep MM sep YYYY where sep is '-', '/', '.', or whitespace (also tolerates 'DD-MM- YYYY'). */
-const KTP_DATE_RE = /(\d{1,2})\s*[-/.\s]\s*(\d{1,2})\s*[-/.\s]\s*(\d{4})(?!\d)/
+/**
+ * DD sep MM sep YYYY where sep is '-', '/', '.', or whitespace (also tolerates 'DD-MM- YYYY'). The day is
+ * anchored on both sides so it cannot start in the middle of a longer digit run ('115-03-1990' or
+ * '2005-03-1990' must not yield a date).
+ */
+const KTP_DATE_RE = /(?<!\d)(\d{1,2})\s*[-/.\s]\s*(\d{1,2})\s*[-/.\s]\s*(\d{4})(?!\d)/
+
+/** Build 'YYYY-MM-DD' from day/month/year strings; null when the date does not exist. */
+function isoFromParts(day: string, month: string, year: string): string | null {
+  const iso = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  try {
+    parseISODate(iso)
+  } catch {
+    return null
+  }
+  return iso
+}
 
 /**
  * Parse Indonesian date strings from the card: '05-03-1990', '05/03/1990', '05 03 1990', '5-3-1990'
@@ -123,13 +138,7 @@ const KTP_DATE_RE = /(\d{1,2})\s*[-/.\s]\s*(\d{1,2})\s*[-/.\s]\s*(\d{4})(?!\d)/
 export function parseKtpDate(text: string): string | null {
   const m = KTP_DATE_RE.exec(text)
   if (!m) return null
-  const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
-  try {
-    parseISODate(iso)
-  } catch {
-    return null
-  }
-  return iso
+  return isoFromParts(m[1], m[2], m[3])
 }
 
 // ---------- label matching ----------
@@ -215,12 +224,32 @@ function parseBloodType(value: string): string | undefined {
   return /^(?:A|B|AB|O)[+-]?$/.test(v) ? v : undefined
 }
 
-/** 'BANDUNG, 05-03-1990' -> { place: 'BANDUNG', date: '1990-03-05' }; falls back to splitting on the last comma. */
+const TRAILING_SEP_RE = /[\s,.;:\-/]+$/
+
+/**
+ * 'BANDUNG, 05-03-1990' -> { place: 'BANDUNG', date: '1990-03-05' }; falls back to splitting on the last comma.
+ *
+ * A place name never ends in a digit, so digits stranded between the place and the date mean OCR broke the
+ * day apart ('BANDUNG, 1 5-03-1990' is really 15-03-1990). When the stranded digit and the matched day join
+ * into an existing date (at most two digits, whitespace-only gap) that repaired date is used; otherwise the
+ * split is treated as failed: the date is dropped (so the NIK-encoded date can fill in) and the digits are
+ * stripped from the place.
+ */
 function parseTtl(value: string): { place?: string; date?: string } {
   const m = KTP_DATE_RE.exec(value)
   if (m) {
-    const place = collapseSpaces(value.slice(0, m.index).replace(/[\s,.;:\-/]+$/, ''))
-    return { place: place || undefined, date: parseKtpDate(m[0]) ?? undefined }
+    const before = value.slice(0, m.index)
+    const remnant = /(\d+)(\s*)$/.exec(before)
+    const place = collapseSpaces(
+      before.slice(0, remnant ? remnant.index : before.length).replace(TRAILING_SEP_RE, ''),
+    )
+    let date: string | null = isoFromParts(m[1], m[2], m[3])
+    if (remnant) {
+      const [, digits, gap] = remnant
+      const joinedDay = digits + m[1]
+      date = gap.length > 0 && joinedDay.length <= 2 ? isoFromParts(joinedDay, m[2], m[3]) : null
+    }
+    return { place: place || undefined, date: date ?? undefined }
   }
   const comma = value.lastIndexOf(',')
   if (comma >= 0) {
@@ -232,14 +261,23 @@ function parseTtl(value: string): { place?: string; date?: string } {
 
 /**
  * Pull a NIK out of free text. `lenient` (used on the line labelled NIK) accepts a run longer than 16
- * characters and keeps its first 16 digits, since trailing noise is common there; the strict mode used
- * when scanning every other line requires exactly 16 to avoid picking up random digit runs.
+ * characters, since stray noise is common there: a colon read as '1'/'l'/'I' in front of the number, or a
+ * trailing speck read as '0'. Every 16-digit window of the run is tried and the first one whose digits 7-12
+ * decode to a real birth date (nikInfo) wins; when no window decodes, the first 16 digits are kept so the
+ * user still has something to correct in the form. The strict mode used when scanning every other line
+ * requires exactly 16 to avoid picking up random digit runs.
  */
-function findNik(text: string, lenient: boolean): string | undefined {
+function findNik(text: string, lenient: boolean, now?: Date): string | undefined {
   for (const m of text.matchAll(NIK_RUN_RE)) {
     const digits = nikDigits(m[0])
     if (isValidNik(digits)) return digits
-    if (lenient && digits.length > 16 && isValidNik(digits.slice(0, 16))) return digits.slice(0, 16)
+    if (lenient && digits.length > 16) {
+      for (let start = 0; start + 16 <= digits.length; start++) {
+        const window = digits.slice(start, start + 16)
+        if (nikInfo(window, now)) return window
+      }
+      return digits.slice(0, 16)
+    }
   }
   return undefined
 }
@@ -258,7 +296,7 @@ export function splitKtpLines(ocrText: string): string[] {
     .filter((l) => l.length > 0)
 }
 
-function applyLabelled(fields: KtpFields, key: LabelKey, value: string, rawLine: string): void {
+function applyLabelled(fields: KtpFields, key: LabelKey, value: string, rawLine: string, now?: Date): void {
   switch (key) {
     case 'provinsi':
       put(fields, 'provinsi', value)
@@ -271,7 +309,7 @@ function applyLabelled(fields: KtpFields, key: LabelKey, value: string, rawLine:
       break
     }
     case 'nik':
-      put(fields, 'nik', findNik(value, true))
+      put(fields, 'nik', findNik(value, true, now))
       break
     case 'nama':
       put(fields, 'nama', value)
@@ -317,24 +355,24 @@ function applyLabelled(fields: KtpFields, key: LabelKey, value: string, rawLine:
   }
 }
 
-function processLine(fields: KtpFields, line: string): void {
+function processLine(fields: KtpFields, line: string, now?: Date): void {
   // 'Jenis Kelamin : LAKI-LAKI Gol. Darah : O' -> handle the two halves separately
   const gd = GOL_DARAH_INLINE_RE.exec(line)
   if (gd && gd.index > 0) {
-    processLine(fields, collapseSpaces(line.slice(0, gd.index)))
-    processLine(fields, line.slice(gd.index))
+    processLine(fields, collapseSpaces(line.slice(0, gd.index)), now)
+    processLine(fields, line.slice(gd.index), now)
     return
   }
   const matched = matchLabel(line)
   if (!matched) return
-  applyLabelled(fields, matched.key, matched.value, line)
+  applyLabelled(fields, matched.key, matched.value, line, now)
 }
 
 export function parseKtpText(ocrText: string, now?: Date): KtpParseResult {
   const lines = splitKtpLines(ocrText)
   const fields: KtpFields = {}
 
-  for (const line of lines) processLine(fields, line)
+  for (const line of lines) processLine(fields, line, now)
 
   // NIK fallback: no labelled NIK line (or it was unreadable) -> first strict 16-char run anywhere
   if (fields.nik === undefined) {

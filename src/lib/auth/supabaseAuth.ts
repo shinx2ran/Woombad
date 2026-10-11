@@ -11,6 +11,7 @@ const ID_MESSAGES: Record<string, string> = {
   'Email not confirmed': 'Email belum dikonfirmasi. Cek kotak masuk Anda.',
   'User already registered': 'Email ini sudah terdaftar. Silakan masuk.',
   'Password should be at least 6 characters.': 'Kata sandi minimal 6 karakter.',
+  'Password should be at least 8 characters.': 'Kata sandi minimal 8 karakter.',
 }
 
 function translate(message: string): string {

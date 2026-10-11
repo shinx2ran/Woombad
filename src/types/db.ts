@@ -32,7 +32,8 @@ export type AddonBilling = (typeof ADDON_BILLINGS)[number]
 export const INVOICE_STATUSES = ['unpaid', 'partial', 'paid', 'void'] as const
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number]
 
-export const PAYMENT_METHODS = ['cash', 'transfer', 'qris', 'other'] as const
+/** deposit = paid by using the tenant's held deposit (potong jaminan): counts as revenue, is not cash in */
+export const PAYMENT_METHODS = ['cash', 'transfer', 'qris', 'deposit', 'other'] as const
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
 
 /**
@@ -50,9 +51,13 @@ export const EXPENSE_CATEGORIES = [
   'supplies', // Perlengkapan & kebersihan
   'tax', // Pajak & retribusi
   'marketing', // Iklan / promosi
-  'deposit_refund', // Pengembalian uang jaminan (cash out, not an operating expense)
+  'deposit_refund', // Pengembalian uang jaminan (cash out, not an operating expense; needs lease_id)
+  'rent_refund', // Pengembalian sewa (reduces revenue, not an operating expense; needs lease_id)
   'other',
 ] as const
+
+/** Expense categories that are money returned to a tenant rather than operating cost. */
+export const REFUND_CATEGORIES: readonly ExpenseCategory[] = ['deposit_refund', 'rent_refund']
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number]
 
 export const GENDERS = ['L', 'P'] as const
@@ -95,6 +100,8 @@ export interface Property extends TimestampedRow {
   name: string
   address: string | null
   notes: string | null
+  /** bank account / QRIS instructions inserted into WhatsApp reminders */
+  payment_info: string | null
 }
 
 export interface Room extends TimestampedRow {
@@ -153,7 +160,10 @@ export interface Lease extends TimestampedRow {
   status: LeaseStatus
   /** actual move-out date when status = ended */
   checkout_date: string | null
-  /** deposit handed back at checkout (recorded as expense category deposit_refund when paid) */
+  /**
+   * @deprecated deposit refunds are recorded as expenses (category deposit_refund, lease_id);
+   * kept only until the domain revision lands, always null afterwards.
+   */
   deposit_returned_amount: number | null
   notes: string | null
 }
@@ -198,11 +208,15 @@ export interface Payment extends BaseRow {
   method: PaymentMethod
   kind: PaymentKind
   notes: string | null
+  /** auth user who recorded it (DB default auth.uid()); null in demo mode */
+  created_by: string | null
 }
 
 export interface Expense extends TimestampedRow {
   /** null = shared across properties */
   property_id: string | null
+  /** required for deposit_refund / rent_refund: the lease the money goes back to */
+  lease_id: string | null
   category: ExpenseCategory
   amount: number
   expense_date: string
@@ -210,6 +224,8 @@ export interface Expense extends TimestampedRow {
   vendor: string | null
   /** storage path in bucket "receipts" or null */
   receipt_path: string | null
+  /** auth user who recorded it (DB default auth.uid()); null in demo mode */
+  created_by: string | null
 }
 
 // ---------- Table map ----------
@@ -235,7 +251,7 @@ export type Row<T extends TableName> = Tables[T]
 /** Tables scoped to an organisation (everything except `organizations`). */
 export type OrgTableName = Exclude<TableName, 'organizations'>
 
-type GeneratedKeys = 'id' | 'created_at' | 'updated_at'
+type GeneratedKeys = 'id' | 'created_at' | 'updated_at' | 'created_by'
 
 /** Insert payload: generated columns optional. */
 export type Insert<T extends TableName> = Omit<Row<T>, Extract<keyof Row<T>, GeneratedKeys>> &
@@ -270,6 +286,13 @@ export const PERIOD_TYPE_LABEL: Record<PeriodType, string> = {
   monthly: 'Bulanan',
 }
 
+/** Unit word for quantities: '3 malam', '2 minggu', '1 bulan'. */
+export const PERIOD_UNIT_LABEL: Record<PeriodType, string> = {
+  daily: 'malam',
+  weekly: 'minggu',
+  monthly: 'bulan',
+}
+
 export const INVOICE_STATUS_LABEL: Record<InvoiceStatus, string> = {
   unpaid: 'Belum Bayar',
   partial: 'DP / Sebagian',
@@ -287,12 +310,13 @@ export const PAYMENT_METHOD_LABEL: Record<PaymentMethod, string> = {
   cash: 'Tunai',
   transfer: 'Transfer',
   qris: 'QRIS',
+  deposit: 'Potong Jaminan',
   other: 'Lainnya',
 }
 
 export const PAYMENT_KIND_LABEL: Record<PaymentKind, string> = {
   rent: 'Sewa',
-  deposit: 'Uang Jaminan',
+  deposit: 'Deposit (Uang Jaminan)',
   other: 'Pemasukan Lain',
 }
 
@@ -304,6 +328,7 @@ export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   tax: 'Pajak & Retribusi',
   marketing: 'Promosi',
   deposit_refund: 'Pengembalian Uang Jaminan',
+  rent_refund: 'Pengembalian Sewa',
   other: 'Lainnya',
 }
 

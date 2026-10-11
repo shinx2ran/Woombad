@@ -17,7 +17,7 @@ export function SignupPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
-    if (password.length < 6) return setError('Kata sandi minimal 6 karakter.')
+    if (password.length < 8) return setError('Kata sandi minimal 8 karakter.')
     if (password !== confirm) return setError('Konfirmasi kata sandi tidak sama.')
     setLoading(true)
     try {
@@ -55,7 +55,7 @@ export function SignupPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          hint="Minimal 6 karakter"
+          hint="Minimal 8 karakter"
         />
         <Input
           label="Ulangi kata sandi"

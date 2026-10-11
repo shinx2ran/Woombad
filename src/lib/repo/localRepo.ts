@@ -130,9 +130,9 @@ export class LocalRepo implements Repo {
     return created.map((r) => ({ ...r }))
   }
 
-  async update<T extends TableName>(table: T, id: string, patch: Update<T>): Promise<Row<T>> {
+  async update<T extends TableName>(table: T, id: string, patch: Update<T>, orgId?: string): Promise<Row<T>> {
     const rows = this.db[table] as Row<T>[]
-    const idx = rows.findIndex((r) => r.id === id)
+    const idx = rows.findIndex((r) => r.id === id && (!orgId || rec(r).org_id === orgId))
     if (idx < 0) throw new Error(`Data tidak ditemukan (${table}/${id})`)
     const next = { ...rows[idx], ...patch } as Record<string, unknown>
     if (hasUpdatedAt(table)) next.updated_at = new Date().toISOString()
@@ -141,11 +141,49 @@ export class LocalRepo implements Repo {
     return { ...rows[idx] }
   }
 
-  async remove<T extends TableName>(table: T, id: string): Promise<void> {
+  async remove<T extends TableName>(table: T, id: string, orgId?: string): Promise<void> {
     const rows = this.db[table] as Row<T>[]
-    const idx = rows.findIndex((r) => r.id === id)
+    const idx = rows.findIndex((r) => r.id === id && (!orgId || rec(r).org_id === orgId))
+    if (idx >= 0 && this.isReferenced(table, id)) {
+      throw new Error('Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.')
+    }
     if (idx >= 0) rows.splice(idx, 1)
     saveDb(this.db)
+  }
+
+  /** Mirror the database's ON DELETE RESTRICT rules so demo mode behaves like online mode. */
+  private isReferenced(table: TableName, id: string): boolean {
+    switch (table) {
+      case 'properties':
+        return (
+          this.db.rooms.some((r) => r.property_id === id) ||
+          this.db.leases.some((r) => r.property_id === id) ||
+          this.db.invoices.some((r) => r.property_id === id) ||
+          this.db.payments.some((r) => r.property_id === id)
+        )
+      case 'rooms':
+      case 'tenants':
+        return this.db.leases.some((l) => (table === 'rooms' ? l.room_id : l.tenant_id) === id)
+      case 'leases':
+        return (
+          this.db.invoices.some((i) => i.lease_id === id) ||
+          this.db.payments.some((p) => p.lease_id === id) ||
+          this.db.expenses.some((e) => e.lease_id === id)
+        )
+      case 'invoices':
+        return this.db.payments.some((p) => p.invoice_id === id)
+      default:
+        return false
+    }
+  }
+
+  async ensureMembership(user: { id: string; email: string | null }): Promise<string> {
+    const [org] = this.db.organizations
+    if (!org) throw new Error('Data demo belum tersedia.')
+    if (!this.db.organization_members.some((m) => m.org_id === org.id && m.user_id === user.id)) {
+      await this.insert('organization_members', { org_id: org.id, user_id: user.id, email: user.email, role: 'owner' })
+    }
+    return org.id
   }
 
   async uploadFile(_bucket: StorageBucket, _path: string, _file: Blob): Promise<string | null> {

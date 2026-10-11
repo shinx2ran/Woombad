@@ -33,8 +33,16 @@ export interface Repo {
   get<T extends TableName>(table: T, id: string): Promise<Row<T> | null>
   insert<T extends TableName>(table: T, row: Insert<T>): Promise<Row<T>>
   insertMany<T extends TableName>(table: T, rows: Insert<T>[]): Promise<Row<T>[]>
-  update<T extends TableName>(table: T, id: string, patch: Update<T>): Promise<Row<T>>
-  remove<T extends TableName>(table: T, id: string): Promise<void>
+  /** `orgId`, when given, additionally scopes the write to that organisation (defence in depth). */
+  update<T extends TableName>(table: T, id: string, patch: Update<T>, orgId?: string): Promise<Row<T>>
+  remove<T extends TableName>(table: T, id: string, orgId?: string): Promise<void>
+
+  /**
+   * Resolve the signed-in user's organisation server-side: existing membership, else pending
+   * invitations for their email, else (first account ever) a new organisation. Throws with an
+   * Indonesian message when the account is not a member of anything.
+   */
+  ensureMembership(user: { id: string; email: string | null }): Promise<string>
 
   /** Upload a file; returns the storage path to persist on the row. Local mode returns null (not stored). */
   uploadFile(bucket: StorageBucket, path: string, file: Blob, contentType?: string): Promise<string | null>
@@ -69,6 +77,16 @@ export interface OrgRepo {
   readonly raw: Repo
 }
 
+/** Never let a patch rewrite identity columns, whatever the caller passed at runtime. */
+function stripImmutable<T extends TableName>(patch: Update<T>): Update<T> {
+  const copy = { ...(patch as Record<string, unknown>) }
+  delete copy.id
+  delete copy.org_id
+  delete copy.created_at
+  delete copy.created_by
+  return copy as Update<T>
+}
+
 export function bindOrg(repo: Repo, orgId: string): OrgRepo {
   const withOrg = <T extends OrgTableName>(opts?: ListOptions<Row<T>>): ListOptions<Row<T>> => ({
     ...opts,
@@ -89,8 +107,8 @@ export function bindOrg(repo: Repo, orgId: string): OrgRepo {
         table,
         rows.map((r) => ({ ...r, org_id: orgId }) as unknown as Insert<typeof table>),
       ),
-    update: (table, id, patch) => repo.update(table, id, patch),
-    remove: (table, id) => repo.remove(table, id),
+    update: (table, id, patch) => repo.update(table, id, stripImmutable(patch), orgId),
+    remove: (table, id) => repo.remove(table, id, orgId),
     uploadFile: (bucket, fileName, file, contentType) =>
       repo.uploadFile(bucket, `${orgId}/${fileName}`, file, contentType),
     getFileUrl: (bucket, path) => repo.getFileUrl(bucket, path),

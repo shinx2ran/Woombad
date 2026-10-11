@@ -71,20 +71,26 @@ function maxISO(a: string, b: string): string {
 // ---------- periods ----------
 
 /**
- * Number of periods already billed when the lease's non-void invoices are contiguous from
- * lease.start_date (first invoice starts on start_date, each next one starts the day after the previous
- * period_end). Returns null when there are gaps/overlaps or an invoice starts before start_date.
- * Used to anchor the next period on the lease start so monthly leases never drift at month end.
+ * Number of periods already billed when the lease's non-void invoices follow the anchored schedule from
+ * lease.start_date: the first invoice starts on start_date, each next one starts the day after the previous
+ * period_end, AND every invoice's period_end equals the anchored end for its quantity
+ * (periodBounds(start_date, type, periodsSoFar, quantity).end). Returns null when there are gaps/overlaps,
+ * an invoice does not start on start_date, or an invoice's end deviates from the anchored schedule
+ * (e.g. a manual periodStart override whose unanchored end lands 3 days early on a Jan-31 lease).
+ * Used to anchor the next period on the lease start so monthly leases never drift at month end; a null
+ * makes nextPeriodBounds fall back to "latest period_end + 1", so no day is ever left unbilled.
  */
 export function billedPeriodCount(lease: Lease, invoices: Invoice[]): number | null {
   const active = activeInvoicesSorted(invoices)
   // Zero non-void invoices: trivially contiguous, nothing billed yet.
   if (active.length === 0) return 0
-  if (active[0].period_start !== lease.start_date) return null
   let count = 0
-  for (let i = 0; i < active.length; i++) {
-    const inv = active[i]
-    if (i > 0 && inv.period_start !== addDaysISO(active[i - 1].period_end, 1)) return null
+  for (const inv of active) {
+    if (!Number.isInteger(inv.quantity) || inv.quantity < 1) return null
+    const expected = periodBounds(lease.start_date, lease.period_type, count, inv.quantity)
+    // Decision: both start and end must match the anchored schedule. Checking only the start
+    // (contiguity) would accept an off-schedule end and then skip days on the next anchored invoice.
+    if (inv.period_start !== expected.start || inv.period_end !== expected.end) return null
     count += inv.quantity
   }
   return count
@@ -231,6 +237,12 @@ export interface LeaseBillingSummary {
    * inactive: lease not active. overdue: daysUntilDue < 0 (or any unpaid invoice past due).
    * due_soon: 0 <= daysUntilDue <= dueSoonDays. unbilled: no invoices at all and not yet due.
    * ok: otherwise.
+   *
+   * Note: lease.end_date is NOT consulted. In this model end_date is extended to the latest invoice's
+   * period_end, so once everything is paid nextDueDate (= coveredThrough + 1) is always > end_date; a
+   * "nothing more to bill" rule based on end_date would silence every settled lease. A tenant who stays
+   * past the paid period is therefore flagged due_soon/overdue until the next invoice is issued or the
+   * lease is checked out (status 'ended' -> inactive).
    */
   state: BillingState
 }
@@ -261,17 +273,15 @@ export function summarizeLeaseBilling(
     }
   }
 
-  const hasOpenInvoice = earliestOpenDue !== null
   const nextDueDate = earliestOpenDue ?? (coveredThrough !== null ? addDaysISO(coveredThrough, 1) : lease.start_date)
   const daysUntilDue = daysBetween(todayISO, nextDueDate)
 
+  // Decision: no end_date-based "nothing more to bill" short-circuit. end_date == coveredThrough for every
+  // rolling lease (it is extended on each invoice), so such a rule would hide every settled lease from the
+  // dashboard's "buat tagihan berikutnya" flow. A fixed-term stay is closed by checkout (status 'ended').
   let state: BillingState
   if (lease.status !== 'active') {
     state = 'inactive'
-  } else if (!hasOpenInvoice && coveredThrough !== null && nextDueDate > lease.end_date) {
-    // Decision: everything billed is settled and the next period would start after the lease ends,
-    // so there is nothing more to bill -> 'ok' (lease expiry itself is surfaced by expiringLeases, not here).
-    state = 'ok'
   } else if (daysUntilDue < 0) {
     state = 'overdue'
   } else if (active.length === 0 && daysUntilDue > dueSoonDays) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Expense, Invoice, Lease, Payment, Property, Room, Tenant } from '../types/db'
 import type { CashflowPoint, CategoryBreakdown, FinanceSummary, PropertyBreakdown } from './finance'
 import {
+  activeLeaseFor,
   buildExpensesSheet,
   buildInvoicesSheet,
   buildPaymentsSheet,
@@ -404,12 +405,37 @@ describe('buildTenantsSheet', () => {
     expect(column(buildTenantsSheet(ctx), 'full_name')).toEqual(['Andi', 'Budi Santoso', 'Sari Dewi'])
   })
 
-  it('prefers the active lease kos over the home kos and uses the latest active lease', () => {
+  it('prefers the active lease kos over the home kos', () => {
     const ctx = makeContext()
-    // Budi's home is kos-a but his newest active lease is in B1 (kos-b)
-    ctx.leases.push(makeLease({ id: 'lease-budi-2', room_id: 'room-b1', property_id: 'kos-b', tenant_id: 'tenant-budi', start_date: '2026-03-01' }))
+    // Budi's home is kos-a but his only active lease is in B1 (kos-b)
+    ctx.leases = [makeLease({ id: 'lease-budi-2', room_id: 'room-b1', property_id: 'kos-b', tenant_id: 'tenant-budi', start_date: '2026-03-01' })]
     const row = buildTenantsSheet(ctx).rows[0]
     expect(row).toMatchObject({ full_name: 'Budi Santoso', property: 'Kos Melati', room: 'B1', lease_status: 'Aktif' })
+  })
+
+  it('reserved (future-start) active lease does not displace the tenant\'s current room in Penyewa sheet', () => {
+    const ctx = makeContext()
+    // Budi lives in A1 (Kos Mawar) until 2026-10-31 and has booked B1 (Kos Melati) from 2026-11-01 ('Dipesan').
+    ctx.leases = [
+      makeLease({ id: 'lease-budi-booking', room_id: 'room-b1', property_id: 'kos-b', tenant_id: 'tenant-budi', start_date: '2026-11-01', end_date: '2027-10-31' }),
+      makeLease({ id: 'lease-budi-current', room_id: 'room-a1', property_id: 'kos-a', tenant_id: 'tenant-budi', start_date: '2026-01-01', end_date: '2026-10-31' }),
+    ]
+    const row = buildTenantsSheet(ctx).rows[0]
+    expect(row).toMatchObject({ full_name: 'Budi Santoso', property: 'Kos Mawar', room: 'A1', lease_status: 'Aktif' })
+  })
+
+  it('activeLeaseFor ignores ended/cancelled leases and other tenants, picks earliest start, ties broken by id', () => {
+    const leases = [
+      makeLease({ id: 'l-ended', tenant_id: 'tenant-budi', status: 'ended', start_date: '2025-01-01' }),
+      makeLease({ id: 'l-cancelled', tenant_id: 'tenant-budi', status: 'cancelled', start_date: '2025-06-01' }),
+      makeLease({ id: 'l-other', tenant_id: 'tenant-sari', status: 'active', start_date: '2025-01-01' }),
+      makeLease({ id: 'l-b', tenant_id: 'tenant-budi', status: 'active', start_date: '2026-02-01' }),
+      makeLease({ id: 'l-a', tenant_id: 'tenant-budi', status: 'active', start_date: '2026-02-01' }),
+      makeLease({ id: 'l-later', tenant_id: 'tenant-budi', status: 'active', start_date: '2026-05-01' }),
+    ]
+    expect(activeLeaseFor('tenant-budi', leases)?.id).toBe('l-a')
+    expect(activeLeaseFor('tenant-sari', leases)?.id).toBe('l-other')
+    expect(activeLeaseFor('tenant-nobody', leases)).toBeUndefined()
   })
 
   it("tenant with no home kos and no active lease renders '-' for kos and gender", () => {

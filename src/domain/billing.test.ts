@@ -147,6 +147,19 @@ describe('billedPeriodCount', () => {
     ]
     expect(billedPeriodCount(lease, invoices)).toBeNull()
   })
+
+  it('finding: contiguous start but off-schedule period_end (manual periodStart override) is not anchored', () => {
+    const inv1 = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27', status: 'paid' })
+    // user typed the "obvious" next day; unanchored end is 2026-03-27 (anchored would be 2026-03-30)
+    const draft2 = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [inv1], periodStart: '2026-02-28' })
+    expect(draft2.period_end).toBe('2026-03-27')
+    const inv2 = makeInvoice({ period_start: draft2.period_start, period_end: draft2.period_end })
+    expect(billedPeriodCount(lease, [inv1, inv2])).toBeNull()
+    // an end that is too long is rejected as well
+    expect(billedPeriodCount(lease, [makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-28' })])).toBeNull()
+    // a first invoice with a quantity that does not match its end is rejected too
+    expect(billedPeriodCount(lease, [makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27', quantity: 2 })])).toBeNull()
+  })
 })
 
 // ---------- nextPeriodBounds / nextPeriodStart ----------
@@ -218,6 +231,24 @@ describe('nextPeriodBounds', () => {
 
   it('rejects quantity < 1', () => {
     expect(() => nextPeriodBounds(makeLease(), [], 0)).toThrow('Jumlah periode minimal 1')
+  })
+
+  it('finding: after a manual periodStart override the next auto invoice starts the day after, leaving no gap', () => {
+    const lease = makeLease({ start_date: '2026-01-31', end_date: '2026-02-27' })
+    const inv1 = makeInvoice({ id: 'a', period_start: '2026-01-31', period_end: '2026-02-27', status: 'paid' })
+    const draft2 = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [inv1], periodStart: '2026-02-28' })
+    const inv2 = makeInvoice({ id: 'b', period_start: draft2.period_start, period_end: draft2.period_end, status: 'paid' })
+    expect(inv2.period_end).toBe('2026-03-27')
+
+    // previously 2026-03-31..2026-04-29 (anchored), skipping 28-30 Mar
+    expect(nextPeriodBounds(lease, [inv1, inv2], 1)).toEqual({ period_start: '2026-03-28', period_end: '2026-04-27' })
+    const draft3 = buildInvoiceDraft({ lease: makeLease({ ...lease, end_date: inv2.period_end }), addons: [], quantity: 1, existingInvoices: [inv1, inv2] })
+    expect(draft3.period_start).toBe('2026-03-28')
+    expect(draft3.due_date).toBe('2026-03-28')
+
+    // dashboard and next invoice agree on the next due date
+    const s = summarizeLeaseBilling(makeLease({ ...lease, end_date: inv2.period_end }), [inv1, inv2], [], '2026-03-20')
+    expect(s.nextDueDate).toBe('2026-03-28')
   })
 })
 
@@ -451,7 +482,8 @@ describe('deriveInvoiceStatus', () => {
 // ---------- summarizeLeaseBilling ----------
 
 describe('summarizeLeaseBilling', () => {
-  const lease = makeLease({ id: 'lease-1', start_date: '2026-01-31', end_date: '2026-12-31' })
+  // Realistic shape: end_date equals the latest invoice's period_end (the app extends it on each invoice).
+  const lease = makeLease({ id: 'lease-1', start_date: '2026-01-31', end_date: '2026-02-27' })
 
   it('nothing billed yet, start far away -> unbilled, nextDueDate = start_date', () => {
     const s = summarizeLeaseBilling(lease, [], [], '2026-01-10')
@@ -566,7 +598,7 @@ describe('summarizeLeaseBilling', () => {
     expect(summarizeLeaseBilling(makeLease({ status: 'cancelled' }), [], [], '2026-01-10').state).toBe('inactive')
   })
 
-  it('daily lease ending before the next period: fully paid -> ok (nothing more to bill)', () => {
+  it('daily lease at its end_date, fully paid: due_soon on the last night, overdue after, inactive once checked out', () => {
     const daily = makeLease({ id: 'lease-1', period_type: 'daily', start_date: '2026-03-01', end_date: '2026-03-03' })
     const inv = makeInvoice({
       id: 'd1',
@@ -576,12 +608,47 @@ describe('summarizeLeaseBilling', () => {
       total_amount: 300_000,
       status: 'paid',
     })
+    // end_date is not consulted: the tenant is still 'active', so the next night is about to fall due
     const s = summarizeLeaseBilling(daily, [inv], [], '2026-03-03')
     expect(s.nextDueDate).toBe('2026-03-04')
     expect(s.daysUntilDue).toBe(1)
-    expect(s.state).toBe('ok')
-    // even once the lease date has passed, with nothing open there is nothing to chase
-    expect(summarizeLeaseBilling(daily, [inv], [], '2026-03-10').state).toBe('ok')
+    expect(s.state).toBe('due_soon')
+    expect(summarizeLeaseBilling(daily, [inv], [], '2026-02-28').state).toBe('ok')
+    expect(summarizeLeaseBilling(daily, [inv], [], '2026-03-10').state).toBe('overdue')
+    // the stay is closed by checkout, not by end_date
+    const ended = makeLease({ ...daily, status: 'ended', checkout_date: '2026-03-04' })
+    expect(summarizeLeaseBilling(ended, [inv], [], '2026-03-10').state).toBe('inactive')
+  })
+
+  it('finding: fully-paid rolling lease becomes due_soon/overdue even though end_date == coveredThrough', () => {
+    const start = makeLease({ id: 'lease-1', start_date: '2026-01-31', end_date: '2026-01-31' })
+    const draft1 = buildInvoiceDraft({ lease: start, addons: [], quantity: 1, existingInvoices: [] })
+    const inv1 = makeInvoice({ id: 'i1', period_start: draft1.period_start, period_end: draft1.period_end, status: 'paid' })
+    const lease1 = makeLease({ ...start, end_date: draft1.new_lease_end_date })
+    expect(lease1.end_date).toBe('2026-02-27')
+
+    const far = summarizeLeaseBilling(lease1, [inv1], [], '2026-02-10')
+    expect(far.nextDueDate).toBe('2026-02-28')
+    expect(far.state).toBe('ok')
+
+    const soon = summarizeLeaseBilling(lease1, [inv1], [], '2026-02-26')
+    expect(soon.daysUntilDue).toBe(2)
+    expect(soon.state).toBe('due_soon')
+
+    const late = summarizeLeaseBilling(lease1, [inv1], [], '2026-03-09')
+    expect(late.daysUntilDue).toBe(-9)
+    expect(late.state).toBe('overdue')
+
+    // second invoice issued and paid: end_date extended to 2026-03-30, the cycle repeats
+    const draft2 = buildInvoiceDraft({ lease: lease1, addons: [], quantity: 1, existingInvoices: [inv1] })
+    const inv2 = makeInvoice({ id: 'i2', period_start: draft2.period_start, period_end: draft2.period_end, status: 'paid' })
+    const lease2 = makeLease({ ...lease1, end_date: draft2.new_lease_end_date })
+    expect(lease2.end_date).toBe('2026-03-30')
+    const s2 = summarizeLeaseBilling(lease2, [inv1, inv2], [], '2026-03-29')
+    expect(s2.nextDueDate).toBe('2026-03-31')
+    expect(s2.daysUntilDue).toBe(2)
+    expect(s2.state).toBe('due_soon')
+    expect(summarizeLeaseBilling(lease2, [inv1, inv2], [], '2026-03-15').state).toBe('ok')
   })
 
   it('lease ending before next period but with an open invoice is still overdue', () => {

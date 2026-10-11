@@ -38,29 +38,16 @@ async function loadMembership(userId: string, email: string | null) {
   if (repo.mode === 'local') {
     const local = repo as LocalRepo
     if (local.isEmpty()) local.replaceAll(buildDemoDb())
-    const [org] = await local.list('organizations')
-    const members = await local.list('organization_members', { where: { org_id: org.id } })
-    const me = members.find((m) => m.user_id === userId) ?? members[0]
-    return { org, role: me?.role ?? ('owner' as MemberRole) }
   }
-  const memberships = await repo.list('organization_members', { where: { user_id: userId } })
-  if (memberships.length === 0) {
-    // Fallback if the signup trigger did not run (e.g. schema installed after signup).
-    const org = await repo.insert('organizations', { name: 'Kos Saya', created_by: userId })
-    await repo.insert('organization_members', { org_id: org.id, user_id: userId, email, role: 'owner' })
-    return { org, role: 'owner' as MemberRole }
-  }
-  // A user who signed up before being invited owns an empty "Kos Saya" org as well as the invited one:
-  // prefer an organisation created by someone else, then the oldest membership.
-  const sorted = [...memberships].sort((a, b) => a.created_at.localeCompare(b.created_at))
-  const orgs = await Promise.all(sorted.map((m) => repo.get('organizations', m.org_id)))
-  const idx = Math.max(
-    0,
-    orgs.findIndex((o) => o && o.created_by !== userId),
-  )
-  const org = orgs[idx]
+  // Membership is resolved server-side (ensure_membership RPC): the client never creates organisations
+  // and never picks an organisation itself, which closes the "invite the owner into my org" attack.
+  const orgId = await repo.ensureMembership({ id: userId, email })
+  const [org, members] = await Promise.all([
+    repo.get('organizations', orgId),
+    repo.list('organization_members', { where: { org_id: orgId, user_id: userId } }),
+  ])
   if (!org) throw new Error('Organisasi tidak ditemukan.')
-  return { org, role: sorted[idx].role }
+  return { org, role: members[0]?.role ?? ('staff' as MemberRole) }
 }
 
 export function OrgProvider({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {

@@ -39,18 +39,25 @@ npm run build      # hasil di dist/
 
 1. Buat akun di <https://supabase.com> → **New project** (region Singapore paling dekat).
 2. Buka **SQL Editor** → tempel seluruh isi `supabase/schema.sql` → **Run**.
-3. (Disarankan) **Authentication → Providers → Email**: matikan *Confirm email* agar login langsung tanpa cek email,
-   atau biarkan aktif dan konfirmasi lewat email.
+3. **Authentication → Providers → Email**: biarkan *Confirm email* **aktif** (sekali konfirmasi per akun), dan di
+   **Authentication → Sign In / Providers** naikkan *Minimum password length* ke **8**. Di **Authentication → URL
+   Configuration** isi *Site URL* dengan alamat aplikasi Anda dan tambahkan `https://<alamat-aplikasi>/reset-sandi` ke
+   *Redirect URLs* (dipakai saat lupa kata sandi).
 4. **Project Settings → API**: salin **Project URL** dan **anon public key**.
 5. Salin `.env.example` menjadi `.env` dan isi kedua nilai tersebut (atau set sebagai *environment variables*
    di layanan hosting).
 6. `npm run build` lalu deploy folder `dist/` — atau hubungkan repo ini ke Cloudflare Pages / Vercel / Netlify
    (framework: Vite, build `npm run build`, output `dist`). Set env `VITE_SUPABASE_URL` dan
    `VITE_SUPABASE_ANON_KEY` di pengaturan proyek hosting.
-7. Buka alamat aplikasi → **Buat akun** (Anda otomatis menjadi pemilik organisasi "Kos Saya").
+7. Buka alamat aplikasi → **Buat akun**. **Akun pertama** otomatis menjadi pemilik organisasi "Kos Saya".
 8. Undang istri/pegawai: **Pengaturan → Anggota → Undang** dengan email mereka → mereka **Buat akun** dengan email
-   yang sama → otomatis masuk ke organisasi yang sama. Peran *Staf* tidak melihat Laporan dan tidak bisa menghapus
-   data keuangan.
+   yang sama → otomatis masuk ke organisasi yang sama (boleh juga mendaftar dulu lalu diundang; saat masuk berikutnya
+   mereka otomatis bergabung). Peran *Admin* cocok untuk pasangan; *Staf* tidak melihat Laporan dan tidak bisa
+   menghapus/mengubah data keuangan orang lain.
+
+Keamanan: setelah akun pertama dibuat, pendaftaran menjadi **khusus undangan** — akun asing yang mendaftar tidak
+mendapat akses apa pun. Penghapusan data keuangan (tagihan yang sudah dibayar, sewa yang punya tagihan) ditolak oleh
+database; gunakan *Batalkan* / *Checkout*.
 
 Kunci *anon* aman dipublikasikan: semua akses dibatasi Row Level Security per organisasi (lihat `schema.sql`).
 

@@ -250,12 +250,18 @@ export function buildInvoicesSheet(invoices: Invoice[], payments: Payment[], ctx
   }
 }
 
-/** The tenant's active lease; when several are active (data error), the most recently started wins. */
-function activeLeaseFor(tenantId: string, leases: Lease[]): Lease | undefined {
+/**
+ * The tenant's current active lease.
+ * Decision: when a tenant has several active leases, the EARLIEST started one wins. SPEC models a booking as an
+ * active lease with a future start_date ('Dipesan'), so a tenant who is in A1 now and has reserved B1 for next month
+ * has two active leases; the earliest is the room they physically occupy. (This sheet has no reference date, so
+ * "latest start wins" would wrongly report the reservation.) Ties on start_date fall back to id for determinism.
+ */
+export function activeLeaseFor(tenantId: string, leases: Lease[]): Lease | undefined {
   let best: Lease | undefined
   for (const l of leases) {
     if (l.tenant_id !== tenantId || l.status !== 'active') continue
-    if (!best || l.start_date > best.start_date) best = l
+    if (!best || l.start_date < best.start_date || (l.start_date === best.start_date && l.id < best.id)) best = l
   }
   return best
 }

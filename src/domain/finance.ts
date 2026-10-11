@@ -47,6 +47,12 @@ export function operatingExpensesListInRange(expenses: Expense[], range: DateRan
   )
 }
 
+/** total - rent paid, floored at 0 (void invoices owe nothing). Same rule as billing.outstandingFor. */
+function invoiceOutstanding(inv: Invoice, payments: Payment[]): number {
+  if (inv.status === 'void') return 0
+  return Math.max(0, inv.total_amount - paidAmountFor(inv.id, payments))
+}
+
 function sumAmount(rows: ReadonlyArray<{ amount: number }>): number {
   let total = 0
   for (const r of rows) total += r.amount
@@ -66,11 +72,17 @@ export interface FinanceSummary {
   depositRefunds: number
   /** sum of total_amount of non-void invoices whose due_date is in range */
   billed: number
-  /** sum of rent payments in range that are attached to an invoice */
+  /**
+   * Over the same billed set: sum(min(paid to date, total_amount)). Payments are counted regardless of
+   * paid_at, so this answers "how much of what was billed in this period has been collected".
+   */
   collected: number
-  /** collected / billed, null when billed is 0 (can exceed 1 when old invoices are paid in this range) */
+  /** collected / billed, null when billed is 0; always within 0..1 */
   collectionRate: number | null
-  /** outstanding across all unpaid/partial invoices with due_date <= range.end (not only in range) */
+  /**
+   * Sum of (total - paid) over all non-void invoices with due_date <= range.end (not only in range) that
+   * still have money owed. Derived from payments, never from the status column (SPEC §2a "Piutang").
+   */
   outstanding: number
   paymentCount: number
   expenseCount: number
@@ -109,18 +121,20 @@ export function summarizeFinance(
     ),
   )
 
-  const scopedInvoices = invoices.filter((inv) => matchesProperty(inv.property_id, propertyIds))
-  const billed = sumAmount(
-    scopedInvoices.filter((inv) => inv.status !== 'void' && inRange(inv.due_date, range)).map((inv) => ({ amount: inv.total_amount })),
-  )
-  const collected = sumAmount(revenueRows.filter((p) => p.kind === 'rent' && p.invoice_id !== null))
+  const scopedInvoices = invoices.filter((inv) => inv.status !== 'void' && matchesProperty(inv.property_id, propertyIds))
+  let billed = 0
+  let collected = 0
+  for (const inv of scopedInvoices) {
+    if (!inRange(inv.due_date, range)) continue
+    billed += inv.total_amount
+    // an over-paid invoice counts at most its total, so collectionRate stays within 0..1
+    collected += Math.min(paidAmountFor(inv.id, payments), inv.total_amount)
+  }
 
   let outstanding = 0
   for (const inv of scopedInvoices) {
-    if ((inv.status === 'unpaid' || inv.status === 'partial') && inv.due_date <= range.end) {
-      // never negative: an over-paid invoice still shows 0 outstanding
-      outstanding += Math.max(0, inv.total_amount - paidAmountFor(inv.id, payments))
-    }
+    // derived from payments, not from inv.status: a stale 'paid' flag must not hide money owed
+    if (inv.due_date <= range.end) outstanding += invoiceOutstanding(inv, payments)
   }
 
   return {
@@ -276,17 +290,20 @@ export interface OutstandingItem {
   daysOverdue: number
 }
 
-/** unpaid/partial invoices sorted by due_date ascending (most overdue first). */
+/**
+ * Non-void invoices that still have money owed (total - rent paid > 0, derived from payments rather than
+ * the status column, SPEC §2a), sorted by due_date ascending (most overdue first) then invoice_number.
+ */
 export function outstandingInvoices(invoices: Invoice[], payments: Payment[], todayISO: string, propertyIds?: string[]): OutstandingItem[] {
   const items: OutstandingItem[] = []
   for (const inv of invoices) {
-    if (inv.status !== 'unpaid' && inv.status !== 'partial') continue
     if (!matchesProperty(inv.property_id, propertyIds)) continue
-    const paid = paidAmountFor(inv.id, payments)
+    const outstanding = invoiceOutstanding(inv, payments)
+    if (outstanding <= 0) continue
     items.push({
       invoice: inv,
-      paid,
-      outstanding: Math.max(0, inv.total_amount - paid),
+      paid: paidAmountFor(inv.id, payments),
+      outstanding,
       daysOverdue: daysBetween(inv.due_date, todayISO),
     })
   }

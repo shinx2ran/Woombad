@@ -2,6 +2,19 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Insert, Row, TableName, Update } from '../../types/db'
 import type { ListOptions, MemberAddResult, Repo, StorageBucket } from './types'
 
+/** Turn Postgres/PostgREST errors into messages a kos owner can act on. */
+export function translateDbError(message: string): string {
+  if (/row-level security|permission denied|42501/i.test(message)) return 'Anda tidak memiliki izin untuk tindakan ini.'
+  if (/invoices_org_id_invoice_number_key|invoice_number/i.test(message) && /duplicate|unique/i.test(message)) {
+    return 'Nomor tagihan sudah dipakai. Coba lagi.'
+  }
+  if (/violates foreign key constraint/i.test(message) && /restrict|still referenced/i.test(message)) {
+    return 'Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.'
+  }
+  if (/Failed to fetch|NetworkError|network/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
+  return message
+}
+
 export class SupabaseRepo implements Repo {
   readonly mode = 'supabase' as const
   private readonly sb: SupabaseClient
@@ -47,26 +60,36 @@ export class SupabaseRepo implements Repo {
 
   async insert<T extends TableName>(table: T, row: Insert<T>): Promise<Row<T>> {
     const { data, error } = await this.sb.from(table).insert(row as never).select('*').single()
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(translateDbError(error.message))
     return data as unknown as Row<T>
   }
 
   async insertMany<T extends TableName>(table: T, rows: Insert<T>[]): Promise<Row<T>[]> {
     if (rows.length === 0) return []
     const { data, error } = await this.sb.from(table).insert(rows as never).select('*')
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(translateDbError(error.message))
     return (data ?? []) as unknown as Row<T>[]
   }
 
-  async update<T extends TableName>(table: T, id: string, patch: Update<T>): Promise<Row<T>> {
-    const { data, error } = await this.sb.from(table).update(patch as never).eq('id', id).select('*').single()
-    if (error) throw new Error(error.message)
+  async update<T extends TableName>(table: T, id: string, patch: Update<T>, orgId?: string): Promise<Row<T>> {
+    let q = this.sb.from(table).update(patch as never).eq('id', id)
+    if (orgId) q = q.eq('org_id', orgId)
+    const { data, error } = await q.select('*').single()
+    if (error) throw new Error(translateDbError(error.message))
     return data as unknown as Row<T>
   }
 
-  async remove<T extends TableName>(table: T, id: string): Promise<void> {
-    const { error } = await this.sb.from(table).delete().eq('id', id)
-    if (error) throw new Error(error.message)
+  async remove<T extends TableName>(table: T, id: string, orgId?: string): Promise<void> {
+    let q = this.sb.from(table).delete().eq('id', id)
+    if (orgId) q = q.eq('org_id', orgId)
+    const { error } = await q
+    if (error) throw new Error(translateDbError(error.message))
+  }
+
+  async ensureMembership(): Promise<string> {
+    const { data, error } = await this.sb.rpc('ensure_membership')
+    if (error) throw new Error(translateDbError(error.message))
+    return data as string
   }
 
   async uploadFile(bucket: StorageBucket, path: string, file: Blob, contentType?: string): Promise<string | null> {
@@ -77,7 +100,7 @@ export class SupabaseRepo implements Repo {
 
   async getFileUrl(bucket: StorageBucket, path: string | null | undefined): Promise<string | null> {
     if (!path) return null
-    const { data, error } = await this.sb.storage.from(bucket).createSignedUrl(path, 60 * 60)
+    const { data, error } = await this.sb.storage.from(bucket).createSignedUrl(path, 300)
     if (error) return null
     return data?.signedUrl ?? null
   }
