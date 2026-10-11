@@ -8,10 +8,13 @@ import {
   buildVacantGroups,
   deltaText,
   dueLabel,
+  extensionQuestionText,
   formatCompactRupiah,
   greetingFor,
+  isPaidUpAndEnding,
   lastSixMonthsRange,
 } from './dashboardModel'
+import { summarizeLeaseBilling } from '../../domain/billing'
 
 const ts = { org_id: 'org', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
 const TODAY = '2026-10-11'
@@ -104,21 +107,21 @@ const payment = (id: string, invoice_id: string | null, lease_id: string, amount
 const lookups = buildLookups(tenants, rooms, properties)
 
 describe('buildAttentionSections', () => {
-  // l1: overdue (due 10 days ago, unpaid); l2: due in 2 days (paid through 2026-10-12);
-  // l3: unbilled (starts in 10 days, no invoice); l4: ok (paid through next month); l5: ended
+  // l1: overdue (due 10 days ago, unpaid); l2: due_soon within grace (paid through 2026-10-09, still in the room,
+  // next period due yesterday); l3: unbilled (starts in 10 days, no invoice); l4: ok (paid through next month); l5: ended
   const leases = [
     lease('l1', 'r1', 't1', '2026-09-01', '2026-10-31'),
-    lease('l2', 'r2', 't2', '2026-09-13', '2026-10-12'),
+    lease('l2', 'r2', 't2', '2026-09-10', '2026-10-09'),
     lease('l3', 'r3', 't3', '2026-10-21', '2026-11-20'),
     lease('l4', 'r5', 't4', '2026-10-01', '2026-11-30'),
     lease('l5', 'r1', 't1', '2026-01-01', '2026-02-01', 'ended'),
   ]
   const invoices = [
     invoice('i1', 'l1', '2026-10-01', '2026-10-31', 'unpaid'),
-    invoice('i2', 'l2', '2026-09-13', '2026-10-12', 'paid'),
+    invoice('i2', 'l2', '2026-09-10', '2026-10-09', 'paid'),
     invoice('i4', 'l4', '2026-10-01', '2026-11-30', 'paid', 3_000_000),
   ]
-  const payments = [payment('p2', 'i2', 'l2', 1_500_000, '2026-09-13'), payment('p4', 'i4', 'l4', 3_000_000, '2026-10-01')]
+  const payments = [payment('p2', 'i2', 'l2', 1_500_000, '2026-09-10'), payment('p4', 'i4', 'l4', 3_000_000, '2026-10-01')]
 
   it('groups overdue, due_soon and unbilled in order and skips ok/ended leases', () => {
     const sections = buildAttentionSections(leases, invoices, payments, [], lookups, TODAY)
@@ -140,7 +143,55 @@ describe('buildAttentionSections', () => {
     const dueSoon = sections[1].items[0]
     expect(dueSoon.openInvoice).toBeNull()
     expect(dueSoon.summary.outstanding).toBe(0)
+    expect(dueSoon.summary.daysUntilDue).toBe(-1)
     expect(dueSoon.amount).toBe(1_500_000)
+  })
+
+  // Paid short stay that is leaving (the review's "Tamu Harian" case): 3 nights 2026-10-11..13, first invoice
+  // paid in full. summarizeLeaseBilling says due_soon (next period would start 14 Okt) but nothing is owed and
+  // the stay ends within the "Akan berakhir" window, so it must not be flagged "Jatuh tempo" with Bayar/Tagih.
+  const guest = { ...lease('l7', 'r2', 't2', '2026-10-11', '2026-10-13'), period_type: 'daily' as const, price_per_period: 100_000 }
+  const guestInvoice = invoice('i7', 'l7', '2026-10-11', '2026-10-13', 'paid', 300_000)
+  const guestPayment = payment('p7', 'i7', 'l7', 300_000, '2026-10-11')
+
+  it('leaves a paid-up lease that ends within 7 days to the "Akan berakhir" list (SPEC 2b.12, not shown twice)', () => {
+    const sections = buildAttentionSections([guest], [guestInvoice], [guestPayment], [], lookups, TODAY)
+    expect(sections).toEqual([])
+    const summary = summarizeLeaseBilling(guest, [guestInvoice], [guestPayment], TODAY)
+    expect(summary.state).toBe('due_soon')
+    expect(isPaidUpAndEnding(guest, summary, TODAY)).toBe(true)
+    const expiring = buildExpiringItems([guest], new Set(), lookups, TODAY)
+    expect(expiring.map((i) => [i.lease.id, i.daysLeft])).toEqual([['l7', 2]])
+  })
+
+  it('keeps a lease whose last invoice is still partly unpaid under attention even though the stay is ending', () => {
+    const partial = { ...guestInvoice, status: 'partial' as const }
+    const dp = { ...guestPayment, amount: 100_000 }
+    const sections = buildAttentionSections([guest], [partial], [dp], [], lookups, TODAY)
+    expect(sections.map((s) => s.group)).toEqual(['due_soon'])
+    expect(sections[0].items[0].amount).toBe(200_000)
+    expect(isPaidUpAndEnding(guest, sections[0].items[0].summary, TODAY)).toBe(false)
+  })
+
+  it('keeps a paid-up tenant who stays on past end_date under attention (the next invoice is due)', () => {
+    const summary = summarizeLeaseBilling(leases[1], invoices, payments, TODAY)
+    expect(summary.outstanding).toBe(0)
+    expect(isPaidUpAndEnding(leases[1], summary, TODAY)).toBe(false)
+    const sections = buildAttentionSections([leases[1]], invoices, payments, [], lookups, TODAY)
+    expect(sections.map((s) => s.group)).toEqual(['due_soon'])
+  })
+
+  it('keeps an unbilled short reservation under "Belum ditagih" even when it ends within 7 days', () => {
+    const reservation = { ...guest, id: 'l8', start_date: '2026-10-15', end_date: '2026-10-17' }
+    const sections = buildAttentionSections([reservation], [], [], [], lookups, TODAY)
+    expect(sections.map((s) => s.group)).toEqual(['unbilled'])
+  })
+
+  it('a paid-up lease ending today is still "Akan berakhir", not "Jatuh tempo"', () => {
+    const today = { ...guest, start_date: '2026-10-09', end_date: TODAY }
+    const inv = { ...guestInvoice, period_start: '2026-10-09', period_end: TODAY }
+    expect(buildAttentionSections([today], [inv], [guestPayment], [], lookups, TODAY)).toEqual([])
+    expect(buildExpiringItems([today], new Set(), lookups, TODAY)[0]?.daysLeft).toBe(0)
   })
 
   it('sorts the most overdue first', () => {
@@ -254,6 +305,15 @@ describe('formatting helpers', () => {
     expect(formatCompactRupiah(3_000_000)).toBe('3 jt')
     expect(formatCompactRupiah(-450_000)).toBe('-450 rb')
     expect(formatCompactRupiah(2_500_000_000)).toBe('2,5 M')
+  })
+
+  it('extensionQuestionText asks about extending without mentioning a bill', () => {
+    const text = extensionQuestionText({ tenantName: 'Tamu Harian Uji', roomName: 'A3', propertyName: 'Kos Melati', endDate: '2026-10-13' })
+    expect(text).toContain('Halo Kak Tamu, ini pesan dari Kos Melati.')
+    expect(text).toContain('kamar A3 berakhir pada 13 Okt 2026')
+    expect(text).toContain('memperpanjang')
+    expect(text).not.toMatch(/Tagihan|jatuh tempo|Rp/)
+    expect(extensionQuestionText({ tenantName: '  ', roomName: 'B1', propertyName: 'Kos', endDate: '2026-10-13' })).toContain('Halo Kak,')
   })
 
   it('dueLabel describes the due date relative to today', () => {

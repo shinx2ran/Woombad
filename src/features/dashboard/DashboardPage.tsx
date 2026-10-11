@@ -17,6 +17,8 @@ import { CashflowChart } from './CashflowChart'
 export function DashboardPage() {
   const { properties, selectedPropertyId, role } = useOrg()
   const showReportLink = role !== 'staff'
+  // Checkout is admin-only on the lease page (SPEC section 3), so staff only get "Perpanjang".
+  const canCheckout = role !== 'staff'
   const { data, isPending, error } = useDashboardData()
   // Captured once per mount: the greeting should not flip mid-session on a re-render.
   const [greeting] = useState(() => greetingFor(new Date().getHours()))
@@ -60,7 +62,7 @@ export function DashboardPage() {
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">
               <AttentionList sections={data.attention} count={data.attentionCount} />
-              <ExpiringList items={data.expiring} />
+              <ExpiringList items={data.expiring} canCheckout={canCheckout} />
               <div className="hidden lg:block">
                 <CashflowChart series={data.cashflow} showReportLink={showReportLink} />
               </div>

@@ -5,8 +5,12 @@
 import type { Invoice, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../../types/db'
 import { computeAddonsAmount, paidAmountFor, summarizeLeaseBilling, type BillingState, type LeaseBillingSummary } from '../../domain/billing'
 import { expiringLeases, isLeaseActiveOn, isLeaseReservedOn, reservedRoomIds, vacantRooms } from '../../domain/occupancy'
-import { daysBetween, parseISODate, rangeForPreset, toISODate, type DateRange } from '../../domain/period'
+import { addDaysISO, daysBetween, parseISODate, rangeForPreset, toISODate, type DateRange } from '../../domain/period'
+import { formatDate } from '../../lib/format'
 import { subMonths } from 'date-fns'
+
+/** Window of the "Akan berakhir" card (SPEC section 3: sewa yang akan berakhir ≤ 7 hari). */
+export const EXPIRING_WITHIN_DAYS = 7
 
 export type AttentionGroup = Extract<BillingState, 'overdue' | 'due_soon' | 'unbilled'>
 
@@ -62,8 +66,30 @@ function isAttentionGroup(state: BillingState): state is AttentionGroup {
 }
 
 /**
+ * A lease that owes nothing and whose stay ends within the "Akan berakhir" window (today <= end_date <=
+ * today + withinDays). `summarizeLeaseBilling` deliberately ignores end_date, so such a lease reads
+ * due_soon (next period starts right after end_date) although there is no bill to pay or chase yet: the
+ * owner's decision is "perpanjang atau checkout", not "bayar / tagih". SPEC 2b.12 lets the dashboard show a
+ * lease either under due/overdue or under akan berakhir; this predicate picks the latter.
+ *
+ * A paid-up lease whose end_date is already in the past (tenant staying on past the paid period) is NOT
+ * covered: it keeps its due_soon / overdue place so the next invoice gets issued.
+ */
+export function isPaidUpAndEnding(lease: Lease, summary: LeaseBillingSummary, todayISO: string, withinDays = EXPIRING_WITHIN_DAYS): boolean {
+  return (
+    lease.status === 'active' &&
+    summary.outstanding === 0 &&
+    summary.state !== 'unbilled' &&
+    lease.end_date >= todayISO &&
+    lease.end_date <= addDaysISO(todayISO, withinDays)
+  )
+}
+
+/**
  * "Perlu perhatian": every active lease (already filtered by kos) whose billing state is overdue,
  * due_soon or unbilled, grouped in that order. Within a group, the most urgent (earliest due date) first.
+ * Paid-up leases ending within `expiringWithinDays` are left out (see isPaidUpAndEnding) so that
+ * buildExpiringItems lists them under "Akan berakhir" instead.
  */
 export function buildAttentionSections(
   leases: Lease[],
@@ -72,6 +98,7 @@ export function buildAttentionSections(
   addons: LeaseAddon[],
   lookups: Lookups,
   todayISO: string,
+  expiringWithinDays = EXPIRING_WITHIN_DAYS,
 ): AttentionSection[] {
   const byGroup = new Map<AttentionGroup, AttentionItem[]>(ATTENTION_ORDER.map((g) => [g, []]))
   const addonsByLease = new Map<string, LeaseAddon[]>()
@@ -84,6 +111,7 @@ export function buildAttentionSections(
     if (lease.status !== 'active') continue
     const summary = summarizeLeaseBilling(lease, invoices, payments, todayISO)
     if (!isAttentionGroup(summary.state)) continue
+    if (isPaidUpAndEnding(lease, summary, todayISO, expiringWithinDays)) continue
     const activeInvoices = invoices.filter((inv) => inv.lease_id === lease.id && inv.status !== 'void')
     const openInvoices = activeInvoices
       .filter((inv) => inv.status !== 'paid' && inv.total_amount - paidAmountFor(inv.id, payments) > 0)
@@ -132,7 +160,7 @@ export function buildExpiringItems(
   excludeLeaseIds: Set<string>,
   lookups: Lookups,
   todayISO: string,
-  withinDays = 7,
+  withinDays = EXPIRING_WITHIN_DAYS,
 ): ExpiringItem[] {
   return expiringLeases(leases, todayISO, withinDays)
     .filter((l) => !excludeLeaseIds.has(l.id))
@@ -143,6 +171,29 @@ export function buildExpiringItems(
       property: lookups.propertiesById.get(lease.property_id) ?? null,
       daysLeft: Math.max(0, daysBetween(todayISO, lease.end_date)),
     }))
+}
+
+export interface ExtensionQuestionInput {
+  tenantName: string
+  roomName: string
+  propertyName: string
+  /** 'YYYY-MM-DD' last night of the current stay */
+  endDate: string
+}
+
+/**
+ * WhatsApp text for a lease under "Akan berakhir": asks whether the tenant will extend. It never mentions a
+ * bill or a due date; nothing is owed yet (that is why the lease is in this list and not under "Perlu
+ * perhatian", where reminderText from src/domain/messages is used).
+ */
+export function extensionQuestionText(input: ExtensionQuestionInput): string {
+  const first = input.tenantName.trim().split(/\s+/)[0] ?? ''
+  const kak = first ? `Kak ${first}` : 'Kak'
+  return [
+    `Halo ${kak}, ini pesan dari ${input.propertyName}.`,
+    `Masa sewa kamar ${input.roomName} berakhir pada ${formatDate(input.endDate)}.`,
+    'Apakah berencana memperpanjang sewa? Mohon kabari ya supaya kami bisa menyiapkan tagihan berikutnya atau jadwal checkout. Terima kasih 🙏',
+  ].join('\n')
 }
 
 export interface VacantRoomItem {
