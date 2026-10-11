@@ -3,11 +3,14 @@ import type { Invoice, Lease, Payment, Room } from '../../types/db'
 import {
   allocateAcrossInvoices,
   appendMoveNote,
+  cancelledLeaseEndDate,
   compareLeaseItems,
   composeInvoiceNotes,
+  futureInvoicesAtCheckout,
   invoiceTimeline,
   matchesLeaseSearch,
   openInvoicesSorted,
+  proRataSuggestion,
   roomAvailability,
   roomPriceFor,
   splitInvoiceNotes,
@@ -119,6 +122,57 @@ describe('open invoices & allocation', () => {
       { invoice: open[1], amount: 100_000 },
     ])
     expect(() => allocateAcrossInvoices(2_000_000, open, payments)).toThrow('Jumlah melebihi total sisa tagihan.')
+  })
+})
+
+describe('proRataSuggestion', () => {
+  it('scales the period price by inclusive days and rounds', () => {
+    // monthly period 8 Nov – 7 Dec (30 days); 14 days -> 1.500.000 * 14 / 30 = 700.000
+    expect(proRataSuggestion(1_500_000, '2026-11-08', '2026-12-07', '2026-11-21')).toEqual({ amount: 700_000, days: 14, fullDays: 30 })
+    // full period -> full price; single day -> price / days rounded
+    expect(proRataSuggestion(1_200_000, '2026-11-01', '2026-11-30', '2026-11-30')?.amount).toBe(1_200_000)
+    expect(proRataSuggestion(1_000_000, '2026-11-01', '2026-11-30', '2026-11-01')).toEqual({ amount: 33_333, days: 1, fullDays: 30 })
+  })
+
+  it('returns null for missing or inverted dates', () => {
+    expect(proRataSuggestion(1_000_000, '2026-11-01', '2026-11-30', '')).toBeNull()
+    expect(proRataSuggestion(1_000_000, '2026-11-01', '2026-11-30', '2026-10-31')).toBeNull()
+    expect(proRataSuggestion(1_000_000, '2026-11-01', '2026-11-30', 'bukan-tanggal')).toBeNull()
+  })
+})
+
+describe('cancelledLeaseEndDate', () => {
+  it('cuts end_date to the cancellation date but never before start_date', () => {
+    expect(cancelledLeaseEndDate(lease, '2026-02-15')).toBe('2026-02-15')
+    expect(cancelledLeaseEndDate(lease, '2026-06-01')).toBe('2026-04-09')
+    // lease that has not started yet, cancelled today
+    expect(cancelledLeaseEndDate({ ...lease, start_date: '2026-11-01', end_date: '2026-11-30' }, '2026-10-11')).toBe('2026-11-01')
+    expect(cancelledLeaseEndDate(lease, '2026-01-10')).toBe('2026-01-10')
+  })
+})
+
+describe('futureInvoicesAtCheckout', () => {
+  const invoices = [
+    inv('cur', '2026-01-10', '2026-02-09'),
+    inv('u', '2026-02-10', '2026-03-09'),
+    inv('p', '2026-03-10', '2026-04-09'),
+    inv('f', '2026-04-10', '2026-05-09', 1_000_000, 'paid'),
+    inv('v', '2026-05-10', '2026-06-09', 1_000_000, 'void'),
+    { ...inv('other', '2026-02-10', '2026-03-09'), lease_id: 'L2' },
+  ]
+  const payments = [pay('p', 500_000), pay('f', 1_000_000)]
+
+  it('splits invoices starting after checkout into void / partial / paid and ignores the rest', () => {
+    const r = futureInvoicesAtCheckout('L1', invoices, payments, '2026-01-20')
+    expect(r.toVoid.map((i) => i.id)).toEqual(['u'])
+    expect(r.partial.map((i) => i.id)).toEqual(['p'])
+    expect(r.paid.map((i) => i.id)).toEqual(['f'])
+  })
+
+  it('treats an invoice starting on the checkout date as current and handles an empty date', () => {
+    expect(futureInvoicesAtCheckout('L1', invoices, payments, '2026-02-10').toVoid.map((i) => i.id)).toEqual([])
+    expect(futureInvoicesAtCheckout('L1', invoices, payments, '2026-02-10').partial.map((i) => i.id)).toEqual(['p'])
+    expect(futureInvoicesAtCheckout('L1', invoices, payments, '')).toEqual({ toVoid: [], partial: [], paid: [] })
   })
 })
 

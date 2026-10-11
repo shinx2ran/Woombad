@@ -5,11 +5,60 @@ import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddo
 import { ADDON_BILLINGS, ADDON_BILLING_LABEL, PERIOD_TYPE_LABEL } from '../../types/db'
 import { depositBalance, outstandingFor, paidAmountFor } from '../../domain/billing'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
-import { openInvoicesSorted, roomAvailability, roomPriceFor, validateSettlement, ROOM_AVAILABILITY_LABEL, type DepositSettlement } from './leaseUtils'
+import {
+  cancelledLeaseEndDate,
+  futureInvoicesAtCheckout,
+  openInvoicesSorted,
+  roomAvailability,
+  roomPriceFor,
+  validateSettlement,
+  ROOM_AVAILABILITY_LABEL,
+  type DepositSettlement,
+} from './leaseUtils'
 import { DepositSettlementForm, Row } from './components'
 import type { LeaseActions, PartialDecision } from './useLeaseActions'
 
 const emptySettlement = (held: number): DepositSettlement => ({ refund: Math.max(0, held), rent: 0, damage: 0, damageNotes: '' })
+
+/** Per partially-paid invoice: refund the DP (expense rent_refund + void) or forfeit it (remaining -> discount, paid). SPEC 2b.4. */
+function PartialDecisionList({
+  invoices,
+  payments,
+  decisions,
+  onChange,
+}: {
+  invoices: Invoice[]
+  payments: Payment[]
+  decisions: Record<string, PartialDecision>
+  onChange: (next: Record<string, PartialDecision>) => void
+}) {
+  return (
+    <>
+      {invoices.map((inv) => {
+        const paid = paidAmountFor(inv.id, payments)
+        return (
+          <div key={inv.id} className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+            <p className="font-medium text-amber-900">
+              {inv.invoice_number} · {formatDate(inv.period_start)} – {formatDate(inv.period_end)} · dibayar {formatRupiah(paid)} dari {formatRupiah(inv.total_amount)}
+            </p>
+            <label className="flex items-start gap-2">
+              <input type="radio" name={`dec-${inv.id}`} className="mt-0.5" checked={decisions[inv.id] === 'refund'} onChange={() => onChange({ ...decisions, [inv.id]: 'refund' })} />
+              <span>
+                <strong>Kembalikan {formatRupiah(paid)}</strong> ke penyewa (pengeluaran 'Pengembalian Sewa'), tagihan dibatalkan.
+              </span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input type="radio" name={`dec-${inv.id}`} className="mt-0.5" checked={decisions[inv.id] === 'forfeit'} onChange={() => onChange({ ...decisions, [inv.id]: 'forfeit' })} />
+              <span>
+                <strong>Anggap hangus</strong>: DP tetap pendapatan, sisa {formatRupiah(inv.total_amount - paid)} jadi diskon, tagihan lunas.
+              </span>
+            </label>
+          </div>
+        )
+      })}
+    </>
+  )
+}
 
 // ---------- checkout ----------
 
@@ -23,35 +72,48 @@ export interface CheckoutModalProps {
   actions: LeaseActions
 }
 
-/** SPEC 2b.5: checkout date, void future unpaid invoices, settle the held deposit, status ended. */
+/**
+ * SPEC 2b.5: checkout date, void future unpaid invoices, decide per future partially-paid invoice (refund /
+ * forfeit, so no receivable survives on an ended lease), settle the held deposit, status ended.
+ */
 export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions }: CheckoutModalProps) {
   const toast = useToast()
   const balance = useMemo(() => depositBalance(lease, payments, expenses), [lease, payments, expenses])
   const [date, setDate] = useState(todayISO())
+  const [decisions, setDecisions] = useState<Record<string, PartialDecision>>({})
   const [settlement, setSettlement] = useState<DepositSettlement>(emptySettlement(balance.held))
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setDate(todayISO())
+    setDecisions({})
     setSettlement(emptySettlement(balance.held))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const toVoid = useMemo(() => actions.invoicesToVoidAtCheckout(lease, invoices, payments, date), [actions, lease, invoices, payments, date])
+  const future = useMemo(() => futureInvoicesAtCheckout(lease.id, invoices, payments, date), [lease.id, invoices, payments, date])
   const open_ = useMemo(() => {
-    const voidIds = new Set(toVoid.map((i) => i.id))
-    return openInvoicesSorted(lease.id, invoices, payments).filter((i) => !voidIds.has(i.id))
-  }, [lease.id, invoices, payments, toVoid])
+    const closedIds = new Set([...future.toVoid, ...future.partial].map((i) => i.id))
+    return openInvoicesSorted(lease.id, invoices, payments).filter((i) => !closedIds.has(i.id))
+  }, [lease.id, invoices, payments, future])
   const rentCapacity = open_.reduce((s, i) => s + outstandingFor(i, payments), 0)
   const settlementError = balance.held > 0 ? validateSettlement(settlement, balance.held, rentCapacity) : null
   const dateError = !date ? 'Tanggal checkout wajib diisi.' : date < lease.start_date ? 'Tanggal checkout tidak boleh sebelum tanggal mulai sewa.' : null
+  const missing = future.partial.some((i) => !decisions[i.id])
 
   const submit = async () => {
-    if (dateError || settlementError) return
+    if (dateError || settlementError || missing) return
     setSaving(true)
     try {
-      await actions.checkout({ lease, checkoutDate: date, invoices, payments, settlement: balance.held > 0 ? settlement : emptySettlement(0) })
+      await actions.checkout({
+        lease,
+        checkoutDate: date,
+        invoices,
+        payments,
+        settlement: balance.held > 0 ? settlement : emptySettlement(0),
+        partialDecisions: decisions,
+      })
       toast.success('Checkout dicatat. Sewa selesai.')
       onClose()
     } catch (err) {
@@ -71,7 +133,7 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
           <Button variant="ghost" onClick={onClose}>
             Batal
           </Button>
-          <Button onClick={submit} loading={saving} disabled={Boolean(dateError || settlementError)}>
+          <Button onClick={submit} loading={saving} disabled={Boolean(dateError || settlementError) || missing}>
             Selesaikan checkout
           </Button>
         </>
@@ -81,12 +143,25 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
         <Input label="Tanggal checkout" type="date" value={date} onChange={(e) => setDate(e.target.value)} required error={dateError ?? undefined} />
         <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
           <Row label="Sewa berakhir menjadi" value={formatDate(date && date < lease.end_date ? date : lease.end_date)} />
-          <Row label="Tagihan dibatalkan (mulai setelah checkout)" value={toVoid.length} />
-          <Row label="Sisa tagihan tetap piutang" value={formatRupiah(rentCapacity)} strong />
+          <Row label="Tagihan dibatalkan (mulai setelah checkout)" value={future.toVoid.length} />
+          {future.partial.length > 0 && <Row label="Tagihan DP setelah checkout → perlu keputusan" value={future.partial.length} />}
+          <Row label="Sisa tagihan s/d checkout tetap piutang" value={formatRupiah(rentCapacity)} strong />
         </div>
-        {toVoid.length > 0 && (
+        {future.toVoid.length > 0 && (
           <p className="text-xs text-slate-500">
-            Dibatalkan: {toVoid.map((i) => `${i.invoice_number} (${formatDate(i.period_start)})`).join(', ')}.
+            Dibatalkan: {future.toVoid.map((i) => `${i.invoice_number} (${formatDate(i.period_start)})`).join(', ')}.
+          </p>
+        )}
+        {future.partial.length > 0 && (
+          <p className="text-xs text-amber-800">
+            Tagihan berikut sudah dibayar sebagian untuk periode <strong>setelah</strong> tanggal checkout. Pilih penyelesaiannya agar tidak ada piutang yang tersisa pada sewa yang sudah selesai.
+          </p>
+        )}
+        <PartialDecisionList invoices={future.partial} payments={payments} decisions={decisions} onChange={setDecisions} />
+        {future.paid.length > 0 && (
+          <p className="text-xs text-slate-500">
+            Sudah lunas untuk periode setelah checkout: {future.paid.map((i) => `${i.invoice_number} (${formatDate(i.period_start)} – ${formatDate(i.period_end)})`).join(', ')}. Bila uangnya
+            dikembalikan, catat sebagai pengeluaran 'Pengembalian Sewa' pada sewa ini.
           </p>
         )}
         <DepositSettlementForm balance={balance} value={settlement} onChange={setSettlement} rentCapacity={rentCapacity} error={settlementError} />
@@ -125,9 +200,11 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
 
   const missing = partial.some((i) => !decisions[i.id])
   const settlementError = balance.held > 0 ? validateSettlement(settlement, balance.held, 0) : null
+  const dateError = !date ? 'Tanggal pembatalan wajib diisi.' : null
+  const notStarted = Boolean(date) && date < lease.start_date
 
   const submit = async () => {
-    if (missing || settlementError) return
+    if (missing || settlementError || dateError) return
     setSaving(true)
     try {
       await actions.cancelLease({ lease, invoices, payments, partialDecisions: decisions, settlement: balance.held > 0 ? settlement : emptySettlement(0), dateISO: date })
@@ -150,7 +227,7 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
           <Button variant="ghost" onClick={onClose}>
             Kembali
           </Button>
-          <Button variant="danger" onClick={submit} loading={saving} disabled={missing || Boolean(settlementError)}>
+          <Button variant="danger" onClick={submit} loading={saving} disabled={missing || Boolean(settlementError || dateError)}>
             Batalkan sewa
           </Button>
         </>
@@ -160,33 +237,21 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
         <p className="text-sm text-slate-600">
           Sewa dibatalkan seolah tidak pernah berjalan: kamar dianggap tidak pernah dihuni. Gunakan <strong>Checkout</strong> bila penyewa memang pernah tinggal.
         </p>
-        <Input label="Tanggal pembatalan" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <Input
+          label="Tanggal pembatalan"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          required
+          error={dateError ?? undefined}
+          hint={notStarted ? `Sewa belum mulai (${formatDate(lease.start_date)}); tanggal ini dipakai untuk pencatatan pengembalian.` : undefined}
+        />
         <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
           <Row label="Tagihan belum bayar → dibatalkan" value={unpaid.length} />
           <Row label="Tagihan DP / sebagian → perlu keputusan" value={partial.length} />
+          {date && <Row label="Sewa berakhir menjadi" value={formatDate(cancelledLeaseEndDate(lease, date))} />}
         </div>
-        {partial.map((inv) => {
-          const paid = paidAmountFor(inv.id, payments)
-          return (
-            <div key={inv.id} className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-              <p className="font-medium text-amber-900">
-                {inv.invoice_number} · dibayar {formatRupiah(paid)} dari {formatRupiah(inv.total_amount)}
-              </p>
-              <label className="flex items-start gap-2">
-                <input type="radio" name={`dec-${inv.id}`} className="mt-0.5" checked={decisions[inv.id] === 'refund'} onChange={() => setDecisions({ ...decisions, [inv.id]: 'refund' })} />
-                <span>
-                  <strong>Kembalikan {formatRupiah(paid)}</strong> ke penyewa (pengeluaran 'Pengembalian Sewa'), tagihan dibatalkan.
-                </span>
-              </label>
-              <label className="flex items-start gap-2">
-                <input type="radio" name={`dec-${inv.id}`} className="mt-0.5" checked={decisions[inv.id] === 'forfeit'} onChange={() => setDecisions({ ...decisions, [inv.id]: 'forfeit' })} />
-                <span>
-                  <strong>Anggap hangus</strong>: DP tetap pendapatan, sisa {formatRupiah(inv.total_amount - paid)} jadi diskon, tagihan lunas.
-                </span>
-              </label>
-            </div>
-          )
-        })}
+        <PartialDecisionList invoices={partial} payments={payments} decisions={decisions} onChange={setDecisions} />
         <DepositSettlementForm balance={balance} value={settlement} onChange={setSettlement} rentCapacity={0} error={settlementError} />
       </div>
     </Modal>
