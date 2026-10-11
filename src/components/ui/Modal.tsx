@@ -56,6 +56,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = 'Hapus',
+  cancelLabel = 'Batal',
   danger = true,
   loading,
 }: {
@@ -65,6 +66,8 @@ export function ConfirmDialog({
   title: string
   message: ReactNode
   confirmLabel?: string
+  /** null hides the cancel button (informational dialogs with a single action) */
+  cancelLabel?: string | null
   danger?: boolean
   loading?: boolean
 }) {
@@ -76,9 +79,11 @@ export function ConfirmDialog({
       size="sm"
       footer={
         <>
-          <button type="button" onClick={onClose} className="h-10 rounded-lg px-4 text-sm font-medium text-slate-700 hover:bg-slate-100">
-            Batal
-          </button>
+          {cancelLabel !== null && (
+            <button type="button" onClick={onClose} className="h-10 rounded-lg px-4 text-sm font-medium text-slate-700 hover:bg-slate-100">
+              {cancelLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirm}
