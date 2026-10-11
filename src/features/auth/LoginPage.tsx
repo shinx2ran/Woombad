@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { Button, Input, useToast } from '../../components/ui'
 import { useAuth } from '../../hooks/useAuth'
+import { safeReturnPath } from '../../lib/redirect'
 
 export function LoginPage() {
   const { auth } = useAuth()
@@ -13,7 +14,8 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const isLocal = auth.mode === 'local'
-  const from = (location.state as { from?: string } | null)?.from ?? '/dashboard'
+  // Only same-origin in-app paths are accepted; a crafted '//evil.example/x' falls back to the dashboard.
+  const from = safeReturnPath((location.state as { from?: unknown } | null)?.from)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -33,7 +35,7 @@ export function LoginPage() {
     setLoading(true)
     try {
       await auth.signInWithPassword('demo@woombad.local', 'demo')
-      navigate('/dashboard', { replace: true })
+      navigate(from, { replace: true })
     } finally {
       setLoading(false)
     }
