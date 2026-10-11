@@ -4,7 +4,7 @@
  */
 import type { Invoice, Lease, Payment, Room, Tenant } from '../../types/db'
 import type { BillingState, ExtraBreakdown, LeaseBillingSummary } from '../../domain/billing'
-import { activeInvoicesSorted, formatExtraBreakdown, outstandingFor, paidAmountFor, parseExtraBreakdown } from '../../domain/billing'
+import { activeInvoicesSorted, formatExtraBreakdown, outstandingFor, paidAmountFor, parseExtraBreakdown, isPaidUpAndEnding } from '../../domain/billing'
 import { addDaysISO, daysBetween } from '../../domain/period'
 import { isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
 import { formatRupiah } from '../../lib/format'
@@ -13,12 +13,21 @@ import { formatRupiah } from '../../lib/format'
 
 export type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'brand'
 
-export const BILLING_STATE_META: Record<BillingState, { label: string; tone: BadgeTone }> = {
+/** Billing state plus the UI-only 'ending' state (paid up, lease ends within 7 days: perpanjang atau checkout). */
+export type DisplayBillingState = BillingState | 'ending'
+
+export const BILLING_STATE_META: Record<DisplayBillingState, { label: string; tone: BadgeTone }> = {
   overdue: { label: 'Terlambat', tone: 'danger' },
   due_soon: { label: 'Jatuh tempo', tone: 'warning' },
   unbilled: { label: 'Belum ditagih', tone: 'neutral' },
   ok: { label: 'Aman', tone: 'success' },
   inactive: { label: 'Tidak aktif', tone: 'neutral' },
+  ending: { label: 'Berakhir segera', tone: 'info' },
+}
+
+/** What the badge should say: a fully paid lease that ends within a week is "ending", not "jatuh tempo". */
+export function displayBillingState(lease: Lease, summary: LeaseBillingSummary, todayISO: string): DisplayBillingState {
+  return isPaidUpAndEnding(lease, summary, todayISO) ? 'ending' : summary.state
 }
 
 const STATE_ORDER: Record<BillingState, number> = { overdue: 0, due_soon: 1, unbilled: 2, ok: 3, inactive: 4 }

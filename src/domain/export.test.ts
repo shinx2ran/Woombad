@@ -542,16 +542,16 @@ describe('buildTenantsSheet', () => {
     expect(buildTenantsSheet(ctx, undefined, '2026-12-01').rows[0]).toMatchObject({ room: 'A2', lease_status: 'Aktif' })
   })
 
-  it("an ended lease still occupies the room until its checkout day ('Selesai'); cancelled never does", () => {
+  it("an ended lease occupies the room until the day before checkout ('Selesai'); cancelled never does", () => {
     const ctx = makeContext()
     ctx.leases = [
       makeLease({ id: 'lease-ending', room_id: 'room-a1', property_id: 'kos-a', tenant_id: 'tenant-budi', status: 'ended', start_date: '2026-01-01', end_date: '2026-10-31', checkout_date: '2026-10-15' }),
       makeLease({ id: 'lease-cancelled', room_id: 'room-a2', property_id: 'kos-a', tenant_id: 'tenant-sari', status: 'cancelled', start_date: '2026-01-01', end_date: '2026-12-31' }),
     ]
-    const onTheDay = buildTenantsSheet(ctx, undefined, '2026-10-15')
-    expect(onTheDay.rows[0]).toMatchObject({ full_name: 'Budi Santoso', room: 'A1', lease_status: 'Selesai' })
-    expect(onTheDay.rows[1]).toMatchObject({ full_name: 'Sari Dewi', room: '-', property: 'Kos Melati', lease_status: 'Tidak ada sewa aktif' })
-    expect(buildTenantsSheet(ctx, undefined, '2026-10-16').rows[0]).toMatchObject({ room: '-', property: 'Kos Mawar', lease_status: 'Tidak ada sewa aktif' })
+    const dayBefore = buildTenantsSheet(ctx, undefined, '2026-10-14')
+    expect(dayBefore.rows[0]).toMatchObject({ full_name: 'Budi Santoso', room: 'A1', lease_status: 'Selesai' })
+    expect(dayBefore.rows[1]).toMatchObject({ full_name: 'Sari Dewi', room: '-', property: 'Kos Melati', lease_status: 'Tidak ada sewa aktif' })
+    expect(buildTenantsSheet(ctx, undefined, '2026-10-15').rows[0]).toMatchObject({ room: '-', property: 'Kos Mawar', lease_status: 'Tidak ada sewa aktif' })
   })
 
   it('an ongoing active lease beats a later-started ended lease whose checkout is still in the future', () => {
@@ -588,8 +588,8 @@ describe('buildTenantsSheet', () => {
     ]
     expect(currentLeaseFor('tenant-budi', leases, '2026-10-11')?.id).toBe('l-later')
     expect(currentLeaseFor('tenant-budi', leases, '2026-03-01')?.id).toBe('l-a')
-    expect(currentLeaseFor('tenant-budi', leases, '2025-06-30')?.id).toBe('l-ended')
-    expect(currentLeaseFor('tenant-budi', leases, '2025-07-01')).toBeUndefined()
+    expect(currentLeaseFor('tenant-budi', leases, '2025-06-29')?.id).toBe('l-ended')
+    expect(currentLeaseFor('tenant-budi', leases, '2025-06-30')).toBeUndefined() // checkout day
     expect(currentLeaseFor('tenant-sari', leases, '2026-10-11')?.id).toBe('l-other')
     expect(currentLeaseFor('tenant-nobody', leases, '2026-10-11')).toBeUndefined()
   })

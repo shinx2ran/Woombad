@@ -3,9 +3,9 @@
  * that exist in src/domain are delegated there; this file only assembles view models.
  */
 import type { Invoice, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../../types/db'
-import { computeAddonsAmount, paidAmountFor, summarizeLeaseBilling, type BillingState, type LeaseBillingSummary } from '../../domain/billing'
+import { computeAddonsAmount, isPaidUpAndEnding as domainIsPaidUpAndEnding, paidAmountFor, summarizeLeaseBilling, type BillingState, type LeaseBillingSummary } from '../../domain/billing'
 import { expiringLeases, isLeaseActiveOn, isLeaseReservedOn, reservedRoomIds, vacantRooms } from '../../domain/occupancy'
-import { addDaysISO, daysBetween, parseISODate, rangeForPreset, toISODate, type DateRange } from '../../domain/period'
+import { daysBetween, parseISODate, rangeForPreset, toISODate, type DateRange } from '../../domain/period'
 import { formatDate } from '../../lib/format'
 import { subMonths } from 'date-fns'
 
@@ -65,24 +65,9 @@ function isAttentionGroup(state: BillingState): state is AttentionGroup {
   return state === 'overdue' || state === 'due_soon' || state === 'unbilled'
 }
 
-/**
- * A lease that owes nothing and whose stay ends within the "Akan berakhir" window (today <= end_date <=
- * today + withinDays). `summarizeLeaseBilling` deliberately ignores end_date, so such a lease reads
- * due_soon (next period starts right after end_date) although there is no bill to pay or chase yet: the
- * owner's decision is "perpanjang atau checkout", not "bayar / tagih". SPEC 2b.12 lets the dashboard show a
- * lease either under due/overdue or under akan berakhir; this predicate picks the latter.
- *
- * A paid-up lease whose end_date is already in the past (tenant staying on past the paid period) is NOT
- * covered: it keeps its due_soon / overdue place so the next invoice gets issued.
- */
+/** Re-exported from the billing domain so every module agrees on what 'akan berakhir' means. */
 export function isPaidUpAndEnding(lease: Lease, summary: LeaseBillingSummary, todayISO: string, withinDays = EXPIRING_WITHIN_DAYS): boolean {
-  return (
-    lease.status === 'active' &&
-    summary.outstanding === 0 &&
-    summary.state !== 'unbilled' &&
-    lease.end_date >= todayISO &&
-    lease.end_date <= addDaysISO(todayISO, withinDays)
-  )
+  return domainIsPaidUpAndEnding(lease, summary, todayISO, withinDays)
 }
 
 /**

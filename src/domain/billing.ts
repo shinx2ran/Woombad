@@ -524,3 +524,21 @@ export function formatExtraBreakdown(parts: ExtraBreakdown): string {
   }
   return chunks.join('; ')
 }
+
+
+/**
+ * A lease that is fully paid and whose end_date falls within the next `withinDays` days: the owner's
+ * decision is "perpanjang atau checkout", not "bayar / tagih". summarizeLeaseBilling ignores end_date
+ * (a rolling tenant's end_date always equals coveredThrough), so UIs use this predicate to show such a
+ * lease as "akan berakhir" instead of "jatuh tempo". A paid-up lease whose end_date is already in the
+ * past is NOT covered (the tenant stayed on; the next invoice must be issued).
+ */
+export function isPaidUpAndEnding(lease: Lease, summary: LeaseBillingSummary, todayISO: string, withinDays = 7): boolean {
+  return (
+    lease.status === 'active' &&
+    summary.outstanding === 0 &&
+    summary.state !== 'unbilled' &&
+    lease.end_date >= todayISO &&
+    lease.end_date <= addDaysISO(todayISO, withinDays)
+  )
+}

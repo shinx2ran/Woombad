@@ -10,7 +10,7 @@ import { summarizeLeaseBilling } from '../../domain/billing'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
-import { compareFinishedLeases, compareLeaseItems, matchesLeaseSearch, type LeaseListItem } from './leaseUtils'
+import { compareFinishedLeases, compareLeaseItems, matchesLeaseSearch, type LeaseListItem, displayBillingState } from './leaseUtils'
 import { BillingStateBadge } from './components'
 import { PaymentModal } from './PaymentModal'
 import { NextInvoiceModal } from './InvoiceFormModal'
@@ -42,7 +42,7 @@ export function LeasesPage() {
   const active = useMemo(() => items.filter((i) => i.lease.status === 'active').sort(compareLeaseItems), [items])
   const finished = useMemo(() => items.filter((i) => i.lease.status !== 'active').sort(compareFinishedLeases), [items])
   const shown = (tab === 'active' ? active : finished).filter((i) => matchesLeaseSearch(i, search))
-  const attention = active.filter((i) => i.summary.state === 'overdue' || i.summary.state === 'due_soon').length
+  const attention = active.filter((i) => ['overdue', 'due_soon'].includes(displayBillingState(i.lease, i.summary, today))).length
 
   const kosName = selectedPropertyId === 'all' ? 'semua kos' : (properties.find((p) => p.id === selectedPropertyId)?.name ?? 'kos terpilih')
 
@@ -115,7 +115,7 @@ export function LeasesPage() {
         <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           {shown.map((item) => (
             <li key={item.lease.id}>
-              <LeaseCard item={item} onPay={() => setModal({ kind: 'pay', lease: item.lease })} onInvoice={() => setModal({ kind: 'invoice', lease: item.lease })} />
+              <LeaseCard item={item} today={today} onPay={() => setModal({ kind: 'pay', lease: item.lease })} onInvoice={() => setModal({ kind: 'invoice', lease: item.lease })} />
             </li>
           ))}
         </ul>
@@ -150,7 +150,7 @@ export function LeasesPage() {
   )
 }
 
-function LeaseCard({ item, onPay, onInvoice }: { item: LeaseListItem; onPay: () => void; onInvoice: () => void }) {
+function LeaseCard({ item, today, onPay, onInvoice }: { item: LeaseListItem; today: string; onPay: () => void; onInvoice: () => void }) {
   const { lease, summary, room, tenant, propertyName } = item
   const isActive = lease.status === 'active'
   return (
@@ -164,7 +164,7 @@ function LeaseCard({ item, onPay, onInvoice }: { item: LeaseListItem; onPay: () 
             <p className="truncate text-sm text-slate-700">{tenant?.full_name ?? 'Penyewa tidak ditemukan'}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {isActive ? <BillingStateBadge state={summary.state} /> : <LeaseStatusBadge status={lease.status} />}
+            {isActive ? <BillingStateBadge state={displayBillingState(lease, summary, today)} /> : <LeaseStatusBadge status={lease.status} />}
             <ChevronRight className="h-4 w-4 text-slate-400" />
           </div>
         </div>

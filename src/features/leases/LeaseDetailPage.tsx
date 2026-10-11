@@ -27,7 +27,7 @@ import { reminderText } from '../../domain/messages'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
-import { invoiceTimeline, openInvoicesSorted } from './leaseUtils'
+import { invoiceTimeline, openInvoicesSorted, displayBillingState } from './leaseUtils'
 import { ActionMenu, BillingStateBadge, InvoiceTimeline, Row, type MenuItem } from './components'
 import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
@@ -263,7 +263,7 @@ export function LeaseDetailPage() {
               <span>Penyewa tidak ditemukan</span>
             )}
             <LeaseStatusBadge status={lease.status} />
-            {isActive && <BillingStateBadge state={summary.state} />}
+            {isActive && <BillingStateBadge state={displayBillingState(lease, summary, today)} />}
           </span>
         }
         actions={

@@ -17,8 +17,10 @@ const day = (iso: string): string => iso.slice(0, 10)
 
 /** Last day (inclusive) a lease occupies its room, or null for an open-ended active lease. */
 export function leaseOccupiedUntil(lease: Lease): string | null {
-  if (lease.status === 'ended') return day(lease.checkout_date ?? lease.end_date)
-  return null
+  if (lease.status !== 'ended') return null
+  // checkout_date is the move-out day: the room is free again from that day (same-day turnover),
+  // so the last occupied night is the day before. Without a recorded checkout, end_date (inclusive).
+  return lease.checkout_date ? addDaysISO(day(lease.checkout_date), -1) : day(lease.end_date)
 }
 
 /**
@@ -74,7 +76,7 @@ export function leaseOverlaps(leases: Lease[], roomId: string, startISO: string,
   for (const l of leases) {
     if (l.room_id !== roomId || l.status === 'cancelled' || l.id === excludeLeaseId) continue
     const lStart = day(l.start_date)
-    const lEnd = day(l.status === 'ended' ? (l.checkout_date ?? l.end_date) : l.end_date)
+    const lEnd = l.status === 'ended' ? leaseOccupiedUntil(l)! : day(l.end_date)
     if (lStart <= end && lEnd >= start) return true
   }
   return false

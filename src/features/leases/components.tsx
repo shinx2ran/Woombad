@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { clsx } from 'clsx'
 import { MoreHorizontal } from 'lucide-react'
 import { Badge, MoneyInput, Input } from '../../components/ui'
-import type { BillingState, DepositBalance } from '../../domain/billing'
+import type { DepositBalance } from '../../domain/billing'
 import { formatDate, formatRupiah } from '../../lib/format'
-import { BILLING_STATE_META, type DepositSettlement, type TimelineSegment } from './leaseUtils'
+import { BILLING_STATE_META, type DepositSettlement, type DisplayBillingState, type TimelineSegment } from './leaseUtils'
 
-export function BillingStateBadge({ state }: { state: BillingState }) {
+export function BillingStateBadge({ state }: { state: DisplayBillingState }) {
   const meta = BILLING_STATE_META[state]
   return <Badge tone={meta.tone}>{meta.label}</Badge>
 }
