@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { Expense } from '../../types/db'
 import {
+  DELETE_DENIED_MESSAGE,
   ORDERED_CATEGORIES,
   SHARED_VALUE,
+  UPDATE_DENIED_MESSAGE,
+  canEditExpense,
   categoryOptionLabel,
   expenseDeltaText,
   filterExpenses,
@@ -11,6 +14,7 @@ import {
   operatingExpenseRows,
   rangeLabel,
   sameDayInMonth,
+  saveErrorMessage,
   shortRupiah,
   splitEvenly,
   splitExpenseRows,
@@ -183,5 +187,42 @@ describe('operatingExpenseRows', () => {
       mkExpense({ id: '4', category: 'supplies', amount: 50_000 }),
     ]
     expect(operatingExpenseRows(rows).map((e) => e.id)).toEqual(['1', '4'])
+  })
+})
+
+describe('canEditExpense (mirror of the expenses_update RLS policy)', () => {
+  const mine = mkExpense({ id: 'm', created_by: 'u-staff' })
+  const theirs = mkExpense({ id: 't', created_by: 'u-owner' })
+  const legacy = mkExpense({ id: 'l', created_by: null })
+
+  it('lets owners and admins edit every row', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(canEditExpense(role, 'u-x', mine)).toBe(true)
+      expect(canEditExpense(role, 'u-x', theirs)).toBe(true)
+      expect(canEditExpense(role, undefined, legacy)).toBe(true)
+    }
+  })
+  it('lets staff edit only rows they recorded', () => {
+    expect(canEditExpense('staff', 'u-staff', mine)).toBe(true)
+    expect(canEditExpense('staff', 'u-staff', theirs)).toBe(false)
+    expect(canEditExpense('staff', 'u-staff', legacy)).toBe(false)
+    expect(canEditExpense('staff', undefined, legacy)).toBe(false)
+  })
+})
+
+describe('saveErrorMessage', () => {
+  it('translates the PostgREST 0-row update failure', () => {
+    expect(saveErrorMessage(new Error('JSON object requested, multiple (or no) rows returned'), 'x')).toBe(UPDATE_DENIED_MESSAGE)
+    expect(saveErrorMessage(new Error('PGRST116'), 'x')).toBe(UPDATE_DENIED_MESSAGE)
+    expect(saveErrorMessage(new Error('The result contains 0 rows'), 'x')).toBe(UPDATE_DENIED_MESSAGE)
+  })
+  it('keeps other messages and falls back for non-errors', () => {
+    expect(saveErrorMessage(new Error('Anda tidak memiliki izin untuk tindakan ini.'), 'x')).toBe('Anda tidak memiliki izin untuk tindakan ini.')
+    expect(saveErrorMessage('boom', 'Gagal menyimpan pengeluaran.')).toBe('Gagal menyimpan pengeluaran.')
+    expect(saveErrorMessage(new Error(''), 'Gagal')).toBe('Gagal')
+  })
+  it('delete message is distinct from the update one', () => {
+    expect(DELETE_DENIED_MESSAGE).not.toBe(UPDATE_DENIED_MESSAGE)
+    expect(DELETE_DENIED_MESSAGE).toMatch(/menghapus/)
   })
 })

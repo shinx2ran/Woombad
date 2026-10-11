@@ -5,7 +5,7 @@
  */
 import { format, getDaysInMonth } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
-import type { Expense, ExpenseCategory, Lease, OrgInsert, Room, Tenant } from '../../types/db'
+import type { Expense, ExpenseCategory, Lease, MemberRole, OrgInsert, Room, Tenant } from '../../types/db'
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABEL, REFUND_CATEGORIES } from '../../types/db'
 import { inRange, parseISODate, toISODate, type DateRange } from '../../domain/period'
 import { formatDate, formatRupiah } from '../../lib/format'
@@ -250,6 +250,34 @@ export function splitExpenseRows(draft: ExpenseDraft, propertyIds: string[]): Or
     vendor: draft.vendor,
     receipt_path: draft.receipt_path,
   }))
+}
+
+// ---------- permissions & write errors ----------
+
+/** Shown next to a row a staff member may not edit (mirrors the `expenses_update` RLS policy). */
+export const EDIT_DENIED_HINT = 'Hanya pencatat atau admin yang dapat mengubah pengeluaran ini.'
+export const UPDATE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk mengubahnya.'
+export const DELETE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk menghapusnya.'
+
+/**
+ * Client-side mirror of the database policy `expenses_update`: owners/admins may edit every row of the
+ * organisation, staff only the rows they recorded themselves (`created_by = auth.uid()`). Used to hide the
+ * "Ubah" action instead of letting the server filter the UPDATE down to 0 rows.
+ */
+export function canEditExpense(role: MemberRole, userId: string | undefined, expense: Pick<Expense, 'created_by'>): boolean {
+  if (role !== 'staff') return true
+  return Boolean(userId) && expense.created_by === userId
+}
+
+/**
+ * Message for a failed save. PostgREST does not raise 42501 when RLS filters an UPDATE down to 0 rows: the
+ * `.single()` on the response fails with PGRST116 ("JSON object requested, multiple (or no) rows returned"),
+ * which must not reach the owner in English.
+ */
+export function saveErrorMessage(err: unknown, fallback: string): string {
+  const message = err instanceof Error ? err.message : ''
+  if (/PGRST116|multiple \(or no\) rows|\b0 rows\b/i.test(message)) return UPDATE_DENIED_MESSAGE
+  return message || fallback
 }
 
 // ---------- validation ----------
