@@ -14,6 +14,7 @@ import {
   categoryOptionLabel,
   isRefundCategory,
   leaseLabel,
+  saveErrorMessage,
   splitEvenly,
   splitExpenseRows,
   validateExpenseForm,
@@ -131,16 +132,6 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
 
     setSaving(true)
     try {
-      let receipt_path = removeReceipt ? null : initial.receipt_path
-      if (file) {
-        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-        const uploaded = await repo.uploadFile('receipts', `${newId()}.${ext}`, file, file.type || undefined)
-        if (uploaded) receipt_path = uploaded
-      }
-      if (removeReceipt && initial.receipt_path && initial.receipt_path !== receipt_path) {
-        await repo.removeFile('receipts', initial.receipt_path).catch(() => undefined)
-      }
-
       // A refund always belongs to the kos of the lease it goes back to.
       const lease = isRefund ? (leasesQuery.data ?? []).find((l) => l.id === leaseId) : undefined
       const draft: ExpenseDraft = {
@@ -151,28 +142,60 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
         amount,
         description: description.trim(),
         vendor: vendor.trim() || null,
-        receipt_path,
+        receipt_path: removeReceipt ? null : initial.receipt_path,
       }
 
+      // 1) Persist the row(s) first. A write the database refuses (e.g. staff editing someone else's row under
+      //    the `expenses_update` policy) fails here, before any file reaches the bucket, so nothing is orphaned.
+      let savedIds: string[]
+      let successMessage: string
       if (isEdit && editingId) {
         await repo.update('expenses', editingId, draft)
-        toast.success('Pengeluaran diperbarui.')
+        savedIds = [editingId]
+        successMessage = 'Pengeluaran diperbarui.'
       } else if (canSplit && split) {
-        const rows = splitExpenseRows(
-          draft,
-          properties.map((p) => p.id),
+        const rows = await repo.insertMany(
+          'expenses',
+          splitExpenseRows(
+            draft,
+            properties.map((p) => p.id),
+          ),
         )
-        await repo.insertMany('expenses', rows)
-        toast.success(`${rows.length} pengeluaran dicatat (dibagi rata ke semua kos).`)
+        savedIds = rows.map((r) => r.id)
+        successMessage = `${rows.length} pengeluaran dicatat (dibagi rata ke semua kos).`
       } else {
-        await repo.insert('expenses', draft)
-        toast.success('Pengeluaran dicatat.')
+        const row = await repo.insert('expenses', draft)
+        savedIds = [row.id]
+        successMessage = 'Pengeluaran dicatat.'
       }
+
+      // 2) Receipt: upload only once the row exists, then attach it. A failed upload keeps the saved row.
+      let receiptWarning: string | null = null
+      let receiptPath = draft.receipt_path
+      if (file) {
+        try {
+          const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+          const uploaded = await repo.uploadFile('receipts', `${newId()}.${ext}`, file, file.type || undefined)
+          if (uploaded) {
+            await Promise.all(savedIds.map((id) => repo.update('expenses', id, { receipt_path: uploaded })))
+            receiptPath = uploaded
+          }
+        } catch {
+          receiptWarning = 'Pengeluaran tersimpan, tetapi foto struk gagal diunggah. Coba unggah lagi lewat "Ubah".'
+        }
+      }
+      // Old file no longer referenced by this row (removed or replaced): best-effort clean-up.
+      if (isEdit && initial.receipt_path && initial.receipt_path !== receiptPath) {
+        await repo.removeFile('receipts', initial.receipt_path).catch(() => undefined)
+      }
+
       await invalidate('expenses')
+      if (receiptWarning) toast.error(receiptWarning)
+      else toast.success(successMessage)
       onSaved?.(draft.expense_date)
       onClose()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Gagal menyimpan pengeluaran.')
+      toast.error(saveErrorMessage(err, 'Gagal menyimpan pengeluaran.'))
     } finally {
       setSaving(false)
     }

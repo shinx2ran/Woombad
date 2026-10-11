@@ -18,6 +18,7 @@ import {
   useToast,
   type Column,
 } from '../../components/ui'
+import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate, useTable } from '../../hooks/useTable'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
@@ -29,7 +30,10 @@ import { ReceiptModal } from './ReceiptModal'
 import {
   CATEGORY_COLOR,
   CATEGORY_TONE,
+  DELETE_DENIED_MESSAGE,
+  EDIT_DENIED_HINT,
   ORDERED_CATEGORIES,
+  canEditExpense,
   dateHeading,
   expenseDeltaText,
   filterExpenses,
@@ -98,10 +102,14 @@ function useHeaderOffset(): number {
 
 export function ExpensesPage() {
   const { role, repo, properties, selectedPropertyId, propertyFilterIds, financePropertyIds } = useOrg()
+  const { session } = useAuth()
   const invalidate = useInvalidate()
   const toast = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
+  // SPEC §2b: staff never see delete for financial data. Editing follows the `expenses_update` RLS policy
+  // (admins: any row; staff: only rows they recorded) so a denied update is never attempted.
   const canDelete = role !== 'staff'
+  const canEdit = (e: Expense) => canEditExpense(role, session?.user.id, e)
   const today = todayISO()
 
   const expensesQuery = useTable('expenses')
@@ -178,6 +186,9 @@ export function ExpensesPage() {
     setDeleteBusy(true)
     try {
       await repo.remove('expenses', deleting.id)
+      // A delete that RLS filters out affects 0 rows without an error: confirm the row is really gone before
+      // reporting success (and before touching its receipt file).
+      if (await repo.get('expenses', deleting.id)) throw new Error(DELETE_DENIED_MESSAGE)
       if (deleting.receipt_path) await repo.removeFile('receipts', deleting.receipt_path).catch(() => undefined)
       await invalidate('expenses')
       toast.success('Pengeluaran dihapus.')
@@ -275,7 +286,11 @@ export function ExpensesPage() {
         <div className="flex items-center justify-end gap-0.5" onClick={(ev) => ev.stopPropagation()}>
           {e.receipt_path && <IconButton label="Lihat struk" onClick={() => setReceiptPath(e.receipt_path)} icon={<Paperclip className="h-4 w-4" />} />}
           <IconButton label="Duplikat ke bulan ini" onClick={() => openDuplicate(e)} icon={<Copy className="h-4 w-4" />} />
-          <IconButton label="Ubah" onClick={() => openEdit(e)} icon={<Pencil className="h-4 w-4" />} />
+          {canEdit(e) ? (
+            <IconButton label="Ubah" onClick={() => openEdit(e)} icon={<Pencil className="h-4 w-4" />} />
+          ) : (
+            <IconButton label={EDIT_DENIED_HINT} icon={<Pencil className="h-4 w-4" />} disabled />
+          )}
           {canDelete && <IconButton label="Hapus" onClick={() => setDeleting(e)} icon={<Trash2 className="h-4 w-4" />} danger />}
         </div>
       ),
@@ -443,7 +458,7 @@ export function ExpensesPage() {
                   columns={columns}
                   rows={rows}
                   rowKey={(e) => e.id}
-                  onRowClick={openEdit}
+                  onRowClick={(e) => (canEdit(e) ? openEdit(e) : setSheet(e))}
                   footer={
                     <tr>
                       <td colSpan={5} className="px-3 py-2.5 text-slate-600">
@@ -490,9 +505,13 @@ export function ExpensesPage() {
               )}
             </dl>
             <div className="grid gap-2">
-              <Button variant="outline" fullWidth icon={<Pencil className="h-4 w-4" />} onClick={() => openEdit(sheet)}>
-                Ubah
-              </Button>
+              {canEdit(sheet) ? (
+                <Button variant="outline" fullWidth icon={<Pencil className="h-4 w-4" />} onClick={() => openEdit(sheet)}>
+                  Ubah
+                </Button>
+              ) : (
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">{EDIT_DENIED_HINT}</p>
+              )}
               <Button variant="outline" fullWidth icon={<Copy className="h-4 w-4" />} onClick={() => openDuplicate(sheet)}>
                 Duplikat ke bulan ini
               </Button>
@@ -558,17 +577,24 @@ function Chip({ active, onClick, color, children }: { active: boolean; onClick: 
   )
 }
 
-function IconButton({ label, onClick, icon, danger }: { label: string; onClick: () => void; icon: ReactNode; danger?: boolean }) {
+function IconButton({ label, onClick, icon, danger, disabled }: { label: string; onClick?: () => void; icon: ReactNode; danger?: boolean; disabled?: boolean }) {
+  // The wrapping span carries the tooltip too: disabled buttons do not get hover events in every browser.
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      className={clsx('rounded-md p-1.5 transition-colors', danger ? 'text-slate-400 hover:bg-red-50 hover:text-red-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-800')}
-    >
-      {icon}
-    </button>
+    <span title={label} className="inline-flex">
+      <button
+        type="button"
+        title={label}
+        aria-label={label}
+        onClick={onClick}
+        disabled={disabled}
+        className={clsx(
+          'rounded-md p-1.5 transition-colors',
+          disabled ? 'cursor-not-allowed text-slate-300' : danger ? 'text-slate-400 hover:bg-red-50 hover:text-red-700' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-800',
+        )}
+      >
+        {icon}
+      </button>
+    </span>
   )
 }
 
