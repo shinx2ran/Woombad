@@ -86,6 +86,9 @@ export function useLeaseActions() {
     // In Supabase mode a trigger maintains invoices.status and staff cannot update invoices (RLS);
     // in demo mode the UI must persist the derived status itself (SPEC section 3).
     const canWriteInvoiceStatus = repo.mode === 'local' || role !== 'staff'
+    // Staff may never edit/void invoices (SPEC section 3); the UI hides those actions and the actions refuse them.
+    const canEditInvoices = role !== 'staff'
+    const STAFF_INVOICE_ERROR = 'Hanya admin yang boleh mengubah tagihan.'
 
     async function syncInvoiceStatus(invoiceId: string): Promise<void> {
       const inv = await repo.get('invoices', invoiceId)
@@ -163,6 +166,7 @@ export function useLeaseActions() {
       let rentAmount = input.amount
       let excess = 0
       if (input.amount < outstanding && input.settleWithDiscount) {
+        if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
         const diff = outstanding - input.amount
         total = total - diff
         await repo.update('invoices', invoice.id, {
@@ -220,6 +224,7 @@ export function useLeaseActions() {
     }
 
     async function updateInvoice(invoice: Invoice, payments: Payment[], patch: { extra_amount: number; discount_amount: number; notes: string | null }): Promise<void> {
+      if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       if (patch.extra_amount < 0 || patch.discount_amount < 0) throw new Error('Nilai tidak boleh negatif.')
       const total = invoice.base_amount + invoice.addons_amount + patch.extra_amount - patch.discount_amount
       if (total < 0) throw new Error('Diskon melebihi jumlah tagihan.')
@@ -243,6 +248,7 @@ export function useLeaseActions() {
     }
 
     async function voidInvoice(invoice: Invoice, lease: Lease, leaseInvoices: Invoice[], payments: Payment[]): Promise<void> {
+      if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       if (paidAmountFor(invoice.id, payments) > 0) throw new Error('Tagihan sudah memiliki pembayaran. Hapus pembayaran dulu atau kecilkan total lewat diskon.')
       await repo.update('invoices', invoice.id, { status: 'void' })
       await shrinkLeaseEnd(lease, leaseInvoices.filter((i) => i.id !== invoice.id))
@@ -315,6 +321,7 @@ export function useLeaseActions() {
     async function checkout(input: CheckoutInput): Promise<void> {
       const { lease, checkoutDate, invoices, payments, settlement } = input
       const toVoid = invoicesToVoidAtCheckout(lease, invoices, payments, checkoutDate)
+      if (toVoid.length > 0 && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       for (const inv of toVoid) await repo.update('invoices', inv.id, { status: 'void' })
       const voidIds = new Set(toVoid.map((i) => i.id))
       const open = openInvoicesSorted(lease.id, invoices, payments).filter((i) => !voidIds.has(i.id))
@@ -392,6 +399,7 @@ export function useLeaseActions() {
 
     return {
       canWriteInvoiceStatus,
+      canEditInvoices,
       syncInvoiceStatus,
       insertFromDraft,
       issueInvoice,

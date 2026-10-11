@@ -152,7 +152,14 @@ export function NewLeasePage() {
   useEffect(() => {
     if (!payNow) setPayAmount(total)
   }, [total, payNow])
+  // The received-deposit section follows the agreed deposit: clearing the agreement to 0 unticks it,
+  // so no deposit payment can be written for a lease whose deposit_amount is 0.
   useEffect(() => {
+    if (deposit <= 0) {
+      setDepositNow(false)
+      setDepositAmount(0)
+      return
+    }
     if (!depositNow) setDepositAmount(deposit)
   }, [deposit, depositNow])
 
@@ -169,7 +176,8 @@ export function NewLeasePage() {
   if (price <= 0) errors.price = 'Harga per periode harus lebih dari 0.'
   if (quantity < 1) errors.quantity = 'Jumlah periode minimal 1.'
   if (payNow && (payAmount <= 0 || payAmount > total)) errors.pay = payAmount <= 0 ? 'Jumlah harus lebih dari 0.' : `Maksimal ${formatRupiah(total)} (sisa bisa dibayar nanti).`
-  if (depositNow && depositAmount <= 0) errors.deposit = 'Jumlah deposit harus lebih dari 0.'
+  if (depositNow && deposit <= 0) errors.deposit = 'Isi deposit yang disepakati dahulu.'
+  else if (depositNow && depositAmount <= 0) errors.deposit = 'Jumlah deposit harus lebih dari 0.'
   const hasErrors = Object.keys(errors).length > 0
 
   const addFromCatalog = (id: string) => {
@@ -243,7 +251,7 @@ export function NewLeasePage() {
         const status = deriveInvoiceStatus(invoice.total_amount, payAmount, invoice.status)
         if (status !== invoice.status && actions.canWriteInvoiceStatus) await repo.update('invoices', invoice.id, { status })
       }
-      if (depositNow && depositAmount > 0) {
+      if (depositNow && deposit > 0 && depositAmount > 0) {
         await repo.insert('payments', {
           property_id: propertyId,
           invoice_id: null,
@@ -496,10 +504,10 @@ export function NewLeasePage() {
               </div>
             )}
             <label className={clsx('flex items-start gap-2 text-sm', deposit > 0 ? 'text-slate-700' : 'text-slate-400')}>
-              <input type="checkbox" className="mt-0.5" checked={depositNow} disabled={deposit <= 0} onChange={(e) => setDepositNow(e.target.checked)} />
+              <input type="checkbox" className="mt-0.5" checked={depositNow && deposit > 0} disabled={deposit <= 0 && !depositNow} onChange={(e) => setDepositNow(e.target.checked)} />
               Catat deposit diterima sekarang
             </label>
-            {depositNow && (
+            {depositNow && deposit > 0 && (
               <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <MoneyInput label="Jumlah deposit diterima" value={depositAmount} onChange={setDepositAmount} error={touched ? errors.deposit : undefined} />
                 <Select label="Metode" value={depositMethod} onChange={(e) => setDepositMethod(e.target.value as PaymentMethod)} options={PAYMENT_METHODS.filter((m) => m !== 'deposit').map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))} />

@@ -182,7 +182,8 @@ export function LeaseDetailPage() {
     if (deposit.shortfall > 0 || deposit.agreed > 0) {
       menuItems.push({ label: 'Catat deposit diterima', icon: <PiggyBank className="h-4 w-4" />, onClick: () => setModal('deposit') })
     }
-    menuItems.push({ label: 'Checkout', hint: 'Penyewa keluar; selesaikan jaminan', icon: <DoorOpen className="h-4 w-4" />, onClick: () => setModal('checkout') })
+    // Checkout voids future invoices and 'Batalkan sewa' edits invoices: admin only (SPEC section 3).
+    if (isAdmin) menuItems.push({ label: 'Checkout', hint: 'Penyewa keluar; selesaikan jaminan', icon: <DoorOpen className="h-4 w-4" />, onClick: () => setModal('checkout') })
     if (isAdmin) menuItems.push({ label: 'Batalkan sewa', hint: 'Sewa tidak pernah berjalan', icon: <Ban className="h-4 w-4" />, danger: true, onClick: () => setModal('cancel') })
   }
 
@@ -193,7 +194,7 @@ export function LeaseDetailPage() {
       { label: 'Bayar', icon: <Wallet className="h-4 w-4" />, disabled: !payable, onClick: () => openPay(inv.id) },
       { label: 'Lihat pembayaran', onClick: () => setPaymentsFilter(inv.id) },
     ]
-    if (inv.status !== 'void') {
+    if (isAdmin && inv.status !== 'void') {
       items.push({
         label: 'Ubah',
         hint: 'Listrik, denda, diskon, catatan',

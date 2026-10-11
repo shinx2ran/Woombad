@@ -87,7 +87,8 @@ export function PaymentModal(props: PaymentModalProps) {
 
   const baseError = invoice ? validateRentPayment(invoice, payments, amount, { method, depositHeld: deposit.held }) : 'Pilih tagihan.'
   const isExcess = Boolean(invoice) && amount > outstanding && outstanding > 0
-  const isShort = Boolean(invoice) && amount > 0 && amount < outstanding
+  // 'Anggap lunas' writes discount/total to the invoice; staff cannot update invoices (SPEC section 3).
+  const isShort = Boolean(invoice) && amount > 0 && amount < outstanding && actions.canEditInvoices
   let error = baseError
   if (isExcess && excessAsOther) {
     error = method === 'deposit' && amount > deposit.held ? `Jaminan yang dipegang hanya ${formatRupiah(deposit.held)}.` : null
