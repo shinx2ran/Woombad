@@ -61,6 +61,25 @@ database; gunakan *Batalkan* / *Checkout*.
 
 Kunci *anon* aman dipublikasikan: semua akses dibatasi Row Level Security per organisasi (lihat `schema.sql`).
 
+## Alur pemakaian sehari-hari
+
+| Kejadian | Yang dilakukan di aplikasi |
+|---|---|
+| Penyewa baru datang | **Sewa → Sewa Baru**: pilih kos & kamar kosong, pilih/buat penyewa (bisa **Scan KTP**), periode & harga, deposit, add-on, lalu catat pembayaran pertama (boleh DP). |
+| Penyewa membayar | **Dashboard → Bayar** (atau buka sewa → **Catat pembayaran**). Status otomatis **DP / Sebagian** atau **Lunas**. Bisa kirim kwitansi ke WhatsApp. |
+| Mendekati jatuh tempo | Dashboard menampilkan **Perlu perhatian** (terlambat / jatuh tempo ≤3 hari). Tombol **Tagih** membuat tagihan periode berikutnya dan memperpanjang sewa; ikon WhatsApp mengirim pengingat berisi nomor rekening. |
+| Perpanjang 2 minggu saja | Buka sewa → **Buat tagihan berikutnya** → **Periode khusus** (pro-rata). |
+| Bayar listrik / denda | Saat membuat tagihan isi kolom **Listrik / Denda / Lainnya**. |
+| Penyewa pindah / keluar | Buka sewa → **Lainnya → Pindah kamar** atau **Checkout** (uang jaminan dikembalikan atau dipotong). |
+| Pengeluaran | **Pengeluaran → Catat**: gaji, listrik/air, perbaikan, dll., per kos atau **Bersama**; ada tombol **Duplikat ke bulan ini** untuk biaya rutin. |
+| Lihat kinerja | **Laporan**: harian / mingguan / bulanan / tahunan, laba-rugi, piutang, hunian, grafik, lalu **Unduh XLSX / CSV** atau **Cetak / PDF**. |
+| Istri ikut mengelola | **Pengaturan → Anggota → Undang** (peran Admin). |
+
+## Menguji skema database secara lokal (opsional)
+
+`supabase/tests/run.sh` memasang `schema.sql` ke PostgreSQL lokal dengan tiruan objek Supabase dan menjalankan
+pengujian fungsional (pendaftaran, undangan, RLS, pembatasan staf, trigger tagihan). Lihat komentar di dalam skrip.
+
 ## Install ke HP
 
 - **Android (Chrome)**: buka alamat aplikasi → menu ⋮ → *Tambahkan ke layar utama* / *Install app*.
