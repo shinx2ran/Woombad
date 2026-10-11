@@ -49,8 +49,13 @@ export class SupabaseAuth implements AuthService {
 
   async sendPasswordReset(email: string): Promise<void> {
     const { error } = await this.sb.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/login`,
+      redirectTo: `${window.location.origin}/reset-sandi`,
     })
+    if (error) throw new Error(translate(error.message))
+  }
+
+  async updatePassword(newPassword: string): Promise<void> {
+    const { error } = await this.sb.auth.updateUser({ password: newPassword })
     if (error) throw new Error(translate(error.message))
   }
 

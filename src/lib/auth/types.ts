@@ -17,5 +17,7 @@ export interface AuthService {
   signUp(email: string, password: string): Promise<AuthSession | null>
   signOut(): Promise<void>
   sendPasswordReset(email: string): Promise<void>
+  /** Set a new password for the signed-in user (used after a recovery link). */
+  updatePassword(newPassword: string): Promise<void>
   onAuthStateChange(listener: AuthListener): () => void
 }

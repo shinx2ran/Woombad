@@ -10,22 +10,33 @@ export class SupabaseRepo implements Repo {
   }
 
   async list<T extends TableName>(table: T, opts: ListOptions<Row<T>> = {}): Promise<Row<T>[]> {
-    let q = this.sb.from(table).select('*')
-    for (const [col, val] of Object.entries(opts.where ?? {})) {
-      if (val === undefined) continue
-      if (Array.isArray(val)) q = q.in(col, val as unknown[])
-      else if (val === null) q = q.is(col, null)
-      else q = q.eq(col, val as never)
+    // PostgREST caps responses (default 1000 rows); page through so yearly reports never silently truncate.
+    const PAGE = 1000
+    const all: Row<T>[] = []
+    for (let from = 0; ; from += PAGE) {
+      let q = this.sb.from(table).select('*')
+      for (const [col, val] of Object.entries(opts.where ?? {})) {
+        if (val === undefined) continue
+        if (Array.isArray(val)) q = q.in(col, val as unknown[])
+        else if (val === null) q = q.is(col, null)
+        else q = q.eq(col, val as never)
+      }
+      for (const [col, val] of Object.entries(opts.gte ?? {})) if (val != null) q = q.gte(col, val as never)
+      for (const [col, val] of Object.entries(opts.lte ?? {})) if (val != null) q = q.lte(col, val as never)
+      if (opts.orderBy) q = q.order(opts.orderBy.column, { ascending: opts.orderBy.ascending ?? true })
+      else q = q.order('created_at', { ascending: false })
+      // stable secondary order so paging never skips/duplicates rows with equal sort keys
+      q = q.order('id', { ascending: true })
+      const remaining = opts.limit != null ? opts.limit - all.length : PAGE
+      const size = Math.min(PAGE, remaining)
+      if (size <= 0) break
+      const { data, error } = await q.range(from, from + size - 1)
+      if (error) throw new Error(error.message)
+      const rows = (data ?? []) as unknown as Row<T>[]
+      all.push(...rows)
+      if (rows.length < size) break
     }
-    for (const [col, val] of Object.entries(opts.gte ?? {})) if (val != null) q = q.gte(col, val as never)
-    for (const [col, val] of Object.entries(opts.lte ?? {})) if (val != null) q = q.lte(col, val as never)
-    if (opts.orderBy) q = q.order(opts.orderBy.column, { ascending: opts.orderBy.ascending ?? true })
-    else q = q.order('created_at', { ascending: false })
-    // Supabase defaults to 1000 rows; raise it for a small kos this is still tiny.
-    q = q.limit(opts.limit ?? 5000)
-    const { data, error } = await q
-    if (error) throw new Error(error.message)
-    return (data ?? []) as unknown as Row<T>[]
+    return all
   }
 
   async get<T extends TableName>(table: T, id: string): Promise<Row<T> | null> {

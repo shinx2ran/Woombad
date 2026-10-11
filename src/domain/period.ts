@@ -256,3 +256,24 @@ export function inRange(iso: string, range: DateRange): boolean {
   const d = iso.slice(0, 10)
   return d >= range.start && d <= range.end
 }
+
+/**
+ * For period-over-period comparison of a range that is still in progress (range.end > today):
+ * returns the elapsed part of the range and the same elapsed length of the previous range, so
+ * "October so far" is compared with "September up to the same day". When the range is complete,
+ * returns it unchanged with the full previous range.
+ */
+export function comparableRanges(
+  range: DateRange,
+  todayISO: string,
+  preset?: RangePreset,
+): { current: DateRange; previous: DateRange; isPartial: boolean } {
+  const prev = previousRange(range, preset)
+  if (todayISO >= range.end || todayISO < range.start) {
+    return { current: range, previous: prev, isPartial: false }
+  }
+  const elapsed = daysBetween(range.start, todayISO) // 0-based
+  const current = { start: range.start, end: todayISO }
+  const prevEnd = addDaysISO(prev.start, elapsed)
+  return { current, previous: { start: prev.start, end: prevEnd < prev.end ? prevEnd : prev.end }, isPartial: true }
+}

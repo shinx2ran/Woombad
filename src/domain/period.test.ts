@@ -128,3 +128,28 @@ describe('buckets', () => {
     expect(defaultGranularity({ start: '2020-01-01', end: '2026-12-31' })).toBe('year')
   })
 })
+
+describe('comparableRanges', () => {
+  it('clips an in-progress month to today and the previous month to the same elapsed days', async () => {
+    const { comparableRanges } = await import('./period')
+    const oct = { start: '2026-10-01', end: '2026-10-31' }
+    const r = comparableRanges(oct, '2026-10-11', 'monthly')
+    expect(r.isPartial).toBe(true)
+    expect(r.current).toEqual({ start: '2026-10-01', end: '2026-10-11' })
+    expect(r.previous).toEqual({ start: '2026-09-01', end: '2026-09-11' })
+  })
+  it('leaves a completed range untouched', async () => {
+    const { comparableRanges } = await import('./period')
+    const sep = { start: '2026-09-01', end: '2026-09-30' }
+    const r = comparableRanges(sep, '2026-10-11', 'monthly')
+    expect(r.isPartial).toBe(false)
+    expect(r.current).toEqual(sep)
+    expect(r.previous).toEqual({ start: '2026-08-01', end: '2026-08-31' })
+  })
+  it('never extends the previous range past its own end (Mar 30 vs Feb)', async () => {
+    const { comparableRanges } = await import('./period')
+    const mar = { start: '2026-03-01', end: '2026-03-31' }
+    const r = comparableRanges(mar, '2026-03-30', 'monthly')
+    expect(r.previous).toEqual({ start: '2026-02-01', end: '2026-02-28' })
+  })
+})

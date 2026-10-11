@@ -44,6 +44,10 @@ export class LocalAuth implements AuthService {
     /* no-op in demo mode */
   }
 
+  async updatePassword(): Promise<void> {
+    /* no-op in demo mode */
+  }
+
   onAuthStateChange(listener: AuthListener): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)

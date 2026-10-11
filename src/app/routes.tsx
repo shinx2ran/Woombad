@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, type RouteObject } from 'react-router'
 import { AppShell } from './AppShell'
 import { AuthGate, GuestOnly } from './AuthGate'
 import { authRoutes } from '../features/auth/routes'
+import { ResetPasswordPage } from '../features/auth/ResetPasswordPage'
 import { dashboardRoutes } from '../features/dashboard/routes'
 import { propertiesRoutes } from '../features/properties/routes'
 import { tenantsRoutes } from '../features/tenants/routes'
@@ -20,6 +21,8 @@ const routes: RouteObject[] = [
     element: <GuestOnly />,
     children: authRoutes,
   },
+  // Reachable both from a recovery link (signed in with a recovery session) and from settings.
+  { path: '/reset-sandi', element: <ResetPasswordPage /> },
   {
     element: <AuthGate />,
     children: [

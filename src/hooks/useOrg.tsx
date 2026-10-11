@@ -18,8 +18,13 @@ interface OrgContextValue {
   /** currently selected property filter for list pages / dashboard */
   selectedPropertyId: PropertySelection
   setSelectedPropertyId: (id: PropertySelection) => void
-  /** convenience: ids to filter by (all property ids when "all") */
+  /** convenience: ids to filter by (all property ids when "all") — for list pages */
   propertyFilterIds: string[]
+  /**
+   * For src/domain finance/export/occupancy functions: `undefined` when "all" (include shared rows with
+   * property_id null), otherwise the single selected id. Never pass `propertyFilterIds` to those functions.
+   */
+  financePropertyIds: string[] | undefined
   refreshProperties: () => Promise<void>
   /** demo mode only: wipe and reseed demo data */
   resetDemoData: () => Promise<void>
@@ -45,9 +50,17 @@ async function loadMembership(userId: string, email: string | null) {
     await repo.insert('organization_members', { org_id: org.id, user_id: userId, email, role: 'owner' })
     return { org, role: 'owner' as MemberRole }
   }
-  const org = await repo.get('organizations', memberships[0].org_id)
+  // A user who signed up before being invited owns an empty "Kos Saya" org as well as the invited one:
+  // prefer an organisation created by someone else, then the oldest membership.
+  const sorted = [...memberships].sort((a, b) => a.created_at.localeCompare(b.created_at))
+  const orgs = await Promise.all(sorted.map((m) => repo.get('organizations', m.org_id)))
+  const idx = Math.max(
+    0,
+    orgs.findIndex((o) => o && o.created_by !== userId),
+  )
+  const org = orgs[idx]
   if (!org) throw new Error('Organisasi tidak ditemukan.')
-  return { org, role: memberships[0].role }
+  return { org, role: sorted[idx].role }
 }
 
 export function OrgProvider({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
@@ -99,6 +112,7 @@ export function OrgProvider({ children, fallback }: { children: ReactNode; fallb
   const value = useMemo<OrgContextValue | null>(() => {
     if (!membership.data || !repo) return null
     const propertyFilterIds = selectedPropertyId === 'all' ? properties.map((p) => p.id) : [selectedPropertyId]
+    const financePropertyIds = selectedPropertyId === 'all' ? undefined : [selectedPropertyId]
     return {
       org: membership.data.org,
       role: membership.data.role,
@@ -107,6 +121,7 @@ export function OrgProvider({ children, fallback }: { children: ReactNode; fallb
       selectedPropertyId,
       setSelectedPropertyId,
       propertyFilterIds,
+      financePropertyIds,
       refreshProperties: async () => {
         await queryClient.invalidateQueries({ queryKey: ['org', orgId, 'properties'] })
       },
