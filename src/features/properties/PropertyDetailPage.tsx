@@ -1,0 +1,104 @@
+import { useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router'
+import { clsx } from 'clsx'
+import { ArrowLeft, Building2, MapPin, Pencil, Wallet } from 'lucide-react'
+import { Button, EmptyState, PageHeader } from '../../components/ui'
+import { useOrg } from '../../hooks/useOrg'
+import { PropertyFormModal } from './PropertyFormModal'
+import { RoomsTab } from './RoomsTab'
+import { AddonsTab } from './AddonsTab'
+
+type Tab = 'kamar' | 'addon'
+
+export function PropertyDetailPage() {
+  const { propertyId = '' } = useParams()
+  const { properties } = useOrg()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [editOpen, setEditOpen] = useState(false)
+  const property = properties.find((p) => p.id === propertyId) ?? null
+  const tab: Tab = searchParams.get('tab') === 'addon' ? 'addon' : 'kamar'
+
+  const setTab = (next: Tab) => {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'kamar') params.delete('tab')
+    else params.set('tab', next)
+    setSearchParams(params, { replace: true })
+  }
+
+  if (!property) {
+    return (
+      <>
+        <PageHeader title="Kos tidak ditemukan" />
+        <EmptyState
+          icon={<Building2 className="h-10 w-10" />}
+          title="Kos tidak ditemukan"
+          description="Kos ini mungkin sudah dihapus atau tautannya salah."
+          action={
+            <Link to="/kos">
+              <Button variant="outline" icon={<ArrowLeft className="h-4 w-4" />}>
+                Kembali ke daftar kos
+              </Button>
+            </Link>
+          }
+        />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <Link to="/kos" className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-800">
+        <ArrowLeft className="h-4 w-4" aria-hidden /> Semua kos
+      </Link>
+      <PageHeader
+        title={property.name}
+        subtitle={
+          <span className="flex flex-col gap-0.5">
+            <span className="inline-flex items-start gap-1">
+              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              {property.address ?? 'Alamat belum diisi'}
+            </span>
+            {property.payment_info && (
+              <span className="inline-flex items-start gap-1">
+                <Wallet className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                {property.payment_info}
+              </span>
+            )}
+          </span>
+        }
+        actions={
+          <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
+            Ubah kos
+          </Button>
+        }
+      />
+
+      <div className="mb-4 flex gap-1 border-b border-slate-200" role="tablist" aria-label="Bagian kos">
+        {(
+          [
+            { id: 'kamar', label: 'Kamar' },
+            { id: 'addon', label: 'Add-on' },
+          ] as { id: Tab; label: string }[]
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={clsx(
+              '-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
+              tab === t.id ? 'border-brand-700 text-brand-800' : 'border-transparent text-slate-500 hover:text-slate-800',
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'kamar' ? <RoomsTab property={property} /> : <AddonsTab property={property} />}
+
+      <PropertyFormModal open={editOpen} property={property} onClose={() => setEditOpen(false)} />
+    </>
+  )
+}
