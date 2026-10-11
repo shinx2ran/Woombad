@@ -11,10 +11,8 @@
  *  - Deposits are payments with kind='deposit' (never revenue), refunds are recorded on the lease.
  */
 import type { Invoice, InvoiceStatus, Lease, LeaseAddon, Payment } from '../types/db'
-
-const notImplemented = (name: string): never => {
-  throw new Error(`${name} belum diimplementasikan`)
-}
+import { formatRupiah } from '../lib/format'
+import { addDaysISO, daysBetween, periodBounds, periodEnd } from './period'
 
 export interface InvoiceDraftInput {
   lease: Lease
@@ -49,6 +47,29 @@ export interface InvoiceDraft {
   new_lease_end_date: string
 }
 
+// ---------- helpers ----------
+
+/** Non-void invoices sorted by period_start ascending (string compare is chronological for ISO dates). */
+export function activeInvoicesSorted(invoices: Invoice[]): Invoice[] {
+  return invoices.filter((inv) => inv.status !== 'void').sort((a, b) => a.period_start.localeCompare(b.period_start))
+}
+
+/** Latest period_end among non-void invoices, or null when none. */
+export function latestCoveredThrough(invoices: Invoice[]): string | null {
+  let latest: string | null = null
+  for (const inv of invoices) {
+    if (inv.status === 'void') continue
+    if (latest === null || inv.period_end > latest) latest = inv.period_end
+  }
+  return latest
+}
+
+function maxISO(a: string, b: string): string {
+  return a >= b ? a : b
+}
+
+// ---------- periods ----------
+
 /**
  * Number of periods already billed when the lease's non-void invoices are contiguous from
  * lease.start_date (first invoice starts on start_date, each next one starts the day after the previous
@@ -56,7 +77,17 @@ export interface InvoiceDraft {
  * Used to anchor the next period on the lease start so monthly leases never drift at month end.
  */
 export function billedPeriodCount(lease: Lease, invoices: Invoice[]): number | null {
-  return notImplemented('billedPeriodCount') as never ?? [lease, invoices]
+  const active = activeInvoicesSorted(invoices)
+  // Zero non-void invoices: trivially contiguous, nothing billed yet.
+  if (active.length === 0) return 0
+  if (active[0].period_start !== lease.start_date) return null
+  let count = 0
+  for (let i = 0; i < active.length; i++) {
+    const inv = active[i]
+    if (i > 0 && inv.period_start !== addDaysISO(active[i - 1].period_end, 1)) return null
+    count += inv.quantity
+  }
+  return count
 }
 
 /**
@@ -66,29 +97,52 @@ export function billedPeriodCount(lease: Lease, invoices: Invoice[]): number | n
  *    end = periodEnd(start, type, quantity)
  */
 export function nextPeriodBounds(lease: Lease, invoices: Invoice[], quantity: number): { period_start: string; period_end: string } {
-  return notImplemented('nextPeriodBounds') as never ?? [lease, invoices, quantity]
+  if (!Number.isInteger(quantity) || quantity < 1) throw new Error('Jumlah periode minimal 1')
+  const count = billedPeriodCount(lease, invoices)
+  if (count !== null) {
+    const bounds = periodBounds(lease.start_date, lease.period_type, count, quantity)
+    return { period_start: bounds.start, period_end: bounds.end }
+  }
+  const covered = latestCoveredThrough(invoices)
+  const start = covered === null ? lease.start_date : addDaysISO(covered, 1)
+  return { period_start: start, period_end: periodEnd(start, lease.period_type, quantity) }
 }
 
 /** Convenience: nextPeriodBounds(lease, invoices, 1).period_start */
 export function nextPeriodStart(lease: Lease, invoices: Invoice[]): string {
-  return notImplemented('nextPeriodStart') as never ?? [lease, invoices]
+  return nextPeriodBounds(lease, invoices, 1).period_start
 }
+
+// ---------- amounts ----------
 
 /**
  * per_period addons: amount * quantity. one_time addons: amount, only when this is the lease's first
  * (non-void) invoice. Negative amounts are allowed (discount-like addons) but totals never go below 0.
  */
 export function computeAddonsAmount(addons: LeaseAddon[], quantity: number, isFirstInvoice: boolean): number {
-  return notImplemented('computeAddonsAmount') as never ?? [addons, quantity, isFirstInvoice]
+  let sum = 0
+  for (const addon of addons) {
+    if (addon.billing === 'per_period') sum += addon.amount * quantity
+    else if (isFirstInvoice) sum += addon.amount
+  }
+  return Math.max(0, sum)
 }
 
 /** 'INV-YYYYMM-0001' where sequence counts invoices (any lease) whose period_start is in the same month. */
 export function invoiceNumber(periodStart: string, sequence: number): string {
-  return notImplemented('invoiceNumber') as never ?? [periodStart, sequence]
+  const yyyymm = periodStart.slice(0, 7).replace('-', '')
+  return `INV-${yyyymm}-${String(sequence).padStart(4, '0')}`
 }
 
+/**
+ * 1 + number of org invoices whose period_start falls in the same YYYY-MM as periodStart.
+ * Void invoices are counted too so a number is never reused after a cancellation.
+ */
 export function nextInvoiceSequence(periodStart: string, orgInvoices: Invoice[]): number {
-  return notImplemented('nextInvoiceSequence') as never ?? [periodStart, orgInvoices]
+  const month = periodStart.slice(0, 7)
+  let count = 0
+  for (const inv of orgInvoices) if (inv.period_start.slice(0, 7) === month) count++
+  return count + 1
 }
 
 /**
@@ -96,21 +150,62 @@ export function nextInvoiceSequence(periodStart: string, orgInvoices: Invoice[])
  * due_date = period_start (kos convention: pay at the start of the period).
  */
 export function buildInvoiceDraft(input: InvoiceDraftInput): InvoiceDraft {
-  return notImplemented('buildInvoiceDraft') as never ?? input
+  const { lease, addons, quantity, existingInvoices } = input
+  if (!Number.isInteger(quantity) || quantity < 1) throw new Error('Jumlah periode minimal 1')
+
+  const bounds = input.periodStart
+    ? { period_start: input.periodStart, period_end: periodEnd(input.periodStart, lease.period_type, quantity) }
+    : nextPeriodBounds(lease, existingInvoices, quantity)
+
+  // A voided first invoice does not count: the re-issued one is the lease's first invoice again.
+  const isFirstInvoice = !existingInvoices.some((inv) => inv.status !== 'void')
+
+  const base_amount = lease.price_per_period * quantity
+  const addons_amount = computeAddonsAmount(addons, quantity, isFirstInvoice)
+  const extra_amount = input.extraAmount ?? 0
+  const discount_amount = input.discountAmount ?? 0
+  const total_amount = Math.max(0, base_amount + addons_amount + extra_amount - discount_amount)
+
+  const numberingPool = input.orgInvoices ?? existingInvoices
+  const sequence = nextInvoiceSequence(bounds.period_start, numberingPool)
+
+  return {
+    period_start: bounds.period_start,
+    period_end: bounds.period_end,
+    quantity,
+    base_amount,
+    addons_amount,
+    extra_amount,
+    discount_amount,
+    total_amount,
+    due_date: bounds.period_start,
+    invoice_number: invoiceNumber(bounds.period_start, sequence),
+    new_lease_end_date: maxISO(lease.end_date, bounds.period_end),
+  }
 }
+
+// ---------- payments & status ----------
 
 /** Sum of payments with kind='rent' for an invoice. */
 export function paidAmountFor(invoiceId: string, payments: Payment[]): number {
-  return notImplemented('paidAmountFor') as never ?? [invoiceId, payments]
+  let sum = 0
+  for (const p of payments) if (p.kind === 'rent' && p.invoice_id === invoiceId) sum += p.amount
+  return sum
 }
 
+/** total - paid, floored at 0. A void invoice has nothing outstanding (decision: cancelled = nothing owed). */
 export function outstandingFor(invoice: Invoice, payments: Payment[]): number {
-  return notImplemented('outstandingFor') as never ?? [invoice, payments]
+  if (invoice.status === 'void') return 0
+  return Math.max(0, invoice.total_amount - paidAmountFor(invoice.id, payments))
 }
 
 /** 'void' stays 'void'. Otherwise paid >= total -> 'paid'; paid > 0 -> 'partial'; else 'unpaid'. A zero-total invoice is 'paid'. */
 export function deriveInvoiceStatus(totalAmount: number, paidAmount: number, current: InvoiceStatus): InvoiceStatus {
-  return notImplemented('deriveInvoiceStatus') as never ?? [totalAmount, paidAmount, current]
+  if (current === 'void') return 'void'
+  if (totalAmount <= 0) return 'paid'
+  if (paidAmount >= totalAmount) return 'paid'
+  if (paidAmount > 0) return 'partial'
+  return 'unpaid'
 }
 
 export type BillingState = 'ok' | 'due_soon' | 'overdue' | 'unbilled' | 'inactive'
@@ -147,8 +242,58 @@ export function summarizeLeaseBilling(
   todayISO: string,
   dueSoonDays = 3,
 ): LeaseBillingSummary {
-  return notImplemented('summarizeLeaseBilling') as never ?? [lease, invoices, payments, todayISO, dueSoonDays]
+  const active = invoices.filter((inv) => inv.lease_id === lease.id && inv.status !== 'void')
+
+  let coveredThrough: string | null = null
+  let paidThrough: string | null = null
+  let outstanding = 0
+  let earliestOpenDue: string | null = null
+
+  for (const inv of active) {
+    if (coveredThrough === null || inv.period_end > coveredThrough) coveredThrough = inv.period_end
+    // Trust the stored status (the app keeps it in sync via deriveInvoiceStatus).
+    if (inv.status === 'paid') {
+      if (paidThrough === null || inv.period_end > paidThrough) paidThrough = inv.period_end
+    } else {
+      // unpaid / partial
+      outstanding += Math.max(0, inv.total_amount - paidAmountFor(inv.id, payments))
+      if (earliestOpenDue === null || inv.due_date < earliestOpenDue) earliestOpenDue = inv.due_date
+    }
+  }
+
+  const hasOpenInvoice = earliestOpenDue !== null
+  const nextDueDate = earliestOpenDue ?? (coveredThrough !== null ? addDaysISO(coveredThrough, 1) : lease.start_date)
+  const daysUntilDue = daysBetween(todayISO, nextDueDate)
+
+  let state: BillingState
+  if (lease.status !== 'active') {
+    state = 'inactive'
+  } else if (!hasOpenInvoice && coveredThrough !== null && nextDueDate > lease.end_date) {
+    // Decision: everything billed is settled and the next period would start after the lease ends,
+    // so there is nothing more to bill -> 'ok' (lease expiry itself is surfaced by expiringLeases, not here).
+    state = 'ok'
+  } else if (daysUntilDue < 0) {
+    state = 'overdue'
+  } else if (active.length === 0 && daysUntilDue > dueSoonDays) {
+    state = 'unbilled'
+  } else if (daysUntilDue <= dueSoonDays) {
+    state = 'due_soon'
+  } else {
+    state = 'ok'
+  }
+
+  return {
+    leaseId: lease.id,
+    coveredThrough,
+    paidThrough,
+    outstanding,
+    nextDueDate,
+    daysUntilDue,
+    state,
+  }
 }
+
+// ---------- deposit ----------
 
 export interface DepositBalance {
   agreed: number
@@ -161,13 +306,30 @@ export interface DepositBalance {
 }
 
 export function depositBalance(lease: Lease, payments: Payment[]): DepositBalance {
-  return notImplemented('depositBalance') as never ?? [lease, payments]
+  let received = 0
+  for (const p of payments) if (p.kind === 'deposit' && p.lease_id === lease.id) received += p.amount
+  const returned = lease.deposit_returned_amount ?? 0
+  const agreed = lease.deposit_amount
+  return {
+    agreed,
+    received,
+    returned,
+    held: received - returned,
+    shortfall: Math.max(0, agreed - received),
+  }
 }
+
+// ---------- validation ----------
 
 /**
  * Validate a payment amount against an invoice. Returns an Indonesian error message or null.
  * Overpayment is rejected (amount > outstanding), as are non-positive amounts and void invoices.
  */
 export function validateRentPayment(invoice: Invoice, payments: Payment[], amount: number): string | null {
-  return notImplemented('validateRentPayment') as never ?? [invoice, payments, amount]
+  if (!Number.isFinite(amount) || amount <= 0) return 'Jumlah pembayaran harus lebih dari 0.'
+  if (invoice.status === 'void') return 'Tagihan sudah dibatalkan.'
+  const outstanding = outstandingFor(invoice, payments)
+  if (outstanding <= 0) return 'Tagihan ini sudah lunas.'
+  if (amount > outstanding) return `Jumlah melebihi sisa tagihan (${formatRupiah(outstanding)}).`
+  return null
 }

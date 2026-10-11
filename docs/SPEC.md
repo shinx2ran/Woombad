@@ -31,15 +31,15 @@ Prinsip:
 
 | Tabel | Arti | Catatan |
 |---|---|---|
-| properties | Kos (bangunan) | user akan punya ≥2 kos |
+| properties | Kos (bangunan) | user akan punya ≥2 kos; `payment_info` = info rekening/QRIS untuk teks pengingat |
 | rooms | Kamar | harga default harian/mingguan/bulanan; `status` hanya `active`/`maintenance`; hunian diturunkan dari leases |
 | addon_catalog | Katalog add-on | contoh: kasur tambahan, parkir, laundry; `property_id` null = semua kos |
 | tenants | Penyewa | data KTP (NIK, nama, TTL, alamat, …) + **telepon diisi manual (KTP tidak memuat nomor HP)** |
-| leases | Sewa / kontrak | `period_type`, `price_per_period`, `deposit_amount`, `start_date`, `end_date`, `status` |
+| leases | Sewa / kontrak | `period_type`, `price_per_period`, `deposit_amount`, `start_date`, `end_date`, `status`, `checkout_date` |
 | lease_addons | Add-on per sewa | `per_period` (dikali jumlah periode) atau `one_time` (hanya di tagihan pertama) |
 | invoices | Tagihan | mencakup `quantity` periode dari `period_start` s/d `period_end` (inklusif); `total = base + addons + extra - discount` |
-| payments | Pembayaran | `kind`: `rent` (lawan tagihan, = pendapatan), `deposit` (uang jaminan, bukan pendapatan), `other` |
-| expenses | Pengeluaran | kategori: gaji, perbaikan, listrik/air/internet, perlengkapan, pajak, promosi, pengembalian jaminan, lainnya |
+| payments | Pembayaran | `kind`: `rent` (lawan tagihan, = pendapatan), `deposit` (uang jaminan, bukan pendapatan), `other`; `method` termasuk `deposit` = **potong jaminan** |
+| expenses | Pengeluaran | kategori: gaji, perbaikan, listrik/air/internet, perlengkapan, pajak, promosi, lainnya, serta **pengembalian jaminan** & **pengembalian sewa** (bukan biaya operasional; wajib `lease_id`) |
 
 Status tagihan **diturunkan dari pembayaran** (`deriveInvoiceStatus`): `paid` (Lunas) jika dibayar ≥ total,
 `partial` (DP/Sebagian) jika 0 < dibayar < total, `unpaid` jika 0. `void` manual. Trigger DB menjaga konsistensi;
@@ -51,8 +51,42 @@ Alur kos yang dimodelkan:
 2. Penyewa bayar → catat **pembayaran** (bisa DP; sisa dibayar nanti) → status tagihan otomatis.
 3. Mendekati `coveredThrough` → dashboard menampilkan "jatuh tempo" → klik **"Buat tagihan berikutnya"** →
    `end_date` sewa otomatis diperpanjang ke `period_end` tagihan baru.
-4. Penyewa keluar → **checkout**: status `ended`, `checkout_date`, `deposit_returned_amount` (+ pengeluaran kategori
-   `deposit_refund` bila uang benar-benar keluar).
+4. Penyewa keluar → **checkout**: status `ended`, `checkout_date`, penyelesaian uang jaminan (dikembalikan = expense
+   `deposit_refund`; dipotong = payment `method='deposit'`). Lihat invarian 2b.
+
+## 2a. Definisi keuangan (basis kas)
+
+| Istilah | Definisi | Fungsi |
+|---|---|---|
+| **Pendapatan** | Pembayaran `kind ∈ {rent, other}` menurut `paid_at`, **dikurangi** pengeluaran kategori `rent_refund` menurut `expense_date`. Termasuk pembayaran `method = 'deposit'` (potong jaminan): itu konversi kewajiban menjadi pendapatan. | `summarizeFinance.revenue`, `rentRevenue`, `otherRevenue` |
+| **Pengeluaran operasional** | Semua `expenses` kecuali kategori `deposit_refund` dan `rent_refund` (keduanya pengembalian uang, bukan biaya). | `summarizeFinance.expenses` |
+| **Laba bersih** | Pendapatan − Pengeluaran operasional | `netProfit`, `margin` |
+| **Ditagihkan** | `total_amount` tagihan non-void dengan `due_date` dalam rentang (**basis jatuh tempo**, bukan periode sewa). | `billed` |
+| **Terkumpul / Tingkat penagihan** | Dari himpunan tagihan yang sama: `Σ min(dibayar, total)`; rasio = terkumpul / ditagihkan (0..1). | `collected`, `collectionRate` |
+| **Piutang** | Tagihan non-void dengan `due_date ≤ akhir rentang` dan `total − dibayar(kind rent) > 0` — **diturunkan dari pembayaran**, bukan dari kolom `status`. `overdue` = yang `due_date < hari ini`. | `outstanding`, `overdue`, `outstandingInvoices` |
+| **Uang jaminan** | Diterima = payment `kind='deposit'`; Dipotong = payment rent/other dengan `method='deposit'`; Dikembalikan = expense `deposit_refund` (+`lease_id`); Dipegang = diterima − dipotong − dikembalikan. Tidak pernah masuk pendapatan/pengeluaran operasional. | `depositBalance`, `depositsHeld` |
+| **Arus kas vs laba** | Grafik arus kas memakai pendapatan & pengeluaran operasional. Lembar **Ringkasan** ekspor memuat rekonsiliasi kas: kas masuk = pendapatan tunai + jaminan diterima − potong jaminan; kas keluar = pengeluaran operasional + pengembalian. | `buildSummarySheet` |
+| **Filter kos** | `financePropertyIds` dari `useOrg()`: `undefined` = semua kos (termasuk pengeluaran **Bersama** `property_id = null`); `[id]` = satu kos, pengeluaran bersama **dikecualikan** dan jumlahnya dilaporkan di `sharedExpensesExcluded` agar UI bisa menampilkan catatan. **Jangan** mengirim `propertyFilterIds` ke fungsi domain. | semua fungsi `src/domain/finance.ts`, `export.ts` |
+| **Perbandingan periode** | Periode berjalan dibandingkan dengan periode sebelumnya **sampai hari yang sama** (`comparableRanges` → `isPartial`), label "vs periode lalu (s/d tanggal yang sama)". | `period.comparableRanges`, `comparePeriods` |
+
+Keterangan lain: **hunian historis** menghitung sewa `ended` sampai `checkout_date ?? end_date` dan sewa `active` sejak `start_date` tanpa batas atas (penyewa masih di kamar sampai checkout); sewa `cancelled` tidak pernah menghuni. Kamar dengan sewa aktif yang `start_date` di masa depan = **Dipesan** (reserved), bukan kosong. Status `maintenance` kamar tidak bersejarah (berlaku ke semua tanggal).
+
+## 2b. Invarian aplikasi (harus ditegakkan modul `leases`)
+
+Postgres tidak bisa menjaga aturan berikut; UI wajib:
+
+1. **Status tagihan** selalu di-update dengan `deriveInvoiceStatus` setelah setiap insert/hapus pembayaran rent dan setiap perubahan `total_amount`. `total_amount` tidak boleh lebih kecil dari yang sudah dibayar (tolak dengan pesan Indonesia).
+2. **Void** tagihan hanya jika `paidAmountFor == 0`. Jika sudah ada pembayaran: hapus/pindahkan pembayaran dulu (admin), atau kecilkan `total_amount` lewat `discount_amount` (DP hangus tetap pendapatan).
+3. **Hapus tagihan** hanya jika tidak ada pembayaran (DB akan menolak: `payments.invoice_id` RESTRICT). Lebih disukai void, bukan hapus (nomor tagihan tidak boleh dipakai ulang).
+4. **Batalkan sewa** (`cancelled`): semua tagihan unpaid di-void; jika ada tagihan partial, pengguna harus memilih: void + kembalikan (expense `rent_refund` + `lease_id`) atau "anggap hangus" (diskon = sisa, status jadi paid). Pembayaran deposit diselesaikan: kembalikan (expense `deposit_refund`) atau potong (payment `other`, method `deposit`).
+5. **Checkout** (`ended`): `checkout_date` wajib; tagihan unpaid yang `period_start > checkout_date` di-void; sisa tagihan sebelum checkout tetap piutang (boleh dipotong jaminan: payment rent, method `deposit`). Deposit yang dipegang **wajib** diselesaikan: dikembalikan (expense `deposit_refund`, `lease_id`), dipotong untuk kerusakan (payment `kind='other'`, `method='deposit'`, catatan "Potongan jaminan: …"), atau dipotong untuk sewa (payment rent method deposit). `end_date` = min(end_date, checkout_date).
+6. **Pembayaran** rent selalu `invoice_id` terisi; deposit/other selalu `invoice_id = null` (DB: `(kind = 'rent') = (invoice_id is not null)`). `property_id` pembayaran = `property_id` tagihan/sewa.
+7. **Kelebihan bayar**: `validateRentPayment` menolak jumlah > sisa. Form menawarkan: "Catat kelebihan Rp X sebagai Pemasukan Lain" (payment `other`, `lease_id`) atau "Jadikan diskon tagihan berikutnya" (isi `discount_amount` pada draft tagihan berikutnya lewat catatan sewa). **Kekurangan yang disepakati** ("kurang 50 ribu, anggap lunas"): tambahkan `discount_amount` sebesar selisih lalu status menjadi paid.
+8. **Double-booking**: saat membuat/mengubah sewa, tolak kamar yang punya sewa non-cancelled yang tumpang tindih dengan `[start_date, end_date]` (`leaseOverlaps`). Kamar dengan sewa aktif berawal di masa depan ditampilkan **Dipesan**.
+9. **Pindah kamar** dalam kos yang sama: ubah `room_id` (+ `price_per_period` bila beda) pada sewa aktif dan tambahkan catatan otomatis "Pindah dari A1 ke B2 pada <tanggal>" di `leases.notes`; pindah antar kos = checkout + sewa baru. Cek double-booking berlaku.
+10. **Perpanjangan**: jumlah periode (`quantity`) yang menentukan `end_date` (`end_date = period_end` tagihan terakhir). Jika pengguna memasukkan tanggal akhir, tampilkan jumlah periode hasil `periodsToCover` dan tanggal akhir hasil perhitungan, minta konfirmasi bila berbeda. Pro-rata ("tambah 2 minggu saja" pada sewa bulanan) memakai `periodEnd` + `baseAmount` pada `InvoiceDraftInput`.
+11. **Nomor tagihan**: `nextInvoiceSequence` dari seluruh tagihan org (termasuk void). Pada error unik (dua perangkat bersamaan), ulangi dengan nomor berikutnya.
+12. **Jatuh tempo**: `due_date = period_start`; status `overdue` baru setelah `graceDays` (default 3) lewat; dashboard tidak menampilkan sewa yang sama dua kali (due/overdue vs akan berakhir).
 
 ## 3. Kontrak untuk modul fitur (`src/features/<nama>`)
 
