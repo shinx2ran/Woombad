@@ -1,10 +1,8 @@
 import type { RouteObject } from 'react-router'
-import { LeasesPage } from './LeasesPage'
-import { NewLeasePage } from './NewLeasePage'
-import { LeaseDetailPage } from './LeaseDetailPage'
 
+// Lazy routes keep the heavy lease screens out of the initial bundle.
 export const leasesRoutes: RouteObject[] = [
-  { path: 'sewa', element: <LeasesPage /> },
-  { path: 'sewa/baru', element: <NewLeasePage /> },
-  { path: 'sewa/:id', element: <LeaseDetailPage /> },
+  { path: 'sewa', lazy: () => import('./LeasesPage').then((m) => ({ Component: m.LeasesPage })) },
+  { path: 'sewa/baru', lazy: () => import('./NewLeasePage').then((m) => ({ Component: m.NewLeasePage })) },
+  { path: 'sewa/:id', lazy: () => import('./LeaseDetailPage').then((m) => ({ Component: m.LeaseDetailPage })) },
 ]

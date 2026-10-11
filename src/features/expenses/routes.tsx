@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router'
-import { ExpensesPage } from './ExpensesPage'
 
-export const expensesRoutes: RouteObject[] = [{ path: 'pengeluaran', element: <ExpensesPage /> }]
+export const expensesRoutes: RouteObject[] = [
+  { path: 'pengeluaran', lazy: () => import('./ExpensesPage').then((m) => ({ Component: m.ExpensesPage })) },
+]

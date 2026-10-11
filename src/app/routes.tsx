@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router'
+import { LoadingState } from '../components/ui'
 import { AppShell } from './AppShell'
 import { AuthGate, GuestOnly } from './AuthGate'
 import { authRoutes } from '../features/auth/routes'
@@ -28,6 +29,7 @@ const routes: RouteObject[] = [
     children: [
       {
         element: <AppShell />,
+        hydrateFallbackElement: <LoadingState />,
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
           ...dashboardRoutes,

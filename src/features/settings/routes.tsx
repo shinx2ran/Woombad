@@ -1,4 +1,5 @@
 import type { RouteObject } from 'react-router'
-import { SettingsPage } from './SettingsPage'
 
-export const settingsRoutes: RouteObject[] = [{ path: 'pengaturan', element: <SettingsPage /> }]
+export const settingsRoutes: RouteObject[] = [
+  { path: 'pengaturan', lazy: () => import('./SettingsPage').then((m) => ({ Component: m.SettingsPage })) },
+]

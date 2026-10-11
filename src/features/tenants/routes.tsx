@@ -1,8 +1,6 @@
 import type { RouteObject } from 'react-router'
-import { TenantsPage } from './TenantsPage'
-import { TenantDetailPage } from './TenantDetailPage'
 
 export const tenantsRoutes: RouteObject[] = [
-  { path: 'penyewa', element: <TenantsPage /> },
-  { path: 'penyewa/:id', element: <TenantDetailPage /> },
+  { path: 'penyewa', lazy: () => import('./TenantsPage').then((m) => ({ Component: m.TenantsPage })) },
+  { path: 'penyewa/:id', lazy: () => import('./TenantDetailPage').then((m) => ({ Component: m.TenantDetailPage })) },
 ]

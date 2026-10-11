@@ -9,7 +9,7 @@ test.describe('Mode Demo', () => {
     await expect(page).toHaveURL(/\/dashboard$/)
     await expect(page.getByText('Mode Demo', { exact: false }).first()).toBeVisible()
     // bottom navigation present on mobile viewport
-    await expect(page.getByRole('link', { name: 'Penyewa' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Penyewa', exact: true })).toBeVisible()
     // property switcher lists the two demo properties
     const switcher = page.getByLabel('Pilih kos')
     await expect(switcher).toBeVisible()
