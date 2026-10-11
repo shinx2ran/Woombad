@@ -160,11 +160,6 @@ export interface Lease extends TimestampedRow {
   status: LeaseStatus
   /** actual move-out date when status = ended */
   checkout_date: string | null
-  /**
-   * @deprecated deposit refunds are recorded as expenses (category deposit_refund, lease_id);
-   * kept only until the domain revision lands, always null afterwards.
-   */
-  deposit_returned_amount: number | null
   notes: string | null
 }
 

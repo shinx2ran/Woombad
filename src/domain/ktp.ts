@@ -229,25 +229,25 @@ const TRAILING_SEP_RE = /[\s,.;:\-/]+$/
 /**
  * 'BANDUNG, 05-03-1990' -> { place: 'BANDUNG', date: '1990-03-05' }; falls back to splitting on the last comma.
  *
- * A place name never ends in a digit, so digits stranded between the place and the date mean OCR broke the
- * day apart ('BANDUNG, 1 5-03-1990' is really 15-03-1990). When the stranded digit and the matched day join
- * into an existing date (at most two digits, whitespace-only gap) that repaired date is used; otherwise the
- * split is treated as failed: the date is dropped (so the NIK-encoded date can fill in) and the digits are
- * stripped from the place.
+ * A place name never ends in a digit, so digits stranded between the place and the date are OCR noise and
+ * are always stripped from the place. When they sit right before the day with only whitespace in between,
+ * OCR broke the day apart ('BANDUNG, 1 5-03-1990' is really 15-03-1990): if the stranded digit and the
+ * matched day join into an existing date (at most two digits) that repaired date is used, otherwise the
+ * split is treated as failed and the date is dropped so the NIK-encoded date can fill in. Digits set off by
+ * punctuation ('BANDUNG 2, 15-03-1990') leave the complete date alone.
  */
 function parseTtl(value: string): { place?: string; date?: string } {
   const m = KTP_DATE_RE.exec(value)
   if (m) {
     const before = value.slice(0, m.index)
-    const remnant = /(\d+)(\s*)$/.exec(before)
+    const remnant = /(\d+)([\s,.;:\-/]*)$/.exec(before)
     const place = collapseSpaces(
       before.slice(0, remnant ? remnant.index : before.length).replace(TRAILING_SEP_RE, ''),
     )
     let date: string | null = isoFromParts(m[1], m[2], m[3])
-    if (remnant) {
-      const [, digits, gap] = remnant
-      const joinedDay = digits + m[1]
-      date = gap.length > 0 && joinedDay.length <= 2 ? isoFromParts(joinedDay, m[2], m[3]) : null
+    if (remnant && /^\s*$/.test(remnant[2])) {
+      const joinedDay = remnant[1] + m[1]
+      date = joinedDay.length <= 2 ? isoFromParts(joinedDay, m[2], m[3]) : null
     }
     return { place: place || undefined, date: date ?? undefined }
   }

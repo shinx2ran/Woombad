@@ -32,6 +32,7 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     method: 'cash',
     kind: 'rent',
     notes: null,
+    created_by: null,
     ...overrides,
   }
 }
@@ -43,12 +44,14 @@ function makeExpense(overrides: Partial<Expense> = {}): Expense {
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     property_id: 'kos-a',
+    lease_id: null,
     category: 'wages',
     amount: 500_000,
     expense_date: '2026-03-15',
     description: 'Gaji penjaga',
     vendor: null,
     receipt_path: null,
+    created_by: null,
     ...overrides,
   }
 }
@@ -86,6 +89,7 @@ function makeProperty(overrides: Partial<Property> = {}): Property {
     name: 'Kos A',
     address: null,
     notes: null,
+    payment_info: null,
     ...overrides,
   }
 }

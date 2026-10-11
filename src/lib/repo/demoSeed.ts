@@ -119,7 +119,6 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
       end_date: toDateISO(addDays(addMonths(start, periods), -1)),
       status: 'active',
       checkout_date: null,
-      deposit_returned_amount: null,
       notes: null,
       ...ts,
     }
@@ -184,7 +183,7 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
     db.leases.push({
       id: leaseId, org_id: DEMO_ORG_ID, property_id: room.property_id, room_id: room.id, tenant_id: tenant.id,
       period_type: 'daily', price_per_period: room.price_daily!, deposit_amount: 0,
-      start_date: toDateISO(s), end_date: toDateISO(e), status: 'active', checkout_date: null, deposit_returned_amount: null, notes: 'Tamu proyek', ...ts,
+      start_date: toDateISO(s), end_date: toDateISO(e), status: 'active', checkout_date: null, notes: 'Tamu proyek', ...ts,
     })
     const invoiceId = newId()
     const total = room.price_daily! * nights

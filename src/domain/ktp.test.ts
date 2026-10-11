@@ -140,6 +140,14 @@ describe('parseKtpDate', () => {
     expect(parseKtpDate('BANDUNG, 15-08-1995')).toBe('1995-08-15')
     expect(parseKtpDate('Tgl 29/02/2024 x')).toBe('2024-02-29')
   })
+  it('date regex has no left boundary: a digit run longer than the day must not yield a date', () => {
+    expect(parseKtpDate('115-03-1990')).toBeNull()
+    expect(parseKtpDate('2005-03-1990')).toBeNull()
+    expect(parseKtpDate('1990-03-05')).toBeNull() // ISO order is not a KTP date
+    // a non-digit boundary before the day is still fine
+    expect(parseKtpDate('x15-03-1990')).toBe('1990-03-15')
+    expect(parseKtpDate('BANDUNG,15-03-1990')).toBe('1990-03-15')
+  })
   it('returns null for impossible or unparseable dates', () => {
     expect(parseKtpDate('31-02-1990')).toBeNull()
     expect(parseKtpDate('29-02-2023')).toBeNull()
@@ -221,6 +229,58 @@ describe('parseKtpText', () => {
   it('keeps the first 16 digits when the NIK line has trailing noise', () => {
     const r = parseKtpText('NIK : 3273010503900001 0', NOW)
     expect(r.fields.nik).toBe('3273010503900001')
+  })
+
+  it('leading look-alike noise on the NIK line yields a wrong NIK (lenient truncation keeps the wrong 16 digits)', () => {
+    // colon read as '1', 'l' or 'I' in front of the number -> 17 candidate chars
+    expect(parseKtpText('NIK 1 3273010503900001\nNama : BUDI', NOW).fields.nik).toBe('3273010503900001')
+    expect(parseKtpText('NIK l 3273010503900001\nNama : BUDI', NOW).fields.nik).toBe('3273010503900001')
+    expect(parseKtpText('NIK I 3273010503900001\nNama : BUDI', NOW).fields.nik).toBe('3273010503900001')
+    // sample B's NIK with the same noise: gender and birth date are still decoded from the right digits
+    const r = parseKtpText('NIK 1 3273014503950002\nNama : SITI', NOW)
+    expect(r.fields.nik).toBe('3273014503950002')
+    expect(r.fields.jenis_kelamin).toBe('P')
+    expect(r.fields.tanggal_lahir).toBe('1995-03-05')
+    expect(r.confidence).toBe(0.8)
+    // noise on both ends
+    expect(parseKtpText('NIK : 1 3273010503900001 0', NOW).fields.nik).toBe('3273010503900001')
+    // trailing noise still keeps the first 16 digits (the leading window decodes)
+    expect(parseKtpText('NIK : 3273010503900001 0', NOW).fields.nik).toBe('3273010503900001')
+  })
+
+  it('keeps the first 16 digits when no window of a noisy NIK run decodes to a date', () => {
+    // digits 7-12 of every window are an impossible date -> fall back to the first 16 so the user can correct
+    expect(parseKtpText('NIK : 3273019999990001 7', NOW).fields.nik).toBe('3273019999990001')
+  })
+
+  it('date regex has no left boundary: a space-split digit before the day gives a wrong birth date and pollutes tempat_lahir', () => {
+    // OCR split the day '15' with a space: the stranded digit is re-joined to the day
+    const r = parseKtpText('Tempat/Tgl Lahir : BANDUNG, 1 5-03-1990', NOW)
+    expect(r.fields.tempat_lahir).toBe('BANDUNG')
+    expect(r.fields.tanggal_lahir).toBe('1990-03-15')
+    const tenant = ktpFieldsToTenant(r.fields)
+    expect(tenant.birth_place).toBe('Bandung')
+    expect(tenant.birth_date).toBe('1990-03-15')
+    // the stranded digit is still the start of the day, with no comma before it
+    expect(parseKtpText('Tempat/Tgl Lahir : BANDUNG 0 5-03-1990', NOW).fields).toEqual({
+      tempat_lahir: 'BANDUNG',
+      tanggal_lahir: '1990-03-05',
+    })
+  })
+
+  it('drops the printed date (NIK fallback applies) when the stranded digit cannot be re-joined into a real date', () => {
+    // '3' + '5' = day 35 does not exist -> failed split: no printed date, place cleaned, NIK date fills in
+    const r = parseKtpText('NIK 3273010503900001\nTempat/Tgl Lahir : BANDUNG, 3 5-03-1990', NOW)
+    expect(r.fields.tempat_lahir).toBe('BANDUNG')
+    expect(r.fields.tanggal_lahir).toBe('1990-03-05')
+    // two stranded digits can never be part of a two-digit day
+    const r2 = parseKtpText('Tempat/Tgl Lahir : BANDUNG, 12 5-03-1990', NOW)
+    expect(r2.fields.tempat_lahir).toBe('BANDUNG')
+    expect(r2.fields.tanggal_lahir).toBeUndefined()
+    // a digit set off from the date by punctuation is place noise, not a split day: the date stands
+    const r3 = parseKtpText('Tempat/Tgl Lahir : BANDUNG 2, 15-03-1990', NOW)
+    expect(r3.fields.tempat_lahir).toBe('BANDUNG')
+    expect(r3.fields.tanggal_lahir).toBe('1990-03-15')
   })
 
   it('leaves nik undefined when no 16-digit run exists', () => {
