@@ -211,7 +211,12 @@ function MembersCard({ isAdmin, currentUserId }: { isAdmin: boolean; currentUser
                   {isAdmin && (
                     <button
                       type="button"
-                      onClick={() => removeInvitation.mutate(inv.id, { onSuccess: () => toast.success('Undangan dibatalkan.') })}
+                      onClick={() =>
+                        removeInvitation.mutate(inv.id, {
+                          onSuccess: () => toast.success('Undangan dibatalkan.'),
+                          onError: (err) => toast.error(err instanceof Error ? err.message : 'Gagal membatalkan undangan.'),
+                        })
+                      }
                       className="text-xs text-slate-500 hover:text-red-600"
                     >
                       Batalkan
@@ -333,6 +338,8 @@ function DataCard({ isLocalMode, isAdmin }: { isLocalMode: boolean; isAdmin: boo
       await resetDemoData()
       toast.success('Data demo di-reset.')
       setResetOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Gagal mereset data demo.')
     } finally {
       setResetting(false)
     }
