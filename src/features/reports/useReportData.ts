@@ -35,6 +35,12 @@ export interface ReportData {
   /** properties visible under the global kos filter */
   visibleProperties: Property[]
   summary: FinanceSummary
+  /**
+   * Summary of the part of the current range that is comparable with `previousSummary`: when the period is
+   * still running (isPartial) this covers range.start..today, otherwise it is identical to `summary`.
+   * Use it for every "vs periode lalu" delta so both sides cover the same number of elapsed days.
+   */
+  currentSummary: FinanceSummary
   previousSummary: FinanceSummary
   comparison: ReturnType<typeof comparePeriods>
   isPartial: boolean
@@ -113,6 +119,7 @@ export function useReportData(range: DateRange, preset: ReportPreset, granularit
       tenants: tenants.data,
       visibleProperties,
       summary,
+      currentSummary: currentCmp,
       previousSummary,
       comparison,
       isPartial: cmp.isPartial,

@@ -21,7 +21,9 @@ function Sub({ children }: { children: ReactNode }) {
 }
 
 export function KpiGrid({ data }: { data: ReportData }) {
-  const { summary: s, previousSummary: p, comparison: c, isPartial, occupancyNow, occupancyPrevious } = data
+  // `s` is the full-range figure shown as the value; `cur` is the elapsed-to-date part (same span as `p`)
+  // so every delta compares like with like, including ratio/balance KPIs.
+  const { summary: s, currentSummary: cur, previousSummary: p, comparison: c, isPartial, occupancyNow, occupancyPrevious } = data
   const compareLabel = isPartial ? 'vs periode lalu (s/d tanggal yang sama)' : 'vs periode lalu'
 
   return (
@@ -79,7 +81,7 @@ export function KpiGrid({ data }: { data: ReportData }) {
           sub={
             <Sub>
               <span>Laba bersih / pendapatan</span>
-              <Delta info={describeRatioDelta(s.margin, p.margin)} />
+              <Delta info={describeRatioDelta(cur.margin, p.margin)} />
             </Sub>
           }
         />
@@ -93,7 +95,7 @@ export function KpiGrid({ data }: { data: ReportData }) {
               <span>
                 Terlambat {formatRupiah(s.overdue)} · Belum jatuh tempo {formatRupiah(s.notYetDue)}
               </span>
-              <Delta info={describeDelta(s.outstanding - p.outstanding, p.outstanding, formatRupiah)} invert />
+              <Delta info={describeDelta(cur.outstanding - p.outstanding, p.outstanding, formatRupiah)} invert />
             </Sub>
           }
         />
@@ -106,7 +108,7 @@ export function KpiGrid({ data }: { data: ReportData }) {
               <span>
                 Terkumpul {formatRupiah(s.collected)} dari {formatRupiah(s.billed)}
               </span>
-              <Delta info={describeRatioDelta(s.collectionRate, p.collectionRate)} />
+              <Delta info={describeRatioDelta(cur.collectionRate, p.collectionRate)} />
             </Sub>
           }
         />
@@ -119,7 +121,7 @@ export function KpiGrid({ data }: { data: ReportData }) {
               <span>
                 Diterima {formatRupiah(s.depositsReceived)} · Dikembalikan {formatRupiah(s.depositRefunds)}
               </span>
-              <Delta info={describeDelta(s.depositsHeld - p.depositsHeld, p.depositsHeld, formatRupiah)} />
+              <Delta info={describeDelta(cur.depositsHeld - p.depositsHeld, p.depositsHeld, formatRupiah)} />
             </Sub>
           }
         />

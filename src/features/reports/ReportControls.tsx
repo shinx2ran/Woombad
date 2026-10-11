@@ -60,7 +60,8 @@ export function ReportControls({ report }: { report: ReportRange }) {
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-3">
         {/* preset segmented control */}
-        <div role="tablist" aria-label="Preset periode" className="flex gap-1 overflow-x-auto rounded-lg bg-slate-200/70 p-1">
+        {/* grid-cols-5 so all five presets stay visible at 360px (no hidden horizontal scroll) */}
+        <div role="tablist" aria-label="Preset periode" className="grid grid-cols-5 gap-0.5 rounded-lg bg-slate-200/70 p-1 sm:gap-1">
           {PRESET_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -69,7 +70,7 @@ export function ReportControls({ report }: { report: ReportRange }) {
               aria-selected={preset === opt.value}
               onClick={() => report.setPreset(opt.value as ReportPreset)}
               className={clsx(
-                'flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                'min-w-0 whitespace-nowrap rounded-md px-0.5 py-1.5 text-xs font-medium transition-colors sm:px-3 sm:text-sm',
                 preset === opt.value ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600 hover:text-slate-900',
               )}
             >
