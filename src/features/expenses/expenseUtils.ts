@@ -22,6 +22,16 @@ export function isRefundCategory(category: ExpenseCategory): boolean {
   return REFUND_CATEGORIES.includes(category)
 }
 
+/**
+ * Rows that count as operating expenses per SPEC §2a: every category except the refunds
+ * (deposit_refund AND rent_refund). Feed the result into src/domain/finance (operatingExpensesInRange,
+ * expensesByCategory): the domain currently excludes only deposit_refund, so rent_refund would otherwise be
+ * counted as a cost. Local workaround until src/domain/finance.ts isOperatingExpense() excludes REFUND_CATEGORIES.
+ */
+export function operatingExpenseRows(expenses: Expense[]): Expense[] {
+  return expenses.filter((e) => !isRefundCategory(e.category))
+}
+
 /** Option label: refunds carry the "bukan biaya operasional" hint. */
 export function categoryOptionLabel(category: ExpenseCategory): string {
   const base = EXPENSE_CATEGORY_LABEL[category]
@@ -270,9 +280,11 @@ export function validateExpenseForm(values: ExpenseFormValues): ExpenseFormError
       errors.expense_date = 'Tanggal tidak valid.'
     }
   }
-  if (!values.property) errors.property = 'Pilih kos, atau "Bersama" untuk biaya semua kos.'
+  const refund = isRefundCategory(values.category)
+  // A refund takes its kos from the chosen lease, so the kos select is not required once a lease is picked.
+  if (!values.property && !(refund && values.lease_id)) errors.property = 'Pilih kos, atau "Bersama" untuk biaya semua kos.'
   if (!Number.isFinite(values.amount) || values.amount <= 0) errors.amount = 'Jumlah harus lebih dari 0.'
   if (!values.description.trim()) errors.description = 'Deskripsi wajib diisi.'
-  if (isRefundCategory(values.category) && !values.lease_id) errors.lease_id = 'Pilih sewa yang menerima pengembalian.'
+  if (refund && !values.lease_id) errors.lease_id = 'Pilih sewa yang menerima pengembalian.'
   return errors
 }

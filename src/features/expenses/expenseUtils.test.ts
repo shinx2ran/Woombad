@@ -8,6 +8,7 @@ import {
   filterExpenses,
   groupByDate,
   isExpenseVisible,
+  operatingExpenseRows,
   rangeLabel,
   sameDayInMonth,
   shortRupiah,
@@ -165,5 +166,22 @@ describe('validateExpenseForm', () => {
   it('requires a lease for refund categories', () => {
     expect(validateExpenseForm({ ...ok, category: 'deposit_refund' }).lease_id).toBe('Pilih sewa yang menerima pengembalian.')
     expect(validateExpenseForm({ ...ok, category: 'deposit_refund', lease_id: 'L1' })).toEqual({})
+  })
+  it('lets a chosen lease stand in for the kos on refunds (kos follows the lease)', () => {
+    expect(validateExpenseForm({ ...ok, property: '', category: 'rent_refund', lease_id: 'L1' })).toEqual({})
+    expect(validateExpenseForm({ ...ok, property: '', category: 'rent_refund' }).property).toMatch(/Pilih kos/)
+    expect(validateExpenseForm({ ...ok, property: '', category: 'utilities', lease_id: 'L1' }).property).toMatch(/Pilih kos/)
+  })
+})
+
+describe('operatingExpenseRows', () => {
+  it('drops both refund categories, keeps everything else', () => {
+    const rows = [
+      mkExpense({ id: '1', category: 'wages', amount: 1_500_000 }),
+      mkExpense({ id: '2', category: 'deposit_refund', amount: 500_000 }),
+      mkExpense({ id: '3', category: 'rent_refund', amount: 300_000 }),
+      mkExpense({ id: '4', category: 'supplies', amount: 50_000 }),
+    ]
+    expect(operatingExpenseRows(rows).map((e) => e.id)).toEqual(['1', '4'])
   })
 })

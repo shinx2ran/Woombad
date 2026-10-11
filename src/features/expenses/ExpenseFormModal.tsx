@@ -31,6 +31,8 @@ export interface ExpenseFormModalProps {
   /** row id when mode = 'edit' */
   editingId?: string
   onClose: () => void
+  /** Called after a successful save with the expense_date of the saved row(s), before onClose. */
+  onSaved?: (expenseDate: string) => void
 }
 
 const MAX_RECEIPT_BYTES = 8 * 1024 * 1024
@@ -46,7 +48,7 @@ function initialPropertyValue(initial: ExpenseDraft, mode: ExpenseFormMode, sele
  * Create / edit / duplicate form. Mounted fresh for every open (the page gives it a new `key`),
  * so state can be initialised from props without sync effects.
  */
-export function ExpenseFormModal({ mode, title, initial, editingId, onClose }: ExpenseFormModalProps) {
+export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onSaved }: ExpenseFormModalProps) {
   const { repo, properties, selectedPropertyId, isLocalMode } = useOrg()
   const invalidate = useInvalidate()
   const toast = useToast()
@@ -167,6 +169,7 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose }: E
         toast.success('Pengeluaran dicatat.')
       }
       await invalidate('expenses')
+      onSaved?.(draft.expense_date)
       onClose()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gagal menyimpan pengeluaran.')
@@ -235,8 +238,13 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose }: E
             required
             value={property}
             onChange={(e) => {
-              setProperty(e.target.value)
-              setLeaseId('')
+              const next = e.target.value
+              setProperty(next)
+              // keep the chosen lease unless it belongs to another kos than the one just picked
+              if (leaseId && next !== SHARED_VALUE) {
+                const lease = (leasesQuery.data ?? []).find((l) => l.id === leaseId)
+                if (lease && lease.property_id !== next) setLeaseId('')
+              }
               setSplit(false)
               clearError('property')
             }}
@@ -245,7 +253,9 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose }: E
             error={errors.property}
             hint={
               !errors.property && selectedPropertyId === 'all' && mode === 'create' && !property
-                ? 'Filter kos sedang "Semua kos": pilih kos secara eksplisit.'
+                ? isRefund
+                  ? 'Boleh dikosongkan: kos mengikuti sewa yang dipilih di bawah.'
+                  : 'Filter kos sedang "Semua kos": pilih kos secara eksplisit.'
                 : undefined
             }
           />
@@ -269,13 +279,20 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose }: E
             required
             value={leaseId}
             onChange={(e) => {
-              setLeaseId(e.target.value)
+              const nextLeaseId = e.target.value
+              setLeaseId(nextLeaseId)
               clearError('lease_id')
+              // the hint promises "kos follows the lease": reflect it in the kos select straight away
+              const lease = (leasesQuery.data ?? []).find((l) => l.id === nextLeaseId)
+              if (lease && property !== lease.property_id) {
+                setProperty(lease.property_id)
+                clearError('property')
+              }
             }}
             options={leaseOptions}
             placeholder={leasesQuery.isPending ? 'Memuat sewa…' : leaseOptions.length === 0 ? 'Tidak ada sewa di kos ini' : '— Pilih sewa —'}
             error={errors.lease_id}
-            hint={!errors.lease_id && !propertyId ? 'Kos akan mengikuti kos dari sewa yang dipilih.' : undefined}
+            hint={!errors.lease_id && !propertyId ? 'Kolom Kos akan terisi otomatis mengikuti kos dari sewa yang dipilih.' : undefined}
           />
         )}
 
@@ -325,7 +342,7 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose }: E
             <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
               <Camera className="h-4 w-4" />
               {file ? 'Ganti foto' : hasStoredReceipt ? 'Ganti struk' : 'Pilih / ambil foto'}
-              <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={onPickFile} data-testid="receipt-input" />
+              <input type="file" accept="image/*" className="sr-only" onChange={onPickFile} data-testid="receipt-input" />
             </label>
             {previewUrl && <img src={previewUrl} alt="Pratinjau struk" className="h-12 w-12 rounded-md border border-slate-200 object-cover" />}
             {file && (

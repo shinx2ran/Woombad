@@ -36,6 +36,7 @@ import {
   groupByDate,
   isExpenseVisible,
   isRefundCategory,
+  operatingExpenseRows,
   rangeLabel,
   sameDayInMonth,
   shortRupiah,
@@ -153,6 +154,15 @@ export function ExpensesPage() {
   const openDuplicate = (e: Expense) =>
     openForm('duplicate', 'Duplikat ke bulan ini', { ...draftFrom(e), expense_date: sameDayInMonth(e.expense_date, today), receipt_path: null })
 
+  // After a save whose date falls outside the visible period (e.g. "Duplikat ke bulan ini" from a past month),
+  // jump to that month so the new row is on screen instead of silently living in another period.
+  const onSaved = (savedDate: string) => {
+    if (inRange(savedDate, range)) return
+    setIsMonth(true)
+    setRange(rangeForPreset('monthly', savedDate))
+    toast.toast(`Menampilkan ${rangeLabel(rangeForPreset('monthly', savedDate), true)}.`, 'info')
+  }
+
   // Dashboard links here with ?new=1 to open the form straight away.
   useEffect(() => {
     if (searchParams.get('new') !== '1') return
@@ -201,8 +211,10 @@ export function ExpensesPage() {
   const groups = useMemo(() => groupByDate(rows), [rows])
 
   // Summary via src/domain/finance on the category-scoped set; property scope always financePropertyIds.
+  // Only operating rows go in (SPEC §2a: no deposit_refund, no rent_refund) - see operatingExpenseRows.
   const summary = useMemo(() => {
-    const scoped = categories.length ? all.filter((e) => categories.includes(e.category)) : all
+    const operating = operatingExpenseRows(all)
+    const scoped = categories.length ? operating.filter((e) => categories.includes(e.category)) : operating
     const total = operatingExpensesInRange(scoped, range, financePropertyIds)
     const cmp = comparableRanges(range, today, isMonth ? 'monthly' : undefined)
     const current = operatingExpensesInRange(scoped, cmp.current, financePropertyIds)
@@ -358,6 +370,7 @@ export function ExpensesPage() {
             delta={summary.delta}
             byCategory={summary.byCategory}
             refunds={summary.refunds}
+            listTotal={summary.listTotal}
             sharedExcluded={summary.sharedExcluded}
             count={rows.length}
             categoryFiltered={categories.length > 0}
@@ -434,7 +447,8 @@ export function ExpensesPage() {
                   footer={
                     <tr>
                       <td colSpan={5} className="px-3 py-2.5 text-slate-600">
-                        {rows.length} transaksi
+                        {rows.length} transaksi · Total daftar
+                        {summary.refunds > 0 && <span className="text-slate-500"> (termasuk pengembalian {formatRupiah(summary.refunds)}; operasional {formatRupiah(summary.total)})</span>}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums text-slate-900">{formatRupiah(summary.listTotal)}</td>
                       <td />
@@ -497,7 +511,9 @@ export function ExpensesPage() {
         )}
       </Modal>
 
-      {form && <ExpenseFormModal key={form.key} mode={form.mode} title={form.title} initial={form.initial} editingId={form.editingId} onClose={() => setForm(null)} />}
+      {form && (
+        <ExpenseFormModal key={form.key} mode={form.mode} title={form.title} initial={form.initial} editingId={form.editingId} onSaved={onSaved} onClose={() => setForm(null)} />
+      )}
 
       <ConfirmDialog
         open={deleting !== null}
@@ -561,6 +577,7 @@ function SummaryStrip({
   delta,
   byCategory,
   refunds,
+  listTotal,
   sharedExcluded,
   count,
   categoryFiltered,
@@ -568,7 +585,10 @@ function SummaryStrip({
   total: number
   delta: { text: string; tone: 'positive' | 'negative' | 'neutral' }
   byCategory: ReturnType<typeof expensesByCategory>
+  /** refunds in the visible list (not part of `total`) */
   refunds: number
+  /** sum of every visible row, refunds included */
+  listTotal: number
   sharedExcluded: number
   count: number
   categoryFiltered: boolean
@@ -587,7 +607,10 @@ function SummaryStrip({
           {refunds > 0 && (
             <p className="mt-2 flex items-start gap-1 text-xs text-slate-500">
               <Undo2 className="mt-0.5 h-3 w-3 shrink-0" />
-              Termasuk pengembalian ke penyewa {formatRupiah(refunds)} (bukan biaya operasional).
+              <span>
+                Daftar juga memuat pengembalian ke penyewa {formatRupiah(refunds)} yang <strong className="font-medium">tidak</strong> dihitung dalam total operasional
+                (total daftar {formatRupiah(listTotal)}).
+              </span>
             </p>
           )}
           {sharedExcluded > 0 && (
