@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button, Input, Modal, MoneyInput, Textarea, useToast } from '../../components/ui'
 import type { Invoice, Lease, LeaseAddon, Payment } from '../../types/db'
 import { PERIOD_UNIT_LABEL } from '../../types/db'
 import { buildInvoiceDraft, nextPeriodBounds, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
 import { periodsToCover } from '../../domain/period'
 import { formatDate, formatRupiah } from '../../lib/format'
-import { composeInvoiceNotes, splitInvoiceNotes, sumExtraBreakdown } from './leaseUtils'
+import { composeInvoiceNotes, proRataSuggestion, splitInvoiceNotes, sumExtraBreakdown } from './leaseUtils'
 import { Row } from './components'
 import type { LeaseActions } from './useLeaseActions'
 
@@ -70,7 +70,10 @@ export interface NextInvoiceModalProps {
   onCreated?: (invoice: Invoice) => void
 }
 
-/** "Buat tagihan berikutnya": quantity-driven (SPEC 2b.10) with a pro-rata 'Periode khusus' override. */
+/**
+ * "Buat tagihan berikutnya": quantity-driven (SPEC 2b.10) with a pro-rata 'Periode khusus' override. The custom
+ * price is prefilled with a pro-rata suggestion that follows the chosen end date until the user edits the price.
+ */
 export function NextInvoiceModal({ open, onClose, lease, addons, leaseInvoices, orgInvoices, actions, onCreated }: NextInvoiceModalProps) {
   const toast = useToast()
   const [quantity, setQuantity] = useState(1)
@@ -78,6 +81,8 @@ export function NextInvoiceModal({ open, onClose, lease, addons, leaseInvoices, 
   const [custom, setCustom] = useState(false)
   const [customEnd, setCustomEnd] = useState('')
   const [baseAmount, setBaseAmount] = useState(0)
+  const [baseTouched, setBaseTouched] = useState(false)
+  const [showExtras, setShowExtras] = useState(false)
   const [parts, setParts] = useState<ExtraBreakdown>({})
   const [discount, setDiscount] = useState(0)
   const [text, setText] = useState('')
@@ -98,11 +103,23 @@ export function NextInvoiceModal({ open, onClose, lease, addons, leaseInvoices, 
     setCustom(false)
     setCustomEnd(nextBounds?.period_end ?? '')
     setBaseAmount(lease.price_per_period)
+    setBaseTouched(false)
+    setShowExtras(false)
     setParts({})
     setDiscount(0)
     setText('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // Pro-rata suggestion for the custom period against the full next period (SPEC 2b.10 'tambah 2 minggu saja').
+  const proRata = useMemo(
+    () => (custom && nextBounds ? proRataSuggestion(lease.price_per_period, nextBounds.period_start, nextBounds.period_end, customEnd) : null),
+    [custom, nextBounds, lease.price_per_period, customEnd],
+  )
+  // Follow the suggestion while the user has not typed a price of their own.
+  useEffect(() => {
+    if (custom && !baseTouched && proRata) setBaseAmount(proRata.amount)
+  }, [custom, baseTouched, proRata])
 
   // SPEC 2b.10: when the user picks an end date, derive the quantity with periodsToCover and show the computed end.
   const coverInfo = useMemo(() => {
@@ -197,7 +214,21 @@ export function NextInvoiceModal({ open, onClose, lease, addons, leaseInvoices, 
         {custom ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Input label="Sampai tanggal" type="date" value={customEnd} min={nextBounds?.period_start} onChange={(e) => setCustomEnd(e.target.value)} required />
-            <MoneyInput label="Harga periode khusus" value={baseAmount} onChange={setBaseAmount} hint="Sesuaikan dengan kesepakatan (pro-rata)." />
+            <MoneyInput
+              label="Harga periode khusus"
+              value={baseAmount}
+              onChange={(v) => {
+                setBaseTouched(true)
+                setBaseAmount(v)
+              }}
+              hint={
+                proRata
+                  ? `Saran pro-rata: ${formatRupiah(proRata.amount)} untuk ${proRata.days} hari (${formatRupiah(lease.price_per_period)} / ${proRata.fullDays} hari).${
+                      baseTouched && baseAmount !== proRata.amount ? ' Harga diubah manual.' : ''
+                    }`
+                  : 'Sesuaikan dengan kesepakatan (pro-rata).'
+              }
+            />
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -227,8 +258,26 @@ export function NextInvoiceModal({ open, onClose, lease, addons, leaseInvoices, 
             />
           </div>
         )}
-        <ExtraFields parts={parts} onChange={setParts} discount={discount} onDiscount={setDiscount} text={text} onText={setText} />
         {preview.draft ? <DraftSummary draft={preview.draft} /> : <p className="text-sm text-red-600">{preview.error}</p>}
+        <button
+          type="button"
+          onClick={() => setShowExtras((v) => !v)}
+          aria-expanded={showExtras}
+          className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <span>
+            Tambahan & diskon
+            {!showExtras && (extraAmount > 0 || discount > 0 || text.trim()) ? (
+              <span className="ml-2 text-xs font-normal text-slate-500">
+                {extraAmount > 0 ? `+${formatRupiah(extraAmount)}` : ''}
+                {extraAmount > 0 && discount > 0 ? ' · ' : ''}
+                {discount > 0 ? `diskon ${formatRupiah(discount)}` : ''}
+              </span>
+            ) : null}
+          </span>
+          {showExtras ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+        </button>
+        {showExtras && <ExtraFields parts={parts} onChange={setParts} discount={discount} onDiscount={setDiscount} text={text} onText={setText} />}
       </div>
     </Modal>
   )

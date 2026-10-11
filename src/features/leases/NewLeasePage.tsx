@@ -102,6 +102,14 @@ export function NewLeasePage() {
     }
   }, [presetRoom, propertyId, data.roomById])
 
+  // ?room= / ?tenant= ids that do not resolve to a row (deleted, typo, other org) are dropped once data has
+  // loaded, so the wizard never writes a lease that points at a tenant or room that does not exist.
+  useEffect(() => {
+    if (data.isPending) return
+    if (roomId && !data.roomById.has(roomId)) setRoomId('')
+    if (tenantId && !data.tenantById.has(tenantId)) setTenantId('')
+  }, [data.isPending, data.roomById, data.tenantById, roomId, tenantId])
+
   const room = data.roomById.get(roomId)
   const property = data.propertyById.get(propertyId)
   const tenant = data.tenantById.get(tenantId)
@@ -166,12 +174,15 @@ export function NewLeasePage() {
   // Validation
   const errors: Record<string, string> = {}
   if (!propertyId) errors.property = 'Pilih kos.'
+  // Validate the resolved rows, not the id strings: a preset id from the URL may not exist.
   if (!roomId) errors.room = 'Pilih kamar.'
+  else if (!room) errors.room = 'Kamar tidak ditemukan. Pilih kamar lain.'
+  else if (room.property_id !== propertyId) errors.room = 'Kamar tidak termasuk kos yang dipilih.'
   else if (roomState && roomState !== 'kosong') errors.room = `Kamar ${ROOM_AVAILABILITY_LABEL[roomState].toLowerCase()} pada periode ini.`
   if (newTenant) {
     if (!newName.trim()) errors.tenant = 'Nama penyewa wajib diisi.'
     else if (!newPhone.trim()) errors.tenant = 'Nomor telepon wajib diisi.'
-  } else if (!tenantId) errors.tenant = 'Pilih penyewa atau buat penyewa baru.'
+  } else if (!tenant) errors.tenant = tenantId ? 'Penyewa tidak ditemukan. Pilih penyewa lain.' : 'Pilih penyewa atau buat penyewa baru.'
   if (!startDate) errors.start = 'Tanggal mulai wajib diisi.'
   if (price <= 0) errors.price = 'Harga per periode harus lebih dari 0.'
   if (quantity < 1) errors.quantity = 'Jumlah periode minimal 1.'
@@ -189,10 +200,11 @@ export function NewLeasePage() {
   const save = async () => {
     setTouched(true)
     if (hasErrors || !periodPreview || !room) return
+    if (!newTenant && !tenant) return
     setSaving(true)
     let lease: Lease | null = null
     try {
-      let finalTenantId = tenantId
+      let finalTenantId = tenant?.id ?? ''
       if (newTenant) {
         const created = await repo.insert('tenants', {
           property_id: propertyId,
@@ -267,7 +279,9 @@ export function NewLeasePage() {
       toast.success(`Sewa kamar ${room.name} dibuat. Tagihan ${invoice.invoice_number} diterbitkan.`)
       navigate(`/sewa/${lease.id}`, { replace: true })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Gagal menyimpan sewa.')
+      const msg = err instanceof Error ? err.message : 'Gagal menyimpan sewa.'
+      // Insert-time FK failure (Supabase): the referenced tenant/room/kos vanished between load and save.
+      toast.error(/violates foreign key constraint/i.test(msg) ? 'Data yang dirujuk tidak ditemukan (mis. penyewa/kamar sudah dihapus). Muat ulang lalu coba lagi.' : msg)
       await invalidate('leases', 'lease_addons', 'invoices', 'payments', 'tenants')
       if (lease) navigate(`/sewa/${lease.id}`, { replace: true })
     } finally {

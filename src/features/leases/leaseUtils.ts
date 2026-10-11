@@ -4,7 +4,7 @@
  */
 import type { Invoice, Lease, Payment, Room, Tenant } from '../../types/db'
 import type { BillingState, ExtraBreakdown, LeaseBillingSummary } from '../../domain/billing'
-import { activeInvoicesSorted, formatExtraBreakdown, outstandingFor, parseExtraBreakdown } from '../../domain/billing'
+import { activeInvoicesSorted, formatExtraBreakdown, outstandingFor, paidAmountFor, parseExtraBreakdown } from '../../domain/billing'
 import { addDaysISO, daysBetween } from '../../domain/period'
 import { isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
 import { formatRupiah } from '../../lib/format'
@@ -138,6 +138,72 @@ export function composeInvoiceNotes(parts: ExtraBreakdown, text: string): string
 /** Sum of the breakdown parts (undefined / negative parts count as 0). */
 export function sumExtraBreakdown(parts: ExtraBreakdown): number {
   return Math.max(0, parts.listrik ?? 0) + Math.max(0, parts.denda ?? 0) + Math.max(0, parts.lainnya ?? 0)
+}
+
+// ---------- pro-rata suggestion (SPEC 2b.10 'Periode khusus') ----------
+
+export interface ProRataSuggestion {
+  /** suggested base amount, rounded to whole rupiah */
+  amount: number
+  /** inclusive days of the custom period */
+  days: number
+  /** inclusive days of the full anchored period the price covers */
+  fullDays: number
+}
+
+/**
+ * Pro-rata base price for a custom period [periodStart, customEnd] against the full period
+ * [periodStart, fullPeriodEnd] that `pricePerPeriod` normally covers: price * days / fullDays, rounded.
+ * Returns null when a date is missing/invalid or the custom end lies before the start. Only a suggestion:
+ * the user may still override it (the agreed price wins).
+ */
+export function proRataSuggestion(pricePerPeriod: number, periodStart: string, fullPeriodEnd: string, customEnd: string): ProRataSuggestion | null {
+  if (!periodStart || !fullPeriodEnd || !customEnd) return null
+  try {
+    const days = daysBetween(periodStart, customEnd) + 1
+    const fullDays = daysBetween(periodStart, fullPeriodEnd) + 1
+    if (days < 1 || fullDays < 1) return null
+    return { amount: Math.round((pricePerPeriod * days) / fullDays), days, fullDays }
+  } catch {
+    return null
+  }
+}
+
+// ---------- lifecycle helpers (checkout / cancel) ----------
+
+/**
+ * end_date to store when a lease is cancelled on `dateISO`: min(end_date, dateISO) but never before start_date,
+ * so cancelling a lease that has not started yet keeps `end_date >= start_date` (DB check constraint).
+ */
+export function cancelledLeaseEndDate(lease: Lease, dateISO: string): string {
+  const cut = lease.end_date <= dateISO ? lease.end_date : dateISO
+  return cut < lease.start_date ? lease.start_date : cut
+}
+
+export interface FutureInvoicesAtCheckout {
+  /** no payment at all -> voided (SPEC 2b.5) */
+  toVoid: Invoice[]
+  /** partially paid -> the user must choose refund / forfeit (same decision as SPEC 2b.4) */
+  partial: Invoice[]
+  /** fully paid for a period after checkout -> left as is, shown as a note */
+  paid: Invoice[]
+}
+
+/**
+ * Non-void invoices of the lease whose period starts after the checkout date, split by payment position.
+ * Everything before/overlapping the checkout date is untouched (stays receivable, SPEC 2b.5).
+ */
+export function futureInvoicesAtCheckout(leaseId: string, invoices: Invoice[], payments: Payment[], checkoutDate: string): FutureInvoicesAtCheckout {
+  const out: FutureInvoicesAtCheckout = { toVoid: [], partial: [], paid: [] }
+  if (!checkoutDate) return out
+  for (const inv of invoices) {
+    if (inv.lease_id !== leaseId || inv.status === 'void' || inv.period_start <= checkoutDate) continue
+    const paid = paidAmountFor(inv.id, payments)
+    if (paid <= 0) out.toVoid.push(inv)
+    else if (paid < inv.total_amount) out.partial.push(inv)
+    else out.paid.push(inv)
+  }
+  return out
 }
 
 // ---------- open invoices & deposit settlement ----------

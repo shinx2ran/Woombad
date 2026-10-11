@@ -16,7 +16,7 @@ import {
   type InvoiceDraftInput,
 } from '../../domain/billing'
 import { formatRupiah } from '../../lib/format'
-import { allocateAcrossInvoices, appendMoveNote, openInvoicesSorted, type DepositSettlement } from './leaseUtils'
+import { allocateAcrossInvoices, appendMoveNote, cancelledLeaseEndDate, futureInvoicesAtCheckout, openInvoicesSorted, type DepositSettlement } from './leaseUtils'
 
 export interface IssueInvoiceInput {
   lease: Lease
@@ -54,15 +54,17 @@ export interface RentPaymentResult {
   excessRecorded: number
 }
 
+export type PartialDecision = 'refund' | 'forfeit'
+
 export interface CheckoutInput {
   lease: Lease
   checkoutDate: string
   invoices: Invoice[]
   payments: Payment[]
   settlement: DepositSettlement
+  /** decision per partially-paid invoice whose period starts after the checkout date (see futureInvoicesAtCheckout) */
+  partialDecisions: Record<string, PartialDecision>
 }
-
-export type PartialDecision = 'refund' | 'forfeit'
 
 export interface CancelInput {
   lease: Lease
@@ -311,20 +313,54 @@ export function useLeaseActions() {
       }
     }
 
-    /** Unpaid (no payment at all) invoices of the lease that start after the checkout date (SPEC 2b.5). */
-    function invoicesToVoidAtCheckout(lease: Lease, invoices: Invoice[], payments: Payment[], checkoutDate: string): Invoice[] {
-      return invoices.filter(
-        (inv) => inv.lease_id === lease.id && inv.status !== 'void' && inv.period_start > checkoutDate && paidAmountFor(inv.id, payments) === 0,
-      )
+    /**
+     * Close a partially-paid invoice that will never be owed in full (SPEC 2b.4; also used for invoices after the
+     * checkout date): 'refund' = expense rent_refund (+ lease_id) for the paid part and void the invoice;
+     * 'forfeit' = the remaining amount becomes discount, total = paid, status paid (the DP stays revenue).
+     */
+    async function resolvePartialInvoice(lease: Lease, inv: Invoice, paid: number, decision: PartialDecision | undefined, dateISO: string, reason: string): Promise<void> {
+      if (!decision) throw new Error(`Pilih penyelesaian untuk tagihan ${inv.invoice_number}.`)
+      if (decision === 'refund') {
+        await repo.insert('expenses', {
+          property_id: lease.property_id,
+          lease_id: lease.id,
+          category: 'rent_refund',
+          amount: paid,
+          expense_date: dateISO,
+          description: `Pengembalian DP tagihan ${inv.invoice_number} (${reason})`,
+          vendor: null,
+          receipt_path: null,
+        })
+        await repo.update('invoices', inv.id, { status: 'void' })
+      } else {
+        const remaining = inv.total_amount - paid
+        await repo.update('invoices', inv.id, {
+          discount_amount: inv.discount_amount + remaining,
+          total_amount: paid,
+          status: 'paid',
+          notes: [inv.notes, `Sisa dianggap hangus (${reason})`].filter(Boolean).join('\n'),
+        })
+      }
     }
 
+    /**
+     * SPEC 2b.5. Invoices whose period starts after the checkout date: unpaid -> void; partially paid -> the
+     * caller's decision (refund / forfeit) so no receivable survives on an ended lease; fully paid are left as
+     * they are. Invoices up to the checkout date stay receivable and may absorb the deposit (settlement.rent).
+     */
     async function checkout(input: CheckoutInput): Promise<void> {
-      const { lease, checkoutDate, invoices, payments, settlement } = input
-      const toVoid = invoicesToVoidAtCheckout(lease, invoices, payments, checkoutDate)
-      if (toVoid.length > 0 && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
-      for (const inv of toVoid) await repo.update('invoices', inv.id, { status: 'void' })
-      const voidIds = new Set(toVoid.map((i) => i.id))
-      const open = openInvoicesSorted(lease.id, invoices, payments).filter((i) => !voidIds.has(i.id))
+      const { lease, checkoutDate, invoices, payments, settlement, partialDecisions } = input
+      if (!checkoutDate) throw new Error('Tanggal checkout wajib diisi.')
+      if (checkoutDate < lease.start_date) throw new Error('Tanggal checkout tidak boleh sebelum tanggal mulai sewa.')
+      const future = futureInvoicesAtCheckout(lease.id, invoices, payments, checkoutDate)
+      if ((future.toVoid.length > 0 || future.partial.length > 0) && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
+      for (const inv of future.partial) {
+        if (!partialDecisions[inv.id]) throw new Error(`Pilih penyelesaian untuk tagihan ${inv.invoice_number}.`)
+      }
+      for (const inv of future.toVoid) await repo.update('invoices', inv.id, { status: 'void' })
+      for (const inv of future.partial) await resolvePartialInvoice(lease, inv, paidAmountFor(inv.id, payments), partialDecisions[inv.id], checkoutDate, 'checkout')
+      const closedIds = new Set([...future.toVoid, ...future.partial].map((i) => i.id))
+      const open = openInvoicesSorted(lease.id, invoices, payments).filter((i) => !closedIds.has(i.id))
       await settleDeposit(lease, settlement, checkoutDate, open, payments)
       await repo.update('leases', lease.id, {
         status: 'ended',
@@ -336,39 +372,19 @@ export function useLeaseActions() {
 
     async function cancelLease(input: CancelInput): Promise<void> {
       const { lease, invoices, payments, partialDecisions, settlement, dateISO } = input
+      if (!dateISO) throw new Error('Tanggal pembatalan wajib diisi.')
       for (const inv of invoices) {
         if (inv.lease_id !== lease.id || inv.status === 'void') continue
         const paid = paidAmountFor(inv.id, payments)
         if (paid === 0) {
           await repo.update('invoices', inv.id, { status: 'void' })
         } else if (paid < inv.total_amount) {
-          const decision = partialDecisions[inv.id]
-          if (!decision) throw new Error(`Pilih penyelesaian untuk tagihan ${inv.invoice_number}.`)
-          if (decision === 'refund') {
-            await repo.insert('expenses', {
-              property_id: lease.property_id,
-              lease_id: lease.id,
-              category: 'rent_refund',
-              amount: paid,
-              expense_date: dateISO,
-              description: `Pengembalian DP tagihan ${inv.invoice_number} (sewa dibatalkan)`,
-              vendor: null,
-              receipt_path: null,
-            })
-            await repo.update('invoices', inv.id, { status: 'void' })
-          } else {
-            const remaining = inv.total_amount - paid
-            await repo.update('invoices', inv.id, {
-              discount_amount: inv.discount_amount + remaining,
-              total_amount: paid,
-              status: 'paid',
-              notes: [inv.notes, 'Sisa dianggap hangus (sewa dibatalkan)'].filter(Boolean).join('\n'),
-            })
-          }
+          await resolvePartialInvoice(lease, inv, paid, partialDecisions[inv.id], dateISO, 'sewa dibatalkan')
         }
       }
       await settleDeposit(lease, settlement, dateISO, [], payments)
-      await repo.update('leases', lease.id, { status: 'cancelled', end_date: minISO(lease.end_date, dateISO) })
+      // end_date never drops below start_date (DB check constraint) when a lease that has not started is cancelled.
+      await repo.update('leases', lease.id, { status: 'cancelled', end_date: cancelledLeaseEndDate(lease, dateISO) })
       await invalidate('leases', 'invoices', 'payments', 'expenses')
     }
 
@@ -409,7 +425,6 @@ export function useLeaseActions() {
       voidInvoice,
       deleteInvoice,
       deletePayment,
-      invoicesToVoidAtCheckout,
       checkout,
       cancelLease,
       moveRoom,
