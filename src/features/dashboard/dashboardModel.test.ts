@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Invoice, Lease, Payment, Property, Room, Tenant } from '../../types/db'
+import type { Invoice, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../../types/db'
 import {
   buildAttentionSections,
   buildExpiringItems,
@@ -121,7 +121,7 @@ describe('buildAttentionSections', () => {
   const payments = [payment('p2', 'i2', 'l2', 1_500_000, '2026-09-13'), payment('p4', 'i4', 'l4', 3_000_000, '2026-10-01')]
 
   it('groups overdue, due_soon and unbilled in order and skips ok/ended leases', () => {
-    const sections = buildAttentionSections(leases, invoices, payments, lookups, TODAY)
+    const sections = buildAttentionSections(leases, invoices, payments, [], lookups, TODAY)
     expect(sections.map((s) => s.group)).toEqual(['overdue', 'due_soon', 'unbilled'])
     expect(sections[0].items.map((i) => i.lease.id)).toEqual(['l1'])
     expect(sections[1].items.map((i) => i.lease.id)).toEqual(['l2'])
@@ -129,7 +129,7 @@ describe('buildAttentionSections', () => {
   })
 
   it('resolves tenant, room, property and the open invoice; amount falls back to price per period', () => {
-    const sections = buildAttentionSections(leases, invoices, payments, lookups, TODAY)
+    const sections = buildAttentionSections(leases, invoices, payments, [], lookups, TODAY)
     const overdue = sections[0].items[0]
     expect(overdue.tenant?.full_name).toBe('Budi')
     expect(overdue.room?.name).toBe('A1')
@@ -146,22 +146,44 @@ describe('buildAttentionSections', () => {
   it('sorts the most overdue first', () => {
     const more = [...leases, lease('l6', 'r5', 't4', '2026-08-01', '2026-10-31')]
     const inv = [...invoices, invoice('i6', 'l6', '2026-09-01', '2026-09-30', 'unpaid')]
-    const sections = buildAttentionSections(more, inv, payments, lookups, TODAY)
+    const sections = buildAttentionSections(more, inv, payments, [], lookups, TODAY)
     expect(sections[0].items.map((i) => i.lease.id)).toEqual(['l6', 'l1'])
   })
 
   it('counts every open invoice and sums their outstanding', () => {
     const inv = [...invoices, invoice('i1b', 'l1', '2026-09-01', '2026-09-30', 'partial')]
     const pays = [...payments, payment('p1b', 'i1b', 'l1', 500_000, '2026-09-01')]
-    const sections = buildAttentionSections(leases, inv, pays, lookups, TODAY)
+    const sections = buildAttentionSections(leases, inv, pays, [], lookups, TODAY)
     const overdue = sections[0].items[0]
     expect(overdue.openInvoiceCount).toBe(2)
     expect(overdue.openInvoice?.id).toBe('i1b')
     expect(overdue.amount).toBe(2_500_000)
   })
 
+  it('adds per-period add-ons to the next-period amount, and one-time add-ons only when nothing was billed yet', () => {
+    const addon = (id: string, lease_id: string, amount: number, billing: LeaseAddon['billing']): LeaseAddon => ({
+      id,
+      lease_id,
+      name: 'Parkir motor',
+      amount,
+      billing,
+      org_id: 'org',
+      created_at: ts.created_at,
+    })
+    const addons = [addon('a1', 'l2', 50_000, 'per_period'), addon('a2', 'l2', 300_000, 'one_time'), addon('a3', 'l3', 75_000, 'per_period'), addon('a4', 'l3', 100_000, 'one_time')]
+    const sections = buildAttentionSections(leases, invoices, payments, addons, lookups, TODAY)
+    const dueSoon = sections[1].items[0] // l2 already has a paid invoice: one_time add-on excluded
+    expect(dueSoon.nextPeriodAmount).toBe(1_550_000)
+    expect(dueSoon.amount).toBe(1_550_000)
+    const unbilled = sections[2].items[0] // l3 has no invoice yet: one_time add-on included
+    expect(unbilled.nextPeriodAmount).toBe(1_675_000)
+    expect(unbilled.amount).toBe(1_675_000)
+    const overdue = sections[0].items[0] // outstanding wins over the next-period amount
+    expect(overdue.amount).toBe(1_500_000)
+  })
+
   it('returns no sections when everything is paid ahead', () => {
-    expect(buildAttentionSections([leases[3]], invoices, payments, lookups, TODAY)).toEqual([])
+    expect(buildAttentionSections([leases[3]], invoices, payments, [], lookups, TODAY)).toEqual([])
   })
 })
 

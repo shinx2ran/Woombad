@@ -15,7 +15,8 @@ import { RecentPaymentsCard } from './RecentPaymentsCard'
 import { CashflowChart } from './CashflowChart'
 
 export function DashboardPage() {
-  const { properties, selectedPropertyId } = useOrg()
+  const { properties, selectedPropertyId, role } = useOrg()
+  const showReportLink = role !== 'staff'
   const { data, isPending, error } = useDashboardData()
   // Captured once per mount: the greeting should not flip mid-session on a re-render.
   const [greeting] = useState(() => greetingFor(new Date().getHours()))
@@ -61,7 +62,7 @@ export function DashboardPage() {
               <AttentionList sections={data.attention} count={data.attentionCount} />
               <ExpiringList items={data.expiring} />
               <div className="hidden lg:block">
-                <CashflowChart series={data.cashflow} />
+                <CashflowChart series={data.cashflow} showReportLink={showReportLink} />
               </div>
             </div>
             <div className="space-y-4">
@@ -69,7 +70,7 @@ export function DashboardPage() {
               <RecentPaymentsCard items={data.recentPayments} />
             </div>
             <div className="lg:hidden">
-              <CashflowChart series={data.cashflow} />
+              <CashflowChart series={data.cashflow} showReportLink={showReportLink} />
             </div>
           </div>
         </>

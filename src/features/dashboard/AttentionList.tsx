@@ -43,7 +43,7 @@ export function AttentionList({ sections, count }: { sections: AttentionSection[
 }
 
 function AttentionRow({ item }: { item: AttentionItem }) {
-  const { lease, tenant, room, property, summary, group, openInvoice, openInvoiceCount, amount } = item
+  const { lease, tenant, room, property, summary, group, openInvoice, openInvoiceCount, amount, nextPeriodAmount } = item
   const style = GROUP_STYLE[group]
   const tenantName = tenant?.full_name ?? 'Penyewa'
   const roomName = room?.name ?? '-'
@@ -69,7 +69,7 @@ function AttentionRow({ item }: { item: AttentionItem }) {
       </>
     ) : (
       <>
-        Periode berikutnya <span className="font-semibold text-slate-900">{formatRupiah(lease.price_per_period)}</span>
+        Periode berikutnya <span className="font-semibold text-slate-900">{formatRupiah(nextPeriodAmount)}</span>
         <span className="text-slate-400">/{PERIOD_UNIT_LABEL[lease.period_type]}</span>
       </>
     )

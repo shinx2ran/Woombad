@@ -35,7 +35,7 @@ export interface DashboardData {
   totals: { properties: number; rooms: number; leases: number }
 }
 
-/** One query per table; everything else is derived in a single useMemo. */
+/** One query per table (lease_addons included so next-period amounts match buildInvoiceDraft); everything else is derived in a single useMemo. */
 export function useDashboardData() {
   const { properties, propertyFilterIds, financePropertyIds } = useOrg()
   const rooms = useTable('rooms')
@@ -44,15 +44,16 @@ export function useDashboardData() {
   const payments = useTable('payments')
   const expenses = useTable('expenses')
   const tenants = useTable('tenants')
+  const addons = useTable('lease_addons')
 
-  const queries = [rooms, leases, invoices, payments, expenses, tenants]
+  const queries = [rooms, leases, invoices, payments, expenses, tenants, addons]
   const isPending = queries.some((q) => q.isPending)
   const error = queries.find((q) => q.isError)?.error ?? null
 
   const today = todayISO()
 
   const data = useMemo<DashboardData | null>(() => {
-    if (!rooms.data || !leases.data || !invoices.data || !payments.data || !expenses.data || !tenants.data) return null
+    if (!rooms.data || !leases.data || !invoices.data || !payments.data || !expenses.data || !tenants.data || !addons.data) return null
     const filter = new Set(propertyFilterIds)
     const inFilter = (propertyId: string | null) => propertyId !== null && filter.has(propertyId)
 
@@ -70,7 +71,7 @@ export function useDashboardData() {
     const previous = summarizeFinance(payments.data, expenses.data, invoices.data, cmp.previous, financePropertyIds, today)
     const comparison = comparePeriods(current, previous)
 
-    const attention = buildAttentionSections(filteredLeases, invoices.data, payments.data, lookups, today)
+    const attention = buildAttentionSections(filteredLeases, invoices.data, payments.data, addons.data, lookups, today)
     const attentionIds = new Set(attention.flatMap((s) => s.items.map((i) => i.lease.id)))
     const expiring = buildExpiringItems(filteredLeases, attentionIds, lookups, today)
     const vacant = buildVacantGroups(filteredRooms, leases.data, lookups, properties, today)
@@ -92,7 +93,7 @@ export function useDashboardData() {
       cashflow,
       totals: { properties: properties.length, rooms: rooms.data.length, leases: leases.data.length },
     }
-  }, [rooms.data, leases.data, invoices.data, payments.data, expenses.data, tenants.data, properties, propertyFilterIds, financePropertyIds, today])
+  }, [rooms.data, leases.data, invoices.data, payments.data, expenses.data, tenants.data, addons.data, properties, propertyFilterIds, financePropertyIds, today])
 
   return { data, isPending, error }
 }

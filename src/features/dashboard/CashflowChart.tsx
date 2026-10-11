@@ -13,11 +13,14 @@ const SERIES_LABEL: Record<string, string> = { revenue: 'Pendapatan', expenses: 
 const SERIES_ORDER: Record<string, number> = { revenue: 0, expenses: 1 }
 const byBarOrder = (item: { dataKey?: unknown }) => SERIES_ORDER[String(item.dataKey)] ?? 9
 
-/** Compact six-month cashflow: revenue vs operating expenses per month (SPEC 2a "Arus kas"). */
-export function CashflowChart({ series }: { series: CashflowPoint[] }) {
+/**
+ * Compact six-month cashflow: revenue vs operating expenses per month (SPEC 2a "Arus kas").
+ * `showReportLink` is false for role 'staff', who must not see Laporan (SPEC 3).
+ */
+export function CashflowChart({ series, showReportLink = true }: { series: CashflowPoint[]; showReportLink?: boolean }) {
   const hasData = series.some((p) => p.revenue !== 0 || p.expenses !== 0)
   return (
-    <SectionCard title="Arus kas 6 bulan" linkTo="/laporan" linkLabel="Laporan">
+    <SectionCard title="Arus kas 6 bulan" linkTo={showReportLink ? '/laporan' : undefined} linkLabel="Laporan">
       {!hasData ? (
         <SectionEmpty>Belum ada pembayaran atau pengeluaran dalam 6 bulan terakhir.</SectionEmpty>
       ) : (

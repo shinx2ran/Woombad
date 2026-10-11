@@ -2,8 +2,8 @@
  * Pure helpers for the dashboard (no React, no I/O) so they can be unit-tested. All calculations
  * that exist in src/domain are delegated there; this file only assembles view models.
  */
-import type { Invoice, Lease, Payment, Property, Room, Tenant } from '../../types/db'
-import { paidAmountFor, summarizeLeaseBilling, type BillingState, type LeaseBillingSummary } from '../../domain/billing'
+import type { Invoice, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../../types/db'
+import { computeAddonsAmount, paidAmountFor, summarizeLeaseBilling, type BillingState, type LeaseBillingSummary } from '../../domain/billing'
 import { expiringLeases, isLeaseActiveOn, isLeaseReservedOn, reservedRoomIds, vacantRooms } from '../../domain/occupancy'
 import { daysBetween, parseISODate, rangeForPreset, toISODate, type DateRange } from '../../domain/period'
 import { subMonths } from 'date-fns'
@@ -29,7 +29,12 @@ export interface AttentionItem {
   openInvoice: Invoice | null
   /** how many non-settled invoices the lease has (the reminder quotes a period only when it is exactly one) */
   openInvoiceCount: number
-  /** amount to mention: outstanding when > 0, otherwise the expected next period amount */
+  /**
+   * What the next period will be billed at: price_per_period + add-ons for one period (per_period add-ons,
+   * plus one_time add-ons when the lease has no non-void invoice yet), i.e. what buildInvoiceDraft produces.
+   */
+  nextPeriodAmount: number
+  /** amount to mention: outstanding when > 0, otherwise nextPeriodAmount */
   amount: number
 }
 
@@ -64,18 +69,28 @@ export function buildAttentionSections(
   leases: Lease[],
   invoices: Invoice[],
   payments: Payment[],
+  addons: LeaseAddon[],
   lookups: Lookups,
   todayISO: string,
 ): AttentionSection[] {
   const byGroup = new Map<AttentionGroup, AttentionItem[]>(ATTENTION_ORDER.map((g) => [g, []]))
+  const addonsByLease = new Map<string, LeaseAddon[]>()
+  for (const addon of addons) {
+    const list = addonsByLease.get(addon.lease_id)
+    if (list) list.push(addon)
+    else addonsByLease.set(addon.lease_id, [addon])
+  }
   for (const lease of leases) {
     if (lease.status !== 'active') continue
     const summary = summarizeLeaseBilling(lease, invoices, payments, todayISO)
     if (!isAttentionGroup(summary.state)) continue
-    const openInvoices = invoices
-      .filter((inv) => inv.lease_id === lease.id && inv.status !== 'void' && inv.status !== 'paid' && inv.total_amount - paidAmountFor(inv.id, payments) > 0)
+    const activeInvoices = invoices.filter((inv) => inv.lease_id === lease.id && inv.status !== 'void')
+    const openInvoices = activeInvoices
+      .filter((inv) => inv.status !== 'paid' && inv.total_amount - paidAmountFor(inv.id, payments) > 0)
       .sort((a, b) => (a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0))
     const openInvoice = openInvoices[0] ?? null
+    // Same arithmetic as buildInvoiceDraft for one period (SPEC 2b: one_time add-ons only on the first invoice).
+    const nextPeriodAmount = lease.price_per_period + computeAddonsAmount(addonsByLease.get(lease.id) ?? [], 1, activeInvoices.length === 0)
     byGroup.get(summary.state)!.push({
       lease,
       tenant: lookups.tenantsById.get(lease.tenant_id) ?? null,
@@ -85,7 +100,8 @@ export function buildAttentionSections(
       group: summary.state,
       openInvoice,
       openInvoiceCount: openInvoices.length,
-      amount: summary.outstanding > 0 ? summary.outstanding : lease.price_per_period,
+      nextPeriodAmount,
+      amount: summary.outstanding > 0 ? summary.outstanding : nextPeriodAmount,
     })
   }
   const sections: AttentionSection[] = []
