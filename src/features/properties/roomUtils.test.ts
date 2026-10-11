@@ -160,9 +160,24 @@ describe('roomPriceLabel', () => {
 describe('roomDisplayState', () => {
   const today = '2026-01-15'
 
-  it('maintenance wins even with an active lease', () => {
-    const s = roomDisplayState(mkRoom({ status: 'maintenance' }), [mkLease()], tenants, [], [], today)
+  it('maintenance wins even with an active lease but keeps the occupant visible', () => {
+    const s = roomDisplayState(mkRoom({ status: 'maintenance' }), [mkLease()], tenants, [mkInvoice()], [mkPayment()], today)
     expect(s.kind).toBe('maintenance')
+    expect(s.occupancy).toBe('occupied')
+    expect(s.lease?.id).toBe('l1')
+    expect(s.tenant?.full_name).toBe('Budi')
+    expect(s.paidThrough).toBe('2026-01-31')
+  })
+  it('maintenance with an upcoming lease reports the reservation underneath', () => {
+    const s = roomDisplayState(mkRoom({ status: 'maintenance' }), [mkLease({ start_date: '2026-02-01', end_date: '2026-02-28' })], tenants, [], [], today)
+    expect(s.kind).toBe('maintenance')
+    expect(s.occupancy).toBe('reserved')
+    expect(s.startDate).toBe('2026-02-01')
+  })
+  it('maintenance without any lease has no occupancy', () => {
+    const s = roomDisplayState(mkRoom({ status: 'maintenance' }), [], tenants, [], [], today)
+    expect(s.kind).toBe('maintenance')
+    expect(s.occupancy).toBeNull()
     expect(s.lease).toBeNull()
   })
 

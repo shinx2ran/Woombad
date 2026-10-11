@@ -21,7 +21,13 @@ export type RoomStateKind = 'occupied' | 'reserved' | 'vacant' | 'maintenance'
 
 export interface RoomDisplayState {
   kind: RoomStateKind
-  /** the lease behind an occupied / reserved state */
+  /**
+   * The lease situation underneath `kind`. Equals `kind` for occupied/reserved rooms; for a maintenance room it
+   * tells whether a tenant still lives there ('occupied') or has booked it ('reserved') so the UI never hides them.
+   * Null when there is no current or upcoming lease.
+   */
+  occupancy: 'occupied' | 'reserved' | null
+  /** the lease behind an occupied / reserved state (also kept when the room is under maintenance) */
   lease: Lease | null
   tenant: Tenant | null
   /** occupied: latest settled period_end (summarizeLeaseBilling.paidThrough) */
@@ -36,6 +42,7 @@ export interface RoomDisplayState {
  * Single state per room for the card grid, mirroring the priority of `roomOccupancy`:
  * maintenance > occupied > reserved > vacant. Occupied uses the lease active on `todayISO`
  * (`isLeaseActiveOn`); reserved the earliest-starting future active lease (`isLeaseReservedOn`).
+ * A maintenance room keeps its lease/tenant/billing fields (see `occupancy`) so the occupant stays visible.
  * `leases` may contain leases of other rooms; they are ignored.
  */
 export function roomDisplayState(
@@ -46,14 +53,28 @@ export function roomDisplayState(
   payments: Payment[],
   todayISO: string,
 ): RoomDisplayState {
-  const empty: RoomDisplayState = { kind: 'vacant', lease: null, tenant: null, paidThrough: null, outstanding: 0, startDate: null }
-  if (room.status === 'maintenance') return { ...empty, kind: 'maintenance' }
+  const empty: RoomDisplayState = { kind: 'vacant', occupancy: null, lease: null, tenant: null, paidThrough: null, outstanding: 0, startDate: null }
+  const leaseState = leaseDisplayState(room, leases, tenantsById, invoices, payments, todayISO, empty)
+  if (room.status === 'maintenance') return { ...leaseState, kind: 'maintenance' }
+  return leaseState
+}
+
+function leaseDisplayState(
+  room: Room,
+  leases: Lease[],
+  tenantsById: Map<string, Tenant>,
+  invoices: Invoice[],
+  payments: Payment[],
+  todayISO: string,
+  empty: RoomDisplayState,
+): RoomDisplayState {
   const roomLeases = leases.filter((l) => l.room_id === room.id)
   const current = roomLeases.find((l) => isLeaseActiveOn(l, todayISO)) ?? null
   if (current) {
     const summary = summarizeLeaseBilling(current, invoices, payments, todayISO)
     return {
       kind: 'occupied',
+      occupancy: 'occupied',
       lease: current,
       tenant: tenantsById.get(current.tenant_id) ?? null,
       paidThrough: summary.paidThrough,
@@ -65,7 +86,14 @@ export function roomDisplayState(
     .filter((l) => isLeaseReservedOn(l, todayISO))
     .sort((a, b) => (a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0))[0]
   if (upcoming) {
-    return { ...empty, kind: 'reserved', lease: upcoming, tenant: tenantsById.get(upcoming.tenant_id) ?? null, startDate: upcoming.start_date }
+    return {
+      ...empty,
+      kind: 'reserved',
+      occupancy: 'reserved',
+      lease: upcoming,
+      tenant: tenantsById.get(upcoming.tenant_id) ?? null,
+      startDate: upcoming.start_date,
+    }
   }
   return empty
 }

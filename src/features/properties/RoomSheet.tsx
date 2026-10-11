@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { Copy, ExternalLink, KeyRound, Pencil, Trash2, Wrench } from 'lucide-react'
+import { AlertTriangle, Copy, ExternalLink, KeyRound, Pencil, Trash2, Wrench } from 'lucide-react'
 import { Button, ConfirmDialog, Modal, useToast } from '../../components/ui'
 import { useRemove, useUpdate } from '../../hooks/useTable'
 import { formatDate, formatRupiah } from '../../lib/format'
@@ -34,18 +34,27 @@ export function RoomSheet({
   const update = useUpdate('rooms')
   const remove = useRemove('rooms')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmMaintenance, setConfirmMaintenance] = useState(false)
 
   if (!item) return null
   const { room, state, hasLeases } = item
   const isMaintenance = room.status === 'maintenance'
+  const occupantName = state.tenant?.full_name ?? 'Penyewa'
 
-  const toggleMaintenance = async () => {
+  const applyMaintenance = async () => {
     try {
       await update.mutateAsync({ id: room.id, patch: { status: isMaintenance ? 'active' : 'maintenance' } })
       toast.success(isMaintenance ? `Kamar ${room.name} aktif kembali.` : `Kamar ${room.name} ditandai perbaikan.`)
+      setConfirmMaintenance(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gagal mengubah status kamar.')
     }
+  }
+
+  /** Marking a room that still has a tenant (or a booking) as under repair needs an explicit confirmation. */
+  const toggleMaintenance = () => {
+    if (!isMaintenance && state.occupancy !== null) setConfirmMaintenance(true)
+    else void applyMaintenance()
   }
 
   const doDelete = async () => {
@@ -77,6 +86,7 @@ export function RoomSheet({
           <span className="flex items-center gap-2">
             Kamar {room.name}
             <RoomStateBadge kind={state.kind} />
+            {state.kind === 'maintenance' && state.occupancy && <RoomStateBadge kind={state.occupancy} />}
           </span>
         }
         footer={
@@ -111,7 +121,15 @@ export function RoomSheet({
             </div>
             <div>
               <dt className="text-xs uppercase tracking-wide text-slate-500">Status kamar</dt>
-              <dd className="font-medium text-slate-900">{isMaintenance ? 'Perbaikan (tidak disewakan)' : 'Aktif'}</dd>
+              <dd className="font-medium text-slate-900">
+                {!isMaintenance
+                  ? 'Aktif'
+                  : state.occupancy === 'occupied'
+                    ? 'Perbaikan (masih dihuni)'
+                    : state.occupancy === 'reserved'
+                      ? 'Perbaikan (sudah dipesan)'
+                      : 'Perbaikan (tidak disewakan)'}
+              </dd>
             </div>
           </dl>
 
@@ -126,7 +144,16 @@ export function RoomSheet({
 
           <section className="rounded-xl border border-slate-200 p-3">
             <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Penghuni</h4>
-            {state.kind === 'occupied' && state.lease && (
+            {isMaintenance && state.occupancy !== null && (
+              <p className="mb-2 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  Kamar ditandai perbaikan, tetapi {state.occupancy === 'occupied' ? 'masih dihuni dan sewanya tetap berjalan' : 'sudah dipesan'}.
+                  Penyewa tetap tampil di sini.
+                </span>
+              </p>
+            )}
+            {state.occupancy === 'occupied' && state.lease && (
               <div className="space-y-1 text-sm">
                 <p className="font-medium text-slate-900">{state.tenant?.full_name ?? 'Penyewa'}</p>
                 <p className="text-slate-600">
@@ -145,7 +172,7 @@ export function RoomSheet({
                 </Link>
               </div>
             )}
-            {state.kind === 'reserved' && state.lease && (
+            {state.occupancy === 'reserved' && state.lease && (
               <div className="space-y-1 text-sm">
                 <p className="font-medium text-slate-900">{state.tenant?.full_name ?? 'Penyewa'}</p>
                 <p className="text-slate-600">Dipesan, sewa mulai {formatDate(state.startDate)}</p>
@@ -162,7 +189,7 @@ export function RoomSheet({
                 </Button>
               </div>
             )}
-            {state.kind === 'maintenance' && (
+            {state.kind === 'maintenance' && state.occupancy === null && (
               <p className="text-sm text-slate-600">Kamar sedang diperbaiki dan tidak ditawarkan ke penyewa baru. Aktifkan kembali bila sudah siap.</p>
             )}
           </section>
@@ -191,6 +218,32 @@ export function RoomSheet({
           )}
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={confirmMaintenance}
+        onClose={() => setConfirmMaintenance(false)}
+        onConfirm={() => void applyMaintenance()}
+        loading={update.isPending}
+        danger={false}
+        confirmLabel="Tandai perbaikan"
+        title="Kamar masih ada penyewanya"
+        message={
+          <>
+            Kamar <strong>{room.name}</strong>{' '}
+            {state.occupancy === 'occupied' ? (
+              <>
+                saat ini dihuni <strong>{occupantName}</strong>. Menandai perbaikan tidak mengakhiri sewa dan tagihan tetap berjalan; kamar hanya dihitung
+                sebagai “perbaikan” dan tidak ditawarkan ke penyewa baru.
+              </>
+            ) : (
+              <>
+                sudah dipesan <strong>{occupantName}</strong> mulai {formatDate(state.startDate)}. Menandai perbaikan tidak membatalkan pesanan tersebut.
+              </>
+            )}{' '}
+            Penyewa tetap tampil di kartu kamar. Lanjutkan?
+          </>
+        }
+      />
 
       <ConfirmDialog
         open={confirmDelete}

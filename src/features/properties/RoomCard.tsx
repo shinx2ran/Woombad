@@ -48,7 +48,9 @@ export function RoomCard({
       type="button"
       onClick={onClick}
       aria-pressed={selecting ? selected : undefined}
-      aria-label={`Kamar ${room.name}, ${ROOM_STATE_LABEL[state.kind]}`}
+      aria-label={`Kamar ${room.name}, ${ROOM_STATE_LABEL[state.kind]}${
+        state.kind === 'maintenance' && state.occupancy ? `, ${ROOM_STATE_LABEL[state.occupancy].toLowerCase()}` : ''
+      }`}
       className={clsx(
         'relative flex min-h-[7.5rem] flex-col rounded-xl border bg-white p-3 text-left shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400',
         STATE_BORDER[state.kind],
@@ -78,7 +80,7 @@ export function RoomCard({
         {!selecting && <RoomStateBadge kind={state.kind} />}
       </div>
       <div className="mt-auto pt-2 text-xs text-slate-600">
-        {state.kind === 'occupied' && (
+        {state.occupancy === 'occupied' && (
           <>
             <p className="truncate font-medium text-slate-800">{state.tenant?.full_name ?? 'Penyewa'}</p>
             <p className={clsx(state.outstanding > 0 && 'text-amber-700')}>
@@ -86,14 +88,18 @@ export function RoomCard({
             </p>
           </>
         )}
-        {state.kind === 'reserved' && (
+        {state.occupancy === 'reserved' && (
           <>
             <p className="truncate font-medium text-slate-800">{state.tenant?.full_name ?? 'Penyewa'}</p>
             <p>Mulai {formatDate(state.startDate)}</p>
           </>
         )}
         {state.kind === 'vacant' && <p className="font-medium text-slate-800">{roomPriceLabel(room)}</p>}
-        {state.kind === 'maintenance' && <p>Tidak disewakan sementara</p>}
+        {state.kind === 'maintenance' && (
+          <p className={clsx(state.occupancy !== null && 'mt-0.5 text-amber-700')}>
+            {state.occupancy === null ? 'Tidak disewakan sementara' : 'Sedang diperbaiki'}
+          </p>
+        )}
       </div>
     </button>
   )
