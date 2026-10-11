@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import type { Invoice, Lease, LeaseAddon, Payment } from '../types/db'
+import type { Expense, Invoice, Lease, LeaseAddon, Payment } from '../types/db'
 import {
+  WARN_OFF_SCHEDULE,
   billedPeriodCount,
   buildInvoiceDraft,
   computeAddonsAmount,
   depositBalance,
   deriveInvoiceStatus,
+  formatExtraBreakdown,
   invoiceNumber,
   nextInvoiceSequence,
   nextPeriodBounds,
   nextPeriodStart,
   outstandingFor,
   paidAmountFor,
+  parseExtraBreakdown,
   summarizeLeaseBilling,
   validateRentPayment,
 } from './billing'
@@ -37,7 +40,6 @@ function makeLease(overrides: Partial<Lease> = {}): Lease {
     end_date: '2026-02-27',
     status: 'active',
     checkout_date: null,
-    deposit_returned_amount: null,
     notes: null,
     ...overrides,
   }
@@ -82,6 +84,26 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     method: 'cash',
     kind: 'rent',
     notes: null,
+    created_by: null,
+    ...overrides,
+  }
+}
+
+function makeExpense(overrides: Partial<Expense> = {}): Expense {
+  return {
+    id: nextId('exp'),
+    org_id: 'org-1',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    property_id: 'prop-1',
+    lease_id: null,
+    category: 'other',
+    amount: 0,
+    expense_date: '2026-03-01',
+    description: '',
+    vendor: null,
+    receipt_path: null,
+    created_by: null,
     ...overrides,
   }
 }
@@ -159,6 +181,23 @@ describe('billedPeriodCount', () => {
     expect(billedPeriodCount(lease, [makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-28' })])).toBeNull()
     // a first invoice with a quantity that does not match its end is rejected too
     expect(billedPeriodCount(lease, [makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27', quantity: 2 })])).toBeNull()
+  })
+
+  it('scenario: Jan-31 lease, invoice2 with manual periodStart 02-28 -> null, next invoice starts 03-28 (no 28-30 Mar hole)', () => {
+    const inv1 = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27', status: 'paid' })
+    const draft2 = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [inv1], periodStart: '2026-02-28' })
+    expect(draft2.period_end).toBe('2026-03-27')
+    expect(draft2.warnings).toEqual([WARN_OFF_SCHEDULE])
+    const inv2 = makeInvoice({ period_start: draft2.period_start, period_end: draft2.period_end })
+    expect(billedPeriodCount(lease, [inv1, inv2])).toBeNull()
+    expect(nextPeriodBounds(lease, [inv1, inv2], 1)).toEqual({ period_start: '2026-03-28', period_end: '2026-04-27' })
+  })
+
+  it('a pro-rata (periodEnd) invoice sitting exactly on the grid still counts as anchored', () => {
+    const inv1 = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27' })
+    expect(billedPeriodCount(lease, [inv1])).toBe(1)
+    const short = makeInvoice({ period_start: '2026-02-28', period_end: '2026-03-13' })
+    expect(billedPeriodCount(lease, [inv1, short])).toBeNull()
   })
 })
 
@@ -291,17 +330,39 @@ describe('invoiceNumber / nextInvoiceSequence', () => {
     expect(invoiceNumber('2026-01-31', 10000)).toBe('INV-202601-10000')
   })
 
-  it('counts invoices in the same month (including void) across leases', () => {
+  it('returns max(sequence) + 1 parsed from invoice_number for the same YYYYMM (including void) across leases', () => {
     const org = [
-      makeInvoice({ lease_id: 'a', period_start: '2026-03-01', period_end: '2026-03-31' }),
-      makeInvoice({ lease_id: 'b', period_start: '2026-03-15', period_end: '2026-04-14', status: 'void' }),
-      makeInvoice({ lease_id: 'c', period_start: '2026-02-28', period_end: '2026-03-27' }),
-      makeInvoice({ lease_id: 'd', period_start: '2025-03-10', period_end: '2025-04-09' }),
+      makeInvoice({ lease_id: 'a', invoice_number: 'INV-202603-0001', period_start: '2026-03-01', period_end: '2026-03-31' }),
+      makeInvoice({ lease_id: 'b', invoice_number: 'INV-202603-0007', period_start: '2026-03-15', period_end: '2026-04-14', status: 'void' }),
+      makeInvoice({ lease_id: 'c', invoice_number: 'INV-202602-0003', period_start: '2026-02-28', period_end: '2026-03-27' }),
+      makeInvoice({ lease_id: 'd', invoice_number: 'INV-202503-0009', period_start: '2025-03-10', period_end: '2025-04-09' }),
     ]
-    expect(nextInvoiceSequence('2026-03-20', org)).toBe(3)
-    expect(nextInvoiceSequence('2026-02-01', org)).toBe(2)
+    expect(nextInvoiceSequence('2026-03-20', org)).toBe(8)
+    expect(nextInvoiceSequence('2026-02-01', org)).toBe(4)
     expect(nextInvoiceSequence('2026-04-01', org)).toBe(1)
     expect(nextInvoiceSequence('2026-04-01', [])).toBe(1)
+  })
+
+  it('uses the number, not period_start, and ignores numbers in other formats', () => {
+    const org = [
+      // period in March but numbered in February (manually renumbered): counts for February
+      makeInvoice({ invoice_number: 'INV-202602-0012', period_start: '2026-03-01', period_end: '2026-03-31' }),
+      makeInvoice({ invoice_number: 'LEGACY-42', period_start: '2026-03-01', period_end: '2026-03-31' }),
+      makeInvoice({ invoice_number: 'INV-202603-10000', period_start: '2026-03-05', period_end: '2026-04-04' }),
+    ]
+    expect(nextInvoiceSequence('2026-02-15', org)).toBe(13)
+    expect(nextInvoiceSequence('2026-03-15', org)).toBe(10001)
+    expect(invoiceNumber('2026-03-15', nextInvoiceSequence('2026-03-15', org))).toBe('INV-202603-10001')
+  })
+
+  it('fills a hole left by a hard-deleted invoice only when it was the max', () => {
+    const org = [
+      makeInvoice({ invoice_number: 'INV-202603-0001' }),
+      // INV-202603-0002 was hard-deleted
+      makeInvoice({ invoice_number: 'INV-202603-0003' }),
+    ]
+    expect(nextInvoiceSequence('2026-03-01', org)).toBe(4)
+    expect(nextInvoiceSequence('2026-03-01', [org[0]])).toBe(2)
   })
 })
 
@@ -326,6 +387,7 @@ describe('buildInvoiceDraft', () => {
       due_date: '2026-01-31',
       invoice_number: 'INV-202601-0001',
       new_lease_end_date: '2026-02-27',
+      warnings: [],
     })
   })
 
@@ -360,7 +422,7 @@ describe('buildInvoiceDraft', () => {
     expect(draft.new_lease_end_date).toBe('2026-04-29')
   })
 
-  it('applies extra and discount; discount larger than total floors at 0', () => {
+  it('applies extra and discount', () => {
     const draft = buildInvoiceDraft({
       lease,
       addons: [],
@@ -372,9 +434,133 @@ describe('buildInvoiceDraft', () => {
     expect(draft.extra_amount).toBe(100_000)
     expect(draft.discount_amount).toBe(250_000)
     expect(draft.total_amount).toBe(1_350_000)
+  })
 
-    const free = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], discountAmount: 9_000_000 })
+  it('a discount equal to the total gives a free period (total 0 -> paid); larger throws', () => {
+    const free = buildInvoiceDraft({ lease, addons: [perPeriod], quantity: 1, existingInvoices: [], discountAmount: 1_700_000 })
     expect(free.total_amount).toBe(0)
+    expect(deriveInvoiceStatus(free.total_amount, 0, 'unpaid')).toBe('paid')
+
+    expect(() => buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], discountAmount: 1_500_001 })).toThrow(
+      'Diskon melebihi jumlah tagihan.',
+    )
+    expect(() =>
+      buildInvoiceDraft({ lease, addons: [perPeriod], quantity: 1, existingInvoices: [], extraAmount: 50_000, discountAmount: 1_750_001 }),
+    ).toThrow('Diskon melebihi jumlah tagihan.')
+  })
+
+  it('rejects negative extra, discount and baseAmount', () => {
+    expect(() => buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], extraAmount: -1 })).toThrow('Nilai tidak boleh negatif.')
+    expect(() => buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], discountAmount: -50_000 })).toThrow(
+      'Nilai tidak boleh negatif.',
+    )
+    expect(() => buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], baseAmount: -1 })).toThrow('Nilai tidak boleh negatif.')
+    expect(() => buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], extraAmount: Number.NaN })).toThrow(
+      'Nilai tidak boleh negatif.',
+    )
+  })
+
+  it('baseAmount overrides quantity * price_per_period (0 allowed)', () => {
+    const draft = buildInvoiceDraft({ lease, addons: [perPeriod], quantity: 2, existingInvoices: [], baseAmount: 2_500_000 })
+    expect(draft.base_amount).toBe(2_500_000)
+    expect(draft.addons_amount).toBe(400_000)
+    expect(draft.total_amount).toBe(2_900_000)
+    expect(draft.warnings).toEqual([])
+
+    const zero = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], baseAmount: 0 })
+    expect(zero.base_amount).toBe(0)
+    expect(zero.total_amount).toBe(0)
+  })
+
+  describe('periodEnd (pro-rata / partial extension)', () => {
+    const first = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27', status: 'paid' })
+
+    it('"tambah 2 minggu saja": start from the anchored next start, end = periodEnd, quantity forced to 1', () => {
+      const draft = buildInvoiceDraft({
+        lease,
+        addons: [perPeriod, oneTime],
+        quantity: 3,
+        existingInvoices: [first],
+        periodEnd: '2026-03-13',
+        baseAmount: 700_000,
+      })
+      expect(draft.period_start).toBe('2026-02-28')
+      expect(draft.period_end).toBe('2026-03-13')
+      expect(draft.quantity).toBe(1)
+      expect(draft.base_amount).toBe(700_000)
+      // per_period addon counts once (quantity 1), one_time not on a second invoice
+      expect(draft.addons_amount).toBe(200_000)
+      expect(draft.total_amount).toBe(900_000)
+      expect(draft.due_date).toBe('2026-02-28')
+      expect(draft.new_lease_end_date).toBe('2026-03-13')
+      expect(draft.invoice_number).toBe('INV-202602-0001')
+      expect(draft.warnings).toEqual([WARN_OFF_SCHEDULE])
+    })
+
+    it('default base is 1 x price_per_period when baseAmount is omitted', () => {
+      const draft = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [first], periodEnd: '2026-03-13' })
+      expect(draft.base_amount).toBe(1_500_000)
+    })
+
+    it('periodStart + periodEnd together', () => {
+      const draft = buildInvoiceDraft({
+        lease,
+        addons: [],
+        quantity: 1,
+        existingInvoices: [first],
+        periodStart: '2026-03-01',
+        periodEnd: '2026-03-10',
+        baseAmount: 500_000,
+      })
+      expect(draft.period_start).toBe('2026-03-01')
+      expect(draft.period_end).toBe('2026-03-10')
+      expect(draft.total_amount).toBe(500_000)
+      expect(draft.warnings).toEqual([WARN_OFF_SCHEDULE])
+    })
+
+    it('periodEnd equal to the start is a one-day invoice; earlier than the start throws', () => {
+      const oneDay = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [first], periodEnd: '2026-02-28', baseAmount: 50_000 })
+      expect(oneDay.period_start).toBe('2026-02-28')
+      expect(oneDay.period_end).toBe('2026-02-28')
+      expect(() => buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [first], periodEnd: '2026-02-27' })).toThrow(
+        'Tanggal akhir harus setelah tanggal mulai.',
+      )
+      expect(() =>
+        buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], periodStart: '2026-03-10', periodEnd: '2026-03-01' }),
+      ).toThrow('Tanggal akhir harus setelah tanggal mulai.')
+    })
+
+    it('a periodEnd that lands exactly on the anchored end produces no warning', () => {
+      const draft = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [first], periodEnd: '2026-03-30' })
+      expect(draft.period_start).toBe('2026-02-28')
+      expect(draft.period_end).toBe('2026-03-30')
+      expect(draft.warnings).toEqual([])
+    })
+
+    it('quantity is ignored when periodEnd is given (even 0)', () => {
+      const draft = buildInvoiceDraft({ lease, addons: [], quantity: 0, existingInvoices: [first], periodEnd: '2026-03-13', baseAmount: 700_000 })
+      expect(draft.quantity).toBe(1)
+    })
+
+    it('after a pro-rata invoice the next auto invoice continues from its end', () => {
+      const draft = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [first], periodEnd: '2026-03-13', baseAmount: 700_000 })
+      const proRata = makeInvoice({ period_start: draft.period_start, period_end: draft.period_end, status: 'paid' })
+      const next = buildInvoiceDraft({ lease: makeLease({ ...lease, end_date: '2026-03-13' }), addons: [], quantity: 1, existingInvoices: [first, proRata] })
+      expect(next.period_start).toBe('2026-03-14')
+      expect(next.period_end).toBe('2026-04-13')
+      expect(next.warnings).toEqual([])
+    })
+  })
+
+  it('warns when a manual periodStart leaves the anchored grid, not when it matches it', () => {
+    const first = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27', status: 'paid' })
+    const onGrid = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [first], periodStart: '2026-02-28' })
+    // start matches but the unanchored end (03-27) does not
+    expect(onGrid.warnings).toEqual([WARN_OFF_SCHEDULE])
+    const exact = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], periodStart: '2026-01-31' })
+    expect(exact.warnings).toEqual([])
+    const off = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], periodStart: '2026-02-01' })
+    expect(off.warnings).toEqual([WARN_OFF_SCHEDULE])
   })
 
   it('negative addons reduce the total but addons never go below 0', () => {
@@ -401,8 +587,8 @@ describe('buildInvoiceDraft', () => {
 
   it('numbers from orgInvoices when given, else from existingInvoices', () => {
     const org = [
-      makeInvoice({ lease_id: 'other-1', period_start: '2026-01-05', period_end: '2026-02-04' }),
-      makeInvoice({ lease_id: 'other-2', period_start: '2026-01-10', period_end: '2026-02-09' }),
+      makeInvoice({ lease_id: 'other-1', invoice_number: 'INV-202601-0001', period_start: '2026-01-05', period_end: '2026-02-04' }),
+      makeInvoice({ lease_id: 'other-2', invoice_number: 'INV-202601-0002', period_start: '2026-01-10', period_end: '2026-02-09' }),
     ]
     const withOrg = buildInvoiceDraft({ lease, addons: [], quantity: 1, existingInvoices: [], orgInvoices: org })
     expect(withOrg.invoice_number).toBe('INV-202601-0003')
@@ -498,12 +684,36 @@ describe('summarizeLeaseBilling', () => {
     })
   })
 
-  it('nothing billed and start within dueSoonDays -> due_soon; start passed -> overdue', () => {
+  it('nothing billed and start within dueSoonDays -> due_soon; within grace -> due_soon; past grace -> overdue', () => {
     expect(summarizeLeaseBilling(lease, [], [], '2026-01-29').state).toBe('due_soon')
     expect(summarizeLeaseBilling(lease, [], [], '2026-01-31').state).toBe('due_soon')
-    const late = summarizeLeaseBilling(lease, [], [], '2026-02-02')
+    const inGrace = summarizeLeaseBilling(lease, [], [], '2026-02-02')
+    expect(inGrace.state).toBe('due_soon')
+    expect(inGrace.daysUntilDue).toBe(-2)
+    const late = summarizeLeaseBilling(lease, [], [], '2026-02-04')
     expect(late.state).toBe('overdue')
-    expect(late.daysUntilDue).toBe(-2)
+    expect(late.daysUntilDue).toBe(-4)
+  })
+
+  it('graceDays: day -2 due_soon, day -3 due_soon, day -4 overdue; graceDays 0 -> day -1 overdue', () => {
+    const inv = makeInvoice({ id: 'inv-1', period_start: '2026-01-31', period_end: '2026-02-27', total_amount: 1_500_000 })
+    expect(summarizeLeaseBilling(lease, [inv], [], '2026-02-02').state).toBe('due_soon')
+    expect(summarizeLeaseBilling(lease, [inv], [], '2026-02-03').state).toBe('due_soon')
+    const day4 = summarizeLeaseBilling(lease, [inv], [], '2026-02-04')
+    expect(day4.daysUntilDue).toBe(-4)
+    expect(day4.state).toBe('overdue')
+    expect(day4.outstanding).toBe(1_500_000)
+
+    const strict = summarizeLeaseBilling(lease, [inv], [], '2026-02-01', 3, 0)
+    expect(strict.daysUntilDue).toBe(-1)
+    expect(strict.state).toBe('overdue')
+    expect(summarizeLeaseBilling(lease, [inv], [], '2026-01-31', 3, 0).state).toBe('due_soon')
+
+    // a longer grace keeps the lease due_soon longer; daysUntilDue stays raw
+    const lenient = summarizeLeaseBilling(lease, [inv], [], '2026-02-07', 3, 7)
+    expect(lenient.daysUntilDue).toBe(-7)
+    expect(lenient.state).toBe('due_soon')
+    expect(summarizeLeaseBilling(lease, [inv], [], '2026-02-08', 3, 7).state).toBe('overdue')
   })
 
   it('unpaid invoice past due -> overdue with outstanding = total', () => {
@@ -515,6 +725,43 @@ describe('summarizeLeaseBilling', () => {
     expect(s.nextDueDate).toBe('2026-01-31')
     expect(s.daysUntilDue).toBe(-5)
     expect(s.state).toBe('overdue')
+  })
+
+  it('finding: a zero-total free period stored as unpaid is settled, not overdue', () => {
+    const draft = buildInvoiceDraft({
+      lease,
+      addons: [],
+      quantity: 1,
+      discountAmount: 1_500_000,
+      existingInvoices: [],
+    })
+    expect(draft.total_amount).toBe(0)
+    const inv = makeInvoice({ id: 'inv-free', ...draft, status: 'unpaid' })
+    const s = summarizeLeaseBilling(lease, [inv], [], '2026-02-10')
+    expect(s.outstanding).toBe(0)
+    expect(s.paidThrough).toBe('2026-02-27')
+    expect(s.nextDueDate).toBe('2026-02-28')
+    expect(s.daysUntilDue).toBe(18)
+    expect(s.state).toBe('ok')
+  })
+
+  it('finding: a partial invoice whose rent payments reach the total is settled even if status lags', () => {
+    const inv = makeInvoice({ id: 'inv-1', period_start: '2026-01-31', period_end: '2026-02-27', status: 'partial' })
+    const payments = [
+      makePayment({ invoice_id: 'inv-1', amount: 1_000_000, kind: 'rent', paid_at: '2026-01-31' }),
+      makePayment({ invoice_id: 'inv-1', amount: 500_000, kind: 'rent', method: 'deposit', paid_at: '2026-02-05' }),
+    ]
+    const s = summarizeLeaseBilling(lease, [inv], payments, '2026-02-10')
+    expect(s.outstanding).toBe(0)
+    expect(s.paidThrough).toBe('2026-02-27')
+    expect(s.nextDueDate).toBe('2026-02-28')
+    expect(s.state).toBe('ok')
+    // one Rupiah short -> still open and overdue (grace elapsed)
+    const short = [makePayment({ invoice_id: 'inv-1', amount: 1_499_999, kind: 'rent' })]
+    const t = summarizeLeaseBilling(lease, [inv], short, '2026-02-10')
+    expect(t.outstanding).toBe(1)
+    expect(t.paidThrough).toBeNull()
+    expect(t.state).toBe('overdue')
   })
 
   it('partial invoice: outstanding = total - rent paid, deposits ignored', () => {
@@ -541,7 +788,9 @@ describe('summarizeLeaseBilling', () => {
     expect(s.paidThrough).toBe('2026-02-27')
     expect(s.outstanding).toBe(3_000_000)
     expect(s.nextDueDate).toBe('2026-02-28')
-    expect(s.state).toBe('overdue')
+    expect(s.daysUntilDue).toBe(-1)
+    expect(s.state).toBe('due_soon')
+    expect(summarizeLeaseBilling(lease, invoices, [], '2026-03-04').state).toBe('overdue')
   })
 
   it('all paid: nextDueDate = coveredThrough + 1; ok when far, due_soon when close, overdue when passed', () => {
@@ -560,8 +809,12 @@ describe('summarizeLeaseBilling', () => {
     const custom = summarizeLeaseBilling(lease, [inv], [], '2026-02-25', 2)
     expect(custom.state).toBe('ok')
 
-    const late = summarizeLeaseBilling(lease, [inv], [], '2026-03-02')
-    expect(late.daysUntilDue).toBe(-2)
+    const grace = summarizeLeaseBilling(lease, [inv], [], '2026-03-02')
+    expect(grace.daysUntilDue).toBe(-2)
+    expect(grace.state).toBe('due_soon')
+
+    const late = summarizeLeaseBilling(lease, [inv], [], '2026-03-04')
+    expect(late.daysUntilDue).toBe(-4)
     expect(late.state).toBe('overdue')
   })
 
@@ -651,10 +904,12 @@ describe('summarizeLeaseBilling', () => {
     expect(summarizeLeaseBilling(lease2, [inv1, inv2], [], '2026-03-15').state).toBe('ok')
   })
 
-  it('lease ending before next period but with an open invoice is still overdue', () => {
+  it('lease ending before next period but with an open invoice is still overdue once grace has passed', () => {
     const daily = makeLease({ id: 'lease-1', period_type: 'daily', start_date: '2026-03-01', end_date: '2026-03-03' })
     const inv = makeInvoice({ id: 'd1', period_start: '2026-03-01', period_end: '2026-03-03', quantity: 3, total_amount: 300_000 })
-    expect(summarizeLeaseBilling(daily, [inv], [], '2026-03-03').state).toBe('overdue')
+    expect(summarizeLeaseBilling(daily, [inv], [], '2026-03-03').state).toBe('due_soon')
+    expect(summarizeLeaseBilling(daily, [inv], [], '2026-03-03', 3, 0).state).toBe('overdue')
+    expect(summarizeLeaseBilling(daily, [inv], [], '2026-03-05').state).toBe('overdue')
   })
 })
 
@@ -664,23 +919,77 @@ describe('depositBalance', () => {
   const lease = makeLease({ id: 'lease-1', deposit_amount: 500_000 })
 
   it('nothing received yet', () => {
-    expect(depositBalance(lease, [])).toEqual({ agreed: 500_000, received: 0, returned: 0, held: 0, shortfall: 500_000 })
+    expect(depositBalance(lease, [], [])).toEqual({ agreed: 500_000, received: 0, applied: 0, returned: 0, held: 0, shortfall: 500_000 })
   })
 
-  it('sums deposit payments for the lease only; rent never counts', () => {
+  it('sums deposit payments for the lease only; cash rent never counts', () => {
     const payments = [
       makePayment({ lease_id: 'lease-1', kind: 'deposit', amount: 300_000 }),
-      makePayment({ lease_id: 'lease-1', kind: 'deposit', amount: 100_000 }),
+      makePayment({ lease_id: 'lease-1', kind: 'deposit', amount: 100_000, method: 'transfer' }),
       makePayment({ lease_id: 'lease-1', kind: 'rent', amount: 1_500_000, invoice_id: 'inv-1' }),
       makePayment({ lease_id: 'lease-2', kind: 'deposit', amount: 500_000 }),
     ]
-    expect(depositBalance(lease, payments)).toEqual({ agreed: 500_000, received: 400_000, returned: 0, held: 400_000, shortfall: 100_000 })
+    expect(depositBalance(lease, payments, [])).toEqual({
+      agreed: 500_000,
+      received: 400_000,
+      applied: 0,
+      returned: 0,
+      held: 400_000,
+      shortfall: 100_000,
+    })
   })
 
-  it('accounts for the refund at checkout; shortfall never negative', () => {
-    const refunded = makeLease({ id: 'lease-1', deposit_amount: 500_000, deposit_returned_amount: 450_000, status: 'ended' })
-    const payments = [makePayment({ lease_id: 'lease-1', kind: 'deposit', amount: 600_000 })]
-    expect(depositBalance(refunded, payments)).toEqual({ agreed: 500_000, received: 600_000, returned: 450_000, held: 150_000, shortfall: 0 })
+  it('applied = rent/other payments with method deposit (potong jaminan); returned = deposit_refund expenses', () => {
+    const payments = [
+      makePayment({ lease_id: 'lease-1', kind: 'deposit', amount: 500_000, method: 'cash' }),
+      // last month's rent taken from the deposit
+      makePayment({ lease_id: 'lease-1', kind: 'rent', amount: 200_000, method: 'deposit', invoice_id: 'inv-9' }),
+      // damage deduction
+      makePayment({ lease_id: 'lease-1', kind: 'other', amount: 50_000, method: 'deposit', notes: 'Potongan jaminan: kunci hilang' }),
+      // other lease's deduction must not count
+      makePayment({ lease_id: 'lease-2', kind: 'rent', amount: 999_000, method: 'deposit', invoice_id: 'inv-z' }),
+    ]
+    const expenses = [
+      makeExpense({ lease_id: 'lease-1', category: 'deposit_refund', amount: 200_000, expense_date: '2026-03-31' }),
+      // rent refund is not a deposit return
+      makeExpense({ lease_id: 'lease-1', category: 'rent_refund', amount: 100_000 }),
+      // refund for another lease / no lease
+      makeExpense({ lease_id: 'lease-2', category: 'deposit_refund', amount: 500_000 }),
+      makeExpense({ lease_id: null, category: 'deposit_refund', amount: 500_000 }),
+    ]
+    expect(depositBalance(lease, payments, expenses)).toEqual({
+      agreed: 500_000,
+      received: 500_000,
+      applied: 250_000,
+      returned: 200_000,
+      held: 50_000,
+      shortfall: 0,
+    })
+  })
+
+  it('held goes negative when more was applied/returned than received (not clamped); shortfall never negative', () => {
+    const payments = [
+      makePayment({ lease_id: 'lease-1', kind: 'deposit', amount: 600_000 }),
+      makePayment({ lease_id: 'lease-1', kind: 'rent', amount: 300_000, method: 'deposit', invoice_id: 'inv-9' }),
+    ]
+    const expenses = [makeExpense({ lease_id: 'lease-1', category: 'deposit_refund', amount: 450_000 })]
+    expect(depositBalance(lease, payments, expenses)).toEqual({
+      agreed: 500_000,
+      received: 600_000,
+      applied: 300_000,
+      returned: 450_000,
+      held: -150_000,
+      shortfall: 0,
+    })
+  })
+
+  it('finding: a kind=deposit payment with method=deposit counts as received only (matches finance.depositsHeld)', () => {
+    const payments = [makePayment({ lease_id: 'lease-1', kind: 'deposit', amount: 500_000, method: 'deposit' })]
+    const b = depositBalance(lease, payments, [])
+    expect(b.received).toBe(500_000)
+    expect(b.applied).toBe(0)
+    expect(b.held).toBe(500_000)
+    expect(b.shortfall).toBe(0)
   })
 })
 
@@ -721,5 +1030,55 @@ describe('validateRentPayment', () => {
     expect(validateRentPayment(invoice, [], 500_000)).toBeNull()
     const payments = [makePayment({ invoice_id: 'inv-1', amount: 500_000 })]
     expect(validateRentPayment(invoice, payments, 1_000_000)).toBeNull()
+  })
+
+  it('method deposit: rejects amounts above the held deposit, after the existing checks', () => {
+    expect(validateRentPayment(invoice, [], 500_001, { method: 'deposit', depositHeld: 500_000 })).toBe('Jaminan yang dipegang hanya Rp 500.000.')
+    expect(validateRentPayment(invoice, [], 500_000, { method: 'deposit', depositHeld: 500_000 })).toBeNull()
+    expect(validateRentPayment(invoice, [], 1, { method: 'deposit', depositHeld: 0 })).toBe('Jaminan yang dipegang hanya Rp 0.')
+    // overpayment message still wins when both apply
+    expect(validateRentPayment(invoice, [], 1_500_001, { method: 'deposit', depositHeld: 100_000 })).toBe(
+      'Jumlah melebihi sisa tagihan (Rp 1.500.000).',
+    )
+    expect(validateRentPayment(invoice, [], 0, { method: 'deposit', depositHeld: 0 })).toBe('Jumlah pembayaran harus lebih dari 0.')
+  })
+
+  it('method deposit without depositHeld, or other methods, skip the deposit check', () => {
+    expect(validateRentPayment(invoice, [], 1_000_000, { method: 'deposit' })).toBeNull()
+    expect(validateRentPayment(invoice, [], 1_000_000, { method: 'cash', depositHeld: 0 })).toBeNull()
+    expect(validateRentPayment(invoice, [], 1_000_000, {})).toBeNull()
+  })
+})
+
+// ---------- extra breakdown ----------
+
+describe('parseExtraBreakdown / formatExtraBreakdown', () => {
+  it('parses the canonical string', () => {
+    expect(parseExtraBreakdown('Listrik: 125000; Denda: 50000; Lainnya: 10000')).toEqual({ listrik: 125_000, denda: 50_000, lainnya: 10_000 })
+  })
+
+  it('is case-insensitive, accepts thousand dots and an Rp prefix, and ignores surrounding text', () => {
+    expect(parseExtraBreakdown('listrik: 125.000; DENDA: Rp 50.000')).toEqual({ listrik: 125_000, denda: 50_000 })
+    expect(parseExtraBreakdown('Bayar telat. Denda: 25000 (3 hari). Listrik:75000')).toEqual({ denda: 25_000, listrik: 75_000 })
+  })
+
+  it('returns {} for null, empty or unrelated notes; a repeated label keeps the last value', () => {
+    expect(parseExtraBreakdown(null)).toEqual({})
+    expect(parseExtraBreakdown('')).toEqual({})
+    expect(parseExtraBreakdown('Sudah termasuk air')).toEqual({})
+    expect(parseExtraBreakdown('Denda: 10000; Denda: 20000')).toEqual({ denda: 20_000 })
+  })
+
+  it('formats in fixed order, omitting zero/undefined parts; empty -> ""', () => {
+    expect(formatExtraBreakdown({ listrik: 125_000, denda: 50_000, lainnya: 10_000 })).toBe('Listrik: 125000; Denda: 50000; Lainnya: 10000')
+    expect(formatExtraBreakdown({ lainnya: 10_000, listrik: 125_000 })).toBe('Listrik: 125000; Lainnya: 10000')
+    expect(formatExtraBreakdown({ listrik: 0, denda: 50_000 })).toBe('Denda: 50000')
+    expect(formatExtraBreakdown({})).toBe('')
+    expect(formatExtraBreakdown({ listrik: 0, denda: undefined })).toBe('')
+  })
+
+  it('round-trips', () => {
+    const parts = { listrik: 125_000, denda: 50_000 }
+    expect(parseExtraBreakdown(formatExtraBreakdown(parts))).toEqual(parts)
   })
 })

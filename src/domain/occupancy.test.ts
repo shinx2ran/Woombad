@@ -6,10 +6,12 @@ import {
   isLeaseActiveOn,
   isLeaseReservedOn,
   leaseOccupiedUntil,
+  leaseOverlaps,
   occupancySeries,
   occupiedRoomIds,
   reservedRoomIds,
   roomOccupancy,
+  roomOccupancyByProperty,
   vacantRooms,
 } from './occupancy'
 
@@ -52,7 +54,6 @@ function makeLease(overrides: Partial<Lease> = {}): Lease {
     end_date: '2026-03-31',
     status: 'active',
     checkout_date: null,
-    deposit_returned_amount: null,
     notes: null,
     ...overrides,
   }
@@ -93,6 +94,48 @@ describe('isLeaseActiveOn', () => {
     expect(isLeaseActiveOn(lease, '2026-03-31T23:00:00Z')).toBe(true)
     expect(isLeaseActiveOn(lease, '2026-02-28T23:00:00Z')).toBe(false)
   })
+  it('slices lease dates to 10 chars too (timestamps stored in date columns)', () => {
+    const ts = makeLease({ start_date: '2026-03-01T00:00:00Z', end_date: '2026-03-31T00:00:00Z', status: 'ended', checkout_date: '2026-03-20T12:00:00Z' })
+    expect(isLeaseActiveOn(ts, '2026-03-01')).toBe(true)
+    expect(isLeaseActiveOn(ts, '2026-03-20')).toBe(true)
+    expect(isLeaseActiveOn(ts, '2026-03-21')).toBe(false)
+    expect(leaseOccupiedUntil(ts)).toBe('2026-03-20')
+    expect(isLeaseReservedOn(makeLease({ start_date: '2026-04-01T00:00:00Z' }), '2026-03-31T23:59:59Z')).toBe(true)
+  })
+})
+
+describe('leaseOverlaps', () => {
+  const existing = [
+    makeLease({ id: 'L1', room_id: 'r1', status: 'active', start_date: '2026-03-10', end_date: '2026-03-20' }),
+    makeLease({ id: 'L2', room_id: 'r1', status: 'ended', start_date: '2026-01-01', end_date: '2026-02-28', checkout_date: '2026-02-10' }),
+    makeLease({ id: 'L3', room_id: 'r1', status: 'cancelled', start_date: '2026-05-01', end_date: '2026-05-31' }),
+    makeLease({ id: 'L4', room_id: 'r2', status: 'active', start_date: '2026-03-01', end_date: '2026-12-31' }),
+  ]
+  it('is edge-inclusive on both ends of the existing lease', () => {
+    expect(leaseOverlaps(existing, 'r1', '2026-03-20', '2026-03-25')).toBe(true) // touches L1 end
+    expect(leaseOverlaps(existing, 'r1', '2026-03-21', '2026-03-25')).toBe(false)
+    expect(leaseOverlaps(existing, 'r1', '2026-03-01', '2026-03-10')).toBe(true) // touches L1 start
+    expect(leaseOverlaps(existing, 'r1', '2026-03-01', '2026-03-09')).toBe(false)
+    expect(leaseOverlaps(existing, 'r1', '2026-03-12', '2026-03-15')).toBe(true) // inside
+    expect(leaseOverlaps(existing, 'r1', '2026-03-01', '2026-03-31')).toBe(true) // contains
+  })
+  it('an ended lease blocks only through checkout_date, a cancelled lease never blocks', () => {
+    expect(leaseOverlaps(existing, 'r1', '2026-02-10', '2026-02-12')).toBe(true) // checkout day itself
+    expect(leaseOverlaps(existing, 'r1', '2026-02-11', '2026-03-09')).toBe(false) // after checkout, before L1 (end_date 02-28 ignored)
+    expect(leaseOverlaps(existing, 'r1', '2026-05-01', '2026-05-31')).toBe(false) // L3 cancelled
+  })
+  it('only looks at the given room and can exclude the lease being edited', () => {
+    expect(leaseOverlaps(existing, 'r2', '2026-06-01', '2026-06-30')).toBe(true)
+    expect(leaseOverlaps(existing, 'r3', '2026-03-10', '2026-03-20')).toBe(false)
+    expect(leaseOverlaps(existing, 'r1', '2026-03-10', '2026-03-25', 'L1')).toBe(false)
+    expect(leaseOverlaps([], 'r1', '2026-03-10', '2026-03-25')).toBe(false)
+  })
+  it('an active lease past end_date does not block beyond end_date (the overlap check uses the contract, not occupancy)', () => {
+    expect(leaseOverlaps(existing, 'r1', '2026-04-01', '2026-04-30')).toBe(false)
+  })
+  it('compares on the date part of timestamps', () => {
+    expect(leaseOverlaps(existing, 'r1', '2026-03-20T08:00:00Z', '2026-03-25T08:00:00Z')).toBe(true)
+  })
 })
 
 describe('leaseOccupiedUntil', () => {
@@ -111,14 +154,32 @@ describe('isLeaseReservedOn / reservedRoomIds', () => {
     expect(isLeaseReservedOn(makeLease({ ...future, status: 'ended' }), '2026-03-31')).toBe(false)
     expect(isLeaseReservedOn(makeLease({ ...future, status: 'cancelled' }), '2026-03-31')).toBe(false)
   })
-  it('a room that is occupied today is not listed as reserved even with a future lease', () => {
+  it('lists every room with a future-start active lease, even one that is occupied today (brief item 7)', () => {
     const leases = [
+      // r1: current tenant until 2026-03-31, next tenant booked from 2026-04-01 -> occupied AND reserved on 2026-03-15
       makeLease({ room_id: 'r1', start_date: '2026-04-01', end_date: '2026-04-30' }),
       makeLease({ room_id: 'r1', status: 'ended', start_date: '2026-03-01', end_date: '2026-03-31', checkout_date: '2026-03-31' }),
       makeLease({ room_id: 'r2', start_date: '2026-05-01', end_date: '2026-05-31' }),
+      // r3: lease already started -> occupied, not reserved
+      makeLease({ room_id: 'r3', start_date: '2026-03-01', end_date: '2026-03-31' }),
     ]
-    expect([...reservedRoomIds(leases, '2026-03-15')]).toEqual(['r2'])
+    expect([...reservedRoomIds(leases, '2026-03-15')]).toEqual(['r1', 'r2'])
+    expect(reservedRoomIds(leases, '2026-03-15').has('r3')).toBe(false)
+    // once the first lease has started, r1 is no longer reserved
+    expect([...reservedRoomIds(leases, '2026-04-01')]).toEqual(['r2'])
     expect([...reservedRoomIds([], '2026-03-15')]).toEqual([])
+  })
+  it('roomOccupancy and vacantRooms still give occupied priority over reserved for the same room', () => {
+    const rooms = [makeRoom({ id: 'r1', name: 'A1' })]
+    const leases = [
+      makeLease({ room_id: 'r1', start_date: '2026-04-01', end_date: '2026-04-30' }),
+      makeLease({ room_id: 'r1', status: 'ended', start_date: '2026-03-01', end_date: '2026-03-31', checkout_date: '2026-03-31' }),
+    ]
+    const snap = roomOccupancy(rooms, leases, '2026-03-15')
+    expect(snap.occupied).toBe(1)
+    expect(snap.reserved).toBe(0)
+    expect(snap.available).toBe(0)
+    expect(vacantRooms(rooms, leases, '2026-03-15')).toEqual([])
   })
 })
 
@@ -145,25 +206,38 @@ describe('occupiedRoomIds', () => {
 
 describe('roomOccupancy', () => {
   it('empty rooms gives zeros and rate 0', () => {
-    expect(roomOccupancy([], [], '2026-03-15')).toEqual({ total: 0, occupied: 0, available: 0, maintenance: 0, rate: 0 })
+    expect(roomOccupancy([], [], '2026-03-15')).toEqual({ total: 0, occupied: 0, reserved: 0, available: 0, maintenance: 0, rate: 0 })
   })
-  it('counts occupied, available and maintenance rooms', () => {
+  it('counts occupied, reserved, available and maintenance rooms', () => {
     const rooms = [
       makeRoom({ id: 'r1' }),
       makeRoom({ id: 'r2' }),
       makeRoom({ id: 'r3' }),
       makeRoom({ id: 'r4', status: 'maintenance' }),
       makeRoom({ id: 'r5', status: 'maintenance' }),
+      makeRoom({ id: 'r6' }),
     ]
     const leases = [
       makeLease({ room_id: 'r1' }),
       makeLease({ room_id: 'r2' }),
       makeLease({ room_id: 'r5' }), // maintenance room with a lease stays maintenance
       makeLease({ room_id: 'r3', status: 'ended', checkout_date: '2026-03-10' }),
+      makeLease({ room_id: 'r6', start_date: '2026-04-01', end_date: '2026-04-30' }), // reserved
+      makeLease({ room_id: 'r4', start_date: '2026-04-01', end_date: '2026-04-30' }), // reserved but maintenance: stays maintenance
       makeLease({ room_id: 'ghost' }), // room not in list is ignored
     ]
     const snap = roomOccupancy(rooms, leases, '2026-03-15')
-    expect(snap).toEqual({ total: 5, occupied: 2, available: 1, maintenance: 2, rate: 2 / 3 })
+    expect(snap).toEqual({ total: 6, occupied: 2, reserved: 1, available: 1, maintenance: 2, rate: 2 / 4 })
+    expect(snap.total - snap.maintenance - snap.occupied - snap.reserved).toBe(snap.available)
+  })
+  it('a room occupied today with a future lease is occupied, not reserved', () => {
+    const rooms = [makeRoom({ id: 'r1' })]
+    const leases = [
+      makeLease({ room_id: 'r1', status: 'ended', start_date: '2026-03-01', end_date: '2026-03-31', checkout_date: '2026-03-31' }),
+      makeLease({ room_id: 'r1', start_date: '2026-04-01', end_date: '2026-04-30' }),
+    ]
+    expect(roomOccupancy(rooms, leases, '2026-03-15')).toMatchObject({ occupied: 1, reserved: 0, available: 0 })
+    expect(roomOccupancy(rooms, leases, '2026-04-01')).toMatchObject({ occupied: 1, reserved: 0, available: 0 })
   })
   it('historical occupancy counts ended leases and active leases past end_date (SPEC 2a hunian historis)', () => {
     const rooms = [makeRoom({ id: 'r1' }), makeRoom({ id: 'r2' })]
@@ -172,15 +246,18 @@ describe('roomOccupancy', () => {
       // active lease whose end_date passed with no new invoice yet: the tenant is still in the room
       makeLease({ room_id: 'r2', status: 'active', start_date: '2026-09-01', end_date: '2026-09-30' }),
     ]
-    expect(roomOccupancy(rooms, leases, '2026-03-15')).toEqual({ total: 2, occupied: 1, available: 1, maintenance: 0, rate: 0.5 })
-    expect(roomOccupancy(rooms, leases, '2026-10-11')).toEqual({ total: 2, occupied: 1, available: 1, maintenance: 0, rate: 0.5 })
-    expect(roomOccupancy(rooms, leases, '2026-07-01').occupied).toBe(0)
+    // 2026-03-15: ended lease on r1 counted on a historical date; r2 lease not started yet -> reserved
+    expect(roomOccupancy(rooms, leases, '2026-03-15')).toEqual({ total: 2, occupied: 1, reserved: 1, available: 0, maintenance: 0, rate: 0.5 })
+    // today: r2 occupied past end_date, r1 checked out
+    expect(roomOccupancy(rooms, leases, '2026-10-11')).toEqual({ total: 2, occupied: 1, reserved: 0, available: 1, maintenance: 0, rate: 0.5 })
+    expect(roomOccupancy(rooms, leases, '2026-07-01')).toMatchObject({ occupied: 0, reserved: 1, available: 1 })
   })
   it('rate is 0 when every room is in maintenance', () => {
     const rooms = [makeRoom({ id: 'r1', status: 'maintenance' })]
     expect(roomOccupancy(rooms, [makeLease({ room_id: 'r1' })], '2026-03-15')).toEqual({
       total: 1,
       occupied: 0,
+      reserved: 0,
       available: 0,
       maintenance: 1,
       rate: 0,
@@ -190,6 +267,30 @@ describe('roomOccupancy', () => {
     const rooms = [makeRoom({ id: 'r1' }), makeRoom({ id: 'r2' })]
     const leases = [makeLease({ room_id: 'r1' }), makeLease({ room_id: 'r2' })]
     expect(roomOccupancy(rooms, leases, '2026-03-01').rate).toBe(1)
+  })
+})
+
+describe('roomOccupancyByProperty', () => {
+  it('empty rooms gives an empty map', () => {
+    expect(roomOccupancyByProperty([], [], '2026-03-15').size).toBe(0)
+  })
+  it('one snapshot per property in first-seen order; leases of other properties do not leak', () => {
+    const rooms = [
+      makeRoom({ id: 'a1', property_id: 'kos-a' }),
+      makeRoom({ id: 'b1', property_id: 'kos-b' }),
+      makeRoom({ id: 'a2', property_id: 'kos-a' }),
+      makeRoom({ id: 'b2', property_id: 'kos-b', status: 'maintenance' }),
+      makeRoom({ id: 'b3', property_id: 'kos-b' }),
+    ]
+    const leases = [
+      makeLease({ room_id: 'a1', property_id: 'kos-a' }),
+      makeLease({ room_id: 'b3', property_id: 'kos-b', start_date: '2026-05-01', end_date: '2026-05-31' }), // reserved
+    ]
+    const byProp = roomOccupancyByProperty(rooms, leases, '2026-03-15')
+    expect([...byProp.keys()]).toEqual(['kos-a', 'kos-b'])
+    expect(byProp.get('kos-a')).toEqual({ total: 2, occupied: 1, reserved: 0, available: 1, maintenance: 0, rate: 0.5 })
+    expect(byProp.get('kos-b')).toEqual({ total: 3, occupied: 0, reserved: 1, available: 1, maintenance: 1, rate: 0 })
+    expect(byProp.has('kos-c')).toBe(false)
   })
 })
 
@@ -250,7 +351,7 @@ describe('occupancySeries', () => {
     expect(series[0]).toMatchObject({ rate: 0, occupied: 0, rentable: 0 })
   })
 
-  it('historical occupancy ignores ended leases and active leases past end_date (finding: ended tenants vanish from tren hunian)', () => {
+  it('historical series counts ended leases through checkout and active leases past end_date (SPEC 2a hunian historis)', () => {
     const oneRoom = [makeRoom({ id: 'r1' })]
     const leases = [
       makeLease({ room_id: 'r1', status: 'ended', start_date: '2026-01-01', end_date: '2026-06-30', checkout_date: '2026-06-30' }),
@@ -328,11 +429,16 @@ describe('vacantRooms', () => {
     const rooms = [makeRoom({ id: 'r1', name: 'A1' }), makeRoom({ id: 'r2', name: 'A2' })]
     const leases = [makeLease({ room_id: 'r2', start_date: '2026-04-01', end_date: '2026-04-30' })]
     expect(vacantRooms(rooms, leases, '2026-03-15').map((r) => r.id)).toEqual(['r1'])
-    // still "available" in the snapshot (physically empty today), but not in the kamar kosong list
-    expect(roomOccupancy(rooms, leases, '2026-03-15').available).toBe(2)
+    expect([...reservedRoomIds(leases, '2026-03-15')]).toEqual(['r2'])
+    // the snapshot reports it as reserved, not available
+    expect(roomOccupancy(rooms, leases, '2026-03-15')).toMatchObject({ occupied: 0, reserved: 1, available: 1 })
     // once the lease starts the room is occupied
     expect(vacantRooms(rooms, leases, '2026-04-01').map((r) => r.id)).toEqual(['r1'])
-    expect(roomOccupancy(rooms, leases, '2026-04-01').occupied).toBe(1)
+    expect(roomOccupancy(rooms, leases, '2026-04-01')).toMatchObject({ occupied: 1, reserved: 0, available: 1 })
+    // the day before the start it is still reserved; a cancelled future lease does not reserve
+    expect(vacantRooms(rooms, leases, '2026-03-31').map((r) => r.id)).toEqual(['r1'])
+    const cancelled = [makeLease({ room_id: 'r2', status: 'cancelled', start_date: '2026-04-01', end_date: '2026-04-30' })]
+    expect(vacantRooms(rooms, cancelled, '2026-03-15').map((r) => r.id)).toEqual(['r1', 'r2'])
   })
   it('a lease checked out today still occupies the room today but not tomorrow', () => {
     const rooms = [makeRoom({ id: 'r1', name: 'Kamar 1' })]

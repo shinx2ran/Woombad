@@ -8,8 +8,11 @@
  *    always stay numbers so spreadsheet formulas keep working.
  *  - Property filter: `propertyIds` undefined = everything in the org; when given, only rows whose
  *    property is listed (shared expenses, property_id null, are then excluded) - same as finance.
+ *  - Invoice status / Dibayar / Sisa are always DERIVED from rent payments (SPEC §2 / §2a), never read
+ *    from the stored `invoices.status` column, except that a void invoice stays 'Dibatalkan'.
+ *  - CSV output guards against spreadsheet formula injection (see `toCsv`).
  */
-import type { Expense, Invoice, Lease, Payment, Property, Room, Tenant } from '../types/db'
+import type { Expense, Invoice, InvoiceStatus, Lease, Payment, Property, Room, Tenant } from '../types/db'
 import {
   EXPENSE_CATEGORY_LABEL,
   GENDER_LABEL,
@@ -19,8 +22,9 @@ import {
   PAYMENT_METHOD_LABEL,
 } from '../types/db'
 import type { CashflowPoint, CategoryBreakdown, FinanceSummary, PropertyBreakdown } from './finance'
+import { isLeaseActiveOn, isLeaseReservedOn } from './occupancy'
 import type { DateRange } from './period'
-import { inRange } from './period'
+import { inRange, toISODate } from './period'
 
 export type CellType = 'string' | 'number' | 'money' | 'date'
 export type ExportCell = string | number | null
@@ -49,8 +53,10 @@ export interface ExportContext {
 export const MISSING = '-'
 /** Label for expenses shared across all properties (property_id null). */
 export const SHARED_LABEL = 'Bersama'
-/** Lease status cell when a tenant has no active lease. */
+/** Lease status cell when a tenant has no lease occupying a room today and no reservation. */
 export const NO_ACTIVE_LEASE_LABEL = 'Tidak ada sewa aktif'
+/** Lease status cell when a tenant's only lease is an active one starting in the future (SPEC §2a "Dipesan"). */
+export const RESERVED_LEASE_LABEL = 'Dipesan'
 
 // ---------- lookups ----------
 
@@ -111,6 +117,17 @@ function paidForInvoice(invoiceId: string, payments: Payment[]): number {
   return sum
 }
 
+/**
+ * Mirror of billing.deriveInvoiceStatus (kept private): void stays void; paid >= total -> 'paid';
+ * paid > 0 -> 'partial'; otherwise 'unpaid'. A zero-total invoice is therefore 'paid'.
+ */
+function derivedInvoiceStatus(inv: Invoice, paid: number): InvoiceStatus {
+  if (inv.status === 'void') return 'void'
+  if (paid >= inv.total_amount) return 'paid'
+  if (paid > 0) return 'partial'
+  return 'unpaid'
+}
+
 function text(value: string | null | undefined): string {
   return value === null || value === undefined || value === '' ? MISSING : value
 }
@@ -126,7 +143,17 @@ function compareStrings(a: string, b: string): number {
 
 // ---------- sheets ----------
 
-/** Payments in range (by paid_at): Tanggal, Kos, Kamar, Penyewa, Jenis, Metode, No. Tagihan, Jumlah, Catatan. */
+/**
+ * Payments in range (by paid_at), sorted by paid_at then created_at.
+ * Columns: Tanggal, Kos, Kamar, Penyewa, Jenis, Metode, No. Tagihan, Sewa, Jumlah, Catatan.
+ *
+ * 'Sewa' (key `lease`) identifies the lease for payments that have a `lease_id` but no `invoice_id`
+ * (deposits, other income): 'Budi Santoso - A1' (tenant - room, unknown parts rendered '-'). Payments that
+ * point at an invoice, or that have no lease at all, carry '-' in 'Sewa' (the invoice number already
+ * identifies them). An unknown lease id renders '-' as well.
+ * Kos/Kamar/Penyewa are resolved through the lease; without a lease the kos falls back to the payment's own
+ * property_id.
+ */
 export function buildPaymentsSheet(payments: Payment[], invoices: Invoice[], ctx: ExportContext, range: DateRange, propertyIds?: string[]): ExportSheet {
   const lookup = indexContext(ctx)
   const invoiceById = new Map<string, Invoice>()
@@ -139,6 +166,8 @@ export function buildPaymentsSheet(payments: Payment[], invoices: Invoice[], ctx
   const rows = selected.map((p) => {
     const names = resolveLeaseNames(lookup, p.lease_id, p.property_id)
     const invoice = p.invoice_id === null ? undefined : invoiceById.get(p.invoice_id)
+    const hasKnownLease = p.lease_id !== null && lookup.leaseById.has(p.lease_id)
+    const lease = p.invoice_id === null && hasKnownLease ? `${names.tenant} - ${names.room}` : MISSING
     return {
       paid_at: dateCell(p.paid_at),
       property: names.property,
@@ -147,6 +176,7 @@ export function buildPaymentsSheet(payments: Payment[], invoices: Invoice[], ctx
       kind: PAYMENT_KIND_LABEL[p.kind],
       method: PAYMENT_METHOD_LABEL[p.method],
       invoice_number: invoice?.invoice_number ?? MISSING,
+      lease,
       amount: p.amount,
       notes: text(p.notes),
     }
@@ -162,6 +192,7 @@ export function buildPaymentsSheet(payments: Payment[], invoices: Invoice[], ctx
       { key: 'kind', header: 'Jenis', type: 'string' },
       { key: 'method', header: 'Metode', type: 'string' },
       { key: 'invoice_number', header: 'No. Tagihan', type: 'string' },
+      { key: 'lease', header: 'Sewa', type: 'string' },
       { key: 'amount', header: 'Jumlah', type: 'money' },
       { key: 'notes', header: 'Catatan', type: 'string' },
     ],
@@ -199,14 +230,40 @@ export function buildExpensesSheet(expenses: Expense[], ctx: ExportContext, rang
   }
 }
 
+export interface InvoicesSheetOptions {
+  /** true = also list void invoices (status 'Dibatalkan', Sisa 0). Default false. */
+  includeVoid?: boolean
+}
+
 /**
- * Invoices with due_date in range: No, Kos, Kamar, Penyewa, Periode awal/akhir, Jatuh tempo, Total, Dibayar, Sisa, Status.
- * Decision: void (Dibatalkan) invoices are left out so the sheet reconciles with 'Ditagihkan' in the summary.
+ * Invoices with due_date in range, sorted by due_date then invoice number (numeric aware).
+ * Columns: No. Tagihan, Kos, Kamar, Penyewa, Periode Awal, Periode Akhir, Jatuh Tempo, Total, Dibayar, Sisa, Status.
+ *
+ * - Dibayar = sum of payments with kind 'rent' and this invoice_id, of ANY date (not only in range).
+ * - Sisa = max(0, Total - Dibayar); 0 for a void invoice (it owes nothing).
+ * - Status is DERIVED from Dibayar (deriveInvoiceStatus semantics), never read from the stored column:
+ *   Dibayar >= Total -> 'Lunas', Dibayar > 0 -> 'DP / Sebagian', otherwise 'Belum Bayar'. A void invoice
+ *   stays 'Dibatalkan' regardless of payments.
+ * - Void invoices are excluded by default so the sheet reconciles with 'Ditagihkan' in the summary; pass
+ *   `{ includeVoid: true }` to list them with status 'Dibatalkan'.
  */
-export function buildInvoicesSheet(invoices: Invoice[], payments: Payment[], ctx: ExportContext, range: DateRange, propertyIds?: string[]): ExportSheet {
+export function buildInvoicesSheet(
+  invoices: Invoice[],
+  payments: Payment[],
+  ctx: ExportContext,
+  range: DateRange,
+  propertyIds?: string[],
+  options: InvoicesSheetOptions = {},
+): ExportSheet {
+  const includeVoid = options.includeVoid === true
   const lookup = indexContext(ctx)
   const selected = invoices
-    .filter((inv) => inv.status !== 'void' && inRange(inv.due_date, range) && matchesPropertyFilter(inv.property_id, propertyIds))
+    .filter(
+      (inv) =>
+        (includeVoid || inv.status !== 'void') &&
+        inRange(inv.due_date, range) &&
+        matchesPropertyFilter(inv.property_id, propertyIds),
+    )
     .sort(
       (a, b) =>
         compareStrings(dateCell(a.due_date), dateCell(b.due_date)) ||
@@ -216,6 +273,7 @@ export function buildInvoicesSheet(invoices: Invoice[], payments: Payment[], ctx
   const rows = selected.map((inv) => {
     const names = resolveLeaseNames(lookup, inv.lease_id, inv.property_id)
     const paid = paidForInvoice(inv.id, payments)
+    const status = derivedInvoiceStatus(inv, paid)
     return {
       invoice_number: inv.invoice_number,
       property: names.property,
@@ -226,8 +284,8 @@ export function buildInvoicesSheet(invoices: Invoice[], payments: Payment[], ctx
       due_date: dateCell(inv.due_date),
       total_amount: inv.total_amount,
       paid,
-      outstanding: Math.max(0, inv.total_amount - paid),
-      status: INVOICE_STATUS_LABEL[inv.status],
+      outstanding: status === 'void' ? 0 : Math.max(0, inv.total_amount - paid),
+      status: INVOICE_STATUS_LABEL[status],
     }
   })
 
@@ -251,11 +309,11 @@ export function buildInvoicesSheet(invoices: Invoice[], payments: Payment[], ctx
 }
 
 /**
- * The tenant's current active lease.
- * Decision: when a tenant has several active leases, the EARLIEST started one wins. SPEC models a booking as an
- * active lease with a future start_date ('Dipesan'), so a tenant who is in A1 now and has reserved B1 for next month
- * has two active leases; the earliest is the room they physically occupy. (This sheet has no reference date, so
- * "latest start wins" would wrongly report the reservation.) Ties on start_date fall back to id for determinism.
+ * The tenant's earliest-started lease with status 'active', ignoring dates (kept for callers that have no
+ * reference date). Ties on start_date fall back to id for determinism.
+ *
+ * NOTE: `buildTenantsSheet` no longer uses this; it uses `currentLeaseFor` (the lease occupying a room on a
+ * given day, SPEC §2a "hunian historis"), which is what "current room" means.
  */
 export function activeLeaseFor(tenantId: string, leases: Lease[]): Lease | undefined {
   let best: Lease | undefined
@@ -267,21 +325,68 @@ export function activeLeaseFor(tenantId: string, leases: Lease[]): Lease | undef
 }
 
 /**
- * All tenants with their current room (active lease) if any.
- * Filter: by tenant.property_id (home kos); tenants without a home kos appear only when no filter is given.
+ * The lease that has the tenant in a room on `dateISO` (`isLeaseActiveOn`: status active with start_date <= date,
+ * or ended with date <= checkout_date ?? end_date; cancelled never). A reserved lease (active, start_date in the
+ * future) is NOT current, so a tenant who lives in A1 and has booked B1 for next month stays in A1.
+ * When several leases occupy on the date, an ACTIVE lease always beats an ENDED one (an ended lease whose
+ * checkout day has not passed yet - SPEC §2b.5 allows recording a planned checkout early - must not displace the
+ * tenant's ongoing tenancy); among leases of the same status the LATEST started wins (e.g. the previous one was
+ * not ended yet); ties on start_date fall back to id for determinism.
  */
-export function buildTenantsSheet(ctx: ExportContext, propertyIds?: string[]): ExportSheet {
+export function currentLeaseFor(tenantId: string, leases: Lease[], dateISO: string): Lease | undefined {
+  const rank = (l: Lease): number => (l.status === 'active' ? 1 : 0)
+  let best: Lease | undefined
+  for (const l of leases) {
+    if (l.tenant_id !== tenantId || !isLeaseActiveOn(l, dateISO)) continue
+    if (
+      !best ||
+      rank(l) > rank(best) ||
+      (rank(l) === rank(best) && (l.start_date > best.start_date || (l.start_date === best.start_date && l.id < best.id)))
+    )
+      best = l
+  }
+  return best
+}
+
+/** The tenant's earliest-starting reserved lease (status active, start_date > dateISO), if any. */
+function reservedLeaseFor(tenantId: string, leases: Lease[], dateISO: string): Lease | undefined {
+  let best: Lease | undefined
+  for (const l of leases) {
+    if (l.tenant_id !== tenantId || !isLeaseReservedOn(l, dateISO)) continue
+    if (!best || l.start_date < best.start_date || (l.start_date === best.start_date && l.id < best.id)) best = l
+  }
+  return best
+}
+
+/**
+ * All tenants (sorted by name) with the room they occupy TODAY, if any.
+ * Columns: Nama, Telepon, NIK, Jenis Kelamin, Kos, Kamar, Status Sewa, Alamat, Pekerjaan.
+ *
+ * - `todayISO` ('YYYY-MM-DD', default: today's local date) is the reference day. The current room comes from
+ *   `currentLeaseFor(tenant, leases, todayISO)`, i.e. the lease occupying a room on that day; an active lease
+ *   with a future start_date (a reservation) never displaces it. 'Status Sewa' shows that lease's status label
+ *   ('Aktif', or 'Selesai' for an ended lease whose checkout day has not passed yet).
+ * - A tenant with no lease occupying today but with a reserved lease shows the reserved kos/room and
+ *   'Status Sewa' = 'Dipesan'.
+ * - Otherwise Kamar is '-' and 'Status Sewa' = 'Tidak ada sewa aktif'.
+ * - Kos: from the chosen lease's room, else the lease itself, else the tenant's home kos (tenant.property_id).
+ * - Filter: by tenant.property_id (home kos); tenants without a home kos appear only when no filter is given.
+ */
+export function buildTenantsSheet(ctx: ExportContext, propertyIds?: string[], todayISO: string = toISODate(new Date())): ExportSheet {
   const lookup = indexContext(ctx)
+  const today = todayISO.slice(0, 10)
   const selected = ctx.tenants
     .filter((t) => matchesPropertyFilter(t.property_id, propertyIds))
     .sort((a, b) => a.full_name.localeCompare(b.full_name, 'id') || compareStrings(a.id, b.id))
 
   const rows = selected.map((t) => {
-    const lease = activeLeaseFor(t.id, ctx.leases)
+    const current = currentLeaseFor(t.id, ctx.leases, today)
+    const reserved = current ? undefined : reservedLeaseFor(t.id, ctx.leases, today)
+    const lease = current ?? reserved
     const room = lease ? lookup.roomById.get(lease.room_id) : undefined
-    // kos: from the active lease's room, else the lease itself, else the tenant's home kos
     const propertyId = room?.property_id ?? lease?.property_id ?? t.property_id
     const property = propertyId === null ? undefined : lookup.propertyById.get(propertyId)
+    const leaseStatus = current ? LEASE_STATUS_LABEL[current.status] : reserved ? RESERVED_LEASE_LABEL : NO_ACTIVE_LEASE_LABEL
     return {
       full_name: t.full_name,
       phone: text(t.phone),
@@ -289,7 +394,7 @@ export function buildTenantsSheet(ctx: ExportContext, propertyIds?: string[]): E
       gender: t.gender === null ? MISSING : GENDER_LABEL[t.gender],
       property: property?.name ?? MISSING,
       room: room?.name ?? MISSING,
-      lease_status: lease ? LEASE_STATUS_LABEL[lease.status] : NO_ACTIVE_LEASE_LABEL,
+      lease_status: leaseStatus,
       address: text(t.address),
       occupation: text(t.occupation),
     }
@@ -332,10 +437,58 @@ function sectionRow(label: string): SummaryRow {
 }
 
 /**
- * Key/value summary + cashflow table + category table flattened into one sheet ("Ringkasan").
- * Columns: Keterangan (label) / Nilai (money) / Catatan (note). Percent-only rows (Margin, Tingkat Penagihan)
- * carry null in Nilai and the percentage in Catatan. Sections are separated by a blank row and introduced by a
- * header-like row; a section header is emitted even when it has no rows so the sheet layout is predictable.
+ * Cash reconciliation rows (SPEC §2a "Arus kas vs laba"), in order:
+ *   Pendapatan sewa bruto (rentRevenue), Pemasukan lain (otherRevenue), Pengembalian sewa (-rentRefunds),
+ *   Pendapatan bersih (revenue), Uang jaminan diterima (depositsReceived), Potong jaminan (non-kas) (-depositsApplied),
+ *   Total kas masuk (rentRevenue + otherRevenue - depositsApplied + depositsReceived),
+ *   Pengeluaran operasional (expenses), Pengembalian sewa (kas keluar) (rentRefunds), Pengembalian uang jaminan (depositRefunds),
+ *   Total kas keluar (expenses + rentRefunds + depositRefunds), Arus kas bersih (kas masuk - kas keluar),
+ *   Laba bersih (netProfit), Uang jaminan dipegang (akhir periode) (depositsHeld),
+ *   Piutang jatuh tempo (overdue), Piutang belum jatuh tempo (notYetDue).
+ * Deductions are shown as negative numbers so the column sums naturally (a zero deduction is 0, never -0);
+ * the totals are computed here from the summary's components (not read from a stored field).
+ */
+function negate(amount: number): number {
+  return amount === 0 ? 0 : -amount
+}
+
+function reconciliationRows(summary: FinanceSummary): SummaryRow[] {
+  const cashIn = summary.rentRevenue + summary.otherRevenue - summary.depositsApplied + summary.depositsReceived
+  const cashOut = summary.expenses + summary.rentRefunds + summary.depositRefunds
+  return [
+    { label: 'Pendapatan sewa bruto', value: summary.rentRevenue, note: 'Pembayaran sewa, termasuk potong jaminan' },
+    { label: 'Pemasukan lain', value: summary.otherRevenue, note: '' },
+    { label: 'Pengembalian sewa', value: negate(summary.rentRefunds), note: 'Mengurangi pendapatan' },
+    { label: 'Pendapatan bersih', value: summary.revenue, note: 'Sewa bruto + lain - pengembalian sewa' },
+    { label: 'Uang jaminan diterima', value: summary.depositsReceived, note: 'Kewajiban, bukan pendapatan' },
+    { label: 'Potong jaminan (non-kas)', value: negate(summary.depositsApplied), note: 'Sudah termasuk pendapatan, tidak ada kas masuk' },
+    { label: 'Total kas masuk', value: cashIn, note: 'Sewa bruto + lain - potong jaminan + jaminan diterima' },
+    { label: 'Pengeluaran operasional', value: summary.expenses, note: '' },
+    { label: 'Pengembalian sewa (kas keluar)', value: summary.rentRefunds, note: '' },
+    { label: 'Pengembalian uang jaminan', value: summary.depositRefunds, note: '' },
+    { label: 'Total kas keluar', value: cashOut, note: 'Operasional + pengembalian sewa + pengembalian jaminan' },
+    { label: 'Arus kas bersih', value: cashIn - cashOut, note: 'Kas masuk - kas keluar' },
+    { label: 'Laba bersih', value: summary.netProfit, note: 'Pendapatan bersih - pengeluaran operasional' },
+    { label: 'Uang jaminan dipegang (akhir periode)', value: summary.depositsHeld, note: 'Saldo per akhir rentang' },
+    { label: 'Piutang jatuh tempo', value: summary.overdue, note: '' },
+    { label: 'Piutang belum jatuh tempo', value: summary.notYetDue, note: '' },
+  ]
+}
+
+/**
+ * Key/value summary + cash reconciliation + cashflow table + category table + per-kos table flattened into one
+ * sheet ("Ringkasan"). Columns: Keterangan (label) / Nilai (money) / Catatan (note).
+ *
+ * Layout (row 0 is the title with the range in Catatan):
+ *   1. KPI rows: Pendapatan, Pengeluaran, Laba Bersih, Margin, Uang Jaminan Diterima, Pengembalian Uang Jaminan,
+ *      Ditagihkan, Terkumpul, Tingkat Penagihan, Piutang. Percent-only rows (Margin, Tingkat Penagihan) carry null
+ *      in Nilai and the percentage in Catatan.
+ *   2. blank, 'Rekonsiliasi Kas' header, the 16 rows documented on `reconciliationRows`.
+ *   3. blank, 'Arus Kas' header, one row per cashflow point (Nilai = net, Catatan = 'Masuk x / Keluar y').
+ *   4. blank, 'Pengeluaran per Kategori' header, one row per category (Catatan = share %).
+ *   5. blank, 'Laba per Kos' header, one row per property (Nilai = net, Catatan = 'Masuk x / Keluar y').
+ * Sections are separated by a blank row and introduced by a header-like row; a section header is emitted even
+ * when it has no rows so the sheet layout is predictable.
  */
 export function buildSummarySheet(
   summary: FinanceSummary,
@@ -357,6 +510,9 @@ export function buildSummarySheet(
     { label: 'Terkumpul', value: summary.collected, note: '' },
     { label: 'Tingkat Penagihan', value: null, note: formatPercent(summary.collectionRate) },
     { label: 'Piutang', value: summary.outstanding, note: '' },
+    BLANK_ROW,
+    sectionRow('Rekonsiliasi Kas'),
+    ...reconciliationRows(summary),
     BLANK_ROW,
     sectionRow('Arus Kas'),
   ]
@@ -385,28 +541,61 @@ export function buildSummarySheet(
 
 // ---------- CSV ----------
 
+/** Leading characters a spreadsheet may interpret as a formula / command (OWASP CSV injection list). */
+const FORMULA_LEAD = ['=', '+', '-', '@', '\t', '\r']
+
+/**
+ * A signed plain number or percentage ('-68%', '+62812', '-1.500,5'): a sign followed only by digits,
+ * '.' or ',' and an optional trailing '%'. Such a cell can never be a formula, so it is not guarded.
+ */
+const SIGNED_NUMBER = /^[-+]\d[\d.,]*%?$/
+
+/**
+ * Formula-injection guard: a string starting with '=', '+', '-', '@', '\t' or '\r' gets a single quote in
+ * front, so a spreadsheet shows it as text instead of evaluating it. Applied to string cells only (numbers
+ * are written as digits and are never affected; headers are our own constants).
+ *
+ * Exempt, because they cannot be formulas and the apostrophe would otherwise show literally after import:
+ * the exact `MISSING` placeholder ('-') and plain signed numbers / percents matching `SIGNED_NUMBER`
+ * (e.g. the '-68%' margin note of a loss month). A sign followed by anything else ('-5 ribu', '+62 812',
+ * '-A1+B2') is still prefixed.
+ */
+function guardFormula(value: string): string {
+  if (value === '' || value === MISSING || SIGNED_NUMBER.test(value)) return value
+  return FORMULA_LEAD.includes(value[0] ?? '') ? `'${value}` : value
+}
+
 function csvEscape(value: string, delimiter: string): string {
   const needsQuotes = value.includes(delimiter) || value.includes('"') || value.includes('\n') || value.includes('\r')
   return needsQuotes ? `"${value.replace(/"/g, '""')}"` : value
 }
 
-/** null -> ''; numbers -> plain digits (no thousand separators); strings quoted only when needed. */
+/**
+ * null/undefined -> ''; numbers -> plain digits (no thousand separators, negatives keep their sign); strings
+ * are formula-guarded (see `toCsv`) and then quoted only when they contain the delimiter, '"', '\n' or '\r'.
+ */
 export function csvCell(cell: ExportCell | undefined, delimiter: ';' | ',' = ';'): string {
   if (cell === null || cell === undefined) return ''
   if (typeof cell === 'number') return String(cell)
-  return csvEscape(cell, delimiter)
+  return csvEscape(guardFormula(cell), delimiter)
 }
 
 /**
  * RFC 4180 CSV. Default delimiter ';' (Indonesian Excel locale); pass ',' for Google Sheets/US Excel.
  * Prefixed with a UTF-8 BOM so Excel opens it correctly. money/number cells are plain digits (no separators).
+ *
+ * Formula injection guard: any STRING cell whose first character is '=', '+', '-', '@', '\t' or '\r' is
+ * prefixed with a single quote (') before quoting, so '=HYPERLINK(...)' becomes "'=HYPERLINK(...)". Numbers
+ * (including negatives such as -200000) are unaffected. Two string shapes that can never be formulas are
+ * exempt and written verbatim: the '-' placeholder for a missing join, and plain signed numbers / percents
+ * such as the '-68%' margin note of a loss month (see `guardFormula`).
  */
 export function toCsv(sheet: ExportSheet, delimiter: ';' | ',' = ';'): string {
   const lines: string[] = [sheet.columns.map((c) => csvEscape(c.header, delimiter)).join(delimiter)]
   for (const row of sheet.rows) {
     lines.push(sheet.columns.map((c) => csvCell(row[c.key], delimiter)).join(delimiter))
   }
-  return `﻿${lines.join('\r\n')}`
+  return `\uFEFF${lines.join('\r\n')}`
 }
 
 /** 'Laporan Bulanan!' -> 'laporan-bulanan' (lowercase; runs of anything but a-z0-9 become one '-'). */

@@ -9,6 +9,7 @@ import {
   buildSummarySheet,
   buildTenantsSheet,
   csvCell,
+  currentLeaseFor,
   exportFileName,
   formatPercent,
   slugify,
@@ -24,7 +25,17 @@ const nextId = (prefix: string) => `${prefix}-${++seq}`
 const TS = '2026-01-01T00:00:00Z'
 
 function makeProperty(overrides: Partial<Property> = {}): Property {
-  return { id: nextId('kos'), org_id: 'org', created_at: TS, updated_at: TS, name: 'Kos', address: null, notes: null, ...overrides }
+  return {
+    id: nextId('kos'),
+    org_id: 'org',
+    created_at: TS,
+    updated_at: TS,
+    name: 'Kos',
+    address: null,
+    notes: null,
+    payment_info: null,
+    ...overrides,
+  }
 }
 
 function makeRoom(overrides: Partial<Room> = {}): Room {
@@ -86,7 +97,6 @@ function makeLease(overrides: Partial<Lease> = {}): Lease {
     end_date: '2026-03-31',
     status: 'active',
     checkout_date: null,
-    deposit_returned_amount: null,
     notes: null,
     ...overrides,
   }
@@ -105,6 +115,7 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     method: 'cash',
     kind: 'rent',
     notes: null,
+    created_by: null,
     ...overrides,
   }
 }
@@ -140,12 +151,14 @@ function makeExpense(overrides: Partial<Expense> = {}): Expense {
     created_at: TS,
     updated_at: TS,
     property_id: 'kos-a',
+    lease_id: null,
     category: 'wages',
     amount: 500_000,
     expense_date: '2026-03-15',
     description: 'Gaji penjaga',
     vendor: null,
     receipt_path: null,
+    created_by: null,
     ...overrides,
   }
 }
@@ -171,6 +184,8 @@ function makeContext(): ExportContext {
 }
 
 const MARCH = { start: '2026-03-01', end: '2026-03-31' }
+/** Reference day for the tenant sheet: after every fixture lease started, before any booking. */
+const TODAY = '2026-10-11'
 
 function headers(sheet: ExportSheet): string[] {
   return sheet.columns.map((c) => c.header)
@@ -188,9 +203,10 @@ describe('buildPaymentsSheet', () => {
   it('has the Indonesian headers and column types', () => {
     const sheet = buildPaymentsSheet([], invoices, ctx, MARCH)
     expect(sheet.name).toBe('Pembayaran')
-    expect(headers(sheet)).toEqual(['Tanggal', 'Kos', 'Kamar', 'Penyewa', 'Jenis', 'Metode', 'No. Tagihan', 'Jumlah', 'Catatan'])
+    expect(headers(sheet)).toEqual(['Tanggal', 'Kos', 'Kamar', 'Penyewa', 'Jenis', 'Metode', 'No. Tagihan', 'Sewa', 'Jumlah', 'Catatan'])
     expect(sheet.columns.find((c) => c.key === 'paid_at')?.type).toBe('date')
     expect(sheet.columns.find((c) => c.key === 'amount')?.type).toBe('money')
+    expect(sheet.columns.find((c) => c.key === 'lease')?.type).toBe('string')
     expect(sheet.rows).toEqual([])
   })
 
@@ -210,6 +226,7 @@ describe('buildPaymentsSheet', () => {
         kind: 'Sewa',
         method: 'Transfer',
         invoice_number: 'INV-2026-001',
+        lease: '-',
         amount: 750_000,
         notes: 'DP',
       },
@@ -226,9 +243,34 @@ describe('buildPaymentsSheet', () => {
       ctx,
       MARCH,
     )
-    expect(sheet.rows[0]).toMatchObject({ property: '-', room: '-', tenant: '-', invoice_number: '-', kind: 'Pemasukan Lain', method: 'QRIS', notes: '-', amount: 50_000 })
-    // no lease: kos still resolved from the payment's own property_id
-    expect(sheet.rows[1]).toMatchObject({ property: 'Kos Melati', room: '-', tenant: '-', invoice_number: '-', kind: 'Uang Jaminan', amount: 500_000 })
+    // unknown lease: nothing to join; the Sewa column stays '-' rather than '- - -'
+    expect(sheet.rows[0]).toMatchObject({ property: '-', room: '-', tenant: '-', invoice_number: '-', lease: '-', kind: 'Pemasukan Lain', method: 'QRIS', notes: '-', amount: 50_000 })
+    // no lease: kos still resolved from the payment's own property_id; kind uses the shared PAYMENT_KIND_LABEL vocabulary
+    expect(sheet.rows[1]).toMatchObject({ property: 'Kos Melati', room: '-', tenant: '-', invoice_number: '-', lease: '-', kind: 'Deposit (Uang Jaminan)', amount: 500_000 })
+  })
+
+  it("'Sewa' = 'tenant - room' only for payments with a lease but no invoice (deposits / other income)", () => {
+    const sheet = buildPaymentsSheet(
+      [
+        makePayment({ paid_at: '2026-03-01', lease_id: 'lease-budi', invoice_id: null, kind: 'deposit', amount: 500_000 }),
+        makePayment({ paid_at: '2026-03-02', lease_id: 'lease-budi', invoice_id: 'inv-1', kind: 'rent', amount: 1_000_000 }),
+        makePayment({ paid_at: '2026-03-03', lease_id: 'lease-sari', invoice_id: null, kind: 'other', method: 'deposit', property_id: 'kos-b', amount: 150_000, notes: 'Potongan jaminan: kerusakan' }),
+        makePayment({ paid_at: '2026-03-04', lease_id: null, invoice_id: null, kind: 'other', amount: 20_000 }),
+      ],
+      invoices,
+      ctx,
+      MARCH,
+    )
+    expect(column(sheet, 'lease')).toEqual(['Budi Santoso - A1', '-', 'Sari Dewi - B1', '-'])
+    expect(sheet.rows[0]).toMatchObject({ kind: 'Deposit (Uang Jaminan)', property: 'Kos Mawar', room: 'A1', tenant: 'Budi Santoso', invoice_number: '-' })
+    expect(sheet.rows[2]).toMatchObject({ kind: 'Pemasukan Lain', method: 'Potong Jaminan', property: 'Kos Melati', notes: 'Potongan jaminan: kerusakan' })
+  })
+
+  it("'Sewa' renders unknown tenant / room parts as '-' inside the pair", () => {
+    const ctx2 = makeContext()
+    ctx2.leases.push(makeLease({ id: 'lease-orphan', room_id: 'room-ghost', tenant_id: 'tenant-ghost', property_id: 'kos-a' }))
+    const sheet = buildPaymentsSheet([makePayment({ lease_id: 'lease-orphan', invoice_id: null, kind: 'deposit' })], invoices, ctx2, MARCH)
+    expect(sheet.rows[0]).toMatchObject({ lease: '- - -', property: 'Kos Mawar', room: '-', tenant: '-' })
   })
 
   it('filters by paid_at range (inclusive) and property', () => {
@@ -272,6 +314,19 @@ describe('buildExpensesSheet', () => {
     ])
     expect(buildExpensesSheet([makeExpense({ vendor: null })], ctx, MARCH).rows[0]?.vendor).toBe('-')
     expect(buildExpensesSheet([makeExpense({ property_id: 'kos-ghost' })], ctx, MARCH).rows[0]?.property).toBe('-')
+  })
+
+  it('labels the refund categories (rent_refund / deposit_refund) like any other expense', () => {
+    const sheet = buildExpensesSheet(
+      [
+        makeExpense({ category: 'rent_refund', lease_id: 'lease-budi', amount: 200_000, expense_date: '2026-03-05', description: 'Sewa batal' }),
+        makeExpense({ category: 'deposit_refund', lease_id: 'lease-sari', amount: 500_000, expense_date: '2026-03-06', property_id: 'kos-b' }),
+      ],
+      ctx,
+      MARCH,
+    )
+    expect(column(sheet, 'category')).toEqual(['Pengembalian Sewa', 'Pengembalian Uang Jaminan'])
+    expect(column(sheet, 'amount')).toEqual([200_000, 500_000])
   })
 
   it("shared expenses show 'Bersama' and are included only without a property filter", () => {
@@ -337,6 +392,46 @@ describe('buildInvoicesSheet', () => {
     expect(sheet.rows[0]).toMatchObject({ paid: 150_000, outstanding: 0, status: 'Lunas' })
   })
 
+  it('derives Status from rent payments, ignoring a stale stored status', () => {
+    const invoices = [
+      makeInvoice({ id: 'stale-paid', invoice_number: 'INV-001', total_amount: 1_000_000, status: 'paid', due_date: '2026-03-01' }),
+      makeInvoice({ id: 'stale-unpaid', invoice_number: 'INV-002', total_amount: 1_000_000, status: 'unpaid', due_date: '2026-03-02' }),
+      makeInvoice({ id: 'stale-partial', invoice_number: 'INV-003', total_amount: 1_000_000, status: 'partial', due_date: '2026-03-03' }),
+      makeInvoice({ id: 'exact', invoice_number: 'INV-004', total_amount: 750_000, status: 'unpaid', due_date: '2026-03-04' }),
+      makeInvoice({ id: 'zero', invoice_number: 'INV-005', total_amount: 0, status: 'unpaid', due_date: '2026-03-05' }),
+    ]
+    const payments = [
+      makePayment({ invoice_id: 'stale-unpaid', kind: 'rent', amount: 1_000_000 }), // fully paid, stored says unpaid
+      makePayment({ invoice_id: 'stale-partial', kind: 'deposit', amount: 500_000 }), // deposit does not pay rent
+      makePayment({ invoice_id: 'exact', kind: 'rent', amount: 400_000 }),
+      makePayment({ invoice_id: 'exact', kind: 'rent', amount: 350_000 }),
+    ]
+    const sheet = buildInvoicesSheet(invoices, payments, ctx, MARCH)
+    expect(column(sheet, 'status')).toEqual(['Belum Bayar', 'Lunas', 'Belum Bayar', 'Lunas', 'Lunas'])
+    expect(column(sheet, 'paid')).toEqual([0, 1_000_000, 0, 750_000, 0])
+    expect(column(sheet, 'outstanding')).toEqual([1_000_000, 0, 1_000_000, 0, 0])
+  })
+
+  it('excludes void invoices by default; includeVoid lists them as Dibatalkan with Sisa 0', () => {
+    const invoices = [
+      makeInvoice({ id: 'v', invoice_number: 'INV-001', total_amount: 1_000_000, status: 'void', due_date: '2026-03-01' }),
+      makeInvoice({ id: 'u', invoice_number: 'INV-002', total_amount: 1_000_000, status: 'unpaid', due_date: '2026-03-02' }),
+      makeInvoice({ id: 'v-out', invoice_number: 'INV-003', status: 'void', due_date: '2026-04-01' }),
+    ]
+    // a void invoice should have no rent payments (SPEC §2b.2); if one slips through it is still reported as paid
+    const payments = [makePayment({ invoice_id: 'v', kind: 'rent', amount: 250_000 })]
+    expect(column(buildInvoicesSheet(invoices, payments, ctx, MARCH), 'invoice_number')).toEqual(['INV-002'])
+    expect(column(buildInvoicesSheet(invoices, payments, ctx, MARCH, undefined, {}), 'invoice_number')).toEqual(['INV-002'])
+    expect(column(buildInvoicesSheet(invoices, payments, ctx, MARCH, undefined, { includeVoid: false }), 'invoice_number')).toEqual(['INV-002'])
+
+    const withVoid = buildInvoicesSheet(invoices, payments, ctx, MARCH, undefined, { includeVoid: true })
+    expect(column(withVoid, 'invoice_number')).toEqual(['INV-001', 'INV-002'])
+    expect(withVoid.rows[0]).toMatchObject({ status: 'Dibatalkan', total_amount: 1_000_000, paid: 250_000, outstanding: 0 })
+    expect(withVoid.rows[1]).toMatchObject({ status: 'Belum Bayar', outstanding: 1_000_000 })
+    // includeVoid still respects the due_date range and the property filter
+    expect(column(buildInvoicesSheet(invoices, payments, ctx, MARCH, ['kos-b'], { includeVoid: true }), 'invoice_number')).toEqual([])
+  })
+
   it('excludes void invoices, filters by due_date and property, falls back to -', () => {
     const invoices = [
       makeInvoice({ id: 'i1', invoice_number: 'INV-003', due_date: '2026-03-31', status: 'void' }),
@@ -367,9 +462,9 @@ describe('buildInvoicesSheet', () => {
 // ---------- tenants ----------
 
 describe('buildTenantsSheet', () => {
-  it('lists every tenant sorted by name with active lease room/kos, or fallbacks', () => {
+  it('lists every tenant sorted by name with the room occupied today, or fallbacks', () => {
     const ctx = makeContext()
-    const sheet = buildTenantsSheet(ctx)
+    const sheet = buildTenantsSheet(ctx, undefined, TODAY)
     expect(sheet.name).toBe('Penyewa')
     expect(headers(sheet)).toEqual(['Nama', 'Telepon', 'NIK', 'Jenis Kelamin', 'Kos', 'Kamar', 'Status Sewa', 'Alamat', 'Pekerjaan'])
     expect(sheet.rows).toEqual([
@@ -389,7 +484,7 @@ describe('buildTenantsSheet', () => {
         phone: '-',
         nik: '-',
         gender: 'Perempuan',
-        // ended lease does not count; kos comes from the tenant's home property
+        // lease ended with checkout 2026-02-28 does not count today; kos comes from the tenant's home property
         property: 'Kos Melati',
         room: '-',
         lease_status: 'Tidak ada sewa aktif',
@@ -399,29 +494,104 @@ describe('buildTenantsSheet', () => {
     ])
   })
 
+  it('todayISO defaults to the current date (an old active lease is current, a far-future one is reserved)', () => {
+    const ctx = makeContext()
+    ctx.leases = [
+      makeLease({ id: 'lease-old', room_id: 'room-a1', property_id: 'kos-a', tenant_id: 'tenant-budi', start_date: '2000-01-01', end_date: '2000-01-31' }),
+      makeLease({ id: 'lease-far', room_id: 'room-b1', property_id: 'kos-b', tenant_id: 'tenant-budi', start_date: '2999-01-01', end_date: '2999-01-31' }),
+    ]
+    expect(buildTenantsSheet(ctx).rows[0]).toMatchObject({ property: 'Kos Mawar', room: 'A1', lease_status: 'Aktif' })
+    expect(buildTenantsSheet(ctx, undefined).rows[0]).toMatchObject({ room: 'A1' })
+  })
+
   it('sorts by full_name regardless of input order', () => {
     const ctx = makeContext()
     ctx.tenants.push(makeTenant({ id: 'tenant-andi', full_name: 'Andi', property_id: null }))
-    expect(column(buildTenantsSheet(ctx), 'full_name')).toEqual(['Andi', 'Budi Santoso', 'Sari Dewi'])
+    expect(column(buildTenantsSheet(ctx, undefined, TODAY), 'full_name')).toEqual(['Andi', 'Budi Santoso', 'Sari Dewi'])
   })
 
-  it('prefers the active lease kos over the home kos', () => {
+  it('prefers the current lease kos over the home kos', () => {
     const ctx = makeContext()
-    // Budi's home is kos-a but his only active lease is in B1 (kos-b)
+    // Budi's home is kos-a but his only current lease is in B1 (kos-b)
     ctx.leases = [makeLease({ id: 'lease-budi-2', room_id: 'room-b1', property_id: 'kos-b', tenant_id: 'tenant-budi', start_date: '2026-03-01' })]
-    const row = buildTenantsSheet(ctx).rows[0]
+    const row = buildTenantsSheet(ctx, undefined, TODAY).rows[0]
     expect(row).toMatchObject({ full_name: 'Budi Santoso', property: 'Kos Melati', room: 'B1', lease_status: 'Aktif' })
   })
 
-  it('reserved (future-start) active lease does not displace the tenant\'s current room in Penyewa sheet', () => {
+  it("reserved (future-start) active lease does not displace the tenant's current room; it becomes current once started", () => {
     const ctx = makeContext()
-    // Budi lives in A1 (Kos Mawar) until 2026-10-31 and has booked B1 (Kos Melati) from 2026-11-01 ('Dipesan').
+    // Budi lives in A1 (Kos Mawar) and has booked B1 (Kos Melati) from 2026-11-01 ('Dipesan').
     ctx.leases = [
       makeLease({ id: 'lease-budi-booking', room_id: 'room-b1', property_id: 'kos-b', tenant_id: 'tenant-budi', start_date: '2026-11-01', end_date: '2027-10-31' }),
       makeLease({ id: 'lease-budi-current', room_id: 'room-a1', property_id: 'kos-a', tenant_id: 'tenant-budi', start_date: '2026-01-01', end_date: '2026-10-31' }),
     ]
-    const row = buildTenantsSheet(ctx).rows[0]
-    expect(row).toMatchObject({ full_name: 'Budi Santoso', property: 'Kos Mawar', room: 'A1', lease_status: 'Aktif' })
+    expect(buildTenantsSheet(ctx, undefined, '2026-10-11').rows[0]).toMatchObject({ full_name: 'Budi Santoso', property: 'Kos Mawar', room: 'A1', lease_status: 'Aktif' })
+    // the day before the booking starts: still A1 (the booking is reserved, not current)
+    expect(buildTenantsSheet(ctx, undefined, '2026-10-31').rows[0]).toMatchObject({ room: 'A1' })
+    // once the booking has started it is the latest-started lease occupying today, so it wins even though the old one was not ended
+    expect(buildTenantsSheet(ctx, undefined, '2026-11-01').rows[0]).toMatchObject({ property: 'Kos Melati', room: 'B1', lease_status: 'Aktif' })
+    // a timestamp is accepted as todayISO
+    expect(buildTenantsSheet(ctx, undefined, '2026-10-11T23:59:00Z').rows[0]).toMatchObject({ room: 'A1' })
+  })
+
+  it("a tenant with only a reservation shows the booked room with status 'Dipesan'", () => {
+    const ctx = makeContext()
+    ctx.leases = [makeLease({ id: 'lease-booking', room_id: 'room-a2', property_id: 'kos-a', tenant_id: 'tenant-budi', start_date: '2026-12-01', end_date: '2026-12-31' })]
+    expect(buildTenantsSheet(ctx, undefined, TODAY).rows[0]).toMatchObject({ property: 'Kos Mawar', room: 'A2', lease_status: 'Dipesan' })
+    // the booking is current on its first day
+    expect(buildTenantsSheet(ctx, undefined, '2026-12-01').rows[0]).toMatchObject({ room: 'A2', lease_status: 'Aktif' })
+  })
+
+  it("an ended lease still occupies the room until its checkout day ('Selesai'); cancelled never does", () => {
+    const ctx = makeContext()
+    ctx.leases = [
+      makeLease({ id: 'lease-ending', room_id: 'room-a1', property_id: 'kos-a', tenant_id: 'tenant-budi', status: 'ended', start_date: '2026-01-01', end_date: '2026-10-31', checkout_date: '2026-10-15' }),
+      makeLease({ id: 'lease-cancelled', room_id: 'room-a2', property_id: 'kos-a', tenant_id: 'tenant-sari', status: 'cancelled', start_date: '2026-01-01', end_date: '2026-12-31' }),
+    ]
+    const onTheDay = buildTenantsSheet(ctx, undefined, '2026-10-15')
+    expect(onTheDay.rows[0]).toMatchObject({ full_name: 'Budi Santoso', room: 'A1', lease_status: 'Selesai' })
+    expect(onTheDay.rows[1]).toMatchObject({ full_name: 'Sari Dewi', room: '-', property: 'Kos Melati', lease_status: 'Tidak ada sewa aktif' })
+    expect(buildTenantsSheet(ctx, undefined, '2026-10-16').rows[0]).toMatchObject({ room: '-', property: 'Kos Mawar', lease_status: 'Tidak ada sewa aktif' })
+  })
+
+  it('an ongoing active lease beats a later-started ended lease whose checkout is still in the future', () => {
+    const ctx = makeContext()
+    // Budi lives in A1 (active since 2026-01-01, no end). He also had A2 from 2026-05-01, already marked ended
+    // with a planned checkout on 2026-10-31 (recorded early, SPEC §2b.5). Today (2026-10-11) both leases
+    // "occupy", but his current room is still A1 and he is still 'Aktif'.
+    ctx.leases = [
+      makeLease({ id: 'l-main', room_id: 'room-a1', property_id: 'kos-a', tenant_id: 'tenant-budi', status: 'active', start_date: '2026-01-01', end_date: '2026-12-31' }),
+      makeLease({ id: 'l-temp', room_id: 'room-a2', property_id: 'kos-a', tenant_id: 'tenant-budi', status: 'ended', start_date: '2026-05-01', end_date: '2026-10-31', checkout_date: '2026-10-31' }),
+    ]
+    expect(buildTenantsSheet(ctx, undefined, '2026-10-11').rows[0]).toMatchObject({ full_name: 'Budi Santoso', room: 'A1', lease_status: 'Aktif' })
+    expect(currentLeaseFor('tenant-budi', ctx.leases, '2026-10-11')?.id).toBe('l-main')
+    // the same holds on the checkout day itself; after it only A1 is left anyway
+    expect(currentLeaseFor('tenant-budi', ctx.leases, '2026-10-31')?.id).toBe('l-main')
+    expect(currentLeaseFor('tenant-budi', ctx.leases, '2026-11-01')?.id).toBe('l-main')
+    // order of input does not matter
+    expect(currentLeaseFor('tenant-budi', [...ctx.leases].reverse(), '2026-10-11')?.id).toBe('l-main')
+    // when ONLY ended leases occupy (tenant already checked out of everything), the latest-started one wins
+    const endedOnly = ctx.leases.map((l) => ({ ...l, status: 'ended' as const, checkout_date: '2026-10-31' }))
+    expect(currentLeaseFor('tenant-budi', endedOnly, '2026-10-11')?.id).toBe('l-temp')
+    expect(buildTenantsSheet({ ...ctx, leases: endedOnly }, undefined, '2026-10-11').rows[0]).toMatchObject({ room: 'A2', lease_status: 'Selesai' })
+  })
+
+  it('currentLeaseFor picks the lease occupying on the date, latest start wins, ties broken by id', () => {
+    const leases = [
+      makeLease({ id: 'l-ended', tenant_id: 'tenant-budi', status: 'ended', start_date: '2025-01-01', end_date: '2025-06-30', checkout_date: '2025-06-30' }),
+      makeLease({ id: 'l-cancelled', tenant_id: 'tenant-budi', status: 'cancelled', start_date: '2025-06-01' }),
+      makeLease({ id: 'l-other', tenant_id: 'tenant-sari', status: 'active', start_date: '2025-01-01' }),
+      makeLease({ id: 'l-b', tenant_id: 'tenant-budi', status: 'active', start_date: '2026-02-01' }),
+      makeLease({ id: 'l-a', tenant_id: 'tenant-budi', status: 'active', start_date: '2026-02-01' }),
+      makeLease({ id: 'l-later', tenant_id: 'tenant-budi', status: 'active', start_date: '2026-05-01' }),
+      makeLease({ id: 'l-future', tenant_id: 'tenant-budi', status: 'active', start_date: '2027-01-01' }),
+    ]
+    expect(currentLeaseFor('tenant-budi', leases, '2026-10-11')?.id).toBe('l-later')
+    expect(currentLeaseFor('tenant-budi', leases, '2026-03-01')?.id).toBe('l-a')
+    expect(currentLeaseFor('tenant-budi', leases, '2025-06-30')?.id).toBe('l-ended')
+    expect(currentLeaseFor('tenant-budi', leases, '2025-07-01')).toBeUndefined()
+    expect(currentLeaseFor('tenant-sari', leases, '2026-10-11')?.id).toBe('l-other')
+    expect(currentLeaseFor('tenant-nobody', leases, '2026-10-11')).toBeUndefined()
   })
 
   it('activeLeaseFor ignores ended/cancelled leases and other tenants, picks earliest start, ties broken by id', () => {
@@ -438,43 +608,56 @@ describe('buildTenantsSheet', () => {
     expect(activeLeaseFor('tenant-nobody', leases)).toBeUndefined()
   })
 
-  it("tenant with no home kos and no active lease renders '-' for kos and gender", () => {
+  it("tenant with no home kos and no lease renders '-' for kos and gender", () => {
     const ctx = makeContext()
     ctx.tenants = [makeTenant({ id: 'tenant-x', full_name: 'Tamu', property_id: null, gender: null })]
     ctx.leases = []
-    expect(buildTenantsSheet(ctx).rows[0]).toMatchObject({ property: '-', room: '-', gender: '-', lease_status: 'Tidak ada sewa aktif' })
+    expect(buildTenantsSheet(ctx, undefined, TODAY).rows[0]).toMatchObject({ property: '-', room: '-', gender: '-', lease_status: 'Tidak ada sewa aktif' })
   })
 
-  it('active lease pointing at an unknown room still shows the lease kos and - for room', () => {
+  it('current lease pointing at an unknown room still shows the lease kos and - for room', () => {
     const ctx = makeContext()
     ctx.leases = [makeLease({ id: 'l', room_id: 'room-ghost', property_id: 'kos-b', tenant_id: 'tenant-budi' })]
-    expect(buildTenantsSheet(ctx).rows[0]).toMatchObject({ property: 'Kos Melati', room: '-', lease_status: 'Aktif' })
+    expect(buildTenantsSheet(ctx, undefined, TODAY).rows[0]).toMatchObject({ property: 'Kos Melati', room: '-', lease_status: 'Aktif' })
   })
 
   it('property filter uses tenant.property_id; null home kos only when unfiltered', () => {
     const ctx = makeContext()
     ctx.tenants.push(makeTenant({ id: 'tenant-andi', full_name: 'Andi', property_id: null }))
-    expect(column(buildTenantsSheet(ctx), 'full_name')).toEqual(['Andi', 'Budi Santoso', 'Sari Dewi'])
-    expect(column(buildTenantsSheet(ctx, ['kos-a']), 'full_name')).toEqual(['Budi Santoso'])
-    expect(column(buildTenantsSheet(ctx, ['kos-b']), 'full_name')).toEqual(['Sari Dewi'])
-    expect(column(buildTenantsSheet(ctx, ['kos-a', 'kos-b']), 'full_name')).toEqual(['Budi Santoso', 'Sari Dewi'])
+    expect(column(buildTenantsSheet(ctx, undefined, TODAY), 'full_name')).toEqual(['Andi', 'Budi Santoso', 'Sari Dewi'])
+    expect(column(buildTenantsSheet(ctx, ['kos-a'], TODAY), 'full_name')).toEqual(['Budi Santoso'])
+    expect(column(buildTenantsSheet(ctx, ['kos-b'], TODAY), 'full_name')).toEqual(['Sari Dewi'])
+    expect(column(buildTenantsSheet(ctx, ['kos-a', 'kos-b'], TODAY), 'full_name')).toEqual(['Budi Santoso', 'Sari Dewi'])
   })
 })
 
 // ---------- summary ----------
 
 describe('buildSummarySheet', () => {
+  /**
+   * March: rent 4.800.000 (of which 300.000 was potong jaminan) + other 400.000 - rent refund 200.000 = revenue 5.000.000.
+   * Opex 3.400.000 -> net profit 1.600.000 (32%). Deposits: received 500.000, refunded 250.000, held 1.200.000.
+   */
   const summary: FinanceSummary = {
     revenue: 5_000_000,
+    rentRevenue: 4_800_000,
+    otherRevenue: 400_000,
+    rentRefunds: 200_000,
     expenses: 3_400_000,
     netProfit: 1_600_000,
     margin: 0.32,
     depositsReceived: 500_000,
+    depositsApplied: 300_000,
     depositRefunds: 250_000,
+    depositsHeld: 1_200_000,
+    sharedExpensesExcluded: 0,
     billed: 4_000_000,
     collected: 4_200_000,
     collectionRate: 1.05,
+    rentReceived: 4_800_000,
     outstanding: 800_000,
+    overdue: 650_000,
+    notYetDue: 150_000,
     paymentCount: 4,
     expenseCount: 3,
   }
@@ -490,6 +673,7 @@ describe('buildSummarySheet', () => {
     { propertyId: 'kos-a', name: 'Kos Mawar', revenue: 5_000_000, expenses: 3_000_000, net: 2_000_000 },
     { propertyId: 'shared', name: 'Bersama', revenue: 0, expenses: 400_000, net: -400_000 },
   ]
+  const blank = { label: '', value: null, note: '' }
 
   it('emits rows in the documented order with percent notes', () => {
     const sheet = buildSummarySheet(summary, cashflow, byCategory, byProperty, MARCH, 'Laporan Maret 2026')
@@ -499,8 +683,7 @@ describe('buildSummarySheet', () => {
       { key: 'value', header: 'Nilai', type: 'money' },
       { key: 'note', header: 'Catatan', type: 'string' },
     ])
-    const blank = { label: '', value: null, note: '' }
-    expect(sheet.rows).toEqual([
+    expect(sheet.rows.slice(0, 13)).toEqual([
       { label: 'Laporan Maret 2026', value: null, note: '2026-03-01 s/d 2026-03-31' },
       { label: 'Pendapatan', value: 5_000_000, note: '' },
       { label: 'Pengeluaran', value: 3_400_000, note: '' },
@@ -512,6 +695,10 @@ describe('buildSummarySheet', () => {
       { label: 'Terkumpul', value: 4_200_000, note: '' },
       { label: 'Tingkat Penagihan', value: null, note: '105%' },
       { label: 'Piutang', value: 800_000, note: '' },
+      blank,
+      { label: 'Rekonsiliasi Kas', value: null, note: '' },
+    ])
+    expect(sheet.rows.slice(29)).toEqual([
       blank,
       { label: 'Arus Kas', value: null, note: '' },
       { label: '1 Mar', value: 1_000_000, note: 'Masuk 1500000 / Keluar 500000' },
@@ -527,12 +714,74 @@ describe('buildSummarySheet', () => {
     ])
   })
 
+  it("'Rekonsiliasi Kas' lists the 16 rows with cash in/out computed from the components", () => {
+    const sheet = buildSummarySheet(summary, cashflow, byCategory, byProperty, MARCH, 'Laporan Maret 2026')
+    const section = sheet.rows.slice(13, 29).map((r) => [r.label, r.value])
+    // kas masuk = 4.800.000 + 400.000 - 300.000 + 500.000 = 5.400.000; kas keluar = 3.400.000 + 200.000 + 250.000 = 3.850.000
+    expect(section).toEqual([
+      ['Pendapatan sewa bruto', 4_800_000],
+      ['Pemasukan lain', 400_000],
+      ['Pengembalian sewa', -200_000],
+      ['Pendapatan bersih', 5_000_000],
+      ['Uang jaminan diterima', 500_000],
+      ['Potong jaminan (non-kas)', -300_000],
+      ['Total kas masuk', 5_400_000],
+      ['Pengeluaran operasional', 3_400_000],
+      ['Pengembalian sewa (kas keluar)', 200_000],
+      ['Pengembalian uang jaminan', 250_000],
+      ['Total kas keluar', 3_850_000],
+      ['Arus kas bersih', 1_550_000],
+      ['Laba bersih', 1_600_000],
+      ['Uang jaminan dipegang (akhir periode)', 1_200_000],
+      ['Piutang jatuh tempo', 650_000],
+      ['Piutang belum jatuh tempo', 150_000],
+    ])
+    // the visible rows add up: bruto + lain + (negative) pengembalian = pendapatan bersih
+    expect(4_800_000 + 400_000 + -200_000).toBe(5_000_000)
+    // arus kas bersih differs from laba bersih by the non-cash / non-P&L items: -300.000 (potong) +500.000 (jaminan) -250.000 (refund)
+    expect(1_600_000 - 300_000 + 500_000 - 250_000).toBe(1_550_000)
+    // every reconciliation row is a money cell (never null) and notes are strings
+    for (const r of sheet.rows.slice(13, 29)) {
+      expect(typeof r.value).toBe('number')
+      expect(typeof r.note).toBe('string')
+    }
+  })
+
+  it('reconciliation with zero deposits and refunds: kas masuk = pendapatan, kas keluar = opex, arus kas = laba', () => {
+    const plain: FinanceSummary = {
+      ...summary,
+      rentRevenue: 2_000_000,
+      otherRevenue: 0,
+      rentRefunds: 0,
+      revenue: 2_000_000,
+      expenses: 750_000,
+      netProfit: 1_250_000,
+      depositsReceived: 0,
+      depositsApplied: 0,
+      depositRefunds: 0,
+      depositsHeld: 0,
+      overdue: 0,
+      notYetDue: 0,
+    }
+    const sheet = buildSummarySheet(plain, [], [], [], MARCH, 'Polos')
+    const byLabel = new Map(sheet.rows.map((r) => [r.label, r.value]))
+    expect(byLabel.get('Total kas masuk')).toBe(2_000_000)
+    expect(byLabel.get('Total kas keluar')).toBe(750_000)
+    expect(byLabel.get('Arus kas bersih')).toBe(1_250_000)
+    expect(byLabel.get('Laba bersih')).toBe(1_250_000)
+    expect(byLabel.get('Pengembalian sewa')).toBe(0)
+    expect(byLabel.get('Potong jaminan (non-kas)')).toBe(0)
+    expect(byLabel.get('Uang jaminan dipegang (akhir periode)')).toBe(0)
+  })
+
   it("renders '-' for null ratios and keeps section headers when sections are empty", () => {
     const empty: FinanceSummary = { ...summary, revenue: 0, netProfit: -3_400_000, margin: null, billed: 0, collectionRate: null }
     const sheet = buildSummarySheet(empty, [], [], [], MARCH, 'Kosong')
     expect(sheet.rows.find((r) => r.label === 'Margin')?.note).toBe('-')
     expect(sheet.rows.find((r) => r.label === 'Tingkat Penagihan')?.note).toBe('-')
-    expect(column(sheet, 'label').slice(11)).toEqual(['', 'Arus Kas', '', 'Pengeluaran per Kategori', '', 'Laba per Kos'])
+    expect(column(sheet, 'label').slice(11, 13)).toEqual(['', 'Rekonsiliasi Kas'])
+    expect(column(sheet, 'label').slice(29)).toEqual(['', 'Arus Kas', '', 'Pengeluaran per Kategori', '', 'Laba per Kos'])
+    expect(sheet.rows).toHaveLength(35)
   })
 
   it('formatPercent rounds to a whole percent', () => {
@@ -593,6 +842,91 @@ describe('toCsv', () => {
     expect(toCsv(odd).slice(1)).toBe('"Nilai; Rp";Kosong\r\n12345678;\r\n-5;"a\rb"')
   })
 
+  it("guards formula injection: string cells starting with = + - @ \\t \\r get a leading ', numbers do not", () => {
+    const risky: ExportSheet = {
+      name: 'x',
+      columns: [
+        { key: 's', header: 'Teks', type: 'string' },
+        { key: 'n', header: 'Jumlah', type: 'money' },
+      ],
+      rows: [
+        { s: '=HYPERLINK("http://evil";"klik")', n: -200_000 },
+        { s: '+62 812', n: 0 },
+        { s: '-5 ribu', n: -5 },
+        { s: '@budi', n: 1 },
+        { s: '\tx', n: 2 },
+        { s: '\rx', n: 3 },
+        { s: 'a=b', n: 4 },
+        { s: '', n: 5 },
+        { s: '-A1+B2', n: 6 },
+        { s: '+SUM(A1:A9)', n: 7 },
+      ],
+    }
+    expect(toCsv(risky).slice(1).split('\r\n')).toEqual([
+      'Teks;Jumlah',
+      `"'=HYPERLINK(""http://evil"";""klik"")";-200000`,
+      `'+62 812;0`,
+      `'-5 ribu;-5`,
+      `'@budi;1`,
+      `'\tx;2`,
+      `"'\rx";3`,
+      'a=b;4',
+      ';5',
+      `'-A1+B2;6`,
+      `'+SUM(A1:A9);7`,
+    ])
+    expect(csvCell('=1+1')).toBe(`'=1+1`)
+    expect(csvCell('=a;b')).toBe(`"'=a;b"`)
+    expect(csvCell('=a;b', ',')).toBe(`'=a;b`)
+    expect(csvCell(-1_000)).toBe('-1000')
+  })
+
+  it("does not guard the '-' placeholder or plain signed numbers / percents (they can never be formulas)", () => {
+    expect(csvCell('-')).toBe('-')
+    expect(csvCell('-68%')).toBe('-68%')
+    expect(csvCell('+5%')).toBe('+5%')
+    expect(csvCell('+62812')).toBe('+62812')
+    expect(csvCell('-1.500,5')).toBe('-1.500,5')
+    // anything else after the sign is still guarded
+    expect(csvCell('--')).toBe(`'--`)
+    expect(csvCell('-%')).toBe(`'-%`)
+    expect(csvCell('-68% rugi')).toBe(`'-68% rugi`)
+    expect(csvCell('-1e5')).toBe(`'-1e5`)
+    expect(csvCell('+62 812')).toBe(`'+62 812`)
+    expect(csvCell('=-5')).toBe(`'=-5`)
+    expect(csvCell('@-5')).toBe(`'@-5`)
+  })
+
+  it('a loss month exports its negative margin and null ratios verbatim', () => {
+    const loss: FinanceSummary = {
+      revenue: 1_000_000,
+      rentRevenue: 1_000_000,
+      otherRevenue: 0,
+      rentRefunds: 0,
+      expenses: 1_680_000,
+      netProfit: -680_000,
+      margin: -0.68,
+      depositsReceived: 0,
+      depositsApplied: 0,
+      depositRefunds: 0,
+      depositsHeld: 0,
+      sharedExpensesExcluded: 0,
+      billed: 0,
+      collected: 0,
+      collectionRate: null,
+      rentReceived: 1_000_000,
+      outstanding: 0,
+      overdue: 0,
+      notYetDue: 0,
+      paymentCount: 1,
+      expenseCount: 2,
+    }
+    const lines = toCsv(buildSummarySheet(loss, [], [], [], MARCH, 'Rugi')).slice(1).split('\r\n')
+    expect(lines).toContain('Laba Bersih;-680000;')
+    expect(lines).toContain('Margin;;-68%')
+    expect(lines).toContain('Tingkat Penagihan;;-')
+  })
+
   it('csvCell handles null, numbers and strings', () => {
     expect(csvCell(null)).toBe('')
     expect(csvCell(undefined)).toBe('')
@@ -603,10 +937,13 @@ describe('toCsv', () => {
     expect(csvCell('say "hi"')).toBe('"say ""hi"""')
   })
 
-  it('round-trips a built sheet', () => {
+  it("round-trips a built sheet (the '-' placeholder for a missing vendor is written verbatim, not guarded)", () => {
     const ctx = makeContext()
     const csv = toCsv(buildExpensesSheet([makeExpense({ description: 'Beli sapu; pel', amount: 35_000, expense_date: '2026-03-02' })], ctx, MARCH))
-    expect(csv.slice(1).split('\r\n')[1]).toBe('2026-03-02;Kos Mawar;Gaji & Upah;"Beli sapu; pel";-;35000')
+    expect(csv.slice(1).split('\r\n')[1]).toBe(`2026-03-02;Kos Mawar;Gaji & Upah;"Beli sapu; pel";-;35000`)
+    // a vendor that starts with a sign is still guarded
+    const guarded = toCsv(buildExpensesSheet([makeExpense({ vendor: '-Toko Jaya-', amount: 1, expense_date: '2026-03-02' })], ctx, MARCH))
+    expect(guarded.slice(1).split('\r\n')[1]).toBe(`2026-03-02;Kos Mawar;Gaji & Upah;Gaji penjaga;'-Toko Jaya-;1`)
   })
 })
 
