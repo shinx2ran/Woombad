@@ -108,6 +108,15 @@ Gunakan:
 - Logika: fungsi di `src/domain/*` (lihat JSDoc di tiap file). **Jangan** menduplikasi perhitungan di UI.
 - Peran: `role === 'staff'` tidak boleh melihat tombol hapus untuk data keuangan dan tidak melihat Laporan.
 
+Catatan mode Supabase vs Demo:
+- Di mode **Supabase**, `invoices.status` dijaga oleh trigger DB setiap ada pembayaran; UI cukup meng-*invalidate*
+  `invoices`. Di mode **Demo** (lokal) tidak ada trigger, jadi UI harus menulis `status` hasil `deriveInvoiceStatus`.
+  Cara aman untuk keduanya: panggil `repo.update('invoices', id, { status })` hanya jika `repo.mode === 'local'`.
+- Peran **staf** di mode Supabase tidak boleh meng-update `invoices` (RLS) dan hanya boleh mengubah `payments`/`expenses`
+  yang ia catat sendiri (`created_by`). UI menyembunyikan tombol tersebut untuk staf dan menampilkan pesan dari
+  `translateDbError` bila server menolak.
+- Hapus tagihan/sewa/kos yang masih dirujuk data lain ditolak (DB RESTRICT; `LocalRepo` meniru aturan ini).
+
 Konvensi kode:
 - Bahasa UI: **Bahasa Indonesia** (label, pesan error, empty state). Kode/komentar boleh Inggris.
 - Mobile-first (lebar 360px harus nyaman), tabel boleh `hideOnMobile` untuk kolom sekunder; aksi utama berupa
