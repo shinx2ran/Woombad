@@ -71,8 +71,12 @@ export function MembersCard({ isAdmin, currentUserId }: { isAdmin: boolean; curr
           <PendingInvitations
             invitations={invitations.data ?? []}
             onCancel={async (inv) => {
-              await repo.remove('invitations', inv.id)
-              await invalidate('invitations')
+              try {
+                await repo.remove('invitations', inv.id)
+              } finally {
+                // refresh even when it was already used or cancelled on another device
+                await invalidate('invitations')
+              }
             }}
           />
         )}

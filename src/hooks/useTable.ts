@@ -64,6 +64,7 @@ export function useRemove<T extends OrgTableName>(table: T, alsoInvalidate: OrgT
   const invalidate = useInvalidate()
   return useMutation({
     mutationFn: (id: string) => repo.remove(table, id),
-    onSuccess: () => invalidate(table, ...alsoInvalidate),
+    // also after a refusal: the row may already be gone on another device
+    onSettled: () => invalidate(table, ...alsoInvalidate),
   })
 }

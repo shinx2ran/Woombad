@@ -118,7 +118,8 @@ ke pemilik (lihat [Lupa kata sandi](#lupa-kata-sandi)).
 2. Muncul layar **Masukkan kode** → ketik **kode pemilik** dari operator → **Gabung**.
 3. Organisasi "Kos Saya" dibuat dan Anda menjadi **Pemilik**.
 
-Masih tampil Mode Demo? Tutup aplikasi sepenuhnya, lalu buka lagi (aplikasi memperbarui diri sendiri).
+Masih tampil Mode Demo? Tutup aplikasi sepenuhnya, lalu buka lagi (aplikasi memperbarui diri sendiri). Bila muncul
+**Versi baru siap**, selesaikan isian yang sedang diketik, lalu ketuk **Muat ulang**.
 
 ### 5. Pemilik: impor data Mode Demo
 
