@@ -73,7 +73,7 @@ export function JoinOrganization({ onJoined }: { onJoined: () => void }) {
           <p>Akun Anda sudah ada, tetapi belum terhubung ke kos mana pun.</p>
           <ul className="list-disc space-y-1 pl-5">
             <li>
-              <strong>Diundang?</strong> Masukkan kode dari pesan WhatsApp pemilik kos.
+              <strong>Diundang?</strong> Masukkan kode dari pesan WhatsApp yang Anda terima.
             </li>
             <li>
               <strong>Pemilik yang baru memasang aplikasi?</strong> Masukkan <strong>kode pemilik</strong> yang Anda terima saat

@@ -16,6 +16,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [resetting, setResetting] = useState(false)
   const [pendingCode] = useState(() => formatCodeInput(readPendingCode()))
   const isLocal = auth.mode === 'local'
   // Only same-origin in-app paths are accepted; a crafted '//evil.example/x' falls back to the dashboard.
@@ -46,15 +47,21 @@ export function LoginPage() {
   }
 
   const reset = async () => {
+    if (resetting) return
+    setError(null)
     if (!email.trim()) {
       setError('Masukkan email terlebih dahulu.')
       return
     }
+    // a second tap while the first request runs would only hit Supabase's resend limit
+    setResetting(true)
     try {
       await auth.sendPasswordReset(email.trim())
       toast.success('Tautan reset kata sandi dikirim ke email Anda.')
     } catch (err) {
       setError(errorMessage(err, 'Gagal mengirim reset.'))
+    } finally {
+      setResetting(false)
     }
   }
 
@@ -86,8 +93,8 @@ export function LoginPage() {
             Masuk
           </Button>
           <div className="flex items-center justify-between text-sm">
-            <button type="button" onClick={reset} className="text-slate-600 hover:underline">
-              Lupa kata sandi?
+            <button type="button" onClick={reset} disabled={resetting} className="text-slate-600 hover:underline disabled:opacity-60">
+              {resetting ? 'Mengirim…' : 'Lupa kata sandi?'}
             </button>
             <Link to="/daftar" className="font-medium text-brand-700 hover:underline">
               Buat akun
@@ -99,7 +106,7 @@ export function LoginPage() {
             </p>
           ) : (
             <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">
-              Diundang pemilik kos? Buka tautan dari pesan WhatsApp, atau{' '}
+              Diundang? Buka tautan dari pesan WhatsApp, atau{' '}
               <Link to="/daftar" className="font-medium text-brand-700 hover:underline">
                 buat akun
               </Link>{' '}

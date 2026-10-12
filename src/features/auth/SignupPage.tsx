@@ -48,7 +48,7 @@ export function SignupPage() {
               itu.
             </>
           ) : (
-            'Setelah masuk, masukkan kode dari pemilik kos.'
+            'Setelah masuk, masukkan kode undangan, atau kode pemilik bila Anda pemilik yang baru memasang aplikasi.'
           )}
         </p>
         <Link to="/login" className="mt-4 inline-block text-sm font-medium text-brand-700 hover:underline">
@@ -67,8 +67,9 @@ export function SignupPage() {
           </p>
         ) : (
           <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-            Akun saja belum cukup: Anda perlu <strong>kode dari pemilik kos</strong> untuk melihat data kos. Kode diminta setelah
-            akun dibuat.
+            Akun saja belum cukup untuk melihat data kos. Setelah akun dibuat, Anda diminta memasukkan kode:{' '}
+            <strong>kode undangan</strong> dari pesan WhatsApp yang Anda terima, atau <strong>kode pemilik</strong> bila Anda pemilik
+            yang baru memasang aplikasi.
           </p>
         )}
         <Input label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />

@@ -46,3 +46,6 @@ export const ROLE_OPTION: Record<MemberRole, { title: string; description: strin
     description: 'Catat check-in, pembayaran, dan pengeluaran. Tidak bisa ubah harga, rekening, atau lihat laporan.',
   },
 }
+
+/** Shown where an invitation's "Untuk siapa?" was left empty. */
+export const NO_LABEL = '(tanpa keterangan)'

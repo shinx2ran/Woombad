@@ -6,6 +6,7 @@ import { MEMBER_ROLE_LABEL } from '../../../types/db'
 import type { CreatedInvitation } from '../../../lib/repo'
 import { errorMessage } from '../../auth/networkError'
 import { RoleOptions } from './RoleOptions'
+import { NO_LABEL } from './permissions'
 import { COPY_FAILED_HINT, COPY_SELECTED_HINT, copyText } from './clipboard'
 import { buildInviteMessage, buildJoinUrl, formatExpiry, whatsappShareUrl } from './inviteLink'
 
@@ -34,7 +35,8 @@ export function InviteModal({
   onClose: () => void
 }) {
   const [label, setLabel] = useState('')
-  const [role, setRole] = useState<InviteRole>('staff')
+  // no default: Admin and Staf differ a lot, so the owner picks one on purpose
+  const [role, setRole] = useState<InviteRole | null>(null)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [created, setCreated] = useState<Created | null>(null)
@@ -60,7 +62,7 @@ export function InviteModal({
 
   const create = async (e: FormEvent) => {
     e.preventDefault()
-    if (creating) return
+    if (creating || !role) return
     setError(null)
     setCreating(true)
     const trimmed = label.trim() || null
@@ -95,7 +97,7 @@ export function InviteModal({
         <Button variant="ghost" onClick={onClose} disabled={creating}>
           Batal
         </Button>
-        <Button type="submit" form="invite-form" loading={creating} icon={<KeyRound className="h-4 w-4" />}>
+        <Button type="submit" form="invite-form" loading={creating} disabled={!role} icon={<KeyRound className="h-4 w-4" />}>
           Buat kode
         </Button>
       </>
@@ -141,6 +143,7 @@ export function InviteModal({
             autoFocus
           />
           <RoleOptions label="Peran" roles={INVITE_ROLES} value={role} onChange={setRole} />
+          {!role && <p className="text-xs text-slate-500">Pilih peran dulu, lalu tekan Buat kode.</p>}
           {error && (
             <p role="alert" className="text-sm text-red-600">
               {error}
@@ -173,7 +176,8 @@ function InviteResult({ created, orgName, onSent }: { created: Created; orgName:
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600">
-        Untuk <strong className="text-slate-900">{created.label ?? 'Tanpa nama'}</strong> · {MEMBER_ROLE_LABEL[created.role]}
+        Untuk: {created.label ? <strong className="text-slate-900">{created.label}</strong> : NO_LABEL} ·{' '}
+        {MEMBER_ROLE_LABEL[created.role]}
       </p>
       <div>
         <input
