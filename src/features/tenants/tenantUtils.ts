@@ -204,15 +204,24 @@ export function formToTenantPayload(values: TenantFormValues): OrgInsert<'tenant
   }
 }
 
-/** Case-insensitive search over name, NIK / passport number and phone (digits compared without separators / country code). */
+/** a query that can only be a phone number: digits with + ( ) - . and spaces */
+const PHONE_QUERY_RE = /^[+\d\s().-]+$/
+
+/**
+ * Case-insensitive search over name, NIK / passport number and phone. Document numbers are compared without
+ * spaces; the phone is compared digit-by-digit (separators and country code ignored) only when the query
+ * looks like a phone number with at least 3 digits, so an alphanumeric passport query such as 'pa1234'
+ * never matches a phone that happens to contain 1234.
+ */
 export function matchesTenantSearch(tenant: Pick<Tenant, 'full_name' | 'nik' | 'phone'> & Partial<Pick<Tenant, 'id_number'>>, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
   if (tenant.full_name.toLowerCase().includes(q)) return true
-  if (tenant.nik && tenant.nik.includes(q)) return true
-  if (tenant.id_number && tenant.id_number.toLowerCase().includes(q)) return true
+  const qCompact = q.replace(/\s+/g, '')
+  if (tenant.nik && tenant.nik.replace(/\s+/g, '').includes(qCompact)) return true
+  if (tenant.id_number && tenant.id_number.replace(/\s+/g, '').toLowerCase().includes(qCompact)) return true
   const qDigits = q.replace(/[^0-9]/g, '')
-  if (qDigits && tenant.phone) {
+  if (PHONE_QUERY_RE.test(q) && qDigits.length >= 3 && tenant.phone) {
     const phoneDigits = tenant.phone.replace(/[^0-9]/g, '')
     // Allow searching "0812…" against a stored "+62812…".
     const local = phoneDigits.startsWith('62') ? `0${phoneDigits.slice(2)}` : phoneDigits
@@ -316,9 +325,11 @@ export function formToScanPrefill(values: TenantFormValues): Partial<ScanPrefill
 }
 
 /**
- * Merge the values the user accepted in the scanner into the form. `id_type` always follows the scanned
- * document (a passport scan switches the form to Paspor), every other field is written only when present;
- * phone and the other manual fields are untouched.
+ * Merge the values the user accepted in the scanner into the form. `id_type` follows the prefill: the
+ * scanner sets it to the scanned document (a passport scan switches the form to Paspor) unless the user
+ * declined the switch in the review list, in which case it carries the form's current type and none of the
+ * other document's number fields. Every other field is written only when present; phone and the other
+ * manual fields are untouched.
  */
 export function applyScanPrefill(current: TenantFormValues, prefill: ScanPrefill): TenantFormValues {
   const next: TenantFormValues = { ...current, id_type: prefill.id_type }
