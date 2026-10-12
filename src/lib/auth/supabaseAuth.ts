@@ -34,7 +34,8 @@ export class SupabaseAuth implements AuthService {
   }
 
   async signOut(): Promise<void> {
-    await this.sb.auth.signOut()
+    // this device only: signing out on the laptop must not end the session on the phone
+    await this.sb.auth.signOut({ scope: 'local' })
   }
 
   async sendPasswordReset(email: string): Promise<void> {

@@ -21,6 +21,7 @@ import {
   type ExpenseFormErrors,
 } from './expenseUtils'
 import { saveExpense } from './saveExpense'
+import { shrinkReceiptImage } from './receiptImage'
 
 export type ExpenseFormMode = 'create' | 'edit' | 'duplicate'
 
@@ -70,6 +71,7 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
   const [removeReceipt, setRemoveReceipt] = useState(false)
   const [errors, setErrors] = useState<ExpenseFormErrors>({})
   const [saving, setSaving] = useState(false)
+  const [preparingPhoto, setPreparingPhoto] = useState(false)
 
   const clearError = (field: keyof ExpenseFormErrors) =>
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
@@ -113,11 +115,23 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
     clearError('description')
   }
 
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const picked = e.target.files?.[0] ?? null
+  const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.target
+    let picked: File | null = input.files?.[0] ?? null
+    if (picked) {
+      setPreparingPhoto(true)
+      try {
+        // camera photos are scaled down first, so they fit the 5 MB limit
+        picked = await shrinkReceiptImage(picked)
+      } catch {
+        // the browser could not decode it: keep the original and let the size check decide
+      } finally {
+        setPreparingPhoto(false)
+      }
+    }
     if (picked && picked.size > MAX_RECEIPT_BYTES) {
       toast.error('Ukuran foto maksimal 5 MB.')
-      e.target.value = ''
+      input.value = ''
       return
     }
     setFile(picked)
@@ -186,7 +200,7 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             Batal
           </Button>
-          <Button type="submit" form="expense-form" loading={saving}>
+          <Button type="submit" form="expense-form" loading={saving || preparingPhoto}>
             {isEdit ? 'Simpan perubahan' : 'Simpan'}
           </Button>
         </>
@@ -332,7 +346,7 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
 
         <Input label="Vendor / penerima" placeholder="Contoh: PLN, Pak Udin" value={vendor} onChange={(e) => setVendor(e.target.value)} />
 
-        <Field label="Foto struk" hint={isLocalMode ? 'Mode Demo: foto tidak disimpan (butuh Supabase Storage, bucket "receipts").' : 'Opsional, maks. 5 MB.'}>
+        <Field label="Foto struk" hint={isLocalMode ? 'Mode Demo: foto tidak disimpan (butuh Supabase Storage, bucket "receipts").' : 'Opsional. Foto besar otomatis diperkecil.'}>
           <div className="flex flex-wrap items-center gap-3">
             <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
               <Camera className="h-4 w-4" />

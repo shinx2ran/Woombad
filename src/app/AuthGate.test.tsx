@@ -9,7 +9,7 @@ vi.mock('../hooks/useAuth', () => ({ useAuth: () => authState }))
 vi.mock('../lib/supabase', async (importOriginal) => ({ ...(await importOriginal<typeof import('../lib/supabase')>()), isSupabaseConfigured: true }))
 
 import { watchedFetch } from '../lib/supabase'
-import { AuthGate, GuestOnly, SERVER_PROBLEM_DELAY_MS } from './AuthGate'
+import { AuthGate, GuestOnly, SERVER_PROBLEM_DELAY_MS, SLOW_START_DELAY_MS } from './AuthGate'
 
 const SESSION_KEY = 'sb-abcdefgh-auth-token'
 const noAnswer = () => watchedFetch('https://abcdefgh.supabase.co/auth/v1/token', undefined, () => Promise.reject(new TypeError('Failed to fetch'))).catch(() => {})
@@ -53,8 +53,46 @@ describe('AuthGate when Supabase does not answer (online)', () => {
 
   it('keeps the spinner while the server answers', async () => {
     renderAt('/dashboard')
-    await act(() => vi.advanceTimersByTimeAsync(10 * SERVER_PROBLEM_DELAY_MS))
+    await act(() => vi.advanceTimersByTimeAsync(SLOW_START_DELAY_MS - 1000))
     expect(screen.getByText('Menyiapkan aplikasi…')).toBeTruthy()
+  })
+
+  it('a start-up that neither answers nor fails (very weak signal) offers a way out after a longer wait', async () => {
+    renderAt('/dashboard')
+    await act(() => vi.advanceTimersByTimeAsync(SLOW_START_DELAY_MS))
+    expect(screen.queryByText('Menyiapkan aplikasi…')).toBeNull()
+    expect(screen.getByText('Tidak dapat terhubung ke server. Periksa koneksi internet.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Keluar' })).toBeTruthy()
+  })
+
+  it('signed in on /login: goes to the remembered deep link instead of always the dashboard', async () => {
+    authState.loading = false
+    authState.session = { user: { id: 'u1', email: 'a@b.c' } }
+    const router = createMemoryRouter(
+      [
+        { element: <GuestOnly />, children: [{ path: '/login', element: <p>Formulir masuk</p> }] },
+        { path: '/penyewa', element: <p>Daftar penyewa</p> },
+        { path: '/dashboard', element: <p>Beranda</p> },
+      ],
+      { initialEntries: [{ pathname: '/login', state: { from: '/penyewa?x=1' } }] },
+    )
+    render(<RouterProvider router={router} />)
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(router.state.location.pathname + router.state.location.search).toBe('/penyewa?x=1')
+  })
+
+  it('an invite link parked on /login by an older version is handed to the join link page', async () => {
+    authState.loading = false
+    const router = createMemoryRouter(
+      [
+        { element: <GuestOnly />, children: [{ path: '/login', element: <p>Formulir masuk</p> }] },
+        { path: '/gabung', element: <p>Gabung</p> },
+      ],
+      { initialEntries: [{ pathname: '/login', state: { from: '/gabung?kode=ABCD-EFGH' } }] },
+    )
+    render(<RouterProvider router={router} />)
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    expect(router.state.location.pathname + router.state.location.search).toBe('/gabung?kode=ABCD-EFGH')
   })
 
   it('after the retries, stays on the error screen instead of a login that cannot succeed', async () => {

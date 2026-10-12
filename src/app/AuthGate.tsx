@@ -11,6 +11,8 @@ import { safeReturnPath } from '../lib/redirect'
 
 /** a failed request during start-up is retried; give it this long before showing the error screen */
 export const SERVER_PROBLEM_DELAY_MS = 3000
+/** a request that neither answers nor fails (very weak signal): offer the way out after this long */
+export const SLOW_START_DELAY_MS = 20000
 
 /** The error screen for a server that does not answer: connection or paused-project text, "Muat ulang", "Keluar". */
 function ServerErrorScreen() {
@@ -24,11 +26,17 @@ function ServerErrorScreen() {
 export function FullPageLoading() {
   const server = useServerStatus()
   const [waited, setWaited] = useState(false)
+  const [slow, setSlow] = useState(false)
   useEffect(() => {
     const timer = setTimeout(() => setWaited(true), SERVER_PROBLEM_DELAY_MS)
-    return () => clearTimeout(timer)
+    const slowTimer = setTimeout(() => setSlow(true), SLOW_START_DELAY_MS)
+    return () => {
+      clearTimeout(timer)
+      clearTimeout(slowTimer)
+    }
   }, [])
-  if (waited && server !== 'ok') return <ServerErrorScreen />
+  // the screen goes away by itself once the data arrives (the parent stops rendering this fallback)
+  if ((waited && server !== 'ok') || slow) return <ServerErrorScreen />
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50">
       <LoadingState label="Menyiapkan aplikasi…" />
@@ -78,8 +86,14 @@ function ServerNotice() {
 /** Opposite of AuthGate: send signed-in users away from the login/signup pages. */
 export function GuestOnly() {
   const { session, loading } = useAuth()
+  const location = useLocation()
+  const from = safeReturnPath((location.state as { from?: unknown } | null)?.from)
   if (loading) return <FullPageLoading />
-  if (session) return <Navigate to="/dashboard" replace />
+  // after sign-in, go where the visitor was headed (the deep link AuthGate remembered)
+  if (session) return <Navigate to={from} replace />
+  // an invite link opened while an older version was still installed was parked here by that version;
+  // hand it to the join link page so the code is kept
+  if (from.startsWith('/gabung?')) return <Navigate to={from} replace />
   return (
     <>
       <ServerNotice />
