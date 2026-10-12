@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Invoice, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../../types/db'
 import {
+  amountDueAsOf,
   buildAttentionSections,
   buildExpiringItems,
   buildLookups,
@@ -240,6 +241,44 @@ describe('buildAttentionSections', () => {
     expect(unbilled.amount).toBe(1_675_000)
     const overdue = sections[0].items[0] // outstanding wins over the next-period amount
     expect(overdue.amount).toBe(1_500_000)
+  })
+
+  it('quotes only what is due: an invoice issued early is left out of amount and counted as not yet due', () => {
+    // l1 owes Oct (due 2026-10-01, overdue); the owner issued Nov early (due 2026-11-01, 21 days ahead).
+    const inv = [...invoices, invoice('i1n', 'l1', '2026-11-01', '2026-11-30', 'unpaid', 1_650_000)]
+    const sections = buildAttentionSections(leases, inv, payments, [], lookups, TODAY)
+    const overdue = sections[0].items[0]
+    expect(overdue.lease.id).toBe('l1')
+    expect(overdue.summary.outstanding).toBe(3_150_000)
+    expect(overdue.dueInvoices.map((i) => i.id)).toEqual(['i1'])
+    expect(overdue.dueAmount).toBe(1_500_000)
+    expect(overdue.notYetDueAmount).toBe(1_650_000)
+    expect(overdue.amount).toBe(1_500_000)
+    expect(overdue.openInvoiceCount).toBe(2)
+    expect(overdue.summary.nextDueDate).toBe('2026-10-01')
+  })
+
+  it('counts an invoice due within the due-soon window (today + 3 days) as due', () => {
+    const inv = [...invoices, invoice('i1n', 'l1', '2026-10-14', '2026-11-13', 'unpaid', 1_000_000)]
+    const overdue = buildAttentionSections(leases, inv, payments, [], lookups, TODAY)[0].items[0]
+    expect(overdue.dueInvoices.map((i) => i.id)).toEqual(['i1', 'i1n'])
+    expect(overdue.amount).toBe(2_500_000)
+    expect(overdue.notYetDueAmount).toBe(0)
+  })
+
+  it('amountDueAsOf sums remaining amounts of open invoices due on or before the date', () => {
+    const inv = [
+      invoice('a', 'l1', '2026-09-01', '2026-09-30', 'partial'),
+      invoice('b', 'l1', '2026-10-01', '2026-10-31', 'unpaid'),
+      invoice('c', 'l1', '2026-11-01', '2026-11-30', 'unpaid'),
+      invoice('d', 'l1', '2026-08-01', '2026-08-31', 'void'),
+      invoice('e', 'l2', '2026-10-01', '2026-10-31', 'unpaid'),
+    ]
+    const pays = [payment('pa', 'a', 'l1', 400_000, '2026-09-02')]
+    const due = amountDueAsOf('l1', inv, pays, '2026-10-01')
+    expect(due.invoices.map((i) => i.id)).toEqual(['a', 'b'])
+    expect(due.amount).toBe(2_600_000)
+    expect(amountDueAsOf('l1', inv, pays, '2026-08-31').amount).toBe(0)
   })
 
   it('returns no sections when everything is paid ahead', () => {
