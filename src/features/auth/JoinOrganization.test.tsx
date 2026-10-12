@@ -62,6 +62,39 @@ describe('JoinOrganization', () => {
     expect(joinWithCode).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the link code for the next visit when the server could not be reached', async () => {
+    savePendingCode('ABCD-EFGH', Date.now() - 1_000)
+    const savedAt = JSON.parse(localStorage.getItem('woombad.pendingCode') ?? '{}').savedAt
+    // what postgrest-js reports for a failed fetch in Safari / every iOS browser
+    joinWithCode.mockRejectedValueOnce(new Error('TypeError: Load failed'))
+    const { unmount } = render(<JoinOrganization onJoined={() => undefined} />)
+    expect((await screen.findByRole('alert')).textContent).toBe('Tidak dapat terhubung ke server. Periksa koneksi internet.')
+    expect(readPendingCode()).toBe('ABCD-EFGH')
+    // put back as it was, so the seven-day limit still counts from when the link was opened
+    expect(JSON.parse(localStorage.getItem('woombad.pendingCode') ?? '{}').savedAt).toBe(savedAt)
+
+    unmount()
+    joinWithCode.mockResolvedValueOnce('org-1')
+    const onJoined = vi.fn()
+    render(<JoinOrganization onJoined={onJoined} />)
+    await waitFor(() => expect(onJoined).toHaveBeenCalledTimes(1))
+    expect(joinWithCode).toHaveBeenCalledTimes(2)
+    expect(readPendingCode()).toBe('')
+  })
+
+  it('forgets the link code once the server has answered a manual retry', async () => {
+    savePendingCode('ABCD-EFGH')
+    joinWithCode.mockRejectedValueOnce(new Error('Tidak dapat terhubung ke server. Periksa koneksi internet.'))
+    render(<JoinOrganization onJoined={() => undefined} />)
+    await screen.findByRole('alert')
+    expect(readPendingCode()).toBe('ABCD-EFGH')
+
+    joinWithCode.mockRejectedValueOnce(new Error('Kode tidak valid atau sudah kedaluwarsa.'))
+    fireEvent.click(screen.getByRole('button', { name: /Gabung/ }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Kode tidak valid atau sudah kedaluwarsa.'))
+    expect(readPendingCode()).toBe('')
+  })
+
   it('does not auto-submit an incomplete pending code', () => {
     savePendingCode('ABC')
     render(<JoinOrganization onJoined={() => undefined} />)

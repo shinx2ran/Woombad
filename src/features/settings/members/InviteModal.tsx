@@ -1,8 +1,10 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useBlocker } from 'react-router'
 import { Copy, KeyRound, Link2, MessageCircle, TriangleAlert } from 'lucide-react'
 import { Button, Input, Modal, useToast } from '../../../components/ui'
 import { MEMBER_ROLE_LABEL } from '../../../types/db'
 import type { CreatedInvitation } from '../../../lib/repo'
+import { errorMessage } from '../../auth/networkError'
 import { RoleOptions } from './RoleOptions'
 import { COPY_FAILED_HINT, COPY_SELECTED_HINT, copyText } from './clipboard'
 import { buildInviteMessage, buildJoinUrl, formatExpiry, whatsappShareUrl } from './inviteLink'
@@ -17,7 +19,8 @@ interface Created extends CreatedInvitation {
 
 /**
  * Two steps: who/role form, then the code. The plain code exists only in this dialog (the database keeps
- * a hash), so closing it before the code was sent or copied asks first.
+ * a hash), so closing it before the code was sent or copied asks first, also on the Android Back button.
+ * While the code is being created the dialog cannot be closed: the invitation would exist without its code.
  */
 export function InviteModal({
   orgName,
@@ -37,6 +40,23 @@ export function InviteModal({
   const [created, setCreated] = useState<Created | null>(null)
   const [sent, setSent] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
+  const unsent = created !== null && !sent
+
+  // Back leaves the page and would drop the code: block it and ask, like the close button does.
+  // While the code is being created Back is simply ignored.
+  const blocker = useBlocker(creating || unsent)
+  useEffect(() => {
+    if (blocker.state === 'blocked' && !unsent) blocker.reset()
+  }, [blocker, unsent])
+  const asking = unsent && (confirmClose || blocker.state === 'blocked')
+
+  // Reload or leaving the site (e.g. Back on the first page) cannot be blocked in-app; let the browser ask.
+  useEffect(() => {
+    if (!unsent) return
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [unsent])
 
   const create = async (e: FormEvent) => {
     e.preventDefault()
@@ -48,22 +68,31 @@ export function InviteModal({
       const result = await onCreate(role, trimmed)
       setCreated({ ...result, label: trimmed, role })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal membuat kode.')
+      setError(errorMessage(err, 'Gagal membuat kode.'))
     } finally {
       setCreating(false)
     }
   }
 
   const requestClose = () => {
-    if (created && !sent) setConfirmClose(true)
+    if (creating) return
+    if (unsent) setConfirmClose(true)
     else onClose()
+  }
+  const keepOpen = () => {
+    if (blocker.state === 'blocked') blocker.reset()
+    setConfirmClose(false)
+  }
+  const closeWithoutSending = () => {
+    if (blocker.state === 'blocked') blocker.proceed()
+    onClose()
   }
 
   let footer
   if (!created) {
     footer = (
       <>
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose} disabled={creating}>
           Batal
         </Button>
         <Button type="submit" form="invite-form" loading={creating} icon={<KeyRound className="h-4 w-4" />}>
@@ -71,13 +100,13 @@ export function InviteModal({
         </Button>
       </>
     )
-  } else if (confirmClose) {
+  } else if (asking) {
     footer = (
       <>
-        <Button variant="ghost" onClick={() => setConfirmClose(false)}>
+        <Button variant="ghost" onClick={keepOpen}>
           Kembali
         </Button>
-        <Button variant="danger" onClick={onClose}>
+        <Button variant="danger" onClick={closeWithoutSending}>
           Tutup
         </Button>
       </>
@@ -89,7 +118,7 @@ export function InviteModal({
   return (
     <Modal open onClose={requestClose} title={created ? 'Kode undangan' : 'Undang anggota'} size="sm" footer={footer}>
       {created ? (
-        confirmClose ? (
+        asking ? (
           <div className="space-y-2 text-sm text-slate-700">
             <p className="font-medium text-slate-900">Tutup tanpa mengirim kode?</p>
             <p>

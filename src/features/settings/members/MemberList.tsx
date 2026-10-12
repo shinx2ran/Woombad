@@ -3,6 +3,7 @@ import { ChevronRight, Trash2 } from 'lucide-react'
 import { Badge, Button, Modal } from '../../../components/ui'
 import { formatDate } from '../../../lib/format'
 import { MEMBER_ROLE_LABEL, MEMBER_ROLES, type MemberRole, type OrganizationMember } from '../../../types/db'
+import { errorMessage } from '../../auth/networkError'
 import { RoleOptions } from './RoleOptions'
 import { canChangeRole, canRemoveMember } from './permissions'
 
@@ -111,7 +112,7 @@ function ManageMemberModal({
       await action()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal menyimpan.')
+      setError(errorMessage(err, 'Gagal menyimpan.'))
       setBusy(false)
     }
   }

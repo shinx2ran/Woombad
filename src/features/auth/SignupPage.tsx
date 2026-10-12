@@ -4,6 +4,7 @@ import { Button, Input } from '../../components/ui'
 import { useAuth } from '../../hooks/useAuth'
 import { AuthLayout } from './LoginPage'
 import { formatCodeInput } from './codeInput'
+import { errorMessage } from './networkError'
 import { readPendingCode } from './pendingCode'
 
 export function SignupPage() {
@@ -28,7 +29,7 @@ export function SignupPage() {
       if (session) navigate('/dashboard', { replace: true })
       else setNeedsConfirm(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal mendaftar.')
+      setError(errorMessage(err, 'Gagal mendaftar.'))
     } finally {
       setLoading(false)
     }

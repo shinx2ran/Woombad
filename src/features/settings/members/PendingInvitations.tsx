@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Badge, ConfirmDialog, useToast } from '../../../components/ui'
 import { formatDate } from '../../../lib/format'
 import { MEMBER_ROLE_LABEL, type Invitation } from '../../../types/db'
+import { errorMessage } from '../../auth/networkError'
 import { isInvitationExpired } from './permissions'
 
 /** Invitations not used yet. The codes themselves cannot be shown again (only a hash is stored). */
@@ -26,7 +27,7 @@ export function PendingInvitations({
       toast.success('Undangan dibatalkan.')
       setTarget(null)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Gagal membatalkan undangan.')
+      toast.error(errorMessage(err, 'Gagal membatalkan undangan.'))
     } finally {
       setBusy(false)
     }

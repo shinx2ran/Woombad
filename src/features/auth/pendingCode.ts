@@ -14,14 +14,20 @@ export function savePendingCode(code: string, now: number = Date.now()): void {
   }
 }
 
-export function readPendingCode(now: number = Date.now()): string {
+export interface PendingCode {
+  code: string
+  savedAt: number
+}
+
+/** The saved code with when it was saved, so it can be put back unchanged (savePendingCode(code, savedAt)). */
+export function readPendingEntry(now: number = Date.now()): PendingCode | null {
   let raw: string | null = null
   try {
     raw = localStorage.getItem(KEY)
   } catch {
-    return ''
+    return null
   }
-  if (!raw) return ''
+  if (!raw) return null
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -29,10 +35,14 @@ export function readPendingCode(now: number = Date.now()): string {
     parsed = null
   }
   // a bare code was written by an earlier build
-  if (!parsed || typeof parsed !== 'object') return raw
+  if (!parsed || typeof parsed !== 'object') return { code: raw, savedAt: now }
   const { code, savedAt } = parsed as { code?: unknown; savedAt?: unknown }
-  if (typeof code !== 'string' || typeof savedAt !== 'number') return ''
-  return now - savedAt > MAX_AGE_MS ? '' : code
+  if (typeof code !== 'string' || typeof savedAt !== 'number') return null
+  return now - savedAt > MAX_AGE_MS ? null : { code, savedAt }
+}
+
+export function readPendingCode(now: number = Date.now()): string {
+  return readPendingEntry(now)?.code ?? ''
 }
 
 export function clearPendingCode(): void {

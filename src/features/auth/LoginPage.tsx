@@ -4,6 +4,7 @@ import { Button, Input, useToast } from '../../components/ui'
 import { useAuth } from '../../hooks/useAuth'
 import { safeReturnPath } from '../../lib/redirect'
 import { formatCodeInput } from './codeInput'
+import { errorMessage } from './networkError'
 import { readPendingCode } from './pendingCode'
 
 export function LoginPage() {
@@ -28,7 +29,7 @@ export function LoginPage() {
       await auth.signInWithPassword(email.trim(), password)
       navigate(from, { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal masuk.')
+      setError(errorMessage(err, 'Gagal masuk.'))
     } finally {
       setLoading(false)
     }
@@ -53,7 +54,7 @@ export function LoginPage() {
       await auth.sendPasswordReset(email.trim())
       toast.success('Tautan reset kata sandi dikirim ke email Anda.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal mengirim reset.')
+      setError(errorMessage(err, 'Gagal mengirim reset.'))
     }
   }
 

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { RouterProvider, createMemoryRouter } from 'react-router'
 import { ToastProvider } from '../../components/ui'
 import type { Invitation, MemberRole, OrganizationMember } from '../../types/db'
 
@@ -53,17 +54,28 @@ function fakeRepo(members: OrganizationMember[], invitations: Invitation[] = [])
   }
 }
 
+let router: ReturnType<typeof createMemoryRouter>
+const goBack = () => act(() => router.navigate(-1))
+
 function setup(opts: { role: MemberRole; members: OrganizationMember[]; invitations?: Invitation[]; isLocalMode?: boolean }) {
   orgState.role = opts.role
   orgState.isLocalMode = opts.isLocalMode ?? false
   orgState.repo = fakeRepo(opts.members, opts.invitations)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // a data router, as in the app: the invite dialog blocks Back while an unsent code is shown
+  router = createMemoryRouter(
+    [
+      { path: '/dashboard', element: <p>Beranda</p> },
+      { path: '/pengaturan', element: <MembersCard isAdmin={opts.role !== 'staff'} currentUserId="me" /> },
+    ],
+    { initialEntries: ['/dashboard', '/pengaturan'], initialIndex: 1 },
+  )
   const wrap = (ui: ReactNode) => (
     <QueryClientProvider client={client}>
       <ToastProvider>{ui}</ToastProvider>
     </QueryClientProvider>
   )
-  render(wrap(<MembersCard isAdmin={opts.role !== 'staff'} currentUserId="me" />))
+  render(wrap(<RouterProvider router={router} />))
   return orgState.repo
 }
 
@@ -144,6 +156,56 @@ describe('MembersCard', () => {
     fireEvent.click(screen.getByRole('link', { name: /Kirim lewat WhatsApp/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Selesai' }))
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('cannot be closed while the code is being created', async () => {
+    const repo = setup({ role: 'owner', members: [OWNER] })
+    let finish: (v: { code: string; expiresAt: string }) => void = () => undefined
+    repo.createInvitation.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    fireEvent.click(screen.getByRole('button', { name: /Undang/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Buat kode/ }))
+
+    expect((screen.getByRole('button', { name: 'Batal' }) as HTMLButtonElement).disabled).toBe(true)
+    // header X, Escape, Back
+    fireEvent.click(screen.getByRole('button', { name: 'Tutup' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await goBack()
+    expect(router.state.location.pathname).toBe('/pengaturan')
+    expect(screen.getByRole('dialog')).toBeTruthy()
+
+    await act(async () => finish({ code: 'WXYZ-2345', expiresAt: '2099-10-19T12:00:00Z' }))
+    expect(((await screen.findByLabelText('Kode undangan')) as HTMLInputElement).value).toBe('WXYZ-2345')
+  })
+
+  it('asks before Back leaves the page with an unsent code', async () => {
+    setup({ role: 'owner', members: [OWNER] })
+    fireEvent.click(screen.getByRole('button', { name: /Undang/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Buat kode/ }))
+    await screen.findByLabelText('Kode undangan')
+
+    await goBack()
+    expect(router.state.location.pathname).toBe('/pengaturan')
+    expect(screen.getByText('Tutup tanpa mengirim kode?')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Kembali' }))
+    expect(screen.getByLabelText('Kode undangan')).toBeTruthy()
+
+    await goBack()
+    expect(screen.getByText('Tutup tanpa mengirim kode?')).toBeTruthy()
+    await act(async () => fireEvent.click(screen.getByText('Tutup', { selector: 'button' })))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/dashboard'))
+    expect(screen.getByText('Beranda')).toBeTruthy()
+  })
+
+  it('lets Back through once the code was sent', async () => {
+    setup({ role: 'owner', members: [OWNER] })
+    fireEvent.click(screen.getByRole('button', { name: /Undang/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Buat kode/ }))
+    await screen.findByLabelText('Kode undangan')
+    fireEvent.click(screen.getByRole('link', { name: /Kirim lewat WhatsApp/ }))
+
+    await goBack()
+    expect(router.state.location.pathname).toBe('/dashboard')
+    expect(screen.queryByText('Tutup tanpa mengirim kode?')).toBeNull()
   })
 
   it('lists pending invitations with expiry and cancels them', async () => {

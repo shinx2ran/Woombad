@@ -6,17 +6,20 @@ import { getRepo } from '../../lib/repo'
 import { normalizeCode } from '../../lib/repo/types'
 import { AuthLayout } from './LoginPage'
 import { formatCodeInput, isCompleteCode } from './codeInput'
-import { clearPendingCode, readPendingCode } from './pendingCode'
+import { errorMessage, isNetworkError } from './networkError'
+import { clearPendingCode, readPendingEntry, savePendingCode } from './pendingCode'
 
 /**
  * Shown by OrgProvider when the signed-in account is not a member of any organisation yet.
  * The owner enters the setup code once; everyone else enters the invitation code they received.
- * A code saved from an invitation link is submitted automatically, once.
+ * A code saved from an invitation link is submitted automatically, once; it is kept for a later visit only
+ * when the server could not be reached.
  */
 export function JoinOrganization({ onJoined }: { onJoined: () => void }) {
   const { auth, session } = useAuth()
   const inputId = useId()
-  const [pending] = useState(() => formatCodeInput(readPendingCode()))
+  const [stored] = useState(() => readPendingEntry())
+  const pending = formatCodeInput(stored?.code ?? '')
   const autoCode = isCompleteCode(pending) ? pending : ''
   const [code, setCode] = useState(pending)
   const [saving, setSaving] = useState(Boolean(autoCode))
@@ -33,11 +36,17 @@ export function JoinOrganization({ onJoined }: { onJoined: () => void }) {
         setJoined(true)
         onJoined()
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Kode tidak dapat dipakai.')
+        // The link code is kept only while the server has not answered: a request that never arrived
+        // counted no attempt, so the next visit may try it again.
+        if (stored && autoCode && normalizeCode(value) === normalizeCode(autoCode)) {
+          if (isNetworkError(err)) savePendingCode(stored.code, stored.savedAt)
+          else clearPendingCode()
+        }
+        setError(errorMessage(err, 'Kode tidak dapat dipakai.'))
         setSaving(false)
       }
     },
-    [onJoined],
+    [onJoined, stored, autoCode],
   )
 
   useEffect(() => {
