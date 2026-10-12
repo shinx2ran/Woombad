@@ -3,10 +3,12 @@ import { ScanLine, X } from 'lucide-react'
 import { Button, Input, Modal, Select, Textarea, useToast } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { useInsert, useInvalidate, useUpdate } from '../../hooks/useTable'
-import { GENDER_LABEL, GENDERS, type Tenant } from '../../types/db'
+import { GENDER_LABEL, GENDERS, ID_TYPE_LABEL, ID_TYPES, type Tenant } from '../../types/db'
 import { isValidNik } from '../../domain/ktp'
-import { KtpScanner } from './KtpScanner'
+import { DocumentScanner } from '../scanner/DocumentScanner'
 import {
+  applyScanPrefill,
+  formToScanPrefill,
   formToTenantPayload,
   initialTenantForm,
   tenantToForm,
@@ -54,20 +56,24 @@ function SuggestInput({
 }
 
 /**
- * Create / edit tenant form in a Modal (bottom sheet on phones). Includes the optional "Scan KTP" panel,
- * which prefills fields via OCR; in Supabase mode the scanned photo can be uploaded to the `ktp` bucket.
+ * Create / edit tenant form in a Modal (bottom sheet on phones). Includes the optional "Scan KTP / Paspor"
+ * panel (shared DocumentScanner), which prefills fields via OCR and switches the identity type to the
+ * detected document; in Supabase mode the scanned photo can be uploaded to the `ktp` bucket.
  */
 export function TenantFormModal({
   open,
   onClose,
   tenant,
   onSaved,
+  autoScan = false,
 }: {
   open: boolean
   onClose: () => void
   /** existing row when editing; null/undefined when creating */
   tenant?: Tenant | null
   onSaved?: (saved: Tenant) => void
+  /** open the scanner panel (and the camera) as soon as the form opens: check-in shortcut */
+  autoScan?: boolean
 }) {
   const { properties, selectedPropertyId, repo, isLocalMode } = useOrg()
   const toast = useToast()
@@ -89,7 +95,7 @@ export function TenantFormModal({
     if (!open) return
     setValues(tenant ? tenantToForm(tenant) : initialTenantForm(selectedPropertyId, properties))
     setErrors({})
-    setScannerOpen(false)
+    setScannerOpen(autoScan && !tenant)
     setKtpImage(null)
     setSaveKtpPhoto(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,6 +113,9 @@ export function TenantFormModal({
       : isValidNik(nikDigits)
         ? 'Format NIK valid (16 digit).'
         : `NIK harus 16 digit (saat ini ${nikDigits.length} digit).`
+  const isPassport = values.id_type === 'passport'
+  const idNumberLabel = isPassport ? 'Nomor paspor' : values.id_type === 'other' ? 'Nomor identitas' : 'NIK'
+  const scannerCurrent = formToScanPrefill(values)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -167,7 +176,7 @@ export function TenantFormModal({
       }
     >
       <form id="tenant-form" onSubmit={submit} className="space-y-6" noValidate>
-        {/* Scan KTP */}
+        {/* Scan KTP / Paspor */}
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Button
@@ -177,15 +186,17 @@ export function TenantFormModal({
               icon={scannerOpen ? <X className="h-4 w-4" /> : <ScanLine className="h-4 w-4" />}
               onClick={() => setScannerOpen((o) => !o)}
             >
-              {scannerOpen ? 'Tutup scan KTP' : 'Scan KTP'}
+              {scannerOpen ? 'Tutup scanner' : 'Scan KTP / Paspor'}
             </Button>
-            {ktpImage && <span className="text-xs text-emerald-700">Foto KTP siap</span>}
+            {ktpImage && <span className="text-xs text-emerald-700">Foto dokumen siap</span>}
           </div>
           {scannerOpen && (
-            <KtpScanner
-              current={values}
-              onApply={(next, image) => {
-                setValues(next)
+            <DocumentScanner
+              current={scannerCurrent}
+              autoStart={autoScan && !isEdit}
+              onCancel={() => setScannerOpen(false)}
+              onApply={(prefill, image) => {
+                setValues((v) => applyScanPrefill(v, prefill))
                 setErrors({})
                 setKtpImage(image)
                 setScannerOpen(false)
@@ -198,13 +209,13 @@ export function TenantFormModal({
             ) : (
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={saveKtpPhoto} onChange={(e) => setSaveKtpPhoto(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600" />
-                Simpan foto KTP
+                Simpan foto dokumen
               </label>
             ))}
         </div>
 
         <Section title="Data diri">
-          <Input label="Nama lengkap" required value={values.full_name} onChange={(e) => set('full_name', e.target.value)} error={errors.full_name} autoComplete="name" placeholder="Sesuai KTP" />
+          <Input label="Nama lengkap" required value={values.full_name} onChange={(e) => set('full_name', e.target.value)} error={errors.full_name} autoComplete="name" placeholder={isPassport ? 'Sesuai paspor' : 'Sesuai KTP'} />
           <div className="grid gap-3 sm:grid-cols-2">
             <Input
               label="Nomor HP / WhatsApp"
@@ -226,20 +237,57 @@ export function TenantFormModal({
             <Input label="Tempat lahir" value={values.birth_place} onChange={(e) => set('birth_place', e.target.value)} />
             <Input label="Tanggal lahir" type="date" value={values.birth_date} onChange={(e) => set('birth_date', e.target.value)} error={errors.birth_date} max="2100-12-31" />
           </div>
-          <Input
-            label="NIK"
-            inputMode="numeric"
-            maxLength={20}
-            value={values.nik}
-            onChange={(e) => set('nik', e.target.value)}
-            error={errors.nik}
-            hint={nikHint}
-            placeholder="16 digit"
-          />
+        </Section>
+
+        <Section title="Identitas">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select
+              label="Jenis identitas"
+              value={values.id_type}
+              onChange={(e) => set('id_type', e.target.value as TenantFormValues['id_type'])}
+              options={ID_TYPES.map((t) => ({ value: t, label: ID_TYPE_LABEL[t] }))}
+              hint="Paspor untuk penyewa WNA; hasil scan memilihnya otomatis."
+            />
+            {values.id_type === 'ktp' ? (
+              <Input
+                label="NIK"
+                inputMode="numeric"
+                maxLength={20}
+                value={values.nik}
+                onChange={(e) => set('nik', e.target.value)}
+                error={errors.nik}
+                hint={nikHint}
+                placeholder="16 digit"
+              />
+            ) : (
+              <Input
+                label={idNumberLabel}
+                autoCapitalize="characters"
+                maxLength={30}
+                value={values.id_number}
+                onChange={(e) => set('id_number', e.target.value)}
+                error={errors.id_number}
+                hint={isPassport ? 'Tertera di halaman data paspor; hasil scan MRZ diverifikasi digit kontrol.' : 'SIM, KITAS, kartu pelajar, dsb.'}
+                placeholder={isPassport ? 'Mis. N1234567' : 'Nomor dokumen'}
+              />
+            )}
+            {isPassport && (
+              <Input
+                label="Kewarganegaraan"
+                autoCapitalize="characters"
+                maxLength={40}
+                value={values.nationality}
+                onChange={(e) => set('nationality', e.target.value)}
+                error={errors.nationality}
+                hint="Kode 3 huruf dari paspor, mis. AUS, SGP, JPN."
+                placeholder="Mis. AUS"
+              />
+            )}
+          </div>
         </Section>
 
         <Section title="Alamat">
-          <Textarea label="Alamat sesuai KTP" rows={2} value={values.address} onChange={(e) => set('address', e.target.value)} placeholder="Jalan, RT/RW, kelurahan, kecamatan, kota" />
+          <Textarea label={isPassport ? 'Alamat (negara asal / tempat tinggal)' : 'Alamat sesuai KTP'} rows={2} value={values.address} onChange={(e) => set('address', e.target.value)} placeholder="Jalan, RT/RW, kelurahan, kecamatan, kota" />
         </Section>
 
         <Section title="Lainnya">

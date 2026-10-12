@@ -1,15 +1,18 @@
 /**
- * KTP scan pipeline (browser): image file -> canvas (resize to <= 1600px wide, grayscale, contrast
- * stretch) -> JPEG blob -> tesseract.js ('ind' + 'eng') -> `parseKtpText` -> `ktpFieldsToTenant`.
+ * Document scan pipeline (browser): image file -> canvas (resize to <= 1600px wide, grayscale, contrast
+ * stretch) -> JPEG blob -> tesseract.js ('ind' + 'eng') -> `interpretOcrText`: detect KTP vs passport
+ * (`detectDocument`), parse (`parseKtpText` / `parsePassportMrz`) and map to a `ScanPrefill`.
  *
  * tesseract.js is loaded with a dynamic `import()` so the main bundle stays small; its worker script,
  * WASM core and language data (~15 MB, once) come from the CDN and are cached by the service worker
  * (see vite.config.ts runtimeCaching).
  *
- * The pure parts (`fitWithin`, `grayscaleContrastStretch`, `mapOcrProgress`) have unit tests; the
- * canvas/worker parts only run in a browser.
+ * The pure parts (`fitWithin`, `grayscaleContrastStretch`, `mapOcrProgress`, `interpretOcrText`) have unit
+ * tests; the canvas/worker parts only run in a browser.
  */
-import { ktpFieldsToTenant, parseKtpText, type KtpParseResult, type TenantPrefill } from '../../domain/ktp'
+import { ktpFieldsToTenant, parseKtpText, splitKtpLines, type KtpParseResult } from '../../domain/ktp'
+import { detectDocument, parsePassportMrz, passportToTenant, type DocumentKind, type PassportParseResult } from '../../domain/passport'
+import type { ScanPrefill } from './types'
 
 export const MAX_IMAGE_WIDTH = 1600
 export const OCR_LANGS = ['ind', 'eng']
@@ -28,14 +31,27 @@ export interface OcrProgress {
   downloading: boolean
 }
 
-export interface KtpScanResult {
+/** What `interpretOcrText` makes of the raw OCR text (no I/O; unit-tested). */
+export interface OcrInterpretation {
+  kind: DocumentKind
+  /** values to offer the form; `id_type` follows the detected document ('ktp' when unknown) */
+  prefill: ScanPrefill
+  /** KTP parse details when kind = 'ktp' */
+  ktp: KtpParseResult | null
+  /** MRZ parse details (check digits!) when kind = 'passport' */
+  passport: PassportParseResult | null
+  /** 0..1: KTP key-field share or passport check-digit share; 0 when unknown */
+  confidence: number
+  /** cleaned, non-empty OCR lines for the "Lihat teks hasil OCR" panel */
+  lines: string[]
+}
+
+export interface DocumentScanResult extends OcrInterpretation {
   /** raw OCR text */
   text: string
   /** tesseract's own mean confidence, 0..100 */
   ocrConfidence: number
-  parse: KtpParseResult
-  prefill: TenantPrefill
-  /** the preprocessed JPEG that was recognised (also what gets uploaded as the KTP photo) */
+  /** the preprocessed JPEG that was recognised (also what gets uploaded as the document photo) */
   image: Blob
 }
 
@@ -111,7 +127,7 @@ export function mapOcrProgress(status: string, progress: number): OcrProgress {
   if (s.includes('initializing api') || s.includes('initialized api')) {
     return { phase: 'load', percent: 45 + p * 5, status: 'Menyiapkan pengenal teks…', downloading: false }
   }
-  if (s.includes('recognizing')) return { phase: 'recognize', percent: 50 + p * 50, status: 'Membaca teks KTP…', downloading: false }
+  if (s.includes('recognizing')) return { phase: 'recognize', percent: 50 + p * 50, status: 'Membaca teks dokumen…', downloading: false }
   return { phase: 'load', percent: 10, status: 'Menyiapkan…', downloading: false }
 }
 
@@ -124,6 +140,61 @@ export function describeUnsupportedImage(file: Blob): string | null {
   }
   if (!type.startsWith('image/')) return 'File yang dipilih bukan gambar.'
   return null
+}
+
+/** an OCR line that is plausibly an MRZ line once cleaned: 38+ chars of [A-Z0-9<] with some filler */
+const MRZ_LIKE_RE = /^[A-Z0-9<]{38,80}$/
+const FILLER_NOISE_RE = /[«»‹›({[]/g
+const MRZ_JUNK_RE = /[\s.,'"`\-_:;|]/g
+/** runs of K / L / I touching a '<': the way tesseract reads long '<<<<' filler in Courier-like fonts */
+const FILLER_RUN_RE = /<[KLI]{2,}|[KLI]{2,}(?=<)/g
+
+/**
+ * Repair what OCR typically does to the '<' filler of an MRZ before `detectDocument` / `parsePassportMrz`
+ * see it (the domain parser tolerates the usual letter/digit confusions but needs lines of 40-46 chars):
+ * - runs of K/L/I adjacent to a '<' become '<' of the same length;
+ * - line 1 (starts with 'P', holds only names after position 5) is cut to 44 characters when OCR made it
+ *   longer, since anything past the names field is filler noise.
+ * Lines that do not look like an MRZ line are returned unchanged.
+ */
+export function repairMrzText(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      const cleaned = line.toUpperCase().replace(FILLER_NOISE_RE, '<').replace(MRZ_JUNK_RE, '')
+      if (!MRZ_LIKE_RE.test(cleaned) || !cleaned.includes('<')) return line
+      let out = cleaned.replace(FILLER_RUN_RE, (m) => '<'.repeat(m.length))
+      if (out.startsWith('P') && out.length > 44) out = out.slice(0, 44)
+      return out
+    })
+    .join('\n')
+}
+
+/**
+ * Pure step after OCR: which document is it, what does it say, what should the form get.
+ * - 'passport': `parsePassportMrz` -> `passportToTenant` (id_type 'passport', id_number, nationality, name,
+ *   gender, birth date); confidence = share of passing check digits.
+ * - 'ktp': `parseKtpText` -> `ktpFieldsToTenant` (id_type 'ktp'); confidence = share of key fields found.
+ * - 'unknown': empty prefill with id_type 'ktp' (the form default) and confidence 0; the UI tells the user to
+ *   retake the photo or type the data manually.
+ * `now` only matters for the century rule of MRZ / NIK birth dates (tests).
+ */
+export function interpretOcrText(rawText: string, now?: Date): OcrInterpretation {
+  const text = repairMrzText(rawText)
+  const kind = detectDocument(text)
+  const lines = splitKtpLines(rawText)
+  if (kind === 'passport') {
+    const passport = parsePassportMrz(text, now)
+    if (passport) {
+      const prefill: ScanPrefill = { ...passportToTenant(passport) }
+      return { kind, prefill, ktp: null, passport, confidence: passport.confidence, lines }
+    }
+  }
+  if (kind === 'ktp') {
+    const ktp = parseKtpText(text, now)
+    return { kind, prefill: { id_type: 'ktp', ...ktpFieldsToTenant(ktp.fields) }, ktp, passport: null, confidence: ktp.confidence, lines }
+  }
+  return { kind: 'unknown', prefill: { id_type: 'ktp' }, ktp: null, passport: null, confidence: 0, lines }
 }
 
 export function hasOcrDataCached(): boolean {
@@ -190,7 +261,7 @@ export async function preprocessImage(file: Blob): Promise<Blob> {
  * Full pipeline. `onProgress` is called with 0..100. Throws an Error with an Indonesian message on failure;
  * the tesseract worker is always terminated.
  */
-export async function recognizeKtp(file: Blob, onProgress: (p: OcrProgress) => void): Promise<KtpScanResult> {
+export async function recognizeDocument(file: Blob, onProgress: (p: OcrProgress) => void): Promise<DocumentScanResult> {
   onProgress({ phase: 'preprocess', percent: 2, status: 'Memproses gambar…', downloading: false })
   const image = await preprocessImage(file)
   onProgress({ phase: 'preprocess', percent: 10, status: 'Gambar siap', downloading: false })
@@ -217,15 +288,14 @@ export async function recognizeKtp(file: Blob, onProgress: (p: OcrProgress) => v
     const { data } = await worker.recognize(image)
     markOcrDataCached()
     onProgress({ phase: 'parse', percent: 100, status: 'Selesai', downloading: false })
-    const parse = parseKtpText(data.text)
-    return { text: data.text, ocrConfidence: Math.round(data.confidence ?? 0), parse, prefill: ktpFieldsToTenant(parse.fields), image }
+    return { text: data.text, ocrConfidence: Math.round(data.confidence ?? 0), image, ...interpretOcrText(data.text) }
   } catch (err) {
     const detail = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false
     throw new Error(
       offline
         ? 'Tidak ada koneksi internet. Data OCR perlu diunduh sekali saat online.'
-        : `Scan KTP gagal${detail ? `: ${detail}` : '.'} Coba foto yang lebih terang dan rata.`,
+        : `Scan dokumen gagal${detail ? `: ${detail}` : '.'} Coba foto yang lebih terang dan rata.`,
     )
   } finally {
     if (worker) await worker.terminate().catch(() => undefined)

@@ -23,7 +23,7 @@ import { useRemove, useRow, useTable } from '../../hooks/useTable'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import { GENDER_LABEL, PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, type Lease, type Payment } from '../../types/db'
 import { TenantFormModal } from './TenantFormModal'
-import { currentStayFor, describeRoom, initials, leasesOfTenant, paymentsOfLeases } from './tenantUtils'
+import { currentStayFor, describeIdentity, describeRoom, initials, leasesOfTenant, paymentsOfLeases } from './tenantUtils'
 
 function InfoList({ items }: { items: { label: string; value: ReactNode }[] }) {
   return (
@@ -90,6 +90,7 @@ export function TenantDetailPage() {
   const roomList = rooms.data ?? []
   const kos = t.property_id ? properties.find((p) => p.id === t.property_id) : null
   const wa = whatsappLink(t.phone, `Halo ${t.full_name}, `)
+  const identity = describeIdentity(t)
 
   const confirmDelete = async () => {
     try {
@@ -219,10 +220,18 @@ export function TenantDetailPage() {
                         {t.phone}
                       </a>
                     ) : (
-                      <span className="italic text-slate-400">Belum diisi, tidak ada di KTP</span>
+                      <span className="italic text-slate-400">Belum diisi, tidak ada di KTP/paspor</span>
                     ),
                   },
-                  { label: 'NIK', value: dash(t.nik) },
+                  {
+                    label: `Identitas · ${identity.label}`,
+                    value: identity.number ? (
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <span className="tabular-nums">{identity.number}</span>
+                        {t.id_type === 'passport' && t.nationality && <Badge tone="info">{t.nationality}</Badge>}
+                      </span>
+                    ) : null,
+                  },
                   { label: 'Jenis kelamin', value: t.gender ? GENDER_LABEL[t.gender] : null },
                   {
                     label: 'Tempat, tanggal lahir',
@@ -260,13 +269,13 @@ export function TenantDetailPage() {
 
           {t.ktp_image_path && (
             <Card>
-              <CardHeader title="Foto KTP" />
+              <CardHeader title={t.id_type === 'passport' ? 'Foto paspor' : 'Foto KTP'} />
               <CardBody>
                 {ktpUrl.isPending ? (
                   <LoadingState label="Memuat foto…" />
                 ) : ktpUrl.data ? (
                   <a href={ktpUrl.data} target="_blank" rel="noopener noreferrer">
-                    <img src={ktpUrl.data} alt={`Foto KTP ${t.full_name}`} className="w-full rounded-lg border border-slate-200 object-contain" />
+                    <img src={ktpUrl.data} alt={`Foto ${identity.label} ${t.full_name}`} className="w-full rounded-lg border border-slate-200 object-contain" />
                   </a>
                 ) : (
                   <p className="text-sm text-slate-500">Foto tidak bisa dimuat.</p>

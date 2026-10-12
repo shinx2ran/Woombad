@@ -2,8 +2,10 @@
  * Pure helpers for the tenants module: form <-> row mapping, validation, search and the
  * "current room" lookup. No React, no I/O, so everything here is unit-tested in node.
  */
-import type { Gender, Lease, OrgInsert, Payment, Property, Room, Tenant } from '../../types/db'
-import { isValidNik, type TenantPrefill } from '../../domain/ktp'
+import type { Gender, IdType, Lease, OrgInsert, Payment, Property, Room, Tenant } from '../../types/db'
+import { ID_TYPE_LABEL } from '../../types/db'
+import { isValidNik } from '../../domain/ktp'
+import type { ScanPrefill } from '../scanner/types'
 import { isLeaseActiveOn, isLeaseReservedOn } from '../../domain/occupancy'
 import { parseISODate } from '../../domain/period'
 import { normalizePhone } from '../../lib/format'
@@ -15,7 +17,14 @@ export interface TenantFormValues {
   gender: '' | Gender
   birth_place: string
   birth_date: string
+  /** which identity document the tenant showed; decides which number field is shown/persisted */
+  id_type: IdType
+  /** KTP number (id_type 'ktp') */
   nik: string
+  /** passport / other document number (id_type 'passport' | 'other') */
+  id_number: string
+  /** alpha-3 / ICAO code from the passport MRZ, e.g. 'AUS' (id_type 'passport') */
+  nationality: string
   address: string
   religion: string
   marital_status: string
@@ -34,7 +43,10 @@ export const EMPTY_TENANT_FORM: TenantFormValues = {
   gender: '',
   birth_place: '',
   birth_date: '',
+  id_type: 'ktp',
   nik: '',
+  id_number: '',
+  nationality: '',
   address: '',
   religion: '',
   marital_status: '',
@@ -52,7 +64,10 @@ export const TENANT_FIELD_LABEL: Record<keyof TenantFormValues, string> = {
   gender: 'Jenis kelamin',
   birth_place: 'Tempat lahir',
   birth_date: 'Tanggal lahir',
+  id_type: 'Jenis identitas',
   nik: 'NIK',
+  id_number: 'Nomor identitas',
+  nationality: 'Kewarganegaraan',
   address: 'Alamat',
   religion: 'Agama',
   marital_status: 'Status perkawinan',
@@ -71,7 +86,10 @@ export function tenantToForm(tenant: Tenant): TenantFormValues {
     gender: tenant.gender ?? '',
     birth_place: tenant.birth_place ?? '',
     birth_date: tenant.birth_date ?? '',
+    id_type: tenant.id_type,
     nik: tenant.nik ?? '',
+    id_number: tenant.id_number ?? '',
+    nationality: tenant.nationality ?? '',
     address: tenant.address ?? '',
     religion: tenant.religion ?? '',
     marital_status: tenant.marital_status ?? '',
@@ -111,9 +129,20 @@ export function validateTenantForm(values: TenantFormValues): TenantFormErrors {
   if (!values.full_name.trim()) errors.full_name = 'Nama wajib diisi.'
   else if (values.full_name.trim().length < 2) errors.full_name = 'Nama terlalu pendek.'
 
-  const nik = values.nik.replace(/\s+/g, '')
-  if (nik && !isValidNik(nik)) {
-    errors.nik = /^\d+$/.test(nik) ? `NIK harus 16 digit (saat ini ${nik.length} digit).` : 'NIK hanya boleh berisi angka.'
+  if (values.id_type === 'ktp') {
+    const nik = values.nik.replace(/\s+/g, '')
+    if (nik && !isValidNik(nik)) {
+      errors.nik = /^\d+$/.test(nik) ? `NIK harus 16 digit (saat ini ${nik.length} digit).` : 'NIK hanya boleh berisi angka.'
+    }
+  } else {
+    const idNumber = values.id_number.replace(/\s+/g, '')
+    if (idNumber && !/^[A-Za-z0-9-]{3,20}$/.test(idNumber)) {
+      errors.id_number = values.id_type === 'passport' ? 'Nomor paspor hanya huruf dan angka (3–20 karakter).' : 'Nomor identitas hanya huruf dan angka (3–20 karakter).'
+    }
+    if (values.id_type === 'passport') {
+      const nat = values.nationality.trim()
+      if (nat && !/^[A-Za-z][A-Za-z .'-]{0,39}$/.test(nat)) errors.nationality = 'Kewarganegaraan diisi dengan kode 3 huruf (mis. AUS) atau nama negara.'
+    }
   }
 
   const phone = normalizePhone(values.phone)
@@ -136,15 +165,30 @@ export function validateTenantForm(values: TenantFormValues): TenantFormErrors {
   return errors
 }
 
+/**
+ * Identity columns for a form: KTP keeps its number in `nik` (id_number/nationality null); a passport keeps
+ * its number in `id_number` with the nationality upper-cased when it is a 1-3 letter code; 'Lainnya' keeps
+ * only `id_number`. The columns of the other document types are always cleared so a row never carries two
+ * numbers.
+ */
+export function identityColumns(values: Pick<TenantFormValues, 'id_type' | 'nik' | 'id_number' | 'nationality'>): Pick<Tenant, 'id_type' | 'nik' | 'id_number' | 'nationality'> {
+  if (values.id_type === 'ktp') {
+    return { id_type: 'ktp', nik: clean(values.nik.replace(/\s+/g, '')), id_number: null, nationality: null }
+  }
+  const id_number = clean(values.id_number.replace(/\s+/g, '').toUpperCase())
+  if (values.id_type === 'passport') {
+    const nat = values.nationality.trim()
+    return { id_type: 'passport', nik: null, id_number, nationality: nat === '' ? null : /^[A-Za-z]{1,3}$/.test(nat) ? nat.toUpperCase() : nat }
+  }
+  return { id_type: 'other', nik: null, id_number, nationality: null }
+}
+
 /** Form values -> insert payload. Phones are normalised to +62…; blanks become null. */
 export function formToTenantPayload(values: TenantFormValues): OrgInsert<'tenants'> {
   return {
     property_id: clean(values.property_id),
     full_name: values.full_name.trim(),
-    nik: clean(values.nik.replace(/\s+/g, '')),
-    id_type: 'ktp',
-    id_number: null,
-    nationality: null,
+    ...identityColumns(values),
     phone: normalizePhone(values.phone),
     gender: values.gender === '' ? null : values.gender,
     birth_place: clean(values.birth_place),
@@ -160,12 +204,13 @@ export function formToTenantPayload(values: TenantFormValues): OrgInsert<'tenant
   }
 }
 
-/** Case-insensitive search over name, NIK and phone (digits compared without separators / country code). */
-export function matchesTenantSearch(tenant: Pick<Tenant, 'full_name' | 'nik' | 'phone'>, query: string): boolean {
+/** Case-insensitive search over name, NIK / passport number and phone (digits compared without separators / country code). */
+export function matchesTenantSearch(tenant: Pick<Tenant, 'full_name' | 'nik' | 'phone'> & Partial<Pick<Tenant, 'id_number'>>, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
   if (tenant.full_name.toLowerCase().includes(q)) return true
   if (tenant.nik && tenant.nik.includes(q)) return true
+  if (tenant.id_number && tenant.id_number.toLowerCase().includes(q)) return true
   const qDigits = q.replace(/[^0-9]/g, '')
   if (qDigits && tenant.phone) {
     const phoneDigits = tenant.phone.replace(/[^0-9]/g, '')
@@ -232,48 +277,62 @@ export function paymentsOfLeases(leaseIds: string[], payments: Payment[]): Payme
     .sort((a, b) => b.paid_at.localeCompare(a.paid_at) || b.created_at.localeCompare(a.created_at))
 }
 
-// ---------------------------------------------------------------- OCR prefill merge
+// ---------------------------------------------------------------- identity & scanner glue
 
-/** Form keys that a KTP scan can fill. */
-export type PrefillKey = keyof TenantPrefill
-
-export interface PrefillDiff {
-  key: PrefillKey
+export interface IdentityDescription {
+  /** 'KTP' | 'Paspor' | 'Lainnya' */
   label: string
-  /** value detected on the card */
-  detected: string
-  /** what the form holds now ('' when empty) */
-  current: string
-  /** default checkbox state: checked when the form field is empty (never silently overwrite typed data) */
-  apply: boolean
+  /** the document number, or null when none is recorded */
+  number: string | null
+  /** 'KTP 3273…' / 'Paspor N1234567 · AUS' / 'Lainnya 123'; null when no number is recorded */
+  text: string | null
 }
 
-export const PREFILL_ORDER: PrefillKey[] = ['full_name', 'nik', 'gender', 'birth_place', 'birth_date', 'address', 'religion', 'marital_status', 'occupation']
+/** How the tenant list / detail show the identity document. */
+export function describeIdentity(tenant: Pick<Tenant, 'id_type' | 'nik' | 'id_number' | 'nationality'>): IdentityDescription {
+  const label = ID_TYPE_LABEL[tenant.id_type]
+  const number = tenant.id_type === 'ktp' ? tenant.nik : tenant.id_number
+  if (!number) return { label, number: null, text: null }
+  const nat = tenant.id_type === 'passport' && tenant.nationality ? ` · ${tenant.nationality}` : ''
+  return { label, number, text: `${label} ${number}${nat}` }
+}
+
+/** The form as the scanner's `current` prop ('' -> undefined so empty fields count as empty). */
+export function formToScanPrefill(values: TenantFormValues): Partial<ScanPrefill> {
+  return {
+    id_type: values.id_type,
+    full_name: values.full_name || undefined,
+    nik: values.nik || undefined,
+    id_number: values.id_number || undefined,
+    nationality: values.nationality || undefined,
+    gender: values.gender || undefined,
+    birth_place: values.birth_place || undefined,
+    birth_date: values.birth_date || undefined,
+    address: values.address || undefined,
+    religion: values.religion || undefined,
+    marital_status: values.marital_status || undefined,
+    occupation: values.occupation || undefined,
+  }
+}
 
 /**
- * Compare a KTP prefill with the current form: one entry per detected field, pre-checked only when the form
- * field is empty or already equal. Fields the user already typed differently default to unchecked so the
- * user decides.
+ * Merge the values the user accepted in the scanner into the form. `id_type` always follows the scanned
+ * document (a passport scan switches the form to Paspor), every other field is written only when present;
+ * phone and the other manual fields are untouched.
  */
-export function diffPrefill(prefill: TenantPrefill, current: TenantFormValues): PrefillDiff[] {
-  const out: PrefillDiff[] = []
-  for (const key of PREFILL_ORDER) {
-    const detected = prefill[key]
-    if (detected === undefined || detected === '') continue
-    const cur = current[key]
-    out.push({ key, label: TENANT_FIELD_LABEL[key], detected, current: cur, apply: cur === '' || cur === detected })
-  }
-  return out
-}
-
-/** Apply the checked entries of a diff to the form, leaving everything else untouched. */
-export function applyPrefill(current: TenantFormValues, diff: PrefillDiff[]): TenantFormValues {
-  const next = { ...current }
-  for (const d of diff) {
-    if (!d.apply) continue
-    if (d.key === 'gender') next.gender = d.detected === 'P' ? 'P' : 'L'
-    else next[d.key] = d.detected
-  }
+export function applyScanPrefill(current: TenantFormValues, prefill: ScanPrefill): TenantFormValues {
+  const next: TenantFormValues = { ...current, id_type: prefill.id_type }
+  if (prefill.full_name !== undefined) next.full_name = prefill.full_name
+  if (prefill.nik !== undefined) next.nik = prefill.nik
+  if (prefill.id_number !== undefined) next.id_number = prefill.id_number
+  if (prefill.nationality !== undefined) next.nationality = prefill.nationality
+  if (prefill.gender !== undefined) next.gender = prefill.gender
+  if (prefill.birth_place !== undefined) next.birth_place = prefill.birth_place
+  if (prefill.birth_date !== undefined) next.birth_date = prefill.birth_date
+  if (prefill.address !== undefined) next.address = prefill.address
+  if (prefill.religion !== undefined) next.religion = prefill.religion
+  if (prefill.marital_status !== undefined) next.marital_status = prefill.marital_status
+  if (prefill.occupation !== undefined) next.occupation = prefill.occupation
   return next
 }
 

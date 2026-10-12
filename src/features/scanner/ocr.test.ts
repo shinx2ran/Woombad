@@ -1,5 +1,92 @@
 import { describe, expect, it } from 'vitest'
-import { describeUnsupportedImage, fitWithin, grayscaleContrastStretch, mapOcrProgress, MAX_IMAGE_WIDTH } from './ktpOcr'
+import { mrzCheckDigit } from '../../domain/passport'
+import { describeUnsupportedImage, fitWithin, grayscaleContrastStretch, interpretOcrText, mapOcrProgress, MAX_IMAGE_WIDTH, repairMrzText } from './ocr'
+
+const NOW = new Date(2026, 9, 12)
+
+/** Self-consistent TD3 line 2 (every check digit computed). */
+function mrzLine2(number: string, nationality: string, birth: string, sex: 'M' | 'F', expiry: string): string {
+  const num = number.padEnd(9, '<')
+  const pers = ''.padEnd(14, '<')
+  const head = num + mrzCheckDigit(num)
+  const birthPart = birth + mrzCheckDigit(birth)
+  const tail = expiry + mrzCheckDigit(expiry) + pers + mrzCheckDigit(pers)
+  return head + nationality + birthPart + sex + tail + mrzCheckDigit(head + birthPart + tail)
+}
+
+const PASSPORT_TEXT = `PASSPORT AUSTRALIA
+P<AUSSMITH<<JOHN<ROBERT<<<<<<<<<<<<<<<<<<<<<
+${mrzLine2('N1234567', 'AUS', '900101', 'M', '300101')}`
+
+const KTP_TEXT = `PROVINSI JAWA BARAT
+KOTA BANDUNG
+NIK : 3273010503900001
+Nama : BUDI SANTOSO
+Tempat/Tgl Lahir : BANDUNG, 05-03-1990
+Jenis Kelamin : LAKI-LAKI Gol. Darah : O
+Alamat : JL. MELATI NO. 12
+Agama : ISLAM`
+
+describe('interpretOcrText', () => {
+  it('detects a passport, maps the MRZ to id_type passport + id_number + nationality and reports check digits', () => {
+    const out = interpretOcrText(PASSPORT_TEXT, NOW)
+    expect(out.kind).toBe('passport')
+    expect(out.prefill).toMatchObject({ id_type: 'passport', id_number: 'N1234567', nationality: 'AUS', full_name: 'John Robert Smith', gender: 'L', birth_date: '1990-01-01' })
+    expect(out.prefill.nik).toBeUndefined()
+    expect(out.passport?.checks.number).toBe(true)
+    expect(out.confidence).toBe(1)
+    expect(out.ktp).toBeNull()
+    expect(out.lines.length).toBe(3)
+  })
+
+  it('detects a KTP and maps it to id_type ktp with the NIK', () => {
+    const out = interpretOcrText(KTP_TEXT, NOW)
+    expect(out.kind).toBe('ktp')
+    expect(out.prefill).toMatchObject({ id_type: 'ktp', nik: '3273010503900001', full_name: 'Budi Santoso', gender: 'L', birth_date: '1990-03-05', religion: 'Islam' })
+    expect(out.prefill.id_number).toBeUndefined()
+    expect(out.ktp?.confidence).toBe(1)
+    expect(out.passport).toBeNull()
+    expect(out.confidence).toBe(1)
+  })
+
+  it('returns unknown with an empty prefill for unrelated text', () => {
+    const out = interpretOcrText('Struk belanja\nTotal 25.000', NOW)
+    expect(out.kind).toBe('unknown')
+    expect(out.prefill).toEqual({ id_type: 'ktp' })
+    expect(out.confidence).toBe(0)
+    expect(out.lines).toEqual(['Struk belanja', 'Total 25.000'])
+  })
+
+  it('repairs filler misread as K/L runs and over-long first lines (real tesseract output of a Courier MRZ)', () => {
+    const ocr = `PASSPORT AUSTRALIA
+Passport No: N1234567
+P<AUSSMITH<<JOHN<ROBERT<<<<<<<<<<<KLKLKLLLLKLKL<
+N1234567<7AUS9001011M3001019<<<<<<<<<<<<O2`
+    const repaired = repairMrzText(ocr).split('\n')
+    expect(repaired[2]).toBe('P<AUSSMITH<<JOHN<ROBERT<<<<<<<<<<<<<<<<<<<<<')
+    expect(repaired[3]).toBe('N1234567<7AUS9001011M3001019<<<<<<<<<<<<O2')
+    expect(repaired[0]).toBe('PASSPORT AUSTRALIA') // untouched
+    const out = interpretOcrText(ocr, NOW)
+    expect(out.kind).toBe('passport')
+    expect(out.prefill).toMatchObject({ id_type: 'passport', id_number: 'N1234567', nationality: 'AUS', full_name: 'John Robert Smith', birth_date: '1990-01-01' })
+    expect(out.passport?.checks.number).toBe(true)
+    expect(out.lines[0]).toBe('PASSPORT AUSTRALIA')
+  })
+
+  it('leaves KTP text and short lines alone', () => {
+    expect(repairMrzText(KTP_TEXT)).toBe(KTP_TEXT)
+    expect(repairMrzText('KLKL<<<')).toBe('KLKL<<<')
+  })
+
+  it('flags a passport number whose check digit fails', () => {
+    const bad = PASSPORT_TEXT.replace('N1234567', 'N1234568')
+    const out = interpretOcrText(bad, NOW)
+    expect(out.kind).toBe('passport')
+    expect(out.passport?.checks.number).toBe(false)
+    expect(out.prefill.id_number).toBe('N1234568')
+    expect(out.confidence).toBeLessThan(1)
+  })
+})
 
 describe('fitWithin', () => {
   it('never upscales and keeps the aspect ratio when shrinking', () => {
