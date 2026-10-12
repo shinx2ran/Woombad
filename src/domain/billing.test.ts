@@ -2,13 +2,21 @@ import { describe, expect, it } from 'vitest'
 import type { Expense, Invoice, Lease, LeaseAddon, Payment } from '../types/db'
 import {
   WARN_OFF_SCHEDULE,
+  WARN_PERIOD_TYPE_CHANGED,
+  WARN_PRICE_NOT_SET,
+  addonPeriodQuantity,
+  addonUnitWarning,
   billedPeriodCount,
   buildInvoiceDraft,
+  chainAnchor,
   computeAddonsAmount,
   depositBalance,
   deriveInvoiceStatus,
   formatExtraBreakdown,
   invoiceNumber,
+  invoicePeriodType,
+  invoiceUnitLabel,
+  nextDueSortKey,
   nextInvoiceSequence,
   nextPeriodBounds,
   nextPeriodStart,
@@ -377,9 +385,11 @@ describe('buildInvoiceDraft', () => {
   it('builds the first invoice with anchored bounds, one_time addon and numbering', () => {
     const draft = buildInvoiceDraft({ lease, addons: [perPeriod, oneTime], quantity: 1, existingInvoices: [] })
     expect(draft).toEqual({
+      period_type: 'monthly',
       period_start: '2026-01-31',
       period_end: '2026-02-27',
       quantity: 1,
+      price_per_period: 1_500_000,
       base_amount: 1_500_000,
       addons_amount: 250_000,
       extra_amount: 0,
@@ -1097,5 +1107,479 @@ describe('isPaidUpAndEnding', () => {
     expect(isPaidUpAndEnding(lease, { ...base, outstanding: 500 }, '2026-03-10')).toBe(false)
     expect(isPaidUpAndEnding(lease, { ...base, state: 'unbilled' }, '2026-03-10')).toBe(false)
     expect(isPaidUpAndEnding({ ...lease, status: 'ended' }, base, '2026-03-10')).toBe(false)
+  })
+})
+
+// ---------- SPEC 5.2: period type / price overrides ----------
+
+describe('nextPeriodBounds with a periodType override (SPEC 5.2)', () => {
+  const daily = makeLease({ period_type: 'daily', price_per_period: 100_000, start_date: '2026-03-01', end_date: '2026-03-10' })
+  const billed = [makeInvoice({ period_start: '2026-03-01', period_end: '2026-03-10', quantity: 10, base_amount: 1_000_000, total_amount: 1_000_000 })]
+
+  it('same type as the lease (explicit or omitted) keeps the anchored grid', () => {
+    expect(nextPeriodBounds(daily, billed, 2, 'daily')).toEqual({ period_start: '2026-03-11', period_end: '2026-03-12' })
+    expect(nextPeriodBounds(daily, billed, 2)).toEqual(nextPeriodBounds(daily, billed, 2, 'daily'))
+    const monthly = makeLease({ start_date: '2026-01-31' })
+    const first = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27' })
+    expect(nextPeriodBounds(monthly, [first], 1, 'monthly')).toEqual({ period_start: '2026-02-28', period_end: '2026-03-30' })
+  })
+
+  it('different type: starts the day after the latest non-void period_end and uses the new type', () => {
+    expect(nextPeriodBounds(daily, billed, 1, 'monthly')).toEqual({ period_start: '2026-03-11', period_end: '2026-04-10' })
+    expect(nextPeriodBounds(daily, billed, 2, 'weekly')).toEqual({ period_start: '2026-03-11', period_end: '2026-03-24' })
+  })
+
+  it('different type with no invoices starts at lease.start_date; void invoices are ignored', () => {
+    expect(nextPeriodBounds(daily, [], 1, 'monthly')).toEqual({ period_start: '2026-03-01', period_end: '2026-03-31' })
+    const voided = makeInvoice({ period_start: '2026-03-11', period_end: '2026-03-20', quantity: 10, status: 'void' })
+    expect(nextPeriodBounds(daily, [...billed, voided], 1, 'monthly')).toEqual({ period_start: '2026-03-11', period_end: '2026-04-10' })
+  })
+
+  it('different type on a monthly lease anchored on Jan 31 ignores the anchored grid (weekly from Feb 28)', () => {
+    const monthly = makeLease({ start_date: '2026-01-31' })
+    const first = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27' })
+    expect(nextPeriodBounds(monthly, [first], 1, 'weekly')).toEqual({ period_start: '2026-02-28', period_end: '2026-03-06' })
+  })
+
+  it('still rejects quantity < 1', () => {
+    expect(() => nextPeriodBounds(daily, billed, 0, 'monthly')).toThrow('Jumlah periode minimal 1')
+  })
+})
+
+describe('buildInvoiceDraft with periodType / pricePerPeriod overrides (SPEC 5.2 / 5.4)', () => {
+  const daily = makeLease({ period_type: 'daily', price_per_period: 100_000, start_date: '2026-03-01', end_date: '2026-03-10' })
+  const last = makeInvoice({
+    invoice_number: 'INV-202603-0001',
+    period_type: 'daily',
+    period_start: '2026-03-01',
+    period_end: '2026-03-10',
+    quantity: 10,
+    base_amount: 1_000_000,
+    total_amount: 1_000_000,
+    status: 'paid',
+  })
+
+  it('daily lease (Rp 100.000) extended as monthly (Rp 1.500.000) from the day after the last invoice', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000 })
+    expect(draft.period_type).toBe('monthly')
+    expect(draft.price_per_period).toBe(1_500_000)
+    expect(draft.period_start).toBe('2026-03-11')
+    expect(draft.period_end).toBe('2026-04-10') // 2026-03-11 + 1 month - 1 day
+    expect(draft.quantity).toBe(1)
+    expect(draft.base_amount).toBe(1_500_000)
+    expect(draft.total_amount).toBe(1_500_000)
+    expect(draft.due_date).toBe('2026-03-11')
+    expect(draft.new_lease_end_date).toBe('2026-04-10')
+    expect(draft.invoice_number).toBe('INV-202603-0002')
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+    expect(draft.warnings).toContain('Jenis periode berbeda dari sewa; periode berikutnya dihitung dari akhir tagihan ini.')
+  })
+
+  it('daily -> weekly x2 at Rp 600.000 per week', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 2, existingInvoices: [last], periodType: 'weekly', pricePerPeriod: 600_000 })
+    expect(draft.period_type).toBe('weekly')
+    expect(draft.period_start).toBe('2026-03-11')
+    expect(draft.period_end).toBe('2026-03-24')
+    expect(draft.base_amount).toBe(1_200_000)
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+  })
+
+  it('same type (explicit) is unchanged: anchored bounds, lease price and no warning', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 3, existingInvoices: [last], periodType: 'daily' })
+    expect(draft.period_type).toBe('daily')
+    expect(draft.price_per_period).toBe(100_000)
+    expect(draft.period_start).toBe('2026-03-11')
+    expect(draft.period_end).toBe('2026-03-13')
+    expect(draft.base_amount).toBe(300_000)
+    expect(draft.warnings).toEqual([])
+    const implicit = buildInvoiceDraft({ lease: daily, addons: [], quantity: 3, existingInvoices: [last] })
+    expect(implicit).toEqual(draft)
+  })
+
+  it('same type on a Jan-31 monthly lease stays on the anchored grid (Feb 28 .. Mar 30), no warning', () => {
+    const monthly = makeLease({ start_date: '2026-01-31', end_date: '2026-02-27' })
+    const first = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27', status: 'paid' })
+    const draft = buildInvoiceDraft({ lease: monthly, addons: [], quantity: 1, existingInvoices: [first], periodType: 'monthly' })
+    expect(draft.period_start).toBe('2026-02-28')
+    expect(draft.period_end).toBe('2026-03-30')
+    expect(draft.warnings).toEqual([])
+  })
+
+  it('type change with no invoices yet starts at lease.start_date (first invoice gets one_time addons)', () => {
+    const oneTime = makeAddon({ name: 'Kunci', amount: 50_000, billing: 'one_time' })
+    const draft = buildInvoiceDraft({ lease: daily, addons: [oneTime], quantity: 1, existingInvoices: [], periodType: 'monthly', pricePerPeriod: 1_500_000 })
+    expect(draft.period_start).toBe('2026-03-01')
+    expect(draft.period_end).toBe('2026-03-31')
+    expect(draft.addons_amount).toBe(50_000)
+    expect(draft.total_amount).toBe(1_550_000)
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+  })
+
+  it('pricePerPeriod alone (negotiated price, same type): base = quantity * price, no warning', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 3, existingInvoices: [last], pricePerPeriod: 90_000 })
+    expect(draft.period_type).toBe('daily')
+    expect(draft.price_per_period).toBe(90_000)
+    expect(draft.base_amount).toBe(270_000)
+    expect(draft.warnings).toEqual([])
+  })
+
+  it('pricePerPeriod 0 is allowed (free period -> total 0)', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 2, existingInvoices: [last], pricePerPeriod: 0 })
+    expect(draft.price_per_period).toBe(0)
+    expect(draft.base_amount).toBe(0)
+    expect(draft.total_amount).toBe(0)
+  })
+
+  it('baseAmount override wins over quantity * pricePerPeriod, but price_per_period still reports the effective price', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000, baseAmount: 1_400_000 })
+    expect(draft.base_amount).toBe(1_400_000)
+    expect(draft.price_per_period).toBe(1_500_000)
+  })
+
+  it('invalid pricePerPeriod throws "Nilai tidak boleh negatif."', () => {
+    expect(() => buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], pricePerPeriod: -1 })).toThrow('Nilai tidak boleh negatif.')
+    expect(() => buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], pricePerPeriod: Number.NaN })).toThrow('Nilai tidak boleh negatif.')
+    expect(() => buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: -1_500_000 })).toThrow('Nilai tidak boleh negatif.')
+  })
+
+  it('periodStart override with a changed type uses the new type for the end and warns about both', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000, periodStart: '2026-03-15' })
+    expect(draft.period_start).toBe('2026-03-15')
+    expect(draft.period_end).toBe('2026-04-14')
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED, WARN_OFF_SCHEDULE])
+  })
+
+  it('periodStart override equal to the fallback start with a changed type warns only about the type', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000, periodStart: '2026-03-11' })
+    expect(draft.period_end).toBe('2026-04-10')
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+  })
+
+  it('periodEnd (pro-rata) with a changed type: quantity 1, start from the fallback, custom end', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 5, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000, periodEnd: '2026-03-25', baseAmount: 750_000 })
+    expect(draft.quantity).toBe(1)
+    expect(draft.period_start).toBe('2026-03-11')
+    expect(draft.period_end).toBe('2026-03-25')
+    expect(draft.base_amount).toBe(750_000)
+    expect(draft.period_type).toBe('monthly')
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED, WARN_OFF_SCHEDULE])
+  })
+
+  it('new_lease_end_date is max(lease.end_date, period_end) also with a type change', () => {
+    const longLease = makeLease({ ...daily, end_date: '2026-06-30' })
+    const draft = buildInvoiceDraft({ lease: longLease, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000 })
+    expect(draft.period_end).toBe('2026-04-10')
+    expect(draft.new_lease_end_date).toBe('2026-06-30')
+  })
+
+  it('after a type-changed invoice is stored, the next default invoice (lease still daily) continues from its end', () => {
+    const monthlyInv = makeInvoice({
+      invoice_number: 'INV-202603-0002',
+      period_type: 'monthly',
+      period_start: '2026-03-11',
+      period_end: '2026-04-10',
+      quantity: 1,
+      base_amount: 1_500_000,
+      total_amount: 1_500_000,
+      status: 'paid',
+    })
+    // billedPeriodCount is null (the monthly invoice is not on the daily grid), so the fallback applies: no gap
+    expect(billedPeriodCount(daily, [last, monthlyInv])).toBeNull()
+    const next = buildInvoiceDraft({ lease: daily, addons: [], quantity: 2, existingInvoices: [last, monthlyInv] })
+    expect(next.period_start).toBe('2026-04-11')
+    expect(next.period_end).toBe('2026-04-12')
+    expect(next.period_type).toBe('daily')
+    expect(next.warnings).toEqual([])
+    // and when the lease itself was switched to monthly, the grid does not fit start_date (03-01) so the chain
+    // re-anchors on the monthly switch invoice (03-11): the 11th stays the billing day
+    const switched = makeLease({ ...daily, period_type: 'monthly', price_per_period: 1_500_000 })
+    expect(chainAnchor(switched, [last, monthlyInv])).toEqual({ anchor: '2026-03-11', count: 1 })
+    const nextMonthly = buildInvoiceDraft({ lease: switched, addons: [], quantity: 1, existingInvoices: [last, monthlyInv] })
+    expect(nextMonthly).toMatchObject({ period_start: '2026-04-11', period_end: '2026-05-10', base_amount: 1_500_000, period_type: 'monthly', warnings: [] })
+  })
+})
+
+// ---------- findings on SPEC 5.2 type changes ----------
+
+describe('finding: per_period add-ons on a type-changed invoice are charged per lease period', () => {
+  const daily = makeLease({ period_type: 'daily', price_per_period: 100_000, start_date: '2026-03-01', end_date: '2026-03-10' })
+  const last = makeInvoice({ period_type: 'daily', period_start: '2026-03-01', period_end: '2026-03-10', quantity: 10, status: 'paid' })
+  const parkir = makeAddon({ name: 'Parkir motor', amount: 10_000, billing: 'per_period' })
+
+  it('daily lease with Parkir motor Rp 10.000/malam extended monthly: 31 nights = Rp 310.000, with a unit warning', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [parkir], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000 })
+    expect(draft.period_start).toBe('2026-03-11')
+    expect(draft.period_end).toBe('2026-04-10')
+    expect(draft.base_amount).toBe(1_500_000)
+    expect(draft.addons_amount).toBe(310_000) // not 10.000 x quantity 1
+    expect(draft.total_amount).toBe(1_810_000)
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED, addonUnitWarning('daily', 31)])
+    expect(draft.warnings[1]).toBe('Add-on per periode dihitung per malam sesuai satuan sewa (31 malam); periksa jumlahnya.')
+  })
+
+  it('daily -> weekly x2 charges 14 nights of the add-on', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [parkir], quantity: 2, existingInvoices: [last], periodType: 'weekly', pricePerPeriod: 600_000 })
+    expect(draft.period_end).toBe('2026-03-24')
+    expect(draft.addons_amount).toBe(140_000)
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED, addonUnitWarning('daily', 14)])
+  })
+
+  it('weekly lease (laundry Rp 50.000/minggu) extended monthly over 31 days: 5 weeks rounded up', () => {
+    const weekly = makeLease({ period_type: 'weekly', price_per_period: 600_000, start_date: '2026-03-02', end_date: '2026-03-08' })
+    const w1 = makeInvoice({ period_type: 'weekly', period_start: '2026-03-02', period_end: '2026-03-08', status: 'paid' })
+    const laundry = makeAddon({ name: 'Laundry', amount: 50_000, billing: 'per_period' })
+    const draft = buildInvoiceDraft({ lease: weekly, addons: [laundry], quantity: 1, existingInvoices: [w1], periodType: 'monthly', pricePerPeriod: 2_000_000 })
+    expect(draft.period_start).toBe('2026-03-09')
+    expect(draft.period_end).toBe('2026-04-08')
+    expect(draft.addons_amount).toBe(250_000)
+    expect(draft.warnings).toContain('Add-on per periode dihitung per minggu sesuai satuan sewa (5 minggu); periksa jumlahnya.')
+  })
+
+  it('monthly lease (parkir Rp 100.000/bulan) billed 3 nights daily charges one month of the add-on and warns', () => {
+    const monthly = makeLease({ start_date: '2026-01-31', end_date: '2026-02-27' })
+    const first = makeInvoice({ period_type: 'monthly', period_start: '2026-01-31', period_end: '2026-02-27', status: 'paid' })
+    const addon = makeAddon({ name: 'Parkir mobil', amount: 100_000, billing: 'per_period' })
+    const draft = buildInvoiceDraft({ lease: monthly, addons: [addon], quantity: 3, existingInvoices: [first], periodType: 'daily', pricePerPeriod: 150_000 })
+    expect(draft.period_start).toBe('2026-02-28')
+    expect(draft.period_end).toBe('2026-03-02')
+    expect(draft.base_amount).toBe(450_000)
+    expect(draft.addons_amount).toBe(100_000)
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED, addonUnitWarning('monthly', 1)])
+    expect(draft.warnings[1]).toBe('Add-on per periode dihitung per bulan sesuai satuan sewa (1 bulan); periksa jumlahnya.')
+  })
+
+  it('addonsAmount override replaces the computed add-ons and silences the unit warning; negative throws', () => {
+    const draft = buildInvoiceDraft({
+      lease: daily,
+      addons: [parkir],
+      quantity: 1,
+      existingInvoices: [last],
+      periodType: 'monthly',
+      pricePerPeriod: 1_500_000,
+      addonsAmount: 150_000,
+    })
+    expect(draft.addons_amount).toBe(150_000)
+    expect(draft.total_amount).toBe(1_650_000)
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+    expect(() =>
+      buildInvoiceDraft({ lease: daily, addons: [parkir], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000, addonsAmount: -1 }),
+    ).toThrow('Nilai tidak boleh negatif.')
+    // the override also works without a type change
+    const sameType = buildInvoiceDraft({ lease: daily, addons: [parkir], quantity: 3, existingInvoices: [last], addonsAmount: 0 })
+    expect(sameType.addons_amount).toBe(0)
+    expect(sameType.warnings).toEqual([])
+  })
+
+  it('no unit warning without per_period add-ons, and none when the type is unchanged', () => {
+    const oneTime = makeAddon({ name: 'Kunci', amount: 50_000, billing: 'one_time' })
+    const changed = buildInvoiceDraft({ lease: daily, addons: [oneTime], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000 })
+    expect(changed.addons_amount).toBe(0) // one_time only on the first invoice
+    expect(changed.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+    const same = buildInvoiceDraft({ lease: daily, addons: [parkir], quantity: 3, existingInvoices: [last] })
+    expect(same.addons_amount).toBe(30_000)
+    expect(same.warnings).toEqual([])
+  })
+
+  it('a pro-rata (periodEnd) type change counts the lease periods covered by the custom dates', () => {
+    const draft = buildInvoiceDraft({
+      lease: daily,
+      addons: [parkir],
+      quantity: 1,
+      existingInvoices: [last],
+      periodType: 'monthly',
+      pricePerPeriod: 1_500_000,
+      periodEnd: '2026-03-25',
+      baseAmount: 750_000,
+    })
+    expect(draft.period_start).toBe('2026-03-11')
+    expect(draft.addons_amount).toBe(150_000) // 15 nights
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED, WARN_OFF_SCHEDULE, addonUnitWarning('daily', 15)])
+  })
+
+  it('addonPeriodQuantity: same type -> quantity; different type -> lease periods covering the bounds', () => {
+    const bounds = { period_start: '2026-03-11', period_end: '2026-04-10' }
+    expect(addonPeriodQuantity(daily, 'daily', bounds, 4)).toBe(4)
+    expect(addonPeriodQuantity(daily, 'monthly', bounds, 1)).toBe(31)
+    expect(addonPeriodQuantity(makeLease({ period_type: 'weekly' }), 'monthly', bounds, 1)).toBe(5)
+    expect(addonPeriodQuantity(makeLease({ period_type: 'monthly' }), 'daily', { period_start: '2026-02-28', period_end: '2026-03-02' }, 3)).toBe(1)
+  })
+})
+
+describe('finding: type change without pricePerPeriod warns that the old unit price is used', () => {
+  const daily = makeLease({ period_type: 'daily', price_per_period: 100_000, start_date: '2026-03-01', end_date: '2026-03-10' })
+  const last = makeInvoice({ period_type: 'daily', period_start: '2026-03-01', period_end: '2026-03-10', quantity: 10, status: 'paid' })
+
+  it('daily Rp 100.000 billed monthly with no price: base 100.000 for a month plus WARN_PRICE_NOT_SET', () => {
+    const draft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly' })
+    expect(draft.period_type).toBe('monthly')
+    expect(draft.period_start).toBe('2026-03-11')
+    expect(draft.period_end).toBe('2026-04-10')
+    expect(draft.price_per_period).toBe(100_000)
+    expect(draft.base_amount).toBe(100_000)
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED, WARN_PRICE_NOT_SET])
+    expect(WARN_PRICE_NOT_SET).toBe(
+      'Harga per periode belum disesuaikan dengan jenis periode baru; tarif sewa lama dipakai apa adanya. Periksa harganya.',
+    )
+  })
+
+  it('no price warning when pricePerPeriod or baseAmount is given, or when the type is unchanged', () => {
+    const priced = buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly', pricePerPeriod: 1_500_000 })
+    expect(priced.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+    const based = buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [last], periodType: 'monthly', baseAmount: 1_400_000 })
+    expect(based.base_amount).toBe(1_400_000)
+    expect(based.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+    const same = buildInvoiceDraft({ lease: daily, addons: [], quantity: 2, existingInvoices: [last] })
+    expect(same.warnings).toEqual([])
+  })
+
+  it('orders warnings: type changed, off schedule, price not set, add-on unit', () => {
+    const parkir = makeAddon({ name: 'Parkir motor', amount: 10_000, billing: 'per_period' })
+    const draft = buildInvoiceDraft({ lease: daily, addons: [parkir], quantity: 1, existingInvoices: [last], periodType: 'monthly', periodStart: '2026-03-15' })
+    expect(draft.period_end).toBe('2026-04-14')
+    expect(draft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED, WARN_OFF_SCHEDULE, WARN_PRICE_NOT_SET, addonUnitWarning('daily', 31)])
+  })
+})
+
+describe('finding: month-end chain re-anchors on the switch invoice once the lease type is made monthly', () => {
+  // daily guest from Jan 1 billed through Jan 30, extended monthly from Jan 31 (Rp 1.500.000)
+  const daily = makeLease({ period_type: 'daily', price_per_period: 100_000, start_date: '2026-01-01', end_date: '2026-01-30' })
+  const nights = makeInvoice({ period_type: 'daily', period_start: '2026-01-01', period_end: '2026-01-30', quantity: 30, status: 'paid' })
+  const switchDraft = buildInvoiceDraft({ lease: daily, addons: [], quantity: 1, existingInvoices: [nights], periodType: 'monthly', pricePerPeriod: 1_500_000 })
+  const switchInv = makeInvoice({
+    period_type: 'monthly',
+    period_start: switchDraft.period_start,
+    period_end: switchDraft.period_end,
+    base_amount: 1_500_000,
+    total_amount: 1_500_000,
+    status: 'paid',
+  })
+  const switched = makeLease({ ...daily, period_type: 'monthly', price_per_period: 1_500_000, end_date: switchInv.period_end })
+
+  it('the switch invoice is 2026-01-31..2026-02-27', () => {
+    expect(switchDraft.period_start).toBe('2026-01-31')
+    expect(switchDraft.period_end).toBe('2026-02-27')
+    expect(switchDraft.warnings).toEqual([WARN_PERIOD_TYPE_CHANGED])
+  })
+
+  it('chainAnchor: start_date grid does not fit, so the chain anchors on the switch invoice', () => {
+    expect(billedPeriodCount(switched, [nights, switchInv])).toBeNull()
+    expect(chainAnchor(switched, [nights, switchInv])).toEqual({ anchor: '2026-01-31', count: 1 })
+  })
+
+  it('next default invoices keep the 31st as billing day: 02-28..03-30, 03-31..04-29, 04-30..05-30 (no drift)', () => {
+    const second = buildInvoiceDraft({ lease: switched, addons: [], quantity: 1, existingInvoices: [nights, switchInv] })
+    expect(second).toMatchObject({ period_type: 'monthly', period_start: '2026-02-28', period_end: '2026-03-30', base_amount: 1_500_000, warnings: [] })
+    expect(second.due_date).toBe('2026-02-28')
+    expect(second.new_lease_end_date).toBe('2026-03-30')
+
+    const inv2 = makeInvoice({ period_type: 'monthly', period_start: second.period_start, period_end: second.period_end, status: 'paid' })
+    const third = nextPeriodBounds(makeLease({ ...switched, end_date: inv2.period_end }), [nights, switchInv, inv2], 1)
+    expect(third).toEqual({ period_start: '2026-03-31', period_end: '2026-04-29' })
+    expect(chainAnchor(switched, [nights, switchInv, inv2])).toEqual({ anchor: '2026-01-31', count: 2 })
+
+    const inv3 = makeInvoice({ period_type: 'monthly', period_start: third.period_start, period_end: third.period_end, status: 'paid' })
+    expect(nextPeriodBounds(switched, [nights, switchInv, inv2, inv3], 1)).toEqual({ period_start: '2026-04-30', period_end: '2026-05-30' })
+    // quantity 2 from the anchor as well
+    expect(nextPeriodBounds(switched, [nights, switchInv, inv2, inv3], 2)).toEqual({ period_start: '2026-04-30', period_end: '2026-06-29' })
+
+    // the dashboard's next due date agrees with the re-anchored start
+    const s = summarizeLeaseBilling(makeLease({ ...switched, end_date: inv2.period_end }), [nights, switchInv, inv2], [], '2026-03-25')
+    expect(s.nextDueDate).toBe('2026-03-31')
+  })
+
+  it('legacy daily invoices with period_type null (read as the lease type) still re-anchor on the switch invoice', () => {
+    const legacy = makeInvoice({ period_type: null, period_start: '2026-01-01', period_end: '2026-01-30', quantity: 30, status: 'paid' })
+    expect(chainAnchor(switched, [legacy, switchInv])).toEqual({ anchor: '2026-01-31', count: 1 })
+    expect(nextPeriodBounds(switched, [legacy, switchInv], 1)).toEqual({ period_start: '2026-02-28', period_end: '2026-03-30' })
+  })
+
+  it('while the lease is still daily the monthly invoice is another type: no anchor, plain fallback', () => {
+    expect(chainAnchor(daily, [nights, switchInv])).toBeNull()
+    expect(nextPeriodBounds(daily, [nights, switchInv], 2)).toEqual({ period_start: '2026-02-28', period_end: '2026-03-01' })
+  })
+
+  it('leap year: switch invoice 2024-01-31..2024-02-28 -> 02-29..03-30 -> 03-31..04-29', () => {
+    const d24 = makeLease({ period_type: 'daily', price_per_period: 100_000, start_date: '2024-01-01', end_date: '2024-01-30' })
+    const n24 = makeInvoice({ period_type: 'daily', period_start: '2024-01-01', period_end: '2024-01-30', quantity: 30, status: 'paid' })
+    const sw = buildInvoiceDraft({ lease: d24, addons: [], quantity: 1, existingInvoices: [n24], periodType: 'monthly', pricePerPeriod: 1_500_000 })
+    expect(sw.period_end).toBe('2024-02-28')
+    const swInv = makeInvoice({ period_type: 'monthly', period_start: sw.period_start, period_end: sw.period_end, status: 'paid' })
+    const m24 = makeLease({ ...d24, period_type: 'monthly', price_per_period: 1_500_000 })
+    expect(nextPeriodBounds(m24, [n24, swInv], 1)).toEqual({ period_start: '2024-02-29', period_end: '2024-03-30' })
+    const inv2 = makeInvoice({ period_type: 'monthly', period_start: '2024-02-29', period_end: '2024-03-30', status: 'paid' })
+    expect(nextPeriodBounds(m24, [n24, swInv, inv2], 1)).toEqual({ period_start: '2024-03-31', period_end: '2024-04-29' })
+  })
+
+  it('chainAnchor on the normal grid is start_date with billedPeriodCount; empty -> count 0; pro-rata end -> null', () => {
+    const lease = makeLease({ start_date: '2026-01-31' })
+    expect(chainAnchor(lease, [])).toEqual({ anchor: '2026-01-31', count: 0 })
+    const first = makeInvoice({ period_start: '2026-01-31', period_end: '2026-02-27' })
+    const second = makeInvoice({ period_start: '2026-02-28', period_end: '2026-03-30' })
+    expect(chainAnchor(lease, [first, second])).toEqual({ anchor: '2026-01-31', count: 2 })
+    // manual 02-28..03-27 breaks the start_date grid: re-anchor on that invoice (same bounds as "end + 1")
+    const manual = makeInvoice({ period_start: '2026-02-28', period_end: '2026-03-27' })
+    expect(chainAnchor(lease, [first, manual])).toEqual({ anchor: '2026-02-28', count: 1 })
+    expect(nextPeriodBounds(lease, [first, manual], 1)).toEqual({ period_start: '2026-03-28', period_end: '2026-04-27' })
+    // a pro-rata end is not a whole period from its start: no anchor, fallback
+    const proRata = makeInvoice({ period_start: '2026-02-28', period_end: '2026-03-13' })
+    expect(chainAnchor(lease, [first, proRata])).toBeNull()
+    expect(nextPeriodBounds(lease, [first, proRata], 1)).toEqual({ period_start: '2026-03-14', period_end: '2026-04-13' })
+  })
+
+  it('a manual first invoice on the 31st of a lease that started mid-month anchors the chain on the 31st', () => {
+    const lease = makeLease({ start_date: '2026-01-15', end_date: '2026-02-27' })
+    const manual = makeInvoice({ period_type: 'monthly', period_start: '2026-01-31', period_end: '2026-02-27', status: 'paid' })
+    expect(billedPeriodCount(lease, [manual])).toBeNull()
+    expect(chainAnchor(lease, [manual])).toEqual({ anchor: '2026-01-31', count: 1 })
+    // previously the fallback gave 02-28..03-27 and the billing day drifted to the 28th
+    expect(nextPeriodBounds(lease, [manual], 1)).toEqual({ period_start: '2026-02-28', period_end: '2026-03-30' })
+  })
+})
+
+describe('invoicePeriodType / invoiceUnitLabel', () => {
+  const daily = makeLease({ period_type: 'daily' })
+  it('uses the invoice period_type when stored, else the lease type', () => {
+    expect(invoicePeriodType(makeInvoice({ period_type: 'monthly' }), daily)).toBe('monthly')
+    expect(invoicePeriodType(makeInvoice({ period_type: 'weekly' }), daily)).toBe('weekly')
+    expect(invoicePeriodType(makeInvoice({ period_type: null }), daily)).toBe('daily')
+    expect(invoicePeriodType(makeInvoice({ period_type: null }), makeLease({ period_type: 'monthly' }))).toBe('monthly')
+  })
+  it('labels the unit in Indonesian', () => {
+    expect(invoiceUnitLabel(makeInvoice({ period_type: null }), daily)).toBe('malam')
+    expect(invoiceUnitLabel(makeInvoice({ period_type: 'weekly' }), daily)).toBe('minggu')
+    expect(invoiceUnitLabel(makeInvoice({ period_type: 'monthly' }), daily)).toBe('bulan')
+  })
+})
+
+describe('nextDueSortKey (SPEC 5.1)', () => {
+  const today = '2026-10-12'
+  it('returns nextDueDate, or 9999-12-31 when null', () => {
+    const lease = makeLease({ start_date: '2026-10-20' })
+    const s = summarizeLeaseBilling(lease, [], [], today)
+    expect(nextDueSortKey(s)).toBe('2026-10-20')
+    expect(nextDueSortKey({ ...s, nextDueDate: null })).toBe('9999-12-31')
+  })
+  it('sorts overdue first, then due soon, then far away, then no due date', () => {
+    const overdue = summarizeLeaseBilling(
+      makeLease({ id: 'overdue', start_date: '2026-09-01' }),
+      [makeInvoice({ lease_id: 'overdue', period_start: '2026-09-01', period_end: '2026-09-30', status: 'unpaid' })],
+      [],
+      today,
+    )
+    const dueSoon = summarizeLeaseBilling(
+      makeLease({ id: 'soon', start_date: '2026-09-14' }),
+      [makeInvoice({ lease_id: 'soon', period_start: '2026-09-14', period_end: '2026-10-13', status: 'paid' })],
+      [],
+      today,
+    )
+    const far = summarizeLeaseBilling(makeLease({ id: 'far', start_date: '2026-11-01' }), [], [], today)
+    const none = { ...far, leaseId: 'none', nextDueDate: null }
+    expect(overdue.state).toBe('overdue')
+    expect(dueSoon.state).toBe('due_soon')
+    expect(nextDueSortKey(overdue)).toBe('2026-09-01')
+    expect(nextDueSortKey(dueSoon)).toBe('2026-10-14')
+    expect(nextDueSortKey(far)).toBe('2026-11-01')
+    const sorted = [none, far, dueSoon, overdue].sort((a, b) => (nextDueSortKey(a) < nextDueSortKey(b) ? -1 : nextDueSortKey(a) > nextDueSortKey(b) ? 1 : 0))
+    expect(sorted.map((s) => s.leaseId)).toEqual(['overdue', 'soon', 'far', 'none'])
   })
 })

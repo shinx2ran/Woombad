@@ -3,8 +3,9 @@
  * and the "when is the next payment due" summary that drives the dashboard.
  *
  * Model recap (see docs/SPEC.md sections 2, 2a, 2b):
- *  - A lease (sewa) has a period_type and price_per_period.
- *  - Each invoice covers `quantity` periods starting at `period_start`, inclusive `period_end`.
+ *  - A lease (sewa) has a period_type and price_per_period (the negotiated price, SPEC 5.4).
+ *  - Each invoice covers `quantity` periods starting at `period_start`, inclusive `period_end`, and may use its
+ *    own period_type / price (SPEC 5.2: a daily guest extends monthly); invoices.period_type null = the lease's.
  *  - Issuing an invoice extends the lease's end_date to at least the invoice's period_end.
  *  - Invoice status is derived from payments with kind='rent': paid >= total -> 'paid' (Lunas);
  *    0 < paid < total -> 'partial' (DP / Sebagian); 0 -> 'unpaid'. 'void' is manual and sticky.
@@ -12,9 +13,10 @@
  *    with method='deposit' (kind rent/other, revenue); returned = expenses category 'deposit_refund'
  *    with the lease_id. The lease row itself stores only the agreed deposit_amount.
  */
-import type { Expense, Invoice, InvoiceStatus, Lease, LeaseAddon, Payment, PaymentMethod } from '../types/db'
+import type { Expense, Invoice, InvoiceStatus, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType } from '../types/db'
+import { PERIOD_UNIT_LABEL } from '../types/db'
 import { formatRupiah } from '../lib/format'
-import { addDaysISO, daysBetween, periodBounds, periodEnd } from './period'
+import { addDaysISO, daysBetween, periodBounds, periodEnd, periodsToCover } from './period'
 
 export interface InvoiceDraftInput {
   lease: Lease
@@ -37,10 +39,34 @@ export interface InvoiceDraftInput {
    */
   periodEnd?: string
   /**
+   * Period type override for THIS invoice (SPEC 5.2: a daily guest extends as weekly/monthly). Default
+   * lease.period_type. When it differs from lease.period_type the anchored grid no longer applies: the
+   * default bounds become [start, periodEnd(start, periodType, quantity)] with start = periodStart ?? day
+   * after the latest non-void period_end ?? lease.start_date, and WARN_PERIOD_TYPE_CHANGED is added to
+   * `warnings`. The draft reports the effective type in `period_type`.
+   */
+  periodType?: PeriodType
+  /**
+   * Price per period override for THIS invoice (SPEC 5.4, negotiated price; >= 0, else Error
+   * 'Nilai tidak boleh negatif.'). Default lease.price_per_period. base_amount = quantity * effective price
+   * unless `baseAmount` is given. The draft reports the effective price in `price_per_period`.
+   * When `periodType` differs from lease.period_type and neither this nor `baseAmount` is given, the lease's
+   * per-period price of the OLD unit is applied to the NEW unit (e.g. a daily rate for a whole month) and
+   * WARN_PRICE_NOT_SET is pushed, so always pass the price for the new unit on a type change.
+   */
+  pricePerPeriod?: number
+  /**
    * Override of the base amount (>= 0, else Error 'Nilai tidak boleh negatif.').
-   * Default: quantity * lease.price_per_period.
+   * Default: quantity * (pricePerPeriod ?? lease.price_per_period).
    */
   baseAmount?: number
+  /**
+   * Override of the add-ons total (>= 0, else Error 'Nilai tidak boleh negatif.'). Default: computed by
+   * computeAddonsAmount with addonPeriodQuantity (per_period add-ons are priced per LEASE period, SPEC 2:
+   * on a type-changed invoice they are multiplied by the number of lease periods the invoice covers, not by
+   * `quantity`). Pass it when the owner agrees a different add-on amount for this invoice.
+   */
+  addonsAmount?: number
   /** Manual extras (listrik, denda, ...), >= 0. See parseExtraBreakdown / formatExtraBreakdown for the notes convention. */
   extraAmount?: number
   /** Discount, >= 0. A discount larger than base + addons + extra throws 'Diskon melebihi jumlah tagihan.' */
@@ -55,9 +81,13 @@ export interface InvoiceDraftInput {
 }
 
 export interface InvoiceDraft {
+  /** effective period type: input.periodType ?? lease.period_type (store it in invoices.period_type) */
+  period_type: PeriodType
   period_start: string
   period_end: string
   quantity: number
+  /** effective price for one period: input.pricePerPeriod ?? lease.price_per_period */
+  price_per_period: number
   base_amount: number
   addons_amount: number
   extra_amount: number
@@ -70,15 +100,45 @@ export interface InvoiceDraft {
   new_lease_end_date: string
   /**
    * Indonesian, non-blocking notices for the UI to show before saving. Currently:
-   *  - 'Periode tidak mengikuti jadwal sewa; tagihan berikutnya dihitung dari akhir periode ini.'
-   *    when periodStart / periodEnd overrides make the invoice leave the anchored grid
-   *    (its start or end differs from what nextPeriodBounds would have produced).
+   *  - WARN_PERIOD_TYPE_CHANGED ('Jenis periode berbeda dari sewa; periode berikutnya dihitung dari akhir
+   *    tagihan ini.') when periodType differs from lease.period_type (pushed first);
+   *  - WARN_OFF_SCHEDULE ('Periode tidak mengikuti jadwal sewa; tagihan berikutnya dihitung dari akhir
+   *    periode ini.') when periodStart / periodEnd overrides make the invoice leave the default bounds
+   *    (its start or end differs from what nextPeriodBounds(lease, invoices, quantity, periodType) gives);
+   *  - WARN_PRICE_NOT_SET ('Harga per periode belum disesuaikan dengan jenis periode baru; tarif sewa lama
+   *    dipakai apa adanya. Periksa harganya.') when periodType differs from lease.period_type and neither
+   *    pricePerPeriod nor baseAmount is given (the old unit's price is billed for the new unit);
+   *  - addonUnitWarning(lease.period_type, n) ('Add-on per periode dihitung per malam sesuai satuan sewa
+   *    (31 malam); periksa jumlahnya.') when periodType differs from lease.period_type, addonsAmount is not
+   *    given and at least one add-on is billed per_period: n = addonPeriodQuantity(...) lease periods.
+   * Order: type changed, off schedule, price not set, add-on unit.
    */
   warnings: string[]
 }
 
 /** Warning pushed when an override leaves the anchored period grid. */
 export const WARN_OFF_SCHEDULE = 'Periode tidak mengikuti jadwal sewa; tagihan berikutnya dihitung dari akhir periode ini.'
+
+/** Warning pushed when the invoice's period type differs from the lease's (SPEC 5.2). */
+export const WARN_PERIOD_TYPE_CHANGED = 'Jenis periode berbeda dari sewa; periode berikutnya dihitung dari akhir tagihan ini.'
+
+/**
+ * Warning pushed when the period type changes but no `pricePerPeriod` (nor `baseAmount`) is given: the
+ * lease's price for the OLD unit is applied to the NEW unit (a Rp 100.000 daily rate billed for a month).
+ */
+export const WARN_PRICE_NOT_SET =
+  'Harga per periode belum disesuaikan dengan jenis periode baru; tarif sewa lama dipakai apa adanya. Periksa harganya.'
+
+/**
+ * Warning pushed when a type-changed invoice carries per_period add-ons: they stay priced per lease period
+ * (`leaseType`), so they are multiplied by `addonQuantity` lease periods (see addonPeriodQuantity), e.g.
+ * addonUnitWarning('daily', 31) -> 'Add-on per periode dihitung per malam sesuai satuan sewa (31 malam);
+ * periksa jumlahnya.'
+ */
+export function addonUnitWarning(leaseType: PeriodType, addonQuantity: number): string {
+  const unit = PERIOD_UNIT_LABEL[leaseType]
+  return `Add-on per periode dihitung per ${unit} sesuai satuan sewa (${addonQuantity} ${unit}); periksa jumlahnya.`
+}
 
 // ---------- helpers ----------
 
@@ -118,16 +178,24 @@ function assertNonNegative(value: number | undefined): number {
  * Returns null on any mismatch: gaps, overlaps, a first invoice not on start_date, a non-integer quantity,
  * or an end that deviates from the grid (e.g. a manual periodStart 2026-02-28 on a Jan-31 lease yields
  * period_end 2026-03-27 while the anchored end is 2026-03-30). Zero non-void invoices -> 0.
- * A null makes nextPeriodBounds fall back to "latest period_end + 1 day", so no day is ever left unbilled.
+ * A null makes nextPeriodBounds try to re-anchor on the latest run of same-type invoices (chainAnchor) and
+ * otherwise fall back to "latest period_end + 1 day", so no day is ever left unbilled.
  */
 export function billedPeriodCount(lease: Lease, invoices: Invoice[]): number | null {
-  const active = activeInvoicesSorted(invoices)
-  if (active.length === 0) return 0
+  return gridPeriodCount(lease.start_date, lease.period_type, activeInvoicesSorted(invoices))
+}
+
+/**
+ * Periods covered by `run` (sorted, non-void) when every invoice sits exactly on the `type` grid anchored
+ * at `anchorISO`: idx starts at 0 and each invoice must have period_start === periodBounds(anchor, type,
+ * idx, 1).start and period_end === periodBounds(anchor, type, idx, quantity).end; null otherwise. [] -> 0.
+ */
+function gridPeriodCount(anchorISO: string, type: PeriodType, run: Invoice[]): number | null {
   let idx = 0
-  for (const inv of active) {
+  for (const inv of run) {
     if (!Number.isInteger(inv.quantity) || inv.quantity < 1) return null
-    const expectedStart = periodBounds(lease.start_date, lease.period_type, idx, 1).start
-    const expectedEnd = periodBounds(lease.start_date, lease.period_type, idx, inv.quantity).end
+    const expectedStart = periodBounds(anchorISO, type, idx, 1).start
+    const expectedEnd = periodBounds(anchorISO, type, idx, inv.quantity).end
     // Decision: both start and end must match the anchored schedule. Checking only the start
     // (contiguity) would accept an off-schedule end and then skip days on the next anchored invoice.
     if (inv.period_start !== expectedStart || inv.period_end !== expectedEnd) return null
@@ -136,22 +204,76 @@ export function billedPeriodCount(lease: Lease, invoices: Invoice[]): number | n
   return idx
 }
 
+export interface ChainAnchor {
+  /** date the lease's period grid is anchored on (lease.start_date, or the start of the re-anchored run) */
+  anchor: string
+  /** whole lease periods already billed from `anchor`; the next period is periodBounds(anchor, type, count, ...) */
+  count: number
+}
+
 /**
- * Bounds of the next `quantity` periods to bill:
- *  - invoices on the anchored grid (billedPeriodCount != null): periodBounds(lease.start_date, type, count, quantity)
- *  - otherwise: start = day after the latest non-void period_end (or lease.start_date when none),
- *    end = periodEnd(start, type, quantity)
+ * Where the lease's billing chain is anchored, for the lease's own period_type:
+ *  1. `{ anchor: lease.start_date, count: billedPeriodCount }` when the non-void invoices sit on the grid
+ *     from start_date (billedPeriodCount != null) — the normal case;
+ *  2. otherwise the chain **re-anchors**: take the trailing run of non-void invoices (sorted by
+ *     period_start) whose invoicePeriodType(inv, lease) === lease.period_type and find the longest suffix
+ *     of it that sits exactly on the grid anchored at that suffix's own first period_start (same rule as
+ *     billedPeriodCount, i.e. each invoice covers a whole number of lease periods from the anchor). Returns
+ *     `{ anchor: suffix[0].period_start, count }`.
+ *     This is what keeps month-end tenants on their billing day after a SPEC 5.2 switch is made the
+ *     lease's type: daily lease from 2026-01-01 billed through 01-30, monthly extension 01-31..02-27, lease
+ *     switched to monthly -> anchor 2026-01-31, count 1 -> next 02-28..03-30, then 03-31..04-29 (not the
+ *     drifting 02-28..03-27, 03-28..04-27).
+ *  3. null when no such suffix exists: the latest non-void invoice was billed with another type, or its
+ *     end is not a whole number of lease periods from its start (a pro-rata `periodEnd` invoice, e.g.
+ *     2026-02-28..2026-03-13 on a monthly lease). nextPeriodBounds then uses "latest period_end + 1 day".
+ * No non-void invoices -> `{ anchor: lease.start_date, count: 0 }`.
  */
-export function nextPeriodBounds(lease: Lease, invoices: Invoice[], quantity: number): { period_start: string; period_end: string } {
+export function chainAnchor(lease: Lease, invoices: Invoice[]): ChainAnchor | null {
+  const active = activeInvoicesSorted(invoices)
+  const fromStart = gridPeriodCount(lease.start_date, lease.period_type, active)
+  if (fromStart !== null) return { anchor: lease.start_date, count: fromStart }
+  let runStart = active.length
+  while (runStart > 0 && invoicePeriodType(active[runStart - 1], lease) === lease.period_type) runStart -= 1
+  for (let k = runStart; k < active.length; k += 1) {
+    const run = active.slice(k)
+    const count = gridPeriodCount(run[0].period_start, lease.period_type, run)
+    if (count !== null) return { anchor: run[0].period_start, count }
+  }
+  return null
+}
+
+/**
+ * Bounds of the next `quantity` periods to bill. `periodType` (default lease.period_type) is the type the
+ * new invoice will use (SPEC 5.2 extension with a different type); UIs pass it to preview the bounds.
+ *  - periodType === lease.period_type and chainAnchor(lease, invoices) != null:
+ *    periodBounds(anchor, lease.period_type, count, quantity). With invoices on the grid from start_date
+ *    this is the anchored grid exactly as before; after an off-grid invoice the chain re-anchors on the
+ *    latest run of same-type invoices (see chainAnchor), e.g. Jan-31 monthly lease with a manual invoice
+ *    2026-02-28..2026-03-27 -> next 2026-03-28..2026-04-27 (anchored on 02-28, no 28-30 Mar hole).
+ *  - otherwise (no anchor, OR periodType differs from the lease's so the anchored grid no longer applies):
+ *    start = day after the latest non-void period_end (or lease.start_date when none),
+ *    end = periodEnd(start, periodType, quantity)
+ * E.g. daily lease billed through 2026-03-10, periodType 'monthly', quantity 1 -> 2026-03-11 .. 2026-04-10.
+ */
+export function nextPeriodBounds(
+  lease: Lease,
+  invoices: Invoice[],
+  quantity: number,
+  periodType?: PeriodType,
+): { period_start: string; period_end: string } {
   if (!Number.isInteger(quantity) || quantity < 1) throw new Error('Jumlah periode minimal 1')
-  const count = billedPeriodCount(lease, invoices)
-  if (count !== null) {
-    const bounds = periodBounds(lease.start_date, lease.period_type, count, quantity)
-    return { period_start: bounds.start, period_end: bounds.end }
+  const type = periodType ?? lease.period_type
+  if (type === lease.period_type) {
+    const chain = chainAnchor(lease, invoices)
+    if (chain !== null) {
+      const bounds = periodBounds(chain.anchor, lease.period_type, chain.count, quantity)
+      return { period_start: bounds.start, period_end: bounds.end }
+    }
   }
   const covered = latestCoveredThrough(invoices)
   const start = covered === null ? lease.start_date : addDaysISO(covered, 1)
-  return { period_start: start, period_end: periodEnd(start, lease.period_type, quantity) }
+  return { period_start: start, period_end: periodEnd(start, type, quantity) }
 }
 
 /** Convenience: nextPeriodBounds(lease, invoices, 1).period_start */
@@ -172,6 +294,25 @@ export function computeAddonsAmount(addons: LeaseAddon[], quantity: number, isFi
     else if (isFirstInvoice) sum += addon.amount
   }
   return Math.max(0, sum)
+}
+
+/**
+ * How many LEASE periods a per_period add-on is charged for on an invoice (SPEC 2: add-on amounts are per
+ * lease period, "dikali jumlah periode"):
+ *  - periodType === lease.period_type -> `quantity` (unchanged behaviour; a pro-rata invoice has quantity 1);
+ *  - otherwise -> periodsToCover(period_start, period_end, lease.period_type): the whole lease periods needed
+ *    to cover the invoice's dates, rounded up. Daily lease extended monthly 2026-03-11..2026-04-10 -> 31
+ *    (nights); daily -> weekly x2 -> 14; weekly lease extended monthly (31 days) -> 5 weeks; a monthly
+ *    lease billed 3 nights daily -> 1 month (the owner can override with InvoiceDraftInput.addonsAmount).
+ */
+export function addonPeriodQuantity(
+  lease: Lease,
+  periodType: PeriodType,
+  bounds: { period_start: string; period_end: string },
+  quantity: number,
+): number {
+  if (periodType === lease.period_type) return quantity
+  return periodsToCover(bounds.period_start, bounds.period_end, lease.period_type)
 }
 
 /** 'INV-YYYYMM-0001': YYYYMM from periodStart, sequence from nextInvoiceSequence (padded to 4, longer when needed). */
@@ -206,20 +347,34 @@ export function nextInvoiceSequence(periodStart: string, orgInvoices: Invoice[])
 /**
  * Build a ready-to-insert invoice.
  *
- * Bounds:
- *  - default: nextPeriodBounds(lease, existingInvoices, quantity) (anchored grid)
- *  - periodStart only: [periodStart, periodEnd(periodStart, type, quantity)]
- *  - periodEnd given: quantity forced to 1, start = periodStart ?? nextPeriodBounds(..., 1).period_start,
- *    end = periodEnd (must be >= start, else 'Tanggal akhir harus setelah tanggal mulai.')
- *  When the resulting start/end differ from the anchored bounds, `warnings` contains WARN_OFF_SCHEDULE.
+ * Effective type = periodType ?? lease.period_type; effective price = pricePerPeriod ?? lease.price_per_period
+ * (>= 0, else 'Nilai tidak boleh negatif.'). Both are reported on the draft (`period_type`, `price_per_period`).
  *
- * Amounts: base = baseAmount ?? quantity * price_per_period; addons via computeAddonsAmount (one_time addons
- * only on the lease's first non-void invoice); extra/discount default 0. baseAmount, extraAmount and
- * discountAmount must be >= 0 ('Nilai tidak boleh negatif.'). total = base + addons + extra - discount;
- * a negative total throws 'Diskon melebihi jumlah tagihan.' (no clamping); 0 is allowed (free period, 'paid').
+ * Bounds (default = nextPeriodBounds(lease, existingInvoices, quantity, effectiveType)):
+ *  - default, type unchanged: the anchored grid, exactly as before
+ *  - default, type differs from lease.period_type: start = day after the latest non-void period_end (or
+ *    lease.start_date when none), end = periodEnd(start, effectiveType, quantity); `warnings` gets
+ *    WARN_PERIOD_TYPE_CHANGED. E.g. daily lease billed through 2026-03-10 extended monthly ->
+ *    2026-03-11 .. 2026-04-10.
+ *  - periodStart only: [periodStart, periodEnd(periodStart, effectiveType, quantity)]
+ *  - periodEnd given: quantity forced to 1, start = periodStart ?? default.period_start,
+ *    end = periodEnd (must be >= start, else 'Tanggal akhir harus setelah tanggal mulai.')
+ *  When the resulting start/end differ from the default bounds, `warnings` also contains WARN_OFF_SCHEDULE.
+ *
+ * Amounts: base = baseAmount ?? quantity * effective price; addons = addonsAmount ?? computeAddonsAmount(
+ * addons, addonPeriodQuantity(lease, effectiveType, bounds, quantity), isFirstInvoice) — per_period add-ons
+ * are priced per LEASE period, so on a type-changed invoice they are multiplied by the lease periods the
+ * invoice covers (daily lease, 'Parkir motor' Rp 10.000/malam, extended monthly 2026-03-11..2026-04-10 ->
+ * 31 x 10.000 = Rp 310.000, plus addonUnitWarning('daily', 31)); one_time add-ons only on the lease's first
+ * non-void invoice; extra/discount default 0. baseAmount, addonsAmount, extraAmount and discountAmount must
+ * be >= 0 ('Nilai tidak boleh negatif.'). total = base + addons + extra - discount; a negative total throws
+ * 'Diskon melebihi jumlah tagihan.' (no clamping); 0 is allowed (free period, 'paid').
+ * A type change without pricePerPeriod (and without baseAmount) bills the old unit's price for the new unit
+ * and pushes WARN_PRICE_NOT_SET; it does not throw (the fallback price rule still applies).
  *
  * due_date = period_start (kos convention: pay at the start of the period).
  * invoice_number from nextInvoiceSequence(period_start, orgInvoices ?? existingInvoices).
+ * new_lease_end_date = max(lease.end_date, period_end) regardless of the type change.
  */
 export function buildInvoiceDraft(input: InvoiceDraftInput): InvoiceDraft {
   const { lease, addons, existingInvoices } = input
@@ -227,28 +382,42 @@ export function buildInvoiceDraft(input: InvoiceDraftInput): InvoiceDraft {
   const quantity = hasCustomEnd ? 1 : input.quantity
   if (!Number.isInteger(quantity) || quantity < 1) throw new Error('Jumlah periode minimal 1')
 
-  const anchored = nextPeriodBounds(lease, existingInvoices, quantity)
+  const period_type = input.periodType ?? lease.period_type
+  const price_per_period = input.pricePerPeriod === undefined ? lease.price_per_period : assertNonNegative(input.pricePerPeriod)
+  const typeChanged = period_type !== lease.period_type
+
+  const anchored = nextPeriodBounds(lease, existingInvoices, quantity, period_type)
   let bounds: { period_start: string; period_end: string }
   if (input.periodEnd !== undefined) {
     const start = input.periodStart ?? anchored.period_start
     if (daysBetween(start, input.periodEnd) < 0) throw new Error('Tanggal akhir harus setelah tanggal mulai.')
     bounds = { period_start: start, period_end: input.periodEnd }
   } else if (input.periodStart !== undefined) {
-    bounds = { period_start: input.periodStart, period_end: periodEnd(input.periodStart, lease.period_type, quantity) }
+    bounds = { period_start: input.periodStart, period_end: periodEnd(input.periodStart, period_type, quantity) }
   } else {
     bounds = anchored
   }
 
   const warnings: string[] = []
+  if (typeChanged) warnings.push(WARN_PERIOD_TYPE_CHANGED)
   if (bounds.period_start !== anchored.period_start || bounds.period_end !== anchored.period_end) {
     warnings.push(WARN_OFF_SCHEDULE)
   }
+  if (typeChanged && input.pricePerPeriod === undefined && input.baseAmount === undefined) warnings.push(WARN_PRICE_NOT_SET)
 
   // A voided first invoice does not count: the re-issued one is the lease's first invoice again.
   const isFirstInvoice = !existingInvoices.some((inv) => inv.status !== 'void')
 
-  const base_amount = input.baseAmount === undefined ? lease.price_per_period * quantity : assertNonNegative(input.baseAmount)
-  const addons_amount = computeAddonsAmount(addons, quantity, isFirstInvoice)
+  const base_amount = input.baseAmount === undefined ? price_per_period * quantity : assertNonNegative(input.baseAmount)
+  // per_period add-ons stay in the lease's unit: on a type change they are multiplied by the lease periods covered.
+  const addonQuantity = addonPeriodQuantity(lease, period_type, bounds, quantity)
+  let addons_amount: number
+  if (input.addonsAmount === undefined) {
+    addons_amount = computeAddonsAmount(addons, addonQuantity, isFirstInvoice)
+    if (typeChanged && addons.some((a) => a.billing === 'per_period')) warnings.push(addonUnitWarning(lease.period_type, addonQuantity))
+  } else {
+    addons_amount = assertNonNegative(input.addonsAmount)
+  }
   const extra_amount = assertNonNegative(input.extraAmount)
   const discount_amount = assertNonNegative(input.discountAmount)
   const total_amount = base_amount + addons_amount + extra_amount - discount_amount
@@ -258,9 +427,11 @@ export function buildInvoiceDraft(input: InvoiceDraftInput): InvoiceDraft {
   const sequence = nextInvoiceSequence(bounds.period_start, numberingPool)
 
   return {
+    period_type,
     period_start: bounds.period_start,
     period_end: bounds.period_end,
     quantity,
+    price_per_period,
     base_amount,
     addons_amount,
     extra_amount,
@@ -271,6 +442,16 @@ export function buildInvoiceDraft(input: InvoiceDraftInput): InvoiceDraft {
     new_lease_end_date: maxISO(lease.end_date, bounds.period_end),
     warnings,
   }
+}
+
+/** Period type an invoice was billed with: invoice.period_type ?? lease.period_type (older rows store null). */
+export function invoicePeriodType(invoice: Invoice, lease: Lease): PeriodType {
+  return invoice.period_type ?? lease.period_type
+}
+
+/** Unit word for the invoice's quantity ('malam' | 'minggu' | 'bulan'), from invoicePeriodType. */
+export function invoiceUnitLabel(invoice: Invoice, lease: Lease): string {
+  return PERIOD_UNIT_LABEL[invoicePeriodType(invoice, lease)]
 }
 
 // ---------- payments & status ----------
@@ -399,6 +580,15 @@ export function summarizeLeaseBilling(
     daysUntilDue,
     state,
   }
+}
+
+/**
+ * Sort key for "jatuh tempo terdekat" lists (SPEC 5.1): summary.nextDueDate, or '9999-12-31' when null, so
+ * plain string comparison (a < b) orders earliest due first; overdue leases (past dates) naturally come first
+ * and leases with no due date last.
+ */
+export function nextDueSortKey(summary: LeaseBillingSummary): string {
+  return summary.nextDueDate ?? '9999-12-31'
 }
 
 // ---------- deposit ----------
