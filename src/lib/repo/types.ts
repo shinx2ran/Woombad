@@ -78,7 +78,6 @@ export interface Repo {
   getFileUrl(bucket: StorageBucket, path: string | null | undefined): Promise<string | null>
   removeFile(bucket: StorageBucket, path: string): Promise<void>
 
-  /** Add a member by email: adds immediately if the user exists, otherwise records an invitation. */
   /** Admin only. Creates a one-time invitation code for the role; `label` says who it is for. */
   createInvitation(orgId: string, role: 'admin' | 'staff', label: string | null): Promise<CreatedInvitation>
   /** Owner only. Refuses to demote the last owner. */

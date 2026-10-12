@@ -17,7 +17,13 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
+      - name: No secret keys in the public build config
+        run: node scripts/check-public-config.mjs
+      - name: Build (Mode Demo, so e2e does not depend on the live database)
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ''
+          VITE_SUPABASE_ANON_KEY: ''
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - run: npm run e2e

@@ -7,7 +7,7 @@ import { errorMessage } from './networkError'
 
 /**
  * Landing page for the Supabase recovery link (redirectTo). The link signs the user in with a
- * recovery session; here they choose a new password. Also reachable from Pengaturan when signed in.
+ * recovery session; here they choose a new password. Also linked from Pengaturan → Tentang (online mode).
  */
 export function ResetPasswordPage() {
   const { auth, session, loading } = useAuth()

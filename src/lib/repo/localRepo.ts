@@ -5,7 +5,7 @@ import type { CreatedInvitation, ListOptions, Repo, StorageBucket } from './type
 import { CODE_ALPHABET, formatCode } from './types'
 import type { MemberRole } from '../../types/db'
 
-const STORAGE_KEY = 'woombad.local.db.v1'
+export const STORAGE_KEY = 'woombad.local.db.v1'
 
 type Db = { [K in TableName]: Row<K>[] }
 
@@ -27,6 +27,13 @@ function loadDb(): Db {
     }
     return db
   } catch {
+    // keep unreadable data for recovery; the demo seed would otherwise overwrite it on start
+    try {
+      const raw = globalThis.localStorage?.getItem(STORAGE_KEY)
+      if (raw) globalThis.localStorage?.setItem(`${STORAGE_KEY}.corrupt`, raw)
+    } catch {
+      // storage blocked or full
+    }
     return emptyDb()
   }
 }

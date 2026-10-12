@@ -13,7 +13,7 @@ export function translateDbError(message: string): string {
   if (/violates foreign key constraint/i.test(message) && /restrict|still referenced/i.test(message)) {
     return 'Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.'
   }
-  if (/Failed to fetch|NetworkError|network/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
+  if (/Failed to fetch|Load failed|NetworkError|network/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
   if (/Signups not allowed|signup.*disabled/i.test(message)) return 'Pendaftaran akun baru sedang ditutup. Minta pemilik kos membuatkan akun.'
   return message
 }
@@ -47,7 +47,7 @@ export class SupabaseRepo implements Repo {
       const size = Math.min(PAGE, remaining)
       if (size <= 0) break
       const { data, error } = await q.range(from, from + size - 1)
-      if (error) throw new Error(error.message)
+      if (error) throw new Error(translateDbError(error.message))
       const rows = (data ?? []) as unknown as Row<T>[]
       all.push(...rows)
       if (rows.length < size) break
@@ -57,7 +57,7 @@ export class SupabaseRepo implements Repo {
 
   async get<T extends TableName>(table: T, id: string): Promise<Row<T> | null> {
     const { data, error } = await this.sb.from(table).select('*').eq('id', id).maybeSingle()
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(translateDbError(error.message))
     return (data as unknown as Row<T>) ?? null
   }
 
@@ -119,7 +119,7 @@ export class SupabaseRepo implements Repo {
 
   async uploadFile(bucket: StorageBucket, path: string, file: Blob, contentType?: string): Promise<string | null> {
     const { error } = await this.sb.storage.from(bucket).upload(path, file, { upsert: true, contentType })
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(translateDbError(error.message))
     return path
   }
 
@@ -132,7 +132,7 @@ export class SupabaseRepo implements Repo {
 
   async removeFile(bucket: StorageBucket, path: string): Promise<void> {
     const { error } = await this.sb.storage.from(bucket).remove([path])
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(translateDbError(error.message))
   }
 
   async removeMember(orgId: string, userId: string): Promise<void> {

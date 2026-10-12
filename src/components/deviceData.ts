@@ -1,8 +1,10 @@
 import { todayISO } from '../lib/format'
 import { TABLE_NAMES } from '../types/db'
 
-/** localStorage key of the Mode Demo database (same key as src/lib/repo/localRepo.ts). */
-export const LOCAL_DB_KEY = 'woombad.local.db.v1'
+import { STORAGE_KEY } from '../lib/repo/localRepo'
+
+/** localStorage key of the Mode Demo database. */
+export const LOCAL_DB_KEY = STORAGE_KEY
 
 /** Raw Mode Demo data stored on this device, or null when there is none (or storage is blocked). */
 export function readDeviceData(): string | null {

@@ -5,6 +5,7 @@ import { getRepo, bindOrg, LocalRepo, NotMemberError, type OrgRepo } from '../li
 import { JoinOrganization } from '../features/auth/JoinOrganization'
 import { buildDemoDb, DEMO_ORG_ID } from '../lib/repo/demoSeed'
 import { useAuth } from './useAuth'
+import { ErrorScreen } from '../components/ErrorBoundary'
 
 const SELECTED_PROPERTY_KEY = 'woombad.selectedProperty'
 
@@ -127,13 +128,7 @@ export function OrgProvider({ children, fallback }: { children: ReactNode; fallb
   if (membership.isError && membership.error instanceof NotMemberError) {
     return <JoinOrganization onJoined={() => void queryClient.invalidateQueries({ queryKey: ['membership', userId] })} />
   }
-  if (membership.isError) {
-    return (
-      <div className="p-6 text-center text-red-700">
-        Gagal memuat organisasi: {(membership.error as Error).message}
-      </div>
-    )
-  }
+  if (membership.isError) return <ErrorScreen error={membership.error} />
   if (!value || propertiesQuery.isPending) return <>{fallback}</>
   return <OrgContext.Provider value={value}>{children}</OrgContext.Provider>
 }

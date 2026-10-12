@@ -15,7 +15,14 @@ const ID_MESSAGES: Record<string, string> = {
 }
 
 function translate(message: string): string {
-  return ID_MESSAGES[message] ?? message
+  if (ID_MESSAGES[message]) return ID_MESSAGES[message]
+  if (/Failed to fetch|Load failed|NetworkError/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
+  // Supabase's built-in mailer only delivers to the project's team members and is heavily rate-limited
+  if (/Email address not authorized|email rate limit/i.test(message)) {
+    return 'Email reset tidak bisa dikirim. Minta pemilik kos membuat kata sandi sementara untuk Anda.'
+  }
+  if (/Signups not allowed|signup.*disabled/i.test(message)) return 'Pendaftaran akun baru sedang ditutup. Minta pemilik kos membuatkan akun.'
+  return message
 }
 
 export class SupabaseAuth implements AuthService {

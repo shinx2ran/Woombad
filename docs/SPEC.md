@@ -165,8 +165,8 @@ arus kas per bucket (`cashflowSeries`), pengeluaran per kategori (donut, `expens
 import dari `'write-excel-file'` default/browser) atau **CSV** (`toCsv`, pemisah `;` default, opsi `,`).
 Grafik harus terbaca di HP (tinggi ~220px, legend ringkas, tooltip Rupiah).
 
-**settings** (`/pengaturan`): nama organisasi (admin), daftar anggota + undang via email (`repo.addMemberByEmail`),
-hapus anggota (owner/admin, bukan diri sendiri), info mode (Demo vs Online) + tombol **Reset data demo**
+**settings** (`/pengaturan`): nama organisasi (admin), daftar anggota + undang dengan kode (lihat 6.1; ubah peran oleh
+pemilik, admin hanya menghapus staf/admin), info mode (Demo vs Online) + tombol **Reset data demo**
 (mode lokal), petunjuk install PWA (Android: "Tambahkan ke layar utama"; iPhone: Safari → Bagikan → Tambahkan ke
 Layar Utama), tombol keluar, versi aplikasi.
 
@@ -262,7 +262,11 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - `set_member_role(p_org_id uuid, p_user_id uuid, p_role text) returns void`: **owner saja**; role owner/admin/staff;
   tolak menurunkan **owner terakhir** ('Tidak dapat mengubah peran pemilik terakhir.'). Policy `members_update` dihapus —
   tidak ada update langsung ke `organization_members`.
-- `remove_member` tetap.
+- `remove_member` tetap (admin tidak dapat menghapus pemilik; pemilik terakhir tidak dapat dihapus).
+- Kode undangan hanya berlaku selama pembuatnya masih pemilik/admin: `remove_member` dan `set_member_role` (turun ke staf)
+  mengakhiri kode yang belum dipakai milik orang itu (`expires_at = now()`).
+- Kode dianggap terpakai (`accepted_at`/`accepted_by`) hanya bila keanggotaan baru benar-benar dibuat; anggota yang sudah
+  ada dan memasukkan kode itu hanya mendapat org id-nya, kode tetap berlaku untuk orang yang dituju.
 
 ### 6.2 Pembatasan staf (ditegakkan database)
 - `properties`: insert/update/delete **admin saja** (termasuk `payment_info` = rekening di pengingat WhatsApp).
@@ -272,7 +276,11 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - `leases`: staf boleh update (perpanjang, checkout, pindah kamar) **kecuali** `price_per_period`, `deposit_amount`,
   `period_type` → 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.'
 - `payments` & `expenses`: update **admin saja** (hapus kebijakan "pemilik baris"); trigger BEFORE INSERT memaksa
-  `created_by = auth.uid()` bila `auth.uid()` tidak null.
+  `created_by = auth.uid()` bila `auth.uid()` tidak null; `created_by` dan `org_id` tidak dapat diubah lewat update.
+  Karena itu foto struk pengeluaran baru diunggah **sebelum** insert dan `receipt_path` ikut di insert (staf tidak bisa
+  update); bila insert gagal, file dihapus lagi (best-effort).
+- `tenants.property_id` dan `expenses.property_id`: `on delete set null (property_id)` (PostgreSQL 15+) agar menghapus kos
+  tidak ikut mengosongkan `org_id`.
 - `invoices`: insert oleh non-admin dengan `status = 'void'` diperlakukan sebagai tagihan biasa (status diturunkan dari
   pembayaran) — ubah `invoices_recalc_trigger`.
 - UI menyembunyikan aksi yang ditolak untuk staf dan tetap menampilkan pesan `translateDbError` bila server menolak.
@@ -316,7 +324,14 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   addon_catalog, tenants, leases, lease_addons, invoices, payments, expenses), `org_id` diganti, `id` UUID dipertahankan,
   `created_by` dikosongkan; baris dengan id non-UUID atau dari organisasi lain dilewati. Hasil: ringkasan jumlah baris.
 
+- Tambahan v0.3: impor juga bisa langsung dari data Mode Demo di browser yang sama (tanpa berkas); data contoh bawaan
+  Mode Demo tidak ikut secara default; cadangan online tidak memuat `invitation_codes` (tanpa grant); pulihkan/reset
+  mengunduh data saat ini lebih dulu; data perangkat yang rusak berhenti di layar galat (unduh / reset), tidak ditimpa.
+
 ### 6.6 Konfigurasi publik untuk build
-- URL Supabase & *publishable/anon key* bersifat publik (dilindungi RLS). Disimpan di `.env.production` (di-commit,
+- URL Supabase & *publishable key* (`sb_publishable_…`) bersifat publik (dilindungi RLS). Kunci anon lama (JWT) tidak
+  dipakai: membatalkan kunci lama berarti mematikan semua kunci lama sekaligus.
+  `scripts/check-public-config.mjs` menolak build bila `.env.production` memuat kunci rahasia. CI membangun dengan variabel
+  kosong (Mode Demo) agar e2e tidak bergantung pada database live. Disimpan di `.env.production` (di-commit,
   pengecualian di `.gitignore`). Workflow deploy hanya mengoper secrets bila tidak kosong (secret kosong tidak boleh
   menimpa `.env.production`). Kunci `service_role` **tidak pernah** di-commit.
