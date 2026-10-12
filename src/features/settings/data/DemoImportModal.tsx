@@ -41,6 +41,17 @@ type Step =
 const kosCounts = (p: KosPreview) =>
   `${p.rooms} kamar · ${p.tenants} penyewa · ${p.leases} sewa · ${p.invoices} tagihan · ${p.payments} pembayaran · ${p.expenses} pengeluaran`
 
+/** A sample kos the owner used is his: say so instead of calling it sample data. */
+const usedSampleText = (p: KosPreview) =>
+  p.ownRows > 0
+    ? `Berisi ${p.ownRows} data yang Anda tambahkan${p.sampleRows > 0 ? ` dan ${p.sampleRows} data contoh` : ''}.`
+    : `Sudah Anda ubah di Mode Demo${p.sampleRows > 0 ? `; berisi ${p.sampleRows} data contoh` : ''}.`
+
+const quoteList = (names: string[]) => {
+  const shown = names.slice(0, 3).map((n) => `“${n}”`)
+  return names.length > 3 ? `${shown.join(', ')} dan ${names.length - 3} lainnya` : shown.join(', ')
+}
+
 const sampleCounts = (s: SampleOutsideKos) =>
   [
     s.expenses > 0 && `${s.expenses} pengeluaran bersama`,
@@ -220,6 +231,7 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
                       {p.alreadyOnline && <Badge tone="info">Sudah pernah diimpor</Badge>}
                     </span>
                     <span className="mt-0.5 block text-xs text-slate-500">{kosCounts(p)}</span>
+                    {p.usedSample && <span className="mt-0.5 block text-xs text-slate-700">{usedSampleText(p)}</span>}
                   </span>
                 </label>
               </li>
@@ -260,6 +272,13 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
               </li>
             )}
           </ul>
+
+          {plan.partialSplits.length > 0 && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">
+              Pengeluaran yang dibagi rata ke beberapa kos hanya ikut sebagian: {quoteList(plan.partialSplits)}. Centang semua kosnya
+              supaya jumlahnya utuh.
+            </p>
+          )}
 
           <div className="rounded-lg bg-slate-50 px-3 py-2">
             <p>

@@ -72,6 +72,8 @@ export interface ImportPlan {
   tables: Record<ImportTable, TablePlan>
   /** invoices whose number was already taken online; the old number is kept in the invoice notes */
   renumberedInvoices: number
+  /** split expenses ("… (1/3)") this import brings over only in part, by description without the suffix */
+  partialSplits: string[]
 }
 
 export interface KosPreview {
@@ -85,8 +87,13 @@ export interface KosPreview {
   expenses: number
   /** the kos itself was imported before (its rows will be skipped as "sudah ada") */
   alreadyOnline: boolean
-  /** a Mode Demo sample kos (not selected by default) */
+  /** a Mode Demo sample kos the owner never touched (not selected by default) */
   sample: boolean
+  /** a Mode Demo sample kos the owner used: he added rows under it or changed it (selected by default) */
+  usedSample: boolean
+  /** sample kos only: rows under it the owner added, and sample rows under it */
+  ownRows: number
+  sampleRows: number
 }
 
 export interface SampleOutsideKos {
@@ -348,6 +355,11 @@ export function sampleRowCheck(backup: ParsedBackup): (row: BackupRow) => boolea
   return (row) => row.org_id === DEMO_ORG_ID && row.created_at === stamp
 }
 
+/** A row edited after it was created (tables without updated_at never count). */
+function wasChanged(row: BackupRow): boolean {
+  return typeof row.updated_at === 'string' && typeof row.created_at === 'string' && row.updated_at !== row.created_at
+}
+
 /** Kos of the backup's own organisation, sorted by name. */
 export function backupProperties(backup: ParsedBackup): BackupRow[] {
   const orgId = sourceOrgId(backup)
@@ -390,30 +402,60 @@ export function previewBackup(backup: ParsedBackup, existing: ExistingOnline = e
     return pid === null || !allPropertyIds.has(pid)
   }
   const withLease = leaseTenantIds(backup)
-  const count = (rows: BackupRow[], pid: string) => rows.filter((r) => key(r.property_id) === pid).length
 
   const properties = backupProperties(backup).map((p): KosPreview => {
     const pid = key(p.id) ?? ''
+    const of = (rows: BackupRow[]) => rows.filter((r) => key(r.property_id) === pid)
+    const [rooms, leases, invoices, payments, expenses] = [t.rooms, t.leases, t.invoices, t.payments, t.expenses].map(of)
     const tenants = new Set<string>()
-    for (const l of t.leases) {
+    for (const l of leases) {
       const tid = key(l.tenant_id)
-      if (tid && key(l.property_id) === pid) tenants.add(tid)
+      if (tid) tenants.add(tid)
     }
-    for (const tn of t.tenants) {
+    for (const tn of of(t.tenants)) {
       const tid = key(tn.id)
-      if (tid && key(tn.property_id) === pid && !withLease.has(tid)) tenants.add(tid)
+      if (tid && !withLease.has(tid)) tenants.add(tid)
     }
+    // A sample kos is the owner's once he added or changed anything that selecting it imports (e.g. renamed it).
+    const fromSample = isSample(p)
+    let ownRows = 0
+    let sampleRows = 0
+    let changed = fromSample && wasChanged(p)
+    if (fromSample) {
+      const leaseIds = new Set(leases.map((l) => key(l.id)))
+      const under = [
+        ...rooms,
+        ...of(t.addon_catalog),
+        ...t.tenants.filter((tn) => tenants.has(key(tn.id) ?? '')),
+        ...leases,
+        ...t.lease_addons.filter((la) => leaseIds.has(key(la.lease_id))),
+        ...invoices,
+        ...payments,
+        ...expenses,
+      ]
+      for (const r of under) {
+        if (!isSample(r)) ownRows++
+        else {
+          sampleRows++
+          if (wasChanged(r)) changed = true
+        }
+      }
+    }
+    const usedSample = fromSample && (ownRows > 0 || changed)
     return {
       id: p.id,
       name: typeof p.name === 'string' && p.name.trim() ? p.name : 'Tanpa nama',
-      rooms: count(t.rooms, pid),
+      rooms: rooms.length,
       tenants: tenants.size,
-      leases: count(t.leases, pid),
-      invoices: count(t.invoices, pid),
-      payments: count(t.payments, pid),
-      expenses: count(t.expenses, pid),
+      leases: leases.length,
+      invoices: invoices.length,
+      payments: payments.length,
+      expenses: expenses.length,
       alreadyOnline: existing.ids.properties.has(pid),
-      sample: isSample(p),
+      sample: fromSample && !usedSample,
+      usedSample,
+      ownRows,
+      sampleRows,
     }
   })
   const sharedExpenses = t.expenses.filter(withoutKos)
@@ -432,7 +474,7 @@ export function sampleOutsideKosCount(preview: BackupPreview): number {
   return preview.sample.expenses + preview.sample.addons + preview.sample.tenants
 }
 
-/** Default selection: the owner's kos and shared expenses; Mode Demo sample data stays unticked. */
+/** Default selection: the owner's kos (also sample kos he used) and shared expenses; untouched sample data stays unticked. */
 export function defaultSelection(preview: BackupPreview): ImportSelection {
   return {
     propertyIds: preview.properties.filter((p) => !p.sample).map((p) => p.id),
@@ -459,6 +501,28 @@ function freeInvoiceNumber(original: string, taken: ReadonlySet<string>): string
   let i = 2
   while (taken.has(`${original}-${i}`)) i++
   return `${original}-${i}`
+}
+
+const SPLIT_RE = /^(.*) \((\d+)\/(\d+)\)$/
+
+/**
+ * "Bagi rata ke semua kos" saves one expense per kos, described "… (i/N)", in one insert (same created_at).
+ * Descriptions of such groups this import brings over only in part: some parts are neither in the plan nor online.
+ */
+function partialSplitExpenses(expenses: readonly BackupRow[], planned: ReadonlySet<string>, online: ReadonlySet<string>): string[] {
+  const groups = new Map<string, { name: string; planned: number; covered: number; total: number }>()
+  for (const e of expenses) {
+    const m = typeof e.description === 'string' ? SPLIT_RE.exec(e.description) : null
+    if (!m || Number(m[3]) < 2) continue
+    const groupKey = JSON.stringify([m[1], m[3], e.expense_date, e.created_at])
+    const g = groups.get(groupKey) ?? { name: m[1], planned: 0, covered: 0, total: 0 }
+    const id = key(e.id) ?? ''
+    g.total++
+    if (planned.has(id)) g.planned++
+    if (planned.has(id) || online.has(id)) g.covered++
+    groups.set(groupKey, g)
+  }
+  return [...groups.values()].filter((g) => g.planned > 0 && g.covered < g.total).map((g) => g.name)
 }
 
 export function emptySkipped(): Record<SkipReason, number> {
@@ -594,7 +658,7 @@ export function planDemoImport(backup: ParsedBackup, selection: ImportSelection,
     take('expenses', e, { adjust: ownKos ? undefined : (row) => void (row.property_id = null) })
   }
 
-  return { tables, renumberedInvoices }
+  return { tables, renumberedInvoices, partialSplits: partialSplitExpenses(t.expenses, planned, existing.ids.expenses) }
 }
 
 export function plannedCount(plan: ImportPlan): number {

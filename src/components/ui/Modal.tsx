@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { clsx } from 'clsx'
+import { useDirtyWhile } from '../../app/dirtyState'
 
 export interface ModalProps {
   open: boolean
@@ -11,8 +12,9 @@ export interface ModalProps {
   size?: 'sm' | 'md' | 'lg'
 }
 
-/** Bottom-sheet on mobile, centered dialog on desktop. */
+/** Bottom-sheet on mobile, centered dialog on desktop. An open dialog holds back automatic app updates (dirtyState). */
 export function Modal({ open, onClose, title, children, footer, size = 'md' }: ModalProps) {
+  useDirtyWhile(open)
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()

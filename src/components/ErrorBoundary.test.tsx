@@ -50,6 +50,14 @@ describe('AppErrorBoundary', () => {
     expect(screen.getByRole('button', { name: 'Unduh data perangkat ini' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Reset data di perangkat ini' })).toBeTruthy()
     expect(screen.getByText('Cannot read properties of undefined')).toBeTruthy()
+    // nothing to sign out of in Mode Demo
+    expect(screen.queryByRole('button', { name: 'Keluar' })).toBeNull()
+  })
+
+  it('shows a lost connection as such, without the online-only Supabase hint', () => {
+    render(<ErrorScreen error={new TypeError('Failed to fetch')} />)
+    expect(screen.getByText('Tidak dapat terhubung ke server. Periksa koneksi internet.')).toBeTruthy()
+    expect(screen.queryByText(/Supabase/)).toBeNull()
   })
 
   it('downloads the raw device data, even when it is not valid JSON', () => {

@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 import { clsx } from 'clsx'
-import { ArrowRight, Building2, CircleCheck, DoorOpen, FilePlus2 } from 'lucide-react'
+import { ArrowRight, Building2, CircleCheck, DoorOpen, FilePlus2, Upload } from 'lucide-react'
 import { Card, CardBody } from '../../components/ui'
 
 interface Step {
@@ -12,9 +12,36 @@ interface Step {
   done: boolean
 }
 
-/** Friendly onboarding shown while the organisation has no rooms yet. Kos and rooms are added by owners/admins (SPEC 6.2). */
-export function FirstRunChecklist({ totals, isAdmin }: { totals: { properties: number; rooms: number; leases: number }; isAdmin: boolean }) {
+/** Opens "Impor dari Mode Demo" in Pengaturan → Data (OnlineBackupSection). */
+const DEMO_IMPORT_PATH = '/pengaturan?impor=demo'
+
+/**
+ * Friendly onboarding shown while the organisation has no rooms yet. Kos and rooms are added by owners/admins (SPEC 6.2).
+ * Online, an owner/admin without any kos is first offered the move from Mode Demo: the import matches rows by id, so
+ * a kos typed in again by hand would end up twice.
+ */
+export function FirstRunChecklist({
+  totals,
+  isAdmin,
+  isOnline = false,
+}: {
+  totals: { properties: number; rooms: number; leases: number }
+  isAdmin: boolean
+  isOnline?: boolean
+}) {
+  const importStep: Step | null =
+    isOnline && isAdmin && totals.properties === 0
+      ? {
+          title: 'Punya data dari Mode Demo? Pindahkan dulu',
+          description: 'Impor kos, kamar, penyewa, dan transaksi dari Mode Demo sebelum mengisi data baru. Belum pernah memakai Mode Demo? Lewati langkah ini.',
+          to: DEMO_IMPORT_PATH,
+          cta: 'Impor dari Mode Demo',
+          icon: Upload,
+          done: false,
+        }
+      : null
   const steps: Step[] = [
+    ...(importStep ? [importStep] : []),
     {
       title: 'Tambah kos',
       description: 'Daftarkan bangunan kos Anda beserta info rekening untuk pengingat.',
@@ -48,7 +75,7 @@ export function FirstRunChecklist({ totals, isAdmin }: { totals: { properties: n
         <h2 className="text-lg font-semibold">Selamat datang di Woombad 👋</h2>
         <p className="mt-1 text-sm text-brand-100">
           {isAdmin
-            ? 'Tiga langkah singkat dan dashboard ini akan mulai bekerja untuk Anda.'
+            ? `${importStep ? 'Beberapa' : 'Tiga'} langkah singkat dan dashboard ini akan mulai bekerja untuk Anda.`
             : 'Kos dan kamar ditambahkan oleh pemilik atau admin. Setelah itu Anda bisa mencatat sewa di sini.'}
         </p>
       </div>

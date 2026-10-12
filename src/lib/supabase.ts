@@ -20,3 +20,25 @@ export function getSupabase(): SupabaseClient {
   }
   return client
 }
+
+const SIGN_OUT_WAIT_MS = 3000
+
+/**
+ * Sign out on this device only, also when the server cannot be reached (no signal, paused project): after a short
+ * wait the stored session is removed anyway. Needs no React providers (used by the error screen).
+ */
+export async function signOutThisDevice(sb?: Pick<SupabaseClient, 'auth'>): Promise<void> {
+  if (!sb && !isSupabaseConfigured) return
+  try {
+    const signOut = (sb ?? getSupabase()).auth.signOut({ scope: 'local' })
+    await Promise.race([signOut, new Promise((resolve) => setTimeout(resolve, SIGN_OUT_WAIT_MS))])
+  } catch {
+    /* removed below */
+  }
+  try {
+    const storage = globalThis.localStorage
+    for (const key of Object.keys(storage)) if (/^sb-.+-auth-token/.test(key)) storage.removeItem(key)
+  } catch {
+    /* storage blocked: nothing stored either */
+  }
+}

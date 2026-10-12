@@ -91,6 +91,36 @@ describe('DemoImportModal', () => {
     expect(await repo.list('addon_catalog')).toEqual([])
   })
 
+  it('ticks a sample kos the owner used, says how much of it is his, and warns about a split expense left in part', async () => {
+    const { db, ownKosId } = ownerDemoDb()
+    const melati = db.properties.find((p) => p.name === 'Kos Melati')!
+    const lease = db.leases.find((l) => l.property_id === melati.id)!
+    const invoice = db.invoices.find((i) => i.lease_id === lease.id)!
+    const later = { created_at: '2026-10-14T09:00:00.000Z', updated_at: '2026-10-14T09:00:00.000Z' }
+    db.payments.push({
+      id: crypto.randomUUID(), org_id: DEMO_ORG_ID, property_id: melati.id, invoice_id: invoice.id, lease_id: lease.id, amount: 825_000,
+      paid_at: '2026-10-14', method: 'cash', kind: 'rent', notes: null, created_by: null, created_at: later.created_at,
+    })
+    for (const [i, pid] of [melati.id, ownKosId].entries()) {
+      db.expenses.push({
+        id: crypto.randomUUID(), org_id: DEMO_ORG_ID, property_id: pid, lease_id: null, category: 'marketing', amount: 100_000,
+        expense_date: '2026-10-14', description: `Iklan Facebook (${i + 1}/2)`, vendor: null, receipt_path: null, created_by: null, ...later,
+      })
+    }
+    renderModal()
+    pickFile(JSON.stringify(buildBackupFile(db, 'Kos Pak Budi')))
+
+    expect(await screen.findByText('Kos Melati')).toBeTruthy()
+    expect(checkbox(/Kos Melati/).checked).toBe(true)
+    expect(checkbox(/Kos Melati/).parentElement?.textContent).not.toContain('Contoh')
+    expect(screen.getByText(/^Berisi 2 data yang Anda tambahkan dan \d+ data contoh\.$/)).toBeTruthy()
+    expect(checkbox(/Kos Anggrek/).checked).toBe(false)
+    expect(screen.queryByText(/hanya ikut sebagian/)).toBeNull()
+
+    fireEvent.click(checkbox(/Kos Melati/))
+    expect(screen.getByText(/dibagi rata ke beberapa kos hanya ikut sebagian: “Iklan Facebook”/)).toBeTruthy()
+  })
+
   it('imports a sample kos the owner ticks and shows the result', async () => {
     const demo = buildDemoDb(new Date(2026, 9, 12))
     renderModal()
