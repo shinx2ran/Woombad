@@ -112,9 +112,9 @@ Catatan mode Supabase vs Demo:
 - Di mode **Supabase**, `invoices.status` dijaga oleh trigger DB setiap ada pembayaran; UI cukup meng-*invalidate*
   `invoices`. Di mode **Demo** (lokal) tidak ada trigger, jadi UI harus menulis `status` hasil `deriveInvoiceStatus`.
   Cara aman untuk keduanya: panggil `repo.update('invoices', id, { status })` hanya jika `repo.mode === 'local'`.
-- Peran **staf** di mode Supabase tidak boleh meng-update `invoices` (RLS) dan hanya boleh mengubah `payments`/`expenses`
-  yang ia catat sendiri (`created_by`). UI menyembunyikan tombol tersebut untuk staf dan menampilkan pesan dari
-  `translateDbError` bila server menolak.
+- Peran **staf** di mode Supabase tidak boleh meng-update `invoices` (RLS) dan hanya boleh **mencatat** `payments`/
+  `expenses`; mengubah/menghapusnya khusus pemilik/admin (lihat 6.2). UI menyembunyikan tombol tersebut untuk staf dan
+  menampilkan pesan dari `translateDbError` bila server menolak.
 - Hapus tagihan/sewa/kos yang masih dirujuk data lain ditolak (DB RESTRICT; `LocalRepo` meniru aturan ini).
 
 Konvensi kode:
@@ -166,7 +166,7 @@ import dari `'write-excel-file'` default/browser) atau **CSV** (`toCsv`, pemisah
 Grafik harus terbaca di HP (tinggi ~220px, legend ringkas, tooltip Rupiah).
 
 **settings** (`/pengaturan`): nama organisasi (admin), daftar anggota + undang dengan kode (lihat 6.1; ubah peran oleh
-pemilik, admin hanya menghapus staf/admin), info mode (Demo vs Online) + tombol **Reset data demo**
+pemilik, admin hanya menghapus staf), info mode (Demo vs Online) + tombol **Reset data demo**
 (mode lokal), petunjuk install PWA (Android: "Tambahkan ke layar utama"; iPhone: Safari → Bagikan → Tambahkan ke
 Layar Utama), tombol keluar, versi aplikasi.
 
@@ -324,7 +324,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   addon_catalog, tenants, leases, lease_addons, invoices, payments, expenses), `org_id` diganti, `id` UUID dipertahankan,
   `created_by` dikosongkan; baris dengan id non-UUID atau dari organisasi lain dilewati. Hasil: ringkasan jumlah baris.
 
-- Tambahan v0.3: impor juga bisa langsung dari data Mode Demo di browser yang sama (tanpa berkas); data contoh bawaan
+- Tambahan v0.3: impor boleh diulang ke organisasi yang sudah berisi (baris dengan id yang sudah ada dilewati); impor
+  juga bisa langsung dari data Mode Demo di browser yang sama (tanpa berkas); data contoh bawaan
   Mode Demo tidak ikut secara default; cadangan online tidak memuat `invitation_codes` (tanpa grant); pulihkan/reset
   mengunduh data saat ini lebih dulu; data perangkat yang rusak berhenti di layar galat (unduh / reset), tidak ditimpa.
 

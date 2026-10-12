@@ -113,8 +113,8 @@ ke pemilik (lihat [Lupa kata sandi](#lupa-kata-sandi)).
 
 ### 4. Pemilik: buat akun pemilik
 
-1. Buka **https://shinx2ran.github.io/Woombad/** → **Buat akun** dengan **email yang sama dengan akun Supabase**
-   (supaya **Lupa kata sandi?** bisa dipakai) dan kata sandi minimal 8 karakter.
+1. Buka **https://shinx2ran.github.io/Woombad/** → **Buat akun** → isi **email yang sama dengan akun Supabase**
+   (supaya **Lupa kata sandi?** bisa dipakai) dan kata sandi minimal 8 karakter → **Daftar**.
 2. Muncul layar **Masukkan kode** → ketik **kode pemilik** dari operator → **Gabung**.
 3. Organisasi "Kos Saya" dibuat dan Anda menjadi **Pemilik**.
 
@@ -131,10 +131,11 @@ Lakukan sebelum mengisi data baru:
 
 ### 6. Pemilik + istri: undang istri
 
-1. Pemilik: **Pengaturan → Anggota → Undang** → peran **Admin** → kirim kode/tautan undangan ke istri lewat
-   WhatsApp. Kode berlaku 7 hari dan hanya untuk satu orang.
-2. Istri: buka tautan itu → **Buat akun** dengan email dan kata sandi sendiri → otomatis bergabung ke kos yang sama
-   (kode sudah terisi; ketuk **Gabung** bila diminta).
+1. Pemilik: **Pengaturan → Anggota → Undang** → isi *Untuk siapa* (mis. "Istri") → pilih **Admin – akses penuh** →
+   **Buat kode** → **Kirim lewat WhatsApp**. Kode berlaku 7 hari, hanya untuk satu orang, dan hanya ditampilkan sekali.
+2. Istri: buka tautan itu → **Buat akun** → isi email dan kata sandi sendiri → **Daftar** → otomatis bergabung ke kos
+   yang sama (kode sudah terisi; ketuk **Gabung** bila diminta). Bila kodenya kosong, ketik kode dari pesan WhatsApp.
+   Sempat muncul Mode Demo atau "halaman tidak ditemukan"? Tunggu beberapa detik; aplikasi memperbarui diri.
 3. Istri: pasang aplikasi ke layar utama (lihat [Install ke HP](#install-ke-hp)) dan masuk dengan akun yang sama.
 
 Pegawai/penjaga kos diundang dengan cara yang sama, dengan peran **Staf**.
@@ -166,7 +167,7 @@ pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disemb
 | *Secret key* (`sb_secret_…`) atau *service_role key* lama | **Ya, sangat** | Membuka semua data tanpa batas. Jangan pernah dikirim (WhatsApp, email), ditempel di aplikasi, atau di-commit ke GitHub. Build otomatis gagal bila kunci ini ada di `.env.production`. Bila bocor: lihat di bawah. |
 | Kata sandi database | Ya | Tidak dipakai aplikasi; simpan di pengelola sandi. |
 | Kode pemilik | Ya, sampai dipakai | Sekali pakai. |
-| Kode undangan | Ya | Hanya untuk orang yang dituju. Sekali pakai, berlaku 7 hari. Salah kirim? Hapus undangannya di **Pengaturan → Anggota**. |
+| Kode undangan | Ya | Hanya untuk orang yang dituju. Sekali pakai, berlaku 7 hari. Salah kirim? Tekan **Batalkan** di **Pengaturan → Anggota → Undangan menunggu**. |
 
 **Bila kunci rahasia bocor**: buka Supabase → Project Settings → **API Keys**. Membuat kunci baru saja **tidak**
 mematikan kunci yang bocor.
