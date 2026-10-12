@@ -214,7 +214,7 @@ function LeaseCard({ item, today, onPay, onInvoice }: { item: LeaseListItem; tod
           <div>
             <dt className="text-xs text-slate-500">Periode</dt>
             <dd className="text-slate-800">
-              {PERIOD_TYPE_LABEL[lease.period_type]} · {formatRupiah(lease.price_per_period)}/{PERIOD_UNIT_LABEL[lease.period_type]}
+              {PERIOD_TYPE_LABEL[lease.period_type]} · <span className="whitespace-nowrap">{formatRupiah(lease.price_per_period)}/{PERIOD_UNIT_LABEL[lease.period_type]}</span>
             </dd>
           </div>
           <div>

@@ -32,7 +32,7 @@ export const ATTENTION_ORDER: AttentionGroup[] = ['overdue', 'due_soon', 'unbill
 
 export const ATTENTION_LABEL: Record<AttentionGroup, string> = {
   overdue: 'Terlambat',
-  due_soon: 'Jatuh tempo ≤ 3 hari',
+  due_soon: 'Jatuh tempo / masa tenggang',
   unbilled: 'Belum ditagih',
 }
 

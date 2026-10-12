@@ -178,7 +178,7 @@ describe('dueLabel', () => {
   })
 
   it('shows lateness; danger only once overdue', () => {
-    expect(dueLabel(lease, summary('2026-10-09', 'due_soon', -3, 100), '2026-10-12')).toEqual({ text: 'Terlambat 3 hari · sejak 9 Okt', tone: 'warning' })
+    expect(dueLabel(lease, summary('2026-10-09', 'due_soon', -3, 100), '2026-10-12')).toEqual({ text: 'Lewat 3 hari · tenggang · sejak 9 Okt', tone: 'warning' })
     expect(dueLabel(lease, summary('2026-10-02', 'overdue', -10, 100), '2026-10-12')?.tone).toBe('danger')
   })
 

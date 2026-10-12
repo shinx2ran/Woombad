@@ -126,7 +126,7 @@ export function PeriodTypePicker({
             role="radio"
             aria-checked={t === value}
             onClick={() => onChange(t)}
-            className={clsx('rounded-md px-2 py-1.5 font-medium transition-colors', t === value ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-slate-100')}
+            className={clsx('min-h-11 rounded-md px-2 py-2 font-medium transition-colors sm:min-h-0 sm:py-1.5', t === value ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-slate-100')}
           >
             {PERIOD_TYPE_LABEL[t]}
           </button>

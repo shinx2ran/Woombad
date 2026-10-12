@@ -148,7 +148,8 @@ export function relativeDays(days: number): string {
 
 /**
  * The prominent next-due line of a lease card (SPEC 5.1):
- *  - past due -> 'Terlambat N hari · sejak 9 Okt' (danger once overdue, warning while within the grace days);
+ *  - past due, still within the grace days (state due_soon) -> 'Lewat N hari · tenggang · sejak 9 Okt' (warning);
+ *  - past due beyond the grace days (state overdue) -> 'Terlambat N hari · sejak 9 Okt' (danger);
  *  - due today -> 'Jatuh tempo hari ini · 12 Okt' (warning);
  *  - a paid-up lease ending within a week (isPaidUpAndEnding) -> 'Berakhir 15 Okt · 3 hari lagi' (info);
  *  - otherwise 'Jatuh tempo 14 Okt · 2 hari lagi' (warning when due_soon, else neutral).
@@ -161,7 +162,11 @@ export function dueLabel(lease: Lease, summary: LeaseBillingSummary, todayISO: s
   }
   const days = summary.daysUntilDue ?? daysBetween(todayISO, summary.nextDueDate)
   const date = formatDate(summary.nextDueDate, 'd MMM')
-  if (days < 0) return { text: `Terlambat ${-days} hari · sejak ${date}`, tone: summary.state === 'overdue' ? 'danger' : 'warning' }
+  if (days < 0) {
+    return summary.state === 'overdue'
+      ? { text: `Terlambat ${-days} hari · sejak ${date}`, tone: 'danger' }
+      : { text: `Lewat ${-days} hari · tenggang · sejak ${date}`, tone: 'warning' }
+  }
   if (days === 0) return { text: `Jatuh tempo hari ini · ${date}`, tone: 'warning' }
   return { text: `Jatuh tempo ${date} · ${relativeDays(days)}`, tone: summary.state === 'due_soon' ? 'warning' : 'neutral' }
 }

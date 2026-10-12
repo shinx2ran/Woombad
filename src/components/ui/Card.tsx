@@ -56,7 +56,7 @@ export function StatCard({
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
         {icon && <span className="text-slate-400">{icon}</span>}
       </div>
-      <p className={clsx('mt-1 text-xl font-semibold tabular-nums sm:text-2xl', tones[tone])}>{value}</p>
+      <p className={clsx('mt-1 whitespace-nowrap text-[clamp(1rem,4.5vw,1.25rem)] font-semibold tabular-nums sm:text-2xl', tones[tone])}>{value}</p>
       {sub && <p className="mt-1 text-xs text-slate-500">{sub}</p>}
     </Card>
   )

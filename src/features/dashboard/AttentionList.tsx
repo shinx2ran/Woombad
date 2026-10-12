@@ -75,7 +75,7 @@ function SortToggle({ value, onChange }: { value: AttentionSort; onChange: (sort
             aria-checked={active}
             onClick={() => onChange(opt.value)}
             className={clsx(
-              'h-8 rounded-md px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
+              'h-10 rounded-md px-3 text-xs font-medium sm:h-8 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
               active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
             )}
           >
