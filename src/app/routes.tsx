@@ -13,6 +13,7 @@ import { expensesRoutes } from '../features/expenses/routes'
 import { reportsRoutes } from '../features/reports/routes'
 import { settingsRoutes } from '../features/settings/routes'
 import { NotFoundPage } from './NotFoundPage'
+import { RouteErrorPage } from './RouteErrorPage'
 
 /**
  * Route table. Each feature exports its own `RouteObject[]` from `src/features/<name>/routes.tsx`
@@ -52,4 +53,5 @@ const routes: RouteObject[] = [
 // BASE_URL is '/' for root hosting or '/Woombad/' on GitHub Pages; react-router wants it without the trailing slash.
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '')
 
-export const router = createBrowserRouter(routes, { basename })
+// The pathless root gives every route one error screen; AppErrorBoundary (main.tsx) covers the providers.
+export const router = createBrowserRouter([{ errorElement: <RouteErrorPage />, children: routes }], { basename })

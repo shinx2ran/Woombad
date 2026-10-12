@@ -4,6 +4,7 @@ import { LayoutDashboard, DoorOpen, Users, ReceiptText, Wallet, BarChart3, Setti
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { PropertySwitcher } from './PropertySwitcher'
+import { BackupReminderBanner } from './BackupReminderBanner'
 
 export interface NavItem {
   to: string
@@ -103,6 +104,7 @@ export function AppShell() {
 
         <main className="flex-1 px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
           <div className="mx-auto w-full max-w-6xl">
+            <BackupReminderBanner />
             <Outlet />
           </div>
         </main>
