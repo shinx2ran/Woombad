@@ -3,7 +3,7 @@ import { Badge, ConfirmDialog, useToast } from '../../../components/ui'
 import { formatDate } from '../../../lib/format'
 import { MEMBER_ROLE_LABEL, type Invitation } from '../../../types/db'
 import { errorMessage } from '../../auth/networkError'
-import { isInvitationExpired } from './permissions'
+import { NO_LABEL, isInvitationExpired } from './permissions'
 
 /** Invitations not used yet. The codes themselves cannot be shown again (only a hash is stored). */
 export function PendingInvitations({
@@ -42,7 +42,7 @@ export function PendingInvitations({
           return (
             <li key={inv.id} className="flex items-center justify-between gap-3 py-2 text-sm">
               <div className="min-w-0">
-                <p className="truncate font-medium text-slate-800">{inv.label || 'Tanpa nama'}</p>
+                <p className={inv.label ? 'truncate font-medium text-slate-800' : 'truncate text-slate-500'}>{inv.label || NO_LABEL}</p>
                 <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-slate-500">
                   <span>{MEMBER_ROLE_LABEL[inv.role]}</span>
                   <span aria-hidden>·</span>
@@ -68,9 +68,13 @@ export function PendingInvitations({
         onConfirm={confirm}
         title="Batalkan undangan?"
         message={
-          <>
-            Kode untuk <strong>{target?.label || 'Tanpa nama'}</strong> tidak bisa dipakai lagi.
-          </>
+          target?.label ? (
+            <>
+              Kode untuk <strong>{target.label}</strong> tidak bisa dipakai lagi.
+            </>
+          ) : (
+            'Kode undangan ini tidak bisa dipakai lagi.'
+          )
         }
         confirmLabel="Batalkan undangan"
         cancelLabel="Kembali"

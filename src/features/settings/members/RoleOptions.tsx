@@ -3,7 +3,7 @@ import { clsx } from 'clsx'
 import type { MemberRole } from '../../../types/db'
 import { ROLE_OPTION } from './permissions'
 
-/** Large radio cards (one per role) with a one-line explanation each. */
+/** Large radio cards (one per role) with a one-line explanation each; `value` null = nothing picked yet. */
 export function RoleOptions<R extends MemberRole>({
   label,
   roles,
@@ -12,7 +12,7 @@ export function RoleOptions<R extends MemberRole>({
 }: {
   label: string
   roles: readonly R[]
-  value: R
+  value: R | null
   onChange: (role: R) => void
 }) {
   const name = useId()

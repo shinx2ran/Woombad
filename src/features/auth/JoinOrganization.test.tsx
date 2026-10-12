@@ -27,7 +27,7 @@ describe('JoinOrganization', () => {
   it('shows the signed-in email and explains both kinds of code', () => {
     render(<JoinOrganization onJoined={() => undefined} />)
     expect(screen.getByText(/istri@contoh\.id/)).toBeTruthy()
-    expect(screen.getByText(/pesan WhatsApp pemilik kos/)).toBeTruthy()
+    expect(screen.getByText(/pesan WhatsApp yang Anda terima/)).toBeTruthy()
     expect(screen.getAllByText(/kode pemilik/).length).toBeGreaterThan(0)
     expect(joinWithCode).not.toHaveBeenCalled()
   })
@@ -122,6 +122,16 @@ describe('JoinOrganization', () => {
     fireEvent.click(screen.getByRole('button', { name: /Gabung/ }))
     await waitFor(() => expect(onJoined).toHaveBeenCalledTimes(1))
     expect(joinWithCode).toHaveBeenCalledWith('WXYZ2345')
+  })
+
+  it('takes the code from a pasted line of the invitation message', async () => {
+    joinWithCode.mockResolvedValue('org-1')
+    render(<JoinOrganization onJoined={() => undefined} />)
+    const input = screen.getByLabelText('Kode') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '3. Kode terisi sendiri. Jika diminta, ketik kode: ABCD-EFGH' } })
+    expect(input.value).toBe('ABCD-EFGH')
+    fireEvent.click(screen.getByRole('button', { name: /Gabung/ }))
+    await waitFor(() => expect(joinWithCode).toHaveBeenCalledWith('ABCDEFGH'))
   })
 
   it('shows the rate-limit message from the server', async () => {

@@ -95,7 +95,7 @@ describe('MembersCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Atur istri@contoh.id' }))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByRole('radio', { name: /Pemilik/ })).toBeTruthy()
-    expect(within(dialog).getByRole('button', { name: /Hapus dari organisasi/ })).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: /Hapus dari daftar anggota/ })).toBeTruthy()
   })
 
   it('changes a role through the server and shows its refusal inline', async () => {
@@ -116,7 +116,7 @@ describe('MembersCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Atur penjaga@contoh.id' }))
     expect(screen.queryByRole('radio')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /Hapus dari organisasi/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Hapus dari daftar anggota/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Hapus' }))
     await waitFor(() => expect(repo.removeMember).toHaveBeenCalledWith('s'))
   })
@@ -144,9 +144,29 @@ describe('MembersCard', () => {
     expect(screen.getByRole('button', { name: /Salin kode/ })).toBeTruthy()
   })
 
+  it('makes the owner pick a role before a code can be made', async () => {
+    const repo = setup({ role: 'owner', members: [OWNER] })
+    fireEvent.click(screen.getByRole('button', { name: /Undang/ }))
+    const radios = screen.getAllByRole('radio') as HTMLInputElement[]
+    expect(radios.map((r) => r.checked)).toEqual([false, false])
+    const create = screen.getByRole('button', { name: /Buat kode/ }) as HTMLButtonElement
+    expect(create.disabled).toBe(true)
+    expect(screen.getByText(/Pilih peran dulu/)).toBeTruthy()
+    fireEvent.submit(document.getElementById('invite-form')!)
+    expect(repo.createInvitation).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('radio', { name: /Staf/ }))
+    expect(create.disabled).toBe(false)
+    fireEvent.click(create)
+    await screen.findByLabelText('Kode undangan')
+    expect(repo.createInvitation).toHaveBeenCalledWith('staff', null)
+    expect(screen.getByText(/Untuk: \(tanpa keterangan\)/)).toBeTruthy()
+  })
+
   it('asks before closing a code that was not sent yet', async () => {
     setup({ role: 'owner', members: [OWNER] })
     fireEvent.click(screen.getByRole('button', { name: /Undang/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Staf/ }))
     fireEvent.click(screen.getByRole('button', { name: /Buat kode/ }))
     await screen.findByLabelText('Kode undangan')
 
@@ -163,6 +183,7 @@ describe('MembersCard', () => {
     let finish: (v: { code: string; expiresAt: string }) => void = () => undefined
     repo.createInvitation.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
     fireEvent.click(screen.getByRole('button', { name: /Undang/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Staf/ }))
     fireEvent.click(screen.getByRole('button', { name: /Buat kode/ }))
 
     expect((screen.getByRole('button', { name: 'Batal' }) as HTMLButtonElement).disabled).toBe(true)
@@ -180,6 +201,7 @@ describe('MembersCard', () => {
   it('asks before Back leaves the page with an unsent code', async () => {
     setup({ role: 'owner', members: [OWNER] })
     fireEvent.click(screen.getByRole('button', { name: /Undang/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Staf/ }))
     fireEvent.click(screen.getByRole('button', { name: /Buat kode/ }))
     await screen.findByLabelText('Kode undangan')
 
@@ -199,6 +221,7 @@ describe('MembersCard', () => {
   it('lets Back through once the code was sent', async () => {
     setup({ role: 'owner', members: [OWNER] })
     fireEvent.click(screen.getByRole('button', { name: /Undang/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Staf/ }))
     fireEvent.click(screen.getByRole('button', { name: /Buat kode/ }))
     await screen.findByLabelText('Kode undangan')
     fireEvent.click(screen.getByRole('link', { name: /Kirim lewat WhatsApp/ }))
@@ -214,7 +237,7 @@ describe('MembersCard', () => {
       members: [OWNER],
       invitations: [invitation('i1', null, '2020-01-01T00:00:00Z'), invitation('i2', 'Pak Udin', '2099-10-19T12:00:00Z')],
     })
-    expect(await screen.findByText('Tanpa nama')).toBeTruthy()
+    expect(await screen.findByText('(tanpa keterangan)')).toBeTruthy()
     expect(screen.getByText('Kedaluwarsa')).toBeTruthy()
     expect(screen.getByText(/berlaku s\/d 19 Okt 2099/)).toBeTruthy()
 
