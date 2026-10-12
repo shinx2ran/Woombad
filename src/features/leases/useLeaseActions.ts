@@ -6,7 +6,7 @@
 import { useMemo } from 'react'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
-import type { AddonBilling, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, Room } from '../../types/db'
+import type { AddonBilling, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
 import {
   buildInvoiceDraft,
   deriveInvoiceStatus,
@@ -16,7 +16,16 @@ import {
   type InvoiceDraftInput,
 } from '../../domain/billing'
 import { formatRupiah } from '../../lib/format'
-import { allocateAcrossInvoices, appendMoveNote, cancelledLeaseEndDate, futureInvoicesAtCheckout, openInvoicesSorted, type DepositSettlement } from './leaseUtils'
+import {
+  allocateAcrossInvoices,
+  appendMoveNote,
+  cancelledLeaseEndDate,
+  extensionLeasePatch,
+  futureInvoicesAtCheckout,
+  invoiceInsertFromDraft,
+  openInvoicesSorted,
+  type DepositSettlement,
+} from './leaseUtils'
 
 export interface IssueInvoiceInput {
   lease: Lease
@@ -24,6 +33,12 @@ export interface IssueInvoiceInput {
   quantity: number
   periodEnd?: string
   baseAmount?: number
+  /** period type for this invoice (SPEC 5.2); default the lease's */
+  periodType?: PeriodType
+  /** agreed price per period for this invoice (SPEC 5.4); always pass it when periodType differs */
+  pricePerPeriod?: number
+  /** 'Jadikan jenis/harga tetap sewa ini': copy type/price to the lease and append a note */
+  makePermanent?: boolean
   extraAmount?: number
   discountAmount?: number
   notes: string | null
@@ -106,23 +121,8 @@ export function useLeaseActions() {
       for (let attempt = 0; ; attempt++) {
         const draft = buildInvoiceDraft({ ...input, orgInvoices })
         try {
-          const invoice = await repo.insert('invoices', {
-            property_id: input.lease.property_id,
-            lease_id: input.lease.id,
-            invoice_number: draft.invoice_number,
-            period_type: input.lease.period_type,
-            period_start: draft.period_start,
-            period_end: draft.period_end,
-            quantity: draft.quantity,
-            base_amount: draft.base_amount,
-            addons_amount: draft.addons_amount,
-            extra_amount: draft.extra_amount,
-            discount_amount: draft.discount_amount,
-            total_amount: draft.total_amount,
-            due_date: draft.due_date,
-            status: deriveInvoiceStatus(draft.total_amount, 0, 'unpaid'),
-            notes,
-          })
+          // period_type = the draft's effective type (SPEC 5.2), not necessarily the lease's.
+          const invoice = await repo.insert('invoices', invoiceInsertFromDraft(input.lease, draft, notes))
           return { invoice, draft }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -143,6 +143,8 @@ export function useLeaseActions() {
           quantity: input.quantity,
           periodEnd: input.periodEnd,
           baseAmount: input.baseAmount,
+          periodType: input.periodType,
+          pricePerPeriod: input.pricePerPeriod,
           extraAmount: input.extraAmount,
           discountAmount: input.discountAmount,
           existingInvoices: input.existingInvoices,
@@ -150,8 +152,17 @@ export function useLeaseActions() {
         },
         input.notes,
       )
-      if (draft.new_lease_end_date !== input.lease.end_date) {
-        await repo.update('leases', input.lease.id, { end_date: draft.new_lease_end_date })
+      // end_date follows the new invoice (SPEC 2b.10); a type/price switch made permanent updates the lease
+      // terms and leaves a note (SPEC 5.2).
+      const patch = extensionLeasePatch(input.lease, draft, input.makePermanent ?? false)
+      if (patch) {
+        try {
+          await repo.update('leases', input.lease.id, patch)
+        } catch (err) {
+          await invalidate('invoices', 'leases')
+          const detail = err instanceof Error ? err.message : 'kesalahan tak dikenal'
+          throw new Error(`Tagihan ${invoice.invoice_number} sudah dibuat, tetapi data sewa gagal diperbarui: ${detail}`)
+        }
       }
       await invalidate('invoices', 'leases')
       return invoice

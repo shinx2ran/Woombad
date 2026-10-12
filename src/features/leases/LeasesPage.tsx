@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
-import { ChevronRight, FilePlus2, Plus, Search, Wallet } from 'lucide-react'
+import { ArrowUpDown, ChevronRight, FilePlus2, Plus, Search, Wallet } from 'lucide-react'
 import { Button, Card, EmptyState, ErrorState, LeaseStatusBadge, LoadingState, PageHeader } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
@@ -10,8 +10,19 @@ import { summarizeLeaseBilling } from '../../domain/billing'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
-import { compareFinishedLeases, compareLeaseItems, matchesLeaseSearch, type LeaseListItem, displayBillingState } from './leaseUtils'
-import { BillingStateBadge } from './components'
+import {
+  DEFAULT_LEASE_SORT,
+  LEASE_SORT_KEYS,
+  LEASE_SORT_LABEL,
+  displayBillingState,
+  dueLabel,
+  matchesLeaseSearch,
+  parseLeaseSort,
+  sortLeaseItems,
+  type LeaseListItem,
+  type LeaseSortKey,
+} from './leaseUtils'
+import { BillingStateBadge, DueLine } from './components'
 import { PaymentModal } from './PaymentModal'
 import { NextInvoiceModal } from './InvoiceFormModal'
 
@@ -22,6 +33,14 @@ export function LeasesPage() {
   const data = useLeaseData()
   const actions = useLeaseActions()
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const sortKey = parseLeaseSort(params.get('urut'))
+  const setSortKey = (key: LeaseSortKey) => {
+    const next = new URLSearchParams(params)
+    if (key === DEFAULT_LEASE_SORT) next.delete('urut')
+    else next.set('urut', key)
+    setParams(next, { replace: true })
+  }
   const [tab, setTab] = useState<Tab>('active')
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<{ kind: 'pay' | 'invoice'; lease: Lease } | null>(null)
@@ -39,8 +58,8 @@ export function LeasesPage() {
       }))
   }, [data.leases, data.invoices, data.payments, data.roomById, data.tenantById, data.propertyById, propertyFilterIds, today])
 
-  const active = useMemo(() => items.filter((i) => i.lease.status === 'active').sort(compareLeaseItems), [items])
-  const finished = useMemo(() => items.filter((i) => i.lease.status !== 'active').sort(compareFinishedLeases), [items])
+  const active = useMemo(() => sortLeaseItems(items.filter((i) => i.lease.status === 'active'), sortKey), [items, sortKey])
+  const finished = useMemo(() => sortLeaseItems(items.filter((i) => i.lease.status !== 'active'), sortKey, true), [items, sortKey])
   const shown = (tab === 'active' ? active : finished).filter((i) => matchesLeaseSearch(i, search))
   const attention = active.filter((i) => ['overdue', 'due_soon'].includes(displayBillingState(i.lease, i.summary, today))).length
 
@@ -93,6 +112,22 @@ export function LeasesPage() {
             className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
           />
         </div>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <ArrowUpDown className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+          <span className="shrink-0">Urutkan</span>
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(parseLeaseSort(e.target.value))}
+            aria-label="Urutkan sewa"
+            className="h-10 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-sm font-medium text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200 sm:flex-none"
+          >
+            {LEASE_SORT_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {LEASE_SORT_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {data.isPending ? (
@@ -139,6 +174,7 @@ export function LeasesPage() {
             open={modal?.kind === 'invoice'}
             onClose={() => setModal(null)}
             lease={modalLease}
+            room={data.roomById.get(modalLease.room_id)}
             addons={modalAddons}
             leaseInvoices={modalInvoices}
             orgInvoices={data.invoices}
@@ -153,6 +189,7 @@ export function LeasesPage() {
 function LeaseCard({ item, today, onPay, onInvoice }: { item: LeaseListItem; today: string; onPay: () => void; onInvoice: () => void }) {
   const { lease, summary, room, tenant, propertyName } = item
   const isActive = lease.status === 'active'
+  const due = dueLabel(lease, summary, today)
   return (
     <Card className="flex h-full flex-col">
       <Link to={`/sewa/${lease.id}`} className="block rounded-t-xl px-4 pt-3 pb-2 hover:bg-slate-50">
@@ -168,6 +205,11 @@ function LeaseCard({ item, today, onPay, onInvoice }: { item: LeaseListItem; tod
             <ChevronRight className="h-4 w-4 text-slate-400" />
           </div>
         </div>
+        {due && (
+          <div className="mt-2">
+            <DueLine due={due} />
+          </div>
+        )}
         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm sm:grid-cols-4">
           <div>
             <dt className="text-xs text-slate-500">Periode</dt>
@@ -184,10 +226,8 @@ function LeaseCard({ item, today, onPay, onInvoice }: { item: LeaseListItem; tod
             <dd className={clsx('tabular-nums font-medium', summary.outstanding > 0 ? 'text-red-700' : 'text-slate-800')}>{formatRupiah(summary.outstanding)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500">{isActive ? 'Jatuh tempo berikutnya' : 'Berakhir'}</dt>
-            <dd className="text-slate-800">
-              {isActive ? (summary.nextDueDate ? formatDate(summary.nextDueDate) : '-') : formatDate(lease.checkout_date ?? lease.end_date)}
-            </dd>
+            <dt className="text-xs text-slate-500">{isActive ? 'Sewa s/d' : 'Berakhir'}</dt>
+            <dd className="text-slate-800">{formatDate(isActive ? lease.end_date : (lease.checkout_date ?? lease.end_date))}</dd>
           </div>
         </dl>
       </Link>

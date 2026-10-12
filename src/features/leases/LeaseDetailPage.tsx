@@ -22,12 +22,12 @@ import {
 import { useOrg } from '../../hooks/useOrg'
 import type { Invoice, LeaseAddon, Payment } from '../../types/db'
 import { PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { buildInvoiceDraft, depositBalance, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
+import { buildInvoiceDraft, depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
 import { reminderText } from '../../domain/messages'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
-import { invoiceTimeline, openInvoicesSorted, displayBillingState } from './leaseUtils'
+import { agreedPriceText, invoiceTimeline, openInvoicesSorted, displayBillingState, priceDelta, priceDeltaText, roomPriceFor } from './leaseUtils'
 import { ActionMenu, BillingStateBadge, InvoiceTimeline, Row, type MenuItem } from './components'
 import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
@@ -103,6 +103,8 @@ export function LeaseDetailPage() {
   const tenant = data.tenantById.get(lease.tenant_id)
   const property = data.propertyById.get(lease.property_id)
   const isActive = lease.status === 'active'
+  // SPEC 5.4: the room's current rate for the lease's type is the 'harga standar'.
+  const standardPrice = roomPriceFor(room, lease.period_type)
   const openInvoices = openInvoicesSorted(lease.id, leaseInvoices, data.payments)
 
   // WhatsApp reminder: the oldest open invoice, or the next period when nothing is open.
@@ -217,7 +219,17 @@ export function LeaseDetailPage() {
       header: 'Nomor',
       render: (inv) => <span className="font-mono text-xs text-slate-900">{inv.invoice_number}</span>,
     },
-    { key: 'period', header: 'Periode', hideOnMobile: true, render: (inv) => `${formatDate(inv.period_start)} – ${formatDate(inv.period_end)}` },
+    {
+      key: 'period',
+      header: 'Periode',
+      hideOnMobile: true,
+      render: (inv) => (
+        <span>
+          {formatDate(inv.period_start)} – {formatDate(inv.period_end)}
+          <span className="block text-xs text-slate-500">{`${inv.quantity} ${invoiceUnitLabel(inv, lease)}`}</span>
+        </span>
+      ),
+    },
     { key: 'due', header: 'Jatuh tempo', hideOnMobile: true, render: (inv) => formatDate(inv.due_date) },
     { key: 'total', header: 'Total', align: 'right', render: (inv) => formatRupiah(inv.total_amount) },
     { key: 'paid', header: 'Dibayar', align: 'right', hideOnMobile: true, render: (inv) => formatRupiah(paidAmountFor(inv.id, data.payments)) },
@@ -310,6 +322,12 @@ export function LeaseDetailPage() {
           <CardHeader title="Info sewa" />
           <CardBody className="space-y-1.5">
             <Row label="Periode" value={`${PERIOD_TYPE_LABEL[lease.period_type]} · ${formatRupiah(lease.price_per_period)}/${PERIOD_UNIT_LABEL[lease.period_type]}`} />
+            <p className="text-right text-xs text-slate-500" data-testid="agreed-price">
+              {agreedPriceText(lease.price_per_period, standardPrice)}
+              {priceDeltaText(priceDelta(lease.price_per_period, standardPrice)) && (
+                <span className="ml-1 font-medium text-slate-700">({priceDeltaText(priceDelta(lease.price_per_period, standardPrice))})</span>
+              )}
+            </p>
             <Row label="Mulai" value={formatDate(lease.start_date)} />
             <Row label="Berakhir" value={formatDate(lease.end_date)} />
             {lease.checkout_date && <Row label="Checkout" value={formatDate(lease.checkout_date)} />}
@@ -353,7 +371,7 @@ export function LeaseDetailPage() {
                       <InvoiceStatusBadge status={inv.status} />
                     </p>
                     <p className="text-xs text-slate-500">
-                      {formatDate(inv.period_start)} – {formatDate(inv.period_end)} · jatuh tempo {formatDate(inv.due_date)}
+                      {formatDate(inv.period_start)} – {formatDate(inv.period_end)} · {inv.quantity} {invoiceUnitLabel(inv, lease)} · jatuh tempo {formatDate(inv.due_date)}
                     </p>
                     <p className="mt-0.5 text-sm tabular-nums">
                       <span className="text-slate-800">{formatRupiah(inv.total_amount)}</span>
@@ -475,7 +493,7 @@ export function LeaseDetailPage() {
         defaultInvoiceId={payInvoiceId}
       />
       <DepositModal open={modal === 'deposit'} onClose={() => setModal(null)} lease={lease} payments={data.payments} expenses={data.expenses} actions={actions} />
-      <NextInvoiceModal open={modal === 'invoice'} onClose={() => setModal(null)} lease={lease} addons={addons} leaseInvoices={leaseInvoices} orgInvoices={data.invoices} actions={actions} />
+      <NextInvoiceModal open={modal === 'invoice'} onClose={() => setModal(null)} lease={lease} room={room} addons={addons} leaseInvoices={leaseInvoices} orgInvoices={data.invoices} actions={actions} />
       <EditInvoiceModal open={modal === 'edit'} onClose={() => setModal(null)} invoice={editInvoice} payments={data.payments} actions={actions} />
       <CheckoutModal open={modal === 'checkout'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
       <CancelLeaseModal open={modal === 'cancel'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />

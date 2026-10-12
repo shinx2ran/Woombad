@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../components/ui'
 import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddon, Payment, Room } from '../../types/db'
-import { ADDON_BILLINGS, ADDON_BILLING_LABEL, PERIOD_TYPE_LABEL } from '../../types/db'
+import { ADDON_BILLINGS, ADDON_BILLING_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { depositBalance, outstandingFor, paidAmountFor } from '../../domain/billing'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
 import {
@@ -15,7 +15,7 @@ import {
   ROOM_AVAILABILITY_LABEL,
   type DepositSettlement,
 } from './leaseUtils'
-import { DepositSettlementForm, Row } from './components'
+import { DepositSettlementForm, PriceField, Row } from './components'
 import type { LeaseActions, PartialDecision } from './useLeaseActions'
 
 const emptySettlement = (held: number): DepositSettlement => ({ refund: Math.max(0, held), rent: 0, damage: 0, damageNotes: '' })
@@ -357,11 +357,13 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
           hint={candidates.length === 0 ? 'Tidak ada kamar lain di kos ini.' : 'Hanya kamar kosong tanpa jadwal bentrok yang bisa dipilih.'}
         />
         {target && (
-          <MoneyInput
-            label={`Harga baru per periode (${PERIOD_TYPE_LABEL[lease.period_type]})`}
+          <PriceField
+            label={`Harga baru per ${PERIOD_UNIT_LABEL[lease.period_type]} (${PERIOD_TYPE_LABEL[lease.period_type]})`}
             value={price}
             onChange={setPrice}
-            hint={`Harga sekarang ${formatRupiah(lease.price_per_period)}; berlaku untuk tagihan berikutnya.`}
+            standard={roomPriceFor(target.room, lease.period_type)}
+            unit={PERIOD_UNIT_LABEL[lease.period_type]}
+            extraHint={`Harga sekarang ${formatRupiah(lease.price_per_period)}; berlaku untuk tagihan berikutnya.`}
           />
         )}
       </div>

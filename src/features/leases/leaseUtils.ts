@@ -2,12 +2,24 @@
  * UI-side helpers for the leases module. Money/date rules live in src/domain; these functions only
  * arrange domain results for display (sorting, search, timeline segments, form conventions).
  */
-import type { Invoice, Lease, Payment, Room, Tenant } from '../../types/db'
-import type { BillingState, ExtraBreakdown, LeaseBillingSummary } from '../../domain/billing'
-import { activeInvoicesSorted, formatExtraBreakdown, outstandingFor, paidAmountFor, parseExtraBreakdown, isPaidUpAndEnding } from '../../domain/billing'
+import type { Invoice, Lease, OrgInsert, Payment, PeriodType, Room, Tenant, Update } from '../../types/db'
+import { PERIOD_TYPE_LABEL } from '../../types/db'
+import type { BillingState, ExtraBreakdown, InvoiceDraft, LeaseBillingSummary } from '../../domain/billing'
+import {
+  activeInvoicesSorted,
+  chainAnchor,
+  deriveInvoiceStatus,
+  formatExtraBreakdown,
+  isPaidUpAndEnding,
+  nextDueSortKey,
+  nextPeriodBounds,
+  outstandingFor,
+  paidAmountFor,
+  parseExtraBreakdown,
+} from '../../domain/billing'
 import { addDaysISO, daysBetween } from '../../domain/period'
-import { isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
-import { formatRupiah } from '../../lib/format'
+import { compareRoomNames, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
+import { formatDate, formatRupiah } from '../../lib/format'
 
 // ---------- billing state presentation ----------
 
@@ -48,6 +60,109 @@ export function compareLeaseItems(a: LeaseListItem, b: LeaseListItem): number {
   const bd = b.summary.nextDueDate ?? ''
   if (ad !== bd) return ad < bd ? -1 : 1
   return (a.room?.name ?? '').localeCompare(b.room?.name ?? '', undefined, { numeric: true })
+}
+
+// ---------- list sorting (SPEC 5.1) ----------
+
+/** Values of the `?urut=` search param on /sewa. */
+export const LEASE_SORT_KEYS = ['jatuh-tempo', 'kamar', 'nama'] as const
+export type LeaseSortKey = (typeof LEASE_SORT_KEYS)[number]
+export const DEFAULT_LEASE_SORT: LeaseSortKey = 'jatuh-tempo'
+
+export const LEASE_SORT_LABEL: Record<LeaseSortKey, string> = {
+  'jatuh-tempo': 'Jatuh tempo terdekat',
+  kamar: 'Nomor kamar',
+  nama: 'Nama penyewa',
+}
+
+/** `?urut=` value -> sort key; unknown / missing values fall back to 'jatuh-tempo'. */
+export function parseLeaseSort(value: string | null | undefined): LeaseSortKey {
+  return (LEASE_SORT_KEYS as readonly string[]).includes(value ?? '') ? (value as LeaseSortKey) : DEFAULT_LEASE_SORT
+}
+
+function roomNameOf(item: LeaseListItem): string {
+  return item.room?.name ?? ''
+}
+
+function compareKosNames(a: LeaseListItem, b: LeaseListItem): number {
+  return a.propertyName.localeCompare(b.propertyName, 'id', { sensitivity: 'base' })
+}
+
+function compareDueKeys(a: LeaseListItem, b: LeaseListItem): number {
+  const ak = nextDueSortKey(a.summary)
+  const bk = nextDueSortKey(b.summary)
+  return ak === bk ? 0 : ak < bk ? -1 : 1
+}
+
+/**
+ * 'Jatuh tempo terdekat': earliest nextDueSortKey first (overdue = past dates come first automatically,
+ * leases without a due date last), ties by room name (compareRoomNames), then kos name.
+ */
+export function compareByNextDue(a: LeaseListItem, b: LeaseListItem): number {
+  return compareDueKeys(a, b) || compareRoomNames(roomNameOf(a), roomNameOf(b)) || compareKosNames(a, b)
+}
+
+/**
+ * 'Nomor kamar': kos NAME first (not property id, so the order matches what the user reads across kos),
+ * then the natural room order (A1 < A2 < A10); same room (old and new lease) by next due date.
+ */
+export function compareByRoom(a: LeaseListItem, b: LeaseListItem): number {
+  return compareKosNames(a, b) || compareRoomNames(roomNameOf(a), roomNameOf(b)) || compareDueKeys(a, b)
+}
+
+/** 'Nama penyewa': tenant name A-Z (case-insensitive), then kos and room. Missing tenants last. */
+export function compareByTenantName(a: LeaseListItem, b: LeaseListItem): number {
+  const an = a.tenant?.full_name
+  const bn = b.tenant?.full_name
+  if (an && !bn) return -1
+  if (!an && bn) return 1
+  const byName = an && bn ? an.localeCompare(bn, 'id', { sensitivity: 'base' }) : 0
+  return byName || compareKosNames(a, b) || compareRoomNames(roomNameOf(a), roomNameOf(b))
+}
+
+/**
+ * Sorted copy of a lease list. 'jatuh-tempo' on a finished (ended / cancelled) list keeps "most recently
+ * finished first" (nothing is due there); 'kamar' and 'nama' apply to both lists.
+ */
+export function sortLeaseItems(items: LeaseListItem[], key: LeaseSortKey, finished = false): LeaseListItem[] {
+  const cmp = key === 'kamar' ? compareByRoom : key === 'nama' ? compareByTenantName : finished ? compareFinishedLeases : compareByNextDue
+  return [...items].sort(cmp)
+}
+
+export type DueTone = 'danger' | 'warning' | 'info' | 'neutral'
+
+export interface DueLabel {
+  /** e.g. 'Jatuh tempo 14 Okt · 2 hari lagi', 'Terlambat 3 hari · sejak 9 Okt', 'Berakhir 15 Okt · 3 hari lagi' */
+  text: string
+  tone: DueTone
+}
+
+/** 'hari ini' / 'besok' / '2 hari lagi' / 'kemarin' / '3 hari lalu' for a raw day difference. */
+export function relativeDays(days: number): string {
+  if (days === 0) return 'hari ini'
+  if (days === 1) return 'besok'
+  if (days === -1) return 'kemarin'
+  return days > 0 ? `${days} hari lagi` : `${-days} hari lalu`
+}
+
+/**
+ * The prominent next-due line of a lease card (SPEC 5.1):
+ *  - past due -> 'Terlambat N hari · sejak 9 Okt' (danger once overdue, warning while within the grace days);
+ *  - due today -> 'Jatuh tempo hari ini · 12 Okt' (warning);
+ *  - a paid-up lease ending within a week (isPaidUpAndEnding) -> 'Berakhir 15 Okt · 3 hari lagi' (info);
+ *  - otherwise 'Jatuh tempo 14 Okt · 2 hari lagi' (warning when due_soon, else neutral).
+ * Null for inactive leases or when no due date is known.
+ */
+export function dueLabel(lease: Lease, summary: LeaseBillingSummary, todayISO: string): DueLabel | null {
+  if (lease.status !== 'active' || !summary.nextDueDate) return null
+  if (isPaidUpAndEnding(lease, summary, todayISO)) {
+    return { text: `Berakhir ${formatDate(lease.end_date, 'd MMM')} · ${relativeDays(daysBetween(todayISO, lease.end_date))}`, tone: 'info' }
+  }
+  const days = summary.daysUntilDue ?? daysBetween(todayISO, summary.nextDueDate)
+  const date = formatDate(summary.nextDueDate, 'd MMM')
+  if (days < 0) return { text: `Terlambat ${-days} hari · sejak ${date}`, tone: summary.state === 'overdue' ? 'danger' : 'warning' }
+  if (days === 0) return { text: `Jatuh tempo hari ini · ${date}`, tone: 'warning' }
+  return { text: `Jatuh tempo ${date} · ${relativeDays(days)}`, tone: summary.state === 'due_soon' ? 'warning' : 'neutral' }
 }
 
 /** Ended/cancelled leases: most recently finished first. */
@@ -316,5 +431,137 @@ export function appendMoveNote(notes: string | null, fromRoom: string, toRoom: s
 export function matchesTenantQuery(t: Tenant, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
-  return [t.full_name, t.phone, t.nik].some((v) => v?.toLowerCase().includes(q))
+  return [t.full_name, t.phone, t.nik, t.id_number].some((v) => v?.toLowerCase().includes(q))
+}
+
+// ---------- negotiated price (SPEC 5.4) ----------
+
+export interface PriceDelta {
+  /** 'none' = the room has no standard rate for this type; 'same' = equal to the standard */
+  kind: 'none' | 'same' | 'discount' | 'more'
+  /** absolute difference in rupiah (0 for none / same) */
+  amount: number
+}
+
+/** Agreed price vs the room's standard rate for the type (null standard -> 'none'). */
+export function priceDelta(price: number, standard: number | null | undefined): PriceDelta {
+  if (standard == null) return { kind: 'none', amount: 0 }
+  if (price === standard) return { kind: 'same', amount: 0 }
+  return price < standard ? { kind: 'discount', amount: standard - price } : { kind: 'more', amount: price - standard }
+}
+
+/** 'Diskon Rp 100.000' / 'Lebih Rp 50.000' / '' (same or no standard). */
+export function priceDeltaText(delta: PriceDelta): string {
+  if (delta.kind === 'discount') return `Diskon ${formatRupiah(delta.amount)}`
+  if (delta.kind === 'more') return `Lebih ${formatRupiah(delta.amount)}`
+  return ''
+}
+
+/** 'Harga disepakati Rp 1.700.000 · standar Rp 1.800.000' (standard omitted when the room has no rate). */
+export function agreedPriceText(price: number, standard: number | null | undefined): string {
+  return standard == null ? `Harga disepakati ${formatRupiah(price)}` : `Harga disepakati ${formatRupiah(price)} · standar ${formatRupiah(standard)}`
+}
+
+// ---------- extension with another period type (SPEC 5.2) ----------
+
+/**
+ * Price to prefill in the extension modal for `type`: the lease's agreed price for its own type (the
+ * negotiated price stays), otherwise the room's standard rate for the new type (0 when the room has none).
+ */
+export function extensionPriceFor(lease: Lease, room: Room | undefined, type: PeriodType): number {
+  if (type === lease.period_type) return lease.price_per_period
+  return roomPriceFor(room, type) ?? 0
+}
+
+/** Default of 'Jadikan jenis/harga tetap sewa ini': on when the type changed, off when only the price did. */
+export function defaultMakePermanent(lease: Lease, type: PeriodType): boolean {
+  return type !== lease.period_type
+}
+
+/** True when an extension differs from the lease in type or price (the checkbox is only offered then). */
+export function extensionChangesTerms(lease: Lease, type: PeriodType, price: number): boolean {
+  return type !== lease.period_type || price !== lease.price_per_period
+}
+
+/** 'Ganti ke Bulanan Rp 1.800.000 mulai 16 Okt 2026' */
+export function periodChangeNote(type: PeriodType, price: number, startISO: string): string {
+  return `Ganti ke ${PERIOD_TYPE_LABEL[type]} ${formatRupiah(price)} mulai ${formatDate(startISO)}`
+}
+
+/** Append one line to lease notes (existing notes trimmed; null/empty notes -> just the line). */
+export function appendLeaseNote(notes: string | null, line: string): string {
+  return notes?.trim() ? `${notes.trim()}\n${line}` : line
+}
+
+/**
+ * Insert payload for an invoice draft. `period_type` is always the draft's effective type, so an extension
+ * billed monthly on a daily lease remembers its own unit (invoiceUnitLabel); status is derived for 0 paid
+ * (a zero total is 'paid').
+ */
+export function invoiceInsertFromDraft(lease: Lease, draft: InvoiceDraft, notes: string | null): OrgInsert<'invoices'> {
+  return {
+    property_id: lease.property_id,
+    lease_id: lease.id,
+    invoice_number: draft.invoice_number,
+    period_type: draft.period_type,
+    period_start: draft.period_start,
+    period_end: draft.period_end,
+    quantity: draft.quantity,
+    base_amount: draft.base_amount,
+    addons_amount: draft.addons_amount,
+    extra_amount: draft.extra_amount,
+    discount_amount: draft.discount_amount,
+    total_amount: draft.total_amount,
+    due_date: draft.due_date,
+    status: deriveInvoiceStatus(draft.total_amount, 0, 'unpaid'),
+    notes,
+  }
+}
+
+/**
+ * Lease update after issuing `draft` (SPEC 2b.10 + 5.2), or null when nothing changes:
+ *  - end_date = draft.new_lease_end_date when it moved;
+ *  - when `makePermanent` and the draft's type or per-period price differs from the lease: period_type and
+ *    price_per_period follow the draft and notes get 'Ganti ke <Jenis> Rp X mulai <period_start>'.
+ */
+export function extensionLeasePatch(lease: Lease, draft: InvoiceDraft, makePermanent: boolean): Update<'leases'> | null {
+  const patch: Update<'leases'> = {}
+  if (draft.new_lease_end_date !== lease.end_date) patch.end_date = draft.new_lease_end_date
+  const changed = draft.period_type !== lease.period_type || draft.price_per_period !== lease.price_per_period
+  if (makePermanent && changed) {
+    patch.period_type = draft.period_type
+    patch.price_per_period = draft.price_per_period
+    patch.notes = appendLeaseNote(lease.notes, periodChangeNote(draft.period_type, draft.price_per_period, draft.period_start))
+  }
+  return Object.keys(patch).length > 0 ? patch : null
+}
+
+export interface FollowingPeriodPreview {
+  /** one period of the lease's (post-save) type right after the new invoice */
+  period_start: string
+  period_end: string
+  /** type the lease will have after saving */
+  period_type: PeriodType
+  /** true when the billing chain sits on a period grid (chainAnchor != null); false = counted from this invoice's end */
+  anchored: boolean
+  /** the grid's anchor date when anchored */
+  anchor: string | null
+}
+
+/**
+ * Preview of the period AFTER this extension: the lease as it will be after saving (type/price switched when
+ * `makePermanent`), the lease's invoices plus a pseudo invoice for the draft, then chainAnchor (does the chain
+ * sit on a grid?) and nextPeriodBounds(…, 1). Null when the bounds cannot be computed.
+ */
+export function previewFollowingPeriod(lease: Lease, invoices: Invoice[], draft: InvoiceDraft, makePermanent: boolean): FollowingPeriodPreview | null {
+  const after: Lease = { ...lease, ...(extensionLeasePatch(lease, draft, makePermanent) ?? {}) }
+  const pseudo: Invoice = { ...invoiceInsertFromDraft(lease, draft, null), id: '__draft__', org_id: lease.org_id, created_at: '', updated_at: '' }
+  const all = [...invoices.filter((i) => i.lease_id === lease.id), pseudo]
+  try {
+    const chain = chainAnchor(after, all)
+    const next = nextPeriodBounds(after, all, 1)
+    return { ...next, period_type: after.period_type, anchored: chain !== null, anchor: chain?.anchor ?? null }
+  } catch {
+    return null
+  }
 }
