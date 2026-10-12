@@ -35,6 +35,13 @@ npm run typecheck
 npm run build      # hasil di dist/
 ```
 
+## Alamat aplikasi (sudah otomatis)
+
+Setiap perubahan di cabang `master` otomatis dibangun dan dipublikasikan oleh GitHub Actions ke
+**https://shinx2ran.github.io/Woombad/** (gratis, tanpa akun tambahan). Buka alamat itu di HP, lalu
+**Masuk ke Mode Demo** untuk mencoba. Untuk hosting lain (Cloudflare Pages, Netlify, Vercel) cukup hubungkan repo ini;
+konfigurasi fallback SPA sudah disertakan (`public/_redirects`, `vercel.json`).
+
 ## Mengaktifkan mode online (Supabase) — sekali saja, ±15 menit
 
 1. Buat akun di <https://supabase.com> → **New project** (region Singapore paling dekat).
@@ -44,11 +51,11 @@ npm run build      # hasil di dist/
    Configuration** isi *Site URL* dengan alamat aplikasi Anda dan tambahkan `https://<alamat-aplikasi>/reset-sandi` ke
    *Redirect URLs* (dipakai saat lupa kata sandi).
 4. **Project Settings → API**: salin **Project URL** dan **anon public key**.
-5. Salin `.env.example` menjadi `.env` dan isi kedua nilai tersebut (atau set sebagai *environment variables*
-   di layanan hosting).
-6. `npm run build` lalu deploy folder `dist/` — atau hubungkan repo ini ke Cloudflare Pages / Vercel / Netlify
-   (framework: Vite, build `npm run build`, output `dist`). Set env `VITE_SUPABASE_URL` dan
-   `VITE_SUPABASE_ANON_KEY` di pengaturan proyek hosting.
+5. Di GitHub: **Settings → Secrets and variables → Actions → New repository secret**, buat dua secret bernama
+   `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY` dengan nilai dari langkah 4. (Untuk pengembangan lokal: salin
+   `.env.example` menjadi `.env`.)
+6. Buka tab **Actions → Deploy to GitHub Pages → Run workflow** (atau tunggu push berikutnya). Setelah ±2 menit
+   alamat aplikasi berjalan dalam mode online.
 7. Buka alamat aplikasi → **Buat akun**. **Akun pertama** otomatis menjadi pemilik organisasi "Kos Saya".
 8. Undang istri/pegawai: **Pengaturan → Anggota → Undang** dengan email mereka → mereka **Buat akun** dengan email
    yang sama → otomatis masuk ke organisasi yang sama (boleh juga mendaftar dulu lalu diundang; saat masuk berikutnya

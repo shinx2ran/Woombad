@@ -38,3 +38,4 @@ playwright-report
 
 # Claude Code worktrees / local state
 .claude/worktrees/
+dist-sub

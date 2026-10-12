@@ -50,7 +50,7 @@ export class SupabaseAuth implements AuthService {
 
   async sendPasswordReset(email: string): Promise<void> {
     const { error } = await this.sb.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-sandi`,
+      redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}reset-sandi`,
     })
     if (error) throw new Error(translate(error.message))
   }

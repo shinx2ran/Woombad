@@ -46,4 +46,7 @@ const routes: RouteObject[] = [
   },
 ]
 
-export const router = createBrowserRouter(routes)
+// BASE_URL is '/' for root hosting or '/Woombad/' on GitHub Pages; react-router wants it without the trailing slash.
+const basename = import.meta.env.BASE_URL.replace(/\/$/, '')
+
+export const router = createBrowserRouter(routes, { basename })
