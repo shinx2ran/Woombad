@@ -100,6 +100,8 @@ export class SupabaseRepo implements Repo {
   async joinWithCode(code: string): Promise<string> {
     const { data, error } = await this.sb.rpc('join_with_code', { p_code: normalizeCode(code) })
     if (error) throw new Error(translateDbError(error.message))
+    // A wrong code returns null instead of raising, so the failed attempt stays recorded for rate limiting.
+    if (!data) throw new Error('Kode tidak valid atau sudah kedaluwarsa.')
     return data as string
   }
 

@@ -248,9 +248,9 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
      `accepted_by`, kembalikan org_id.
   3. Bila belum ada organisasi sama sekali dan hash cocok dengan `app_settings.setup_code_hash` yang belum dipakai →
      buat organisasi 'Kos Saya' (`created_by` = user) + member `owner`, set `setup_code_used_at`, kembalikan org_id.
-  4. Selain itu catat kegagalan di `join_attempts` dan `raise 'Kode tidak valid atau sudah kedaluwarsa.'`.
-  Kegagalan harus tetap tercatat walau exception dilempar (gunakan blok yang tidak di-rollback, mis. insert lalu
-  `return` nilai khusus dan raise di luar, atau `perform` dalam sub-blok yang tidak dibatalkan — pastikan teruji).
+  4. Selain itu catat kegagalan di `join_attempts` dan **kembalikan `null` tanpa exception** (exception akan
+  membatalkan transaksi sehingga catatan kegagalan ikut hilang). Klien memetakan `null` →
+  'Kode tidak valid atau sudah kedaluwarsa.'. Kode kosong/terlalu pendek juga dihitung sebagai kegagalan.
 - `create_invitation(p_org_id uuid, p_role text, p_label text) returns table(code text, expires_at timestamptz)`:
   admin saja; role `admin`/`staff`; kode acak dari `gen_random_uuid()` (bawaan PG13+), kedaluwarsa 7 hari; simpan
   `invitations (org_id, label, role, invited_by, code_hash, expires_at)`. `invitations.email` menjadi nullable, kolom baru
@@ -286,6 +286,11 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - UI: Pengaturan → **Riwayat perubahan** (owner/admin): 100 perubahan terakhir — kapan, siapa (email anggota), apa
   (tabel + aksi + ringkasan kolom yang berubah, mis. "Pembayaran Rp 1.500.000 → Rp 1.000.000"). Mode demo: kartu
   menjelaskan riwayat hanya tersedia di mode online.
+
+### 6.3a Satu berkas skema
+- Belum ada database online, jadi **tidak ada migrasi 0003**: `supabase/schema.sql` adalah versi lengkap dan harus
+  bisa dijalankan pada database kosong, dijalankan dua kali, maupun di atas skema v0.2 (`alter table ... add column if
+  not exists`, `drop ... if exists`). Ketiga skenario diuji di `supabase/tests`.
 
 ### 6.4 Penyimpanan foto
 - Hapus trigger `tenants_delete_ktp` / `expenses_delete_receipt` beserta fungsinya: Supabase versi baru menolak
