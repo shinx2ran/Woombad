@@ -9,6 +9,7 @@ import type { Expense, ExpenseCategory, Lease, MemberRole, OrgInsert, Room, Tena
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABEL, REFUND_CATEGORIES } from '../../types/db'
 import { inRange, parseISODate, toISODate, type DateRange } from '../../domain/period'
 import { formatDate, formatRupiah } from '../../lib/format'
+import { DELETE_DENIED_MESSAGE, UPDATE_DENIED_MESSAGE } from '../../lib/repo/types'
 
 // ---------- categories ----------
 
@@ -254,19 +255,17 @@ export function splitExpenseRows(draft: ExpenseDraft, propertyIds: string[]): Or
 
 // ---------- permissions & write errors ----------
 
-/** Shown next to a row a staff member may not edit (mirrors the `expenses_update` RLS policy). */
-export const EDIT_DENIED_HINT = 'Hanya pencatat atau admin yang dapat mengubah pengeluaran ini.'
-export const UPDATE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk mengubahnya.'
-export const DELETE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk menghapusnya.'
+/** Shown to staff on a recorded expense (mirrors the admin-only `expenses_update` / `expenses_delete` policies). */
+export const EDIT_DENIED_HINT = 'Hanya pemilik/admin yang dapat mengubah atau menghapus pengeluaran.'
+export { DELETE_DENIED_MESSAGE, UPDATE_DENIED_MESSAGE }
 
 /**
- * Client-side mirror of the database policy `expenses_update`: owners/admins may edit every row of the
- * organisation, staff only the rows they recorded themselves (`created_by = auth.uid()`). Used to hide the
- * "Ubah" action instead of letting the server filter the UPDATE down to 0 rows.
+ * Client-side mirror of the database policies `expenses_update` / `expenses_delete` (SPEC 6.2): only owners and
+ * admins may change or delete a recorded expense; staff record new ones. Used to hide "Ubah" / "Hapus" instead of
+ * letting the server filter the write down to 0 rows.
  */
-export function canEditExpense(role: MemberRole, userId: string | undefined, expense: Pick<Expense, 'created_by'>): boolean {
-  if (role !== 'staff') return true
-  return Boolean(userId) && expense.created_by === userId
+export function canEditExpenses(role: MemberRole): boolean {
+  return role === 'owner' || role === 'admin'
 }
 
 /**

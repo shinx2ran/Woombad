@@ -1,9 +1,11 @@
 import type { Insert, Row, TableName, Update } from '../../types/db'
 import { TABLE_NAMES } from '../../types/db'
 import { newId } from '../ids'
-import type { ListOptions, MemberAddResult, Repo, StorageBucket } from './types'
+import type { CreatedInvitation, ListOptions, Repo, StorageBucket } from './types'
+import { CODE_ALPHABET, DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, UPDATE_DENIED_MESSAGE, VOID_PAID_INVOICE_MESSAGE, formatCode } from './types'
+import type { MemberRole } from '../../types/db'
 
-const STORAGE_KEY = 'woombad.local.db.v1'
+export const STORAGE_KEY = 'woombad.local.db.v1'
 
 type Db = { [K in TableName]: Row<K>[] }
 
@@ -25,6 +27,13 @@ function loadDb(): Db {
     }
     return db
   } catch {
+    // keep unreadable data for recovery; the demo seed would otherwise overwrite it on start
+    try {
+      const raw = globalThis.localStorage?.getItem(STORAGE_KEY)
+      if (raw) globalThis.localStorage?.setItem(`${STORAGE_KEY}.corrupt`, raw)
+    } catch {
+      // storage blocked or full
+    }
     return emptyDb()
   }
 }
@@ -32,6 +41,7 @@ function loadDb(): Db {
 /** Columns added after the first release default to null (like a DB migration) for rows stored earlier. */
 const COLUMN_DEFAULTS: Partial<Record<TableName, Record<string, unknown>>> = {
   invoices: { period_type: null },
+  invitations: { label: null, expires_at: '2099-12-31T00:00:00.000Z', accepted_by: null },
   tenants: { id_type: 'ktp', id_number: null, nationality: null },
   payments: { created_by: null },
   expenses: { lease_id: null, created_by: null },
@@ -150,7 +160,11 @@ export class LocalRepo implements Repo {
   async update<T extends TableName>(table: T, id: string, patch: Update<T>, orgId?: string): Promise<Row<T>> {
     const rows = this.db[table] as Row<T>[]
     const idx = rows.findIndex((r) => r.id === id && (!orgId || rec(r).org_id === orgId))
-    if (idx < 0) throw new Error(`Data tidak ditemukan (${table}/${id})`)
+    if (idx < 0) throw new Error(UPDATE_DENIED_MESSAGE)
+    // invoices_void_guard: an invoice with rent payments cannot be voided
+    if (table === 'invoices' && rec(patch).status === 'void' && rec(rows[idx]).status !== 'void' && this.db.payments.some((p) => p.invoice_id === id && p.kind === 'rent')) {
+      throw new Error(VOID_PAID_INVOICE_MESSAGE)
+    }
     const next = { ...rows[idx], ...patch } as Record<string, unknown>
     if (hasUpdatedAt(table)) next.updated_at = new Date().toISOString()
     rows[idx] = next as unknown as Row<T>
@@ -161,10 +175,10 @@ export class LocalRepo implements Repo {
   async remove<T extends TableName>(table: T, id: string, orgId?: string): Promise<void> {
     const rows = this.db[table] as Row<T>[]
     const idx = rows.findIndex((r) => r.id === id && (!orgId || rec(r).org_id === orgId))
-    if (idx >= 0 && this.isReferenced(table, id)) {
-      throw new Error('Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.')
-    }
-    if (idx >= 0) rows.splice(idx, 1)
+    // like SupabaseRepo: deleting nothing is an error, never a silent success
+    if (idx < 0) throw new Error(DELETE_DENIED_MESSAGE)
+    if (this.isReferenced(table, id)) throw new Error(IN_USE_MESSAGE)
+    rows.splice(idx, 1)
     saveDb(this.db)
   }
 
@@ -216,18 +230,40 @@ export class LocalRepo implements Repo {
     /* nothing stored */
   }
 
-  async addMemberByEmail(orgId: string, email: string, role: 'admin' | 'staff'): Promise<MemberAddResult> {
-    const existing = this.db.organization_members.find(
-      (m) => m.org_id === orgId && m.email?.toLowerCase() === email.toLowerCase(),
-    )
-    if (existing) return { status: 'already_member', message: 'Email ini sudah menjadi anggota.' }
-    await this.insert('organization_members', {
+  /** Demo mode has a single local user who is always a member, so any code simply returns the org. */
+  async joinWithCode(): Promise<string> {
+    const [org] = this.db.organizations
+    if (!org) throw new Error('Data demo belum tersedia.')
+    return org.id
+  }
+
+  async createInvitation(orgId: string, role: 'admin' | 'staff', label: string | null): Promise<CreatedInvitation> {
+    const bytes = new Uint8Array(8)
+    crypto.getRandomValues(bytes)
+    const code = Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('')
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    await this.insert('invitations', {
       org_id: orgId,
-      user_id: `local-${email.toLowerCase()}`,
-      email: email.toLowerCase(),
+      label: label?.trim() || null,
+      email: null,
       role,
+      invited_by: null,
+      expires_at: expiresAt,
+      accepted_at: null,
+      accepted_by: null,
     })
-    return { status: 'added', message: 'Anggota ditambahkan (mode demo: tidak ada login terpisah).' }
+    return { code: formatCode(code), expiresAt }
+  }
+
+  async setMemberRole(orgId: string, userId: string, role: MemberRole): Promise<void> {
+    const members = this.db.organization_members.filter((m) => m.org_id === orgId)
+    const target = members.find((m) => m.user_id === userId)
+    if (!target) throw new Error('Anggota tidak ditemukan.')
+    if (target.role === 'owner' && role !== 'owner' && members.filter((m) => m.role === 'owner').length <= 1) {
+      throw new Error('Tidak dapat mengubah peran pemilik terakhir.')
+    }
+    target.role = role
+    saveDb(this.db)
   }
 
   async removeMember(orgId: string, userId: string): Promise<void> {

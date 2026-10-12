@@ -16,10 +16,9 @@ import { CashflowChart } from './CashflowChart'
 import { useIsDesktop } from './useIsDesktop'
 
 export function DashboardPage() {
-  const { properties, selectedPropertyId, role } = useOrg()
-  const showReportLink = role !== 'staff'
-  // Checkout is admin-only on the lease page (SPEC section 3), so staff only get "Perpanjang".
-  const canCheckout = role !== 'staff'
+  const { properties, selectedPropertyId, role, isLocalMode } = useOrg()
+  const isAdmin = role === 'owner' || role === 'admin'
+  const showReportLink = isAdmin
   const { data, isPending, error } = useDashboardData()
   const isDesktop = useIsDesktop()
   // Captured once per mount: the greeting should not flip mid-session on a re-render.
@@ -54,7 +53,7 @@ export function DashboardPage() {
       ) : isPending || !data ? (
         <DashboardSkeleton />
       ) : data.totals.rooms === 0 ? (
-        <FirstRunChecklist totals={data.totals} />
+        <FirstRunChecklist totals={data.totals} isAdmin={isAdmin} isOnline={!isLocalMode} />
       ) : (
         <>
           <div className="sm:hidden">
@@ -64,7 +63,7 @@ export function DashboardPage() {
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">
               <AttentionList sections={data.attention} count={data.attentionCount} />
-              <ExpiringList items={data.expiring} canCheckout={canCheckout} />
+              <ExpiringList items={data.expiring} />
               {isDesktop && <CashflowChart series={data.cashflow} showReportLink={showReportLink} />}
             </div>
             <div className="space-y-4">

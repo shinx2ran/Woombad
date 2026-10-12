@@ -2,8 +2,9 @@ name: Deploy to GitHub Pages
 
 # Builds the app on every push to master and publishes it at https://shinx2ran.github.io/Woombad/
 # by pushing the build output to the gh-pages branch (GitHub Pages serves that branch).
-# Online mode: add repository secrets VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
-# (Settings -> Secrets and variables -> Actions), then push or run this workflow manually.
+# Online mode: the public Supabase URL and publishable key live in .env.production (committed). Repository secrets
+# VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are optional and, only when non-empty, override that file.
+# Without either the app is built in Mode Demo.
 
 on:
   push:
@@ -27,12 +28,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Vite lets every process env var, even an empty one, win over .env files, so an unset or blank secret
+      # must not be exported at all (it would silently switch the build to Mode Demo).
+      - name: Use Supabase secrets when set
+        env:
+          SECRET_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SECRET_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          url="$(printf '%s' "$SECRET_URL" | tr -d '[:space:]')"
+          key="$(printf '%s' "$SECRET_KEY" | tr -d '[:space:]')"
+          if [ -n "$url" ]; then echo "VITE_SUPABASE_URL=$url" >> "$GITHUB_ENV"; fi
+          if [ -n "$key" ]; then echo "VITE_SUPABASE_ANON_KEY=$key" >> "$GITHUB_ENV"; fi
+      # Deploy does not wait for CI, so test the checker (and the env priority above) right before relying on it.
+      - name: Test the public config check
+        run: npx vitest run --root scripts
+      - name: Check public config (no secret keys)
+        run: node scripts/check-public-config.mjs
       - name: Build (sub-path /Woombad/)
         run: npm run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - name: SPA fallback for deep links (GitHub Pages serves 404.html for unknown paths)
         run: cp dist/index.html dist/404.html && touch dist/.nojekyll
       - name: Publish to gh-pages

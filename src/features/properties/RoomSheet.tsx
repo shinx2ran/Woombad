@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { AlertTriangle, Copy, ExternalLink, KeyRound, Pencil, Trash2, Wrench } from 'lucide-react'
 import { Button, ConfirmDialog, Modal, useToast } from '../../components/ui'
-import { useRemove, useUpdate } from '../../hooks/useTable'
+import { useInvalidate, useRemove, useUpdate } from '../../hooks/useTable'
 import { formatDate, formatRupiah } from '../../lib/format'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL, type Room } from '../../types/db'
 import type { RoomWithState } from './RoomsTab'
@@ -17,22 +17,25 @@ function PriceRow({ label, value }: { label: string; value: number | null }) {
   )
 }
 
-/** Detail sheet for one room: prices, current occupant, and actions. */
+/** Detail sheet for one room: prices, current occupant, and actions. Deleting a room is admin-only (SPEC 6.2). */
 export function RoomSheet({
   item,
   open,
   onClose,
   onEdit,
+  isAdmin,
 }: {
   item: RoomWithState | null
   open: boolean
   onClose: () => void
   onEdit: (room: Room) => void
+  isAdmin: boolean
 }) {
   const toast = useToast()
   const navigate = useNavigate()
   const update = useUpdate('rooms')
   const remove = useRemove('rooms')
+  const invalidate = useInvalidate()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmMaintenance, setConfirmMaintenance] = useState(false)
 
@@ -64,7 +67,10 @@ export function RoomSheet({
       setConfirmDelete(false)
       onClose()
     } catch (err) {
+      // refresh: a room already deleted on another device then disappears instead of failing on every retry
+      void invalidate('rooms')
       toast.error(err instanceof Error ? err.message : 'Gagal menghapus kamar.')
+      setConfirmDelete(false)
     }
   }
 
@@ -91,17 +97,21 @@ export function RoomSheet({
         }
         footer={
           <div className="flex w-full flex-wrap items-center justify-between gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-red-700 hover:bg-red-50 disabled:text-slate-400"
-              icon={<Trash2 className="h-4 w-4" />}
-              disabled={hasLeases}
-              onClick={() => setConfirmDelete(true)}
-              title={hasLeases ? 'Kamar yang pernah disewa tidak dapat dihapus.' : 'Hapus kamar'}
-            >
-              Hapus
-            </Button>
+            {isAdmin ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-red-700 hover:bg-red-50 disabled:text-slate-400"
+                icon={<Trash2 className="h-4 w-4" />}
+                disabled={hasLeases}
+                onClick={() => setConfirmDelete(true)}
+                title={hasLeases ? 'Kamar yang pernah disewa tidak dapat dihapus.' : 'Hapus kamar'}
+              >
+                Hapus
+              </Button>
+            ) : (
+              <span />
+            )}
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" icon={<Wrench className="h-4 w-4" />} onClick={toggleMaintenance} loading={update.isPending}>
                 {isMaintenance ? 'Aktifkan kembali' : 'Tandai perbaikan'}
@@ -211,7 +221,7 @@ export function RoomSheet({
             </Button>
           </div>
 
-          {hasLeases && (
+          {isAdmin && hasLeases && (
             <p className="text-xs text-slate-500">
               Kamar ini pernah atau sedang disewa, sehingga tidak dapat dihapus agar riwayat sewa tetap utuh. Gunakan “Tandai perbaikan” untuk menonaktifkannya.
             </p>

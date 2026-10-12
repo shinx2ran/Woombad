@@ -3,10 +3,11 @@ import { Link, useNavigate } from 'react-router'
 import { Button, Input } from '../../components/ui'
 import { useAuth } from '../../hooks/useAuth'
 import { AuthLayout } from './LoginPage'
+import { errorMessage } from './networkError'
 
 /**
  * Landing page for the Supabase recovery link (redirectTo). The link signs the user in with a
- * recovery session; here they choose a new password. Also reachable from Pengaturan when signed in.
+ * recovery session; here they choose a new password. Also linked from Pengaturan → Tentang (online mode).
  */
 export function ResetPasswordPage() {
   const { auth, session, loading } = useAuth()
@@ -28,7 +29,7 @@ export function ResetPasswordPage() {
       setDone(true)
       window.setTimeout(() => navigate('/dashboard', { replace: true }), 1200)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal mengubah kata sandi.')
+      setError(errorMessage(err, 'Gagal mengubah kata sandi.'))
     } finally {
       setSaving(false)
     }

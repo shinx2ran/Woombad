@@ -18,7 +18,8 @@ export interface RoomWithState {
   hasLeases: boolean
 }
 
-export function RoomsTab({ property }: { property: Property }) {
+/** Staff see rooms and may edit name/floor/status/notes; adding/deleting rooms and prices are admin-only (SPEC 6.2). */
+export function RoomsTab({ property, isAdmin }: { property: Property; isAdmin: boolean }) {
   const rooms = useTable('rooms', { where: { property_id: property.id } })
   // Leases/invoices/payments/tenants are tiny tables; load them whole and filter in memory.
   const leases = useTable('leases')
@@ -109,7 +110,7 @@ export function RoomsTab({ property }: { property: Property }) {
                 Ubah harga ({selected.size})
               </Button>
             </>
-          ) : (
+          ) : isAdmin ? (
             <>
               {items.length > 0 && (
                 <Button variant="outline" size="sm" icon={<CheckSquare className="h-4 w-4" />} onClick={() => setSelecting(true)}>
@@ -120,7 +121,7 @@ export function RoomsTab({ property }: { property: Property }) {
                 Tambah Kamar
               </Button>
             </>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -128,11 +129,15 @@ export function RoomsTab({ property }: { property: Property }) {
         <EmptyState
           icon={<DoorOpen className="h-10 w-10" />}
           title="Belum ada kamar"
-          description="Tambahkan kamar satu per satu atau sekaligus (mis. A1 sampai A6) dengan harga yang sama."
+          description={
+            isAdmin ? 'Tambahkan kamar satu per satu atau sekaligus (mis. A1 sampai A6) dengan harga yang sama.' : 'Kamar ditambahkan oleh pemilik atau admin.'
+          }
           action={
-            <Button icon={<Plus className="h-4 w-4" />} onClick={openCreate}>
-              Tambah Kamar
-            </Button>
+            isAdmin ? (
+              <Button icon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+                Tambah Kamar
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -153,6 +158,7 @@ export function RoomsTab({ property }: { property: Property }) {
         item={sheetItem}
         open={sheetItem !== null}
         onClose={() => setSheetRoomId(null)}
+        isAdmin={isAdmin}
         onEdit={(room) => {
           setSheetRoomId(null)
           setEditing(room)
@@ -165,18 +171,21 @@ export function RoomsTab({ property }: { property: Property }) {
         property={property}
         room={editing}
         existingRooms={rooms.data ?? []}
+        isAdmin={isAdmin}
         onClose={() => setFormOpen(false)}
       />
 
-      <BulkPriceModal
-        open={bulkOpen}
-        rooms={selectedRooms}
-        onClose={() => setBulkOpen(false)}
-        onDone={() => {
-          setBulkOpen(false)
-          exitSelecting()
-        }}
-      />
+      {isAdmin && (
+        <BulkPriceModal
+          open={bulkOpen}
+          rooms={selectedRooms}
+          onClose={() => setBulkOpen(false)}
+          onDone={() => {
+            setBulkOpen(false)
+            exitSelecting()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -19,7 +19,7 @@ import {
   type Column,
 } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
-import { useRemove, useRow, useTable } from '../../hooks/useTable'
+import { useInvalidate, useRemove, useRow, useTable } from '../../hooks/useTable'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import { GENDER_LABEL, PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, type Lease, type Payment } from '../../types/db'
 import { TenantFormModal } from './TenantFormModal'
@@ -52,6 +52,7 @@ export function TenantDetailPage() {
   const rooms = useTable('rooms')
   const payments = useTable('payments')
   const remove = useRemove('tenants')
+  const invalidate = useInvalidate()
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -94,10 +95,23 @@ export function TenantDetailPage() {
 
   const confirmDelete = async () => {
     try {
+      // Row first, photo second (SPEC 6.4): a refused delete (tenant still has leases) must keep the KTP photo.
+      // remove() throws when nothing was deleted, so the file is only touched once the row is gone.
       await remove.mutateAsync(t.id)
-      toast.success(`Penyewa ${t.full_name} dihapus.`)
+      let photoKept = false
+      if (t.ktp_image_path) {
+        try {
+          await repo.removeFile('ktp', t.ktp_image_path)
+        } catch {
+          photoKept = true
+        }
+      }
+      if (photoKept) toast.error(`Penyewa ${t.full_name} dihapus, tetapi foto dokumen gagal dihapus dari penyimpanan.`)
+      else toast.success(`Penyewa ${t.full_name} dihapus.`)
       navigate('/penyewa', { replace: true })
     } catch (err) {
+      // refresh: a tenant already deleted on another device then shows as not found instead of failing again
+      void invalidate('tenants')
       toast.error(err instanceof Error ? err.message : 'Gagal menghapus penyewa.')
       setDeleteOpen(false)
     }

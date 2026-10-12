@@ -1,4 +1,5 @@
 import type { Insert, OrgInsert, OrgTableName, Row, TableName, Update } from '../../types/db'
+import type { MemberRole } from '../../types/db'
 
 export type RepoMode = 'supabase' | 'local'
 
@@ -17,9 +18,38 @@ export interface ListOptions<T> {
 
 export type StorageBucket = 'ktp' | 'receipts'
 
-export interface MemberAddResult {
-  status: 'added' | 'invited' | 'already_member'
-  message: string
+/** Thrown by ensureMembership when the signed-in account belongs to no organisation yet. */
+export class NotMemberError extends Error {
+  readonly code = 'NOT_MEMBER'
+  constructor(message = 'Akun ini belum menjadi anggota. Masukkan kode dari pemilik kos.') {
+    super(message)
+    this.name = 'NotMemberError'
+  }
+}
+
+/** A write that reached no row: the row is gone, or row-level security hides it from this member. */
+export const UPDATE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk mengubahnya.'
+export const DELETE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk menghapusnya.'
+/** ON DELETE RESTRICT: another row still points at the one being deleted. */
+export const IN_USE_MESSAGE = 'Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.'
+/** Same text as the invoices_void_guard trigger in supabase/schema.sql. */
+export const VOID_PAID_INVOICE_MESSAGE = 'Tagihan yang sudah ada pembayarannya tidak dapat dibatalkan.'
+
+export interface CreatedInvitation {
+  /** plain code, formatted 'ABCD-EFGH'; shown once, the database keeps only a hash */
+  code: string
+  expiresAt: string
+}
+
+/** Invitation/setup codes: uppercase, no separators, no look-alike characters (no 0/O/1/I/L). */
+export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+
+export function normalizeCode(input: string): string {
+  return input.toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+export function formatCode(normalized: string): string {
+  return normalized.length === 8 ? `${normalized.slice(0, 4)}-${normalized.slice(4)}` : normalized
 }
 
 /**
@@ -38,11 +68,17 @@ export interface Repo {
   remove<T extends TableName>(table: T, id: string, orgId?: string): Promise<void>
 
   /**
-   * Resolve the signed-in user's organisation server-side: existing membership, else pending
-   * invitations for their email, else (first account ever) a new organisation. Throws with an
-   * Indonesian message when the account is not a member of anything.
+   * Resolve the signed-in user's organisation server-side (existing membership only; the owner is
+   * listed first). Throws NotMemberError when the account belongs to no organisation: the UI then asks
+   * for a code (joinWithCode). Never creates organisations and never matches invitations by email.
    */
   ensureMembership(user: { id: string; email: string | null }): Promise<string>
+
+  /**
+   * Join with a code: an invitation code (one-time, 7 days) or, while no organisation exists yet, the
+   * owner setup code configured on the server. Returns the organisation id. Errors are Indonesian.
+   */
+  joinWithCode(code: string): Promise<string>
 
   /** Upload a file; returns the storage path to persist on the row. Local mode returns null (not stored). */
   uploadFile(bucket: StorageBucket, path: string, file: Blob, contentType?: string): Promise<string | null>
@@ -50,8 +86,10 @@ export interface Repo {
   getFileUrl(bucket: StorageBucket, path: string | null | undefined): Promise<string | null>
   removeFile(bucket: StorageBucket, path: string): Promise<void>
 
-  /** Add a member by email: adds immediately if the user exists, otherwise records an invitation. */
-  addMemberByEmail(orgId: string, email: string, role: 'admin' | 'staff'): Promise<MemberAddResult>
+  /** Admin only. Creates a one-time invitation code for the role; `label` says who it is for. */
+  createInvitation(orgId: string, role: 'admin' | 'staff', label: string | null): Promise<CreatedInvitation>
+  /** Owner only. Refuses to demote the last owner. */
+  setMemberRole(orgId: string, userId: string, role: MemberRole): Promise<void>
   removeMember(orgId: string, userId: string): Promise<void>
 }
 
@@ -71,7 +109,8 @@ export interface OrgRepo {
   uploadFile(bucket: StorageBucket, fileName: string, file: Blob, contentType?: string): Promise<string | null>
   getFileUrl(bucket: StorageBucket, path: string | null | undefined): Promise<string | null>
   removeFile(bucket: StorageBucket, path: string): Promise<void>
-  addMemberByEmail(email: string, role: 'admin' | 'staff'): Promise<MemberAddResult>
+  createInvitation(role: 'admin' | 'staff', label: string | null): Promise<CreatedInvitation>
+  setMemberRole(userId: string, role: MemberRole): Promise<void>
   removeMember(userId: string): Promise<void>
   /** underlying unscoped repo, for the rare cross-org operations (organisation switcher, etc.) */
   readonly raw: Repo
@@ -113,7 +152,8 @@ export function bindOrg(repo: Repo, orgId: string): OrgRepo {
       repo.uploadFile(bucket, `${orgId}/${fileName}`, file, contentType),
     getFileUrl: (bucket, path) => repo.getFileUrl(bucket, path),
     removeFile: (bucket, path) => repo.removeFile(bucket, path),
-    addMemberByEmail: (email, role) => repo.addMemberByEmail(orgId, email, role),
+    createInvitation: (role, label) => repo.createInvitation(orgId, role, label),
+    setMemberRole: (userId, role) => repo.setMemberRole(orgId, userId, role),
     removeMember: (userId) => repo.removeMember(orgId, userId),
   }
 }

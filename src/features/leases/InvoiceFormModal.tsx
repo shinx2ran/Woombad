@@ -173,8 +173,10 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const standard = roomPriceFor(room, periodType)
   const typeChanged = periodType !== lease.period_type
   const changesTerms = extensionChangesTerms(lease, periodType, price)
-  // Old invoices with period_type null get pinned on a permanent type switch; staff cannot update invoices (Supabase RLS).
-  const permanentBlocked = typeChanged && !actions.canWriteInvoiceStatus && invoicesToPinType(lease, leaseInvoices, periodType).length > 0
+  // Staff may bill a one-off extension but never change the lease's type or price (SPEC 6.2). Old invoices with
+  // period_type null get pinned on a permanent type switch, which needs invoice updates (Supabase RLS).
+  const staffBlocked = !actions.canEditLeaseTerms
+  const permanentBlocked = staffBlocked || (typeChanged && !actions.canWriteInvoiceStatus && invoicesToPinType(lease, leaseInvoices, periodType).length > 0)
   const permanent = !permanentBlocked && (permanentOverride ?? defaultMakePermanent(lease, periodType))
   const makePermanent = changesTerms && permanent
 
@@ -324,7 +326,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
               <span className="block font-medium text-slate-900">Jadikan jenis/harga tetap sewa ini</span>
               <span className="block text-xs text-slate-500">
                 {permanentBlocked
-                  ? 'Hanya admin yang dapat mengganti jenis sewa secara tetap. Tagihan ini dibuat sekali saja.'
+                  ? `${staffBlocked ? 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.' : 'Hanya pemilik/admin yang dapat mengganti jenis sewa secara tetap.'} Tagihan ini dibuat sekali saja.`
                   : permanent
                     ? `Sewa menjadi ${PERIOD_TYPE_LABEL[periodType]} ${formatRupiah(price)} / ${unit}; catatan otomatis ditambahkan.`
                     : `Hanya tagihan ini; sewa tetap ${PERIOD_TYPE_LABEL[lease.period_type]} ${formatRupiah(lease.price_per_period)} / ${PERIOD_UNIT_LABEL[lease.period_type]}.`}

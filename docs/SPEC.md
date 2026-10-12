@@ -78,7 +78,7 @@ Postgres tidak bisa menjaga aturan berikut; UI wajib:
 1. **Status tagihan** selalu di-update dengan `deriveInvoiceStatus` setelah setiap insert/hapus pembayaran rent dan setiap perubahan `total_amount`. `total_amount` tidak boleh lebih kecil dari yang sudah dibayar (tolak dengan pesan Indonesia).
 2. **Void** tagihan hanya jika `paidAmountFor == 0`. Jika sudah ada pembayaran: hapus/pindahkan pembayaran dulu (admin), atau kecilkan `total_amount` lewat `discount_amount` (DP hangus tetap pendapatan).
 3. **Hapus tagihan** hanya jika tidak ada pembayaran (DB akan menolak: `payments.invoice_id` RESTRICT). Lebih disukai void, bukan hapus (nomor tagihan tidak boleh dipakai ulang).
-4. **Batalkan sewa** (`cancelled`): semua tagihan unpaid di-void; jika ada tagihan partial, pengguna harus memilih: void + kembalikan (expense `rent_refund` + `lease_id`) atau "anggap hangus" (diskon = sisa, status jadi paid). Pembayaran deposit diselesaikan: kembalikan (expense `deposit_refund`) atau potong (payment `other`, method `deposit`).
+4. **Batalkan sewa** (`cancelled`): semua tagihan unpaid di-void; jika ada tagihan partial, pengguna harus memilih: **kembalikan** (tagihan *ditutup*, tidak di-void, karena DB menolak void tagihan yang sudah ada pembayarannya (2b.2): sisa yang belum dibayar menjadi `discount_amount`, `total_amount` = yang sudah dibayar, status paid, catatan "DP dikembalikan (<alasan>)"; lalu satu expense `rent_refund` + `lease_id` sebesar yang sudah dibayar, keterangan memuat nomor tagihan, tidak pernah dua kali untuk tagihan yang sama) atau "anggap hangus" (diskon = sisa, status jadi paid). Data dibaca ulang dari server lalu semua perubahan tagihan ditulis lebih dulu, sebelum pengeluaran/pembayaran apa pun, agar penolakan database tidak meninggalkan data setengah jadi. Pembayaran deposit diselesaikan: kembalikan (expense `deposit_refund`) atau potong (payment `other`, method `deposit`).
 5. **Checkout** (`ended`): `checkout_date` wajib; tagihan unpaid yang `period_start > checkout_date` di-void; sisa tagihan sebelum checkout tetap piutang (boleh dipotong jaminan: payment rent, method `deposit`). Deposit yang dipegang **wajib** diselesaikan: dikembalikan (expense `deposit_refund`, `lease_id`), dipotong untuk kerusakan (payment `kind='other'`, `method='deposit'`, catatan "Potongan jaminan: …"), atau dipotong untuk sewa (payment rent method deposit). `end_date` = min(end_date, checkout_date).
 6. **Pembayaran** rent selalu `invoice_id` terisi; deposit/other selalu `invoice_id = null` (DB: `(kind = 'rent') = (invoice_id is not null)`). `property_id` pembayaran = `property_id` tagihan/sewa.
 7. **Kelebihan bayar**: `validateRentPayment` menolak jumlah > sisa. Form menawarkan: "Catat kelebihan Rp X sebagai Pemasukan Lain" (payment `other`, `lease_id`) atau "Jadikan diskon tagihan berikutnya" (isi `discount_amount` pada draft tagihan berikutnya lewat catatan sewa). **Kekurangan yang disepakati** ("kurang 50 ribu, anggap lunas"): tambahkan `discount_amount` sebesar selisih lalu status menjadi paid.
@@ -112,9 +112,9 @@ Catatan mode Supabase vs Demo:
 - Di mode **Supabase**, `invoices.status` dijaga oleh trigger DB setiap ada pembayaran; UI cukup meng-*invalidate*
   `invoices`. Di mode **Demo** (lokal) tidak ada trigger, jadi UI harus menulis `status` hasil `deriveInvoiceStatus`.
   Cara aman untuk keduanya: panggil `repo.update('invoices', id, { status })` hanya jika `repo.mode === 'local'`.
-- Peran **staf** di mode Supabase tidak boleh meng-update `invoices` (RLS) dan hanya boleh mengubah `payments`/`expenses`
-  yang ia catat sendiri (`created_by`). UI menyembunyikan tombol tersebut untuk staf dan menampilkan pesan dari
-  `translateDbError` bila server menolak.
+- Peran **staf** di mode Supabase tidak boleh meng-update `invoices` (RLS) dan hanya boleh **mencatat** `payments`/
+  `expenses`; mengubah/menghapusnya khusus pemilik/admin (lihat 6.2). UI menyembunyikan tombol tersebut untuk staf dan
+  menampilkan pesan dari `translateDbError` bila server menolak.
 - Hapus tagihan/sewa/kos yang masih dirujuk data lain ditolak (DB RESTRICT; `LocalRepo` meniru aturan ini).
 
 Konvensi kode:
@@ -165,8 +165,8 @@ arus kas per bucket (`cashflowSeries`), pengeluaran per kategori (donut, `expens
 import dari `'write-excel-file'` default/browser) atau **CSV** (`toCsv`, pemisah `;` default, opsi `,`).
 Grafik harus terbaca di HP (tinggi ~220px, legend ringkas, tooltip Rupiah).
 
-**settings** (`/pengaturan`): nama organisasi (admin), daftar anggota + undang via email (`repo.addMemberByEmail`),
-hapus anggota (owner/admin, bukan diri sendiri), info mode (Demo vs Online) + tombol **Reset data demo**
+**settings** (`/pengaturan`): nama organisasi (admin), daftar anggota + undang dengan kode (lihat 6.1; ubah peran oleh
+pemilik, admin hanya menghapus staf), info mode (Demo vs Online) + tombol **Reset data demo**
 (mode lokal), petunjuk install PWA (Android: "Tambahkan ke layar utama"; iPhone: Safari → Bagikan → Tambahkan ke
 Layar Utama), tombol keluar, versi aplikasi.
 
@@ -219,3 +219,120 @@ Layar Utama), tombol keluar, versi aplikasi.
   dan menampilkan "Harga standar Rp X" sebagai petunjuk; bila berbeda tampilkan selisih ("Diskon Rp Y" / "Lebih Rp Y").
 - Detail sewa menampilkan "Harga disepakati Rp X · standar Rp Y". Modal perpanjangan selalu mengizinkan harga khusus untuk
   tagihan itu (override `pricePerPeriod`), dengan centang untuk menjadikannya harga tetap sewa (5.2).
+
+## 6. Peluncuran online (v0.3) — keamanan sebelum go-live
+
+Hasil penilaian keamanan: orang luar tidak dapat membaca/mengubah data (245 uji serangan pada PostgreSQL). Celah yang
+tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasan staf**, **riwayat perubahan**, dan
+**cadangan**. Bagian ini adalah kontrak untuk perbaikan sebelum peluncuran.
+
+### 6.1 Keanggotaan berbasis kode (tanpa email)
+- **Kode** = 8 karakter dari alfabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (tanpa 0/O/1/I/L), ditampilkan `ABCD-EFGH`.
+  Klien menormalkan (`normalizeCode`: huruf besar, buang non-alfanumerik) sebelum dikirim. Server hanya menyimpan
+  `encode(sha256(convert_to(kode_normal,'UTF8')),'hex')` (fungsi bawaan Postgres; **jangan** pakai pgcrypto — di Supabase
+  pgcrypto ada di skema `extensions`).
+- **Kode pemilik (setup code)**: tabel `public.app_settings (id int primary key default 1 check (id = 1),
+  setup_code_hash text, setup_code_used_at timestamptz)`. Diisi oleh operator lewat
+  `select public.set_setup_code('ABCD-EFGH')` — fungsi ini **tidak** di-grant ke `authenticated`/`anon` (hanya postgres /
+  service_role). Tidak ada RLS policy untuk tabel ini (tak terbaca klien).
+- **Pendaftaran tidak lagi membuat organisasi atau menerima undangan otomatis.** Trigger `on_auth_user_created` dan
+  fungsi `accept_invitations_for`, `handle_new_user`, `add_member_by_email` dihapus.
+- `ensure_membership() returns uuid`: hanya mengembalikan keanggotaan yang ada (owner dulu, lalu yang tertua). Bila tidak
+  ada: `raise exception using errcode = 'WB001', message = 'Akun ini belum menjadi anggota. Masukkan kode dari pemilik kos.'`
+  (klien memetakan `WB001` → `NotMemberError` → layar **Masukkan kode**).
+- `join_with_code(p_code text) returns uuid` (security definer, untuk `authenticated`):
+  1. Batasi percobaan: tabel `public.join_attempts (user_id uuid, attempted_at timestamptz default now())`; bila ≥ 10
+     kegagalan dalam 1 jam terakhir untuk `auth.uid()` → `'Terlalu banyak percobaan. Coba lagi dalam 1 jam.'`.
+  2. Cocokkan undangan: `invitation_codes.code_hash` sama (undangan terkait `accepted_at is null`, `expires_at > now()` → insert
+     `organization_members (org_id, user_id, email dari auth.users, role)` (on conflict do nothing), set `accepted_at`,
+     `accepted_by`, kembalikan org_id.
+  3. Bila belum ada organisasi sama sekali dan hash cocok dengan `app_settings.setup_code_hash` yang belum dipakai →
+     buat organisasi 'Kos Saya' (`created_by` = user) + member `owner`, set `setup_code_used_at`, kembalikan org_id.
+  4. Selain itu catat kegagalan di `join_attempts` dan **kembalikan `null` tanpa exception** (exception akan
+  membatalkan transaksi sehingga catatan kegagalan ikut hilang). Klien memetakan `null` →
+  'Kode tidak valid atau sudah kedaluwarsa.'. Kode kosong/terlalu pendek juga dihitung sebagai kegagalan.
+- `create_invitation(p_org_id uuid, p_role text, p_label text) returns table(code text, expires_at timestamptz)`:
+  admin saja; role `admin`/`staff`; kode acak dari `gen_random_uuid()` (bawaan PG13+), kedaluwarsa 7 hari; simpan
+  `invitations (org_id, label, role, invited_by, expires_at)` + hash di tabel terpisah
+  `public.invitation_codes (invitation_id uuid primary key references invitations on delete cascade, code_hash text unique
+  not null)` — RLS aktif tanpa policy dan **tanpa grant**, jadi hash tidak pernah terkirim ke klien (juga tidak ikut cadangan).
+  `invitations.email` menjadi nullable, kolom baru `label text`, `expires_at timestamptz not null default now() + interval
+  '7 days'`, `accepted_by uuid`. Admin boleh `select`/`delete` undangan organisasinya (sudah ada). Maksimal 20 undangan aktif
+  per organisasi.
+- `set_member_role(p_org_id uuid, p_user_id uuid, p_role text) returns void`: **owner saja**; role owner/admin/staff;
+  tolak menurunkan **owner terakhir** ('Tidak dapat mengubah peran pemilik terakhir.'). Policy `members_update` dihapus —
+  tidak ada update langsung ke `organization_members`.
+- `remove_member` tetap (admin tidak dapat menghapus pemilik; pemilik terakhir tidak dapat dihapus).
+- Kode undangan hanya berlaku selama pembuatnya masih pemilik/admin: `remove_member` dan `set_member_role` (turun ke staf)
+  mengakhiri kode yang belum dipakai milik orang itu (`expires_at = now()`).
+- Kode dianggap terpakai (`accepted_at`/`accepted_by`) hanya bila keanggotaan baru benar-benar dibuat; anggota yang sudah
+  ada dan memasukkan kode itu hanya mendapat org id-nya, kode tetap berlaku untuk orang yang dituju.
+
+### 6.2 Pembatasan staf (ditegakkan database)
+- `properties`: insert/update/delete **admin saja** (termasuk `payment_info` = rekening di pengingat WhatsApp).
+- `addon_catalog` (daftar harga tambahan): insert/update/delete **admin saja**.
+- `rooms`: staf boleh update kecuali kolom harga (`price_daily/weekly/monthly`) → trigger menolak
+  'Hanya pemilik/admin yang dapat mengubah harga kamar.'; insert/delete kamar admin saja.
+- `leases`: staf boleh update (perpanjang, checkout, pindah kamar) **kecuali** `price_per_period`, `deposit_amount`,
+  `period_type` → 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.'
+- `payments` & `expenses`: update **admin saja** (hapus kebijakan "pemilik baris"); trigger BEFORE INSERT memaksa
+  `created_by = auth.uid()` bila `auth.uid()` tidak null; `created_by` dan `org_id` tidak dapat diubah lewat update.
+  Karena itu foto struk pengeluaran baru diunggah **sebelum** insert dan `receipt_path` ikut di insert (staf tidak bisa
+  update); bila insert gagal, file dihapus lagi (best-effort).
+- `tenants.property_id` dan `expenses.property_id`: `on delete set null (property_id)` (PostgreSQL 15+) agar menghapus kos
+  tidak ikut mengosongkan `org_id`.
+- `invoices`: insert oleh non-admin dengan `status = 'void'` diperlakukan sebagai tagihan biasa (status diturunkan dari
+  pembayaran) — ubah `invoices_recalc_trigger`.
+- UI menyembunyikan aksi yang ditolak untuk staf dan tetap menampilkan pesan `translateDbError` bila server menolak.
+
+### 6.3 Riwayat perubahan (audit log)
+- Tabel `public.audit_log (id uuid pk default gen_random_uuid(), org_id uuid not null references organizations on delete
+  cascade, table_name text not null, row_id uuid, action text check in ('insert','update','delete'), changed_by uuid
+  default auth.uid(), changed_at timestamptz not null default now(), old_data jsonb, new_data jsonb)`, indeks
+  `(org_id, changed_at desc)`.
+- Trigger AFTER INSERT/UPDATE/DELETE (security definer) pada `payments, invoices, expenses, leases, lease_addons,
+  properties, rooms, addon_catalog, tenants, organization_members, invitations, organizations`. Lewati bila organisasinya
+  sudah tidak ada (penghapusan berantai oleh operator).
+- RLS: `select` untuk `is_org_admin(org_id)`; **tidak ada** policy insert/update/delete; `grant select` saja ke
+  `authenticated`. Tak seorang pun (termasuk pemilik lewat aplikasi) dapat mengubah/menghapus riwayat.
+- Urutan list di klien memakai `orderBy: { column: 'changed_at' }` (tabel ini tidak punya `created_at`).
+- UI: Pengaturan → **Riwayat perubahan** (owner/admin): 100 perubahan terakhir — kapan, siapa (email anggota), apa
+  (tabel + aksi + ringkasan kolom yang berubah, mis. "Pembayaran Rp 1.500.000 → Rp 1.000.000"). Mode demo: kartu
+  menjelaskan riwayat hanya tersedia di mode online.
+
+### 6.3a Satu berkas skema
+- Belum ada database online, jadi **tidak ada migrasi 0003**: `supabase/schema.sql` adalah versi lengkap dan harus
+  bisa dijalankan pada database kosong, dijalankan dua kali, maupun di atas skema v0.2 (`alter table ... add column if
+  not exists`, `drop ... if exists`). Ketiga skenario diuji di `supabase/tests`.
+
+### 6.4 Penyimpanan foto
+- Hapus trigger `tenants_delete_ktp` / `expenses_delete_receipt` beserta fungsinya: Supabase versi baru menolak
+  `delete from storage.objects` langsung, sehingga hapus penyewa akan gagal. Aplikasi menghapus **baris dulu**, lalu file
+  lewat Storage API (`repo.removeFile`, best-effort + peringatan bila gagal). Urutan ini mencegah foto hilang ketika
+  penghapusan baris ditolak (mis. penyewa masih punya sewa). Berlaku untuk penyewa (`ktp_image_path`) dan pengeluaran
+  (struk); juga hapus foto lama saat foto KTP/struk diganti.
+
+### 6.5 Cadangan & pindah dari Mode Demo
+- Pengaturan → Data (mode online, owner/admin): **Unduh cadangan lengkap (JSON)** — semua tabel organisasi (kecuali
+  `audit_log` opsional), format `{ version: 1, exportedAt, orgName, tables: { <tabel>: Row[] } }`; foto tidak termasuk
+  (dijelaskan). Teks lama tentang "Dashboard → Database → Backups" dihapus: paket gratis Supabase **tidak** punya cadangan.
+- Mode demo: **Pulihkan dari JSON** memvalidasi berkas dengan zod (semua tabel array, baris punya `id`), otomatis
+  mengunduh data saat ini sebelum menimpa, dan aplikasi punya error boundary dengan tombol "Reset data di perangkat ini"
+  bila data rusak. Mode demo meminta `navigator.storage.persist()` dan menampilkan pengingat bila cadangan terakhir > 7 hari.
+- **Impor dari Mode Demo** (mode online, owner/admin, organisasi baru): pilih berkas cadangan demo → pratinjau per kos →
+  pilih kos yang diimpor (+ opsi pengeluaran Bersama) → sisipkan dengan urutan dependensi (properties, rooms,
+  addon_catalog, tenants, leases, lease_addons, invoices, payments, expenses), `org_id` diganti, `id` UUID dipertahankan,
+  `created_by` dikosongkan; baris dengan id non-UUID atau dari organisasi lain dilewati. Hasil: ringkasan jumlah baris.
+
+- Tambahan v0.3: impor boleh diulang ke organisasi yang sudah berisi (baris dengan id yang sudah ada dilewati); impor
+  juga bisa langsung dari data Mode Demo di browser yang sama (tanpa berkas); data contoh bawaan
+  Mode Demo tidak ikut secara default; cadangan online tidak memuat `invitation_codes` (tanpa grant); pulihkan/reset
+  mengunduh data saat ini lebih dulu; data perangkat yang rusak berhenti di layar galat (unduh / reset), tidak ditimpa.
+
+### 6.6 Konfigurasi publik untuk build
+- URL Supabase & *publishable key* (`sb_publishable_…`) bersifat publik (dilindungi RLS). Kunci anon lama (JWT) tidak
+  dipakai: membatalkan kunci lama berarti mematikan semua kunci lama sekaligus.
+  `scripts/check-public-config.mjs` menolak build bila `.env.production` memuat kunci rahasia. CI membangun dengan variabel
+  kosong (Mode Demo) agar e2e tidak bergantung pada database live. Disimpan di `.env.production` (di-commit,
+  pengecualian di `.gitignore`). Workflow deploy hanya mengoper secrets bila tidak kosong (secret kosong tidak boleh
+  menimpa `.env.production`). Kunci `service_role` **tidak pernah** di-commit.

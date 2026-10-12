@@ -1,20 +1,26 @@
 -- =====================================================================================
--- Woombad: Supabase / PostgreSQL schema
--- Run this whole file once in Supabase Dashboard -> SQL Editor on a fresh project.
+-- Woombad: Supabase / PostgreSQL schema (v0.3)
+-- Run this whole file in Supabase Dashboard -> SQL Editor. It is the complete schema: it works on an
+-- empty project, can be run again, and upgrades a v0.2 installation in place (no separate migration).
+-- Then the operator sets the owner's one-time setup code (not callable from the app):
+--   select public.set_setup_code('ABCD-EFGH');
 -- Design notes:
---  * One family = one organisation. The FIRST account to sign up creates the organisation;
---    every later account must be invited (Pengaturan -> Anggota) and signs up with that email.
---  * Every business row carries org_id; Row Level Security is a single is_org_member(org_id) check,
---    and composite foreign keys (org_id, id) make cross-organisation references impossible.
+--  * One family = one organisation. Signing up gives no access by itself: the owner enters the setup
+--    code (once, only while no organisation exists) and everyone else enters a one-time invitation
+--    code made by an owner/admin (join_with_code). Codes are stored only as SHA-256 hashes.
+--  * Every business row carries org_id; Row Level Security is is_org_member(org_id) (admin-only for
+--    money edits, prices and master data), and composite foreign keys (org_id, id) make
+--    cross-organisation references impossible.
 --  * Financial rows are never cascaded away: voiding/cancelling is the only path.
+--  * Every change is recorded in audit_log by triggers; nobody can change that history via the API.
 -- =====================================================================================
 
-create extension if not exists pgcrypto;
+begin;
 
 -- ---------- helpers ----------
 
 create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = public, pg_temp as $$
 begin
   new.updated_at = now();
   return new;
@@ -40,21 +46,78 @@ create table if not exists public.organization_members (
 );
 create index if not exists organization_members_user_idx on public.organization_members (user_id);
 
+-- One row per invitation code. The code itself lives (hashed) in invitation_codes.
 create table if not exists public.invitations (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id) on delete cascade,
-  email text not null,
+  -- who it is for, free text ("Istri", "Pak Udin")
+  label text,
+  -- legacy (v0.2 email invitations); null for code invitations
+  email text,
   -- 'owner' can never be granted through an invitation
   role text not null check (role in ('admin', 'staff')),
   invited_by uuid references auth.users(id) on delete set null,
+  expires_at timestamptz not null default now() + interval '7 days',
   accepted_at timestamptz,
+  accepted_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
-create unique index if not exists invitations_pending_unique on public.invitations (org_id, lower(email)) where accepted_at is null;
+alter table public.invitations alter column email drop not null;
+alter table public.invitations add column if not exists label text;
+alter table public.invitations add column if not exists expires_at timestamptz not null default now() + interval '7 days';
+alter table public.invitations add column if not exists accepted_by uuid references auth.users(id) on delete set null;
+-- v0.2 kept one pending invitation per email; codes have no email
+drop index if exists public.invitations_pending_unique;
+do $$
+declare r record;
+begin
+  for r in
+    select c.conname from pg_constraint c
+    where c.conrelid = 'public.invitations'::regclass and c.contype = 'u'
+      and exists (select 1 from pg_attribute a where a.attrelid = c.conrelid and a.attnum = any (c.conkey) and a.attname = 'email')
+  loop
+    execute format('alter table public.invitations drop constraint %I', r.conname);
+  end loop;
+  for r in
+    select i.indexrelid::regclass::text as name from pg_index i
+    where i.indrelid = 'public.invitations'::regclass and i.indisunique and not i.indisprimary
+      and pg_get_indexdef(i.indexrelid) ilike '%email%'
+  loop
+    execute format('drop index %s', r.name);
+  end loop;
+end $$;
+create index if not exists invitations_org_idx on public.invitations (org_id, expires_at) where accepted_at is null;
+
+-- Code hashes are kept apart from invitations: no grants, no policies, so they never reach a client
+-- (nor a backup made through the API).
+create table if not exists public.invitation_codes (
+  invitation_id uuid primary key references public.invitations(id) on delete cascade,
+  code_hash text not null unique
+);
+
+-- v0.2 email invitations have no code and can never be used any more
+update public.invitations i set expires_at = now()
+where i.accepted_at is null and i.email is not null and i.expires_at > now()
+  and not exists (select 1 from public.invitation_codes c where c.invitation_id = i.id);
+
+-- Singleton with the owner's setup code (set by the operator with set_setup_code).
+create table if not exists public.app_settings (
+  id int primary key default 1 check (id = 1),
+  setup_code_hash text,
+  setup_code_used_at timestamptz
+);
+insert into public.app_settings (id) values (1) on conflict (id) do nothing;
+
+-- Failed join_with_code attempts, for rate limiting.
+create table if not exists public.join_attempts (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  attempted_at timestamptz not null default now()
+);
+create index if not exists join_attempts_user_idx on public.join_attempts (user_id, attempted_at);
 
 -- security definer so RLS policies on organization_members itself do not recurse
 create or replace function public.is_org_member(p_org uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
   select exists (
     select 1 from public.organization_members m
     where m.org_id = p_org and m.user_id = auth.uid()
@@ -62,7 +125,7 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 create or replace function public.is_org_admin(p_org uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
   select exists (
     select 1 from public.organization_members m
     where m.org_id = p_org and m.user_id = auth.uid() and m.role in ('owner', 'admin')
@@ -70,120 +133,215 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 create or replace function public.is_org_owner(p_org uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
   select exists (
     select 1 from public.organization_members m
     where m.org_id = p_org and m.user_id = auth.uid() and m.role = 'owner'
   );
 $$;
 
--- Accept every pending invitation addressed to this email. Returns the number accepted.
-create or replace function public.accept_invitations_for(p_user uuid, p_email text)
-returns int language plpgsql security definer set search_path = public as $$
-declare
-  inv record;
-  n int := 0;
-begin
-  if p_email is null then return 0; end if;
-  for inv in
-    select * from public.invitations
-    where lower(email) = lower(p_email) and accepted_at is null
-  loop
-    insert into public.organization_members (org_id, user_id, email, role)
-    values (inv.org_id, p_user, lower(p_email), inv.role)
-    on conflict (org_id, user_id) do nothing;
-    update public.invitations set accepted_at = now() where id = inv.id;
-    n := n + 1;
-  end loop;
-  return n;
-end $$;
+-- Same normalisation as the client (normalizeCode): upper case, letters and digits only.
+create or replace function public.normalize_code(p_code text)
+returns text language sql immutable set search_path = public, pg_temp as $$
+  select regexp_replace(upper(coalesce(p_code, '')), '[^A-Z0-9]', '', 'g');
+$$;
 
--- On signup: join the organisation(s) that invited this email. The very first account of the
--- project creates the organisation. Any other uninvited account stays without an organisation
--- (it can do nothing; ensure_membership() explains why in Indonesian).
-create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer set search_path = public as $$
-declare
-  new_org uuid;
+create or replace function public.hash_code(p_code text)
+returns text language sql stable set search_path = public, pg_temp as $$
+  select encode(sha256(convert_to(public.normalize_code(p_code), 'UTF8')), 'hex');
+$$;
+
+-- Operator only (SQL editor / service role): store the owner's setup code and make it usable again.
+create or replace function public.set_setup_code(p_code text)
+returns text language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if public.accept_invitations_for(new.id, new.email) = 0
-     and not exists (select 1 from public.organizations) then
-    insert into public.organizations (name, created_by) values ('Kos Saya', new.id) returning id into new_org;
-    insert into public.organization_members (org_id, user_id, email, role) values (new_org, new.id, new.email, 'owner');
+  if char_length(public.normalize_code(p_code)) < 8 then
+    raise exception 'Kode pemilik minimal 8 huruf/angka.';
   end if;
-  return new;
+  insert into public.app_settings (id, setup_code_hash, setup_code_used_at)
+  values (1, public.hash_code(p_code), null)
+  on conflict (id) do update set setup_code_hash = excluded.setup_code_hash, setup_code_used_at = null;
+  if exists (select 1 from public.organizations) then
+    return 'Kode disimpan, tetapi organisasi sudah ada: kode pemilik hanya berlaku selama belum ada organisasi.';
+  end if;
+  return 'Kode pemilik disimpan. Berlaku sekali, untuk akun pertama yang memasukkannya.';
 end $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
-
--- Called by the app after login. Resolves the organisation server-side (never trusts the client):
--- existing membership (owner first, then oldest) -> pending invitations for this email ->
--- first-ever account creates the organisation -> otherwise a clear error.
+-- Called by the app after login: the existing membership (owner first, then oldest). Never creates
+-- anything; SQLSTATE WB001 tells the app to show the "enter a code" screen.
 create or replace function public.ensure_membership()
-returns uuid language plpgsql security definer set search_path = public as $$
+returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   org uuid;
   me uuid := auth.uid();
-  my_email text;
 begin
   if me is null then raise exception 'Belum masuk.'; end if;
   select org_id into org from public.organization_members
    where user_id = me order by (role = 'owner') desc, created_at asc limit 1;
-  if org is not null then return org; end if;
-
-  select email into my_email from auth.users where id = me;
-  if public.accept_invitations_for(me, my_email) > 0 then
-    select org_id into org from public.organization_members where user_id = me order by created_at asc limit 1;
-    return org;
+  if org is null then
+    raise exception using errcode = 'WB001', message = 'Akun ini belum menjadi anggota. Masukkan kode dari pemilik kos.';
   end if;
-
-  if not exists (select 1 from public.organizations) then
-    insert into public.organizations (name, created_by) values ('Kos Saya', me) returning id into org;
-    insert into public.organization_members (org_id, user_id, email, role) values (org, me, my_email, 'owner');
-    return org;
-  end if;
-
-  raise exception 'Akun ini belum menjadi anggota kos mana pun. Minta pemilik kos mengundang email Anda di Pengaturan > Anggota.';
+  return org;
 end $$;
 
--- Invite by email (admin only). Never adds an existing account silently: the invited person
--- joins when they sign in (ensure_membership) or sign up (handle_new_user) with that email.
-create or replace function public.add_member_by_email(p_org_id uuid, p_email text, p_role text)
-returns text language plpgsql security definer set search_path = public as $$
+-- Join with an invitation code, or (while no organisation exists) the owner setup code.
+-- Returns the organisation id, or null for a wrong/expired/used code.
+create or replace function public.join_with_code(p_code text)
+returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  normalized text := lower(trim(p_email));
+  me uuid := auth.uid();
+  h text;
+  inv record;
+  new_org uuid;
+  added int;
 begin
-  if not public.is_org_admin(p_org_id) then
-    raise exception 'Hanya pemilik/admin yang dapat menambah anggota.';
-  end if;
-  if p_role not in ('admin', 'staff') then
-    raise exception 'Peran tidak valid.';
-  end if;
-  if normalized !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
-    raise exception 'Format email tidak valid.';
-  end if;
-  if exists (
-    select 1 from public.organization_members m
-    where m.org_id = p_org_id and lower(coalesce(m.email, '')) = normalized
-  ) then
-    return 'already_member';
+  if me is null then raise exception 'Belum masuk.'; end if;
+  -- one attempt per account at a time, so parallel requests cannot get past the limit
+  perform pg_advisory_xact_lock(hashtextextended('join_with_code:' || me::text, 0));
+  delete from public.join_attempts where user_id = me and attempted_at < now() - interval '1 day';
+  if (select count(*) from public.join_attempts
+      where user_id = me and attempted_at > now() - interval '1 hour') >= 10 then
+    raise exception 'Terlalu banyak percobaan. Coba lagi dalam 1 jam.';
   end if;
 
-  insert into public.invitations (org_id, email, role, invited_by)
-  values (p_org_id, normalized, p_role, auth.uid())
-  on conflict (org_id, lower(email)) where accepted_at is null do update set role = excluded.role;
-  return 'invited';
+  if char_length(public.normalize_code(p_code)) >= 8 then
+    h := public.hash_code(p_code);
+
+    -- the row lock makes a code usable once, even when two people enter it at the same moment
+    select i.id, i.org_id, i.role, i.invited_by into inv
+      from public.invitation_codes c
+      join public.invitations i on i.id = c.invitation_id
+     where c.code_hash = h and i.accepted_at is null and i.expires_at > now()
+       for update of i;
+    -- a code only works while whoever made it may still invite (checked after the lock, so a
+    -- removal or demotion committed meanwhile counts)
+    if found and exists (select 1 from public.organization_members m
+                          where m.org_id = inv.org_id and m.user_id = inv.invited_by and m.role in ('owner', 'admin')) then
+      insert into public.organization_members (org_id, user_id, email, role)
+      values (inv.org_id, me, (select u.email from auth.users u where u.id = me), inv.role)
+      on conflict (org_id, user_id) do nothing;
+      get diagnostics added = row_count;
+      -- already a member: leave the code for the person it was made for
+      if added > 0 then
+        update public.invitations set accepted_at = now(), accepted_by = me where id = inv.id;
+      end if;
+      return inv.org_id;
+    end if;
+
+    -- owner setup code; the lock serialises two people entering it at the same moment
+    perform 1 from public.app_settings s
+     where s.id = 1 and s.setup_code_hash = h and s.setup_code_used_at is null
+       for update;
+    if found and not exists (select 1 from public.organizations) then
+      insert into public.organizations (name, created_by) values ('Kos Saya', me) returning id into new_org;
+      insert into public.organization_members (org_id, user_id, email, role)
+      values (new_org, me, (select u.email from auth.users u where u.id = me), 'owner');
+      update public.app_settings set setup_code_used_at = now() where id = 1;
+      return new_org;
+    end if;
+  end if;
+
+  -- an exception would roll this record back, so a failure returns null instead
+  insert into public.join_attempts (user_id) values (me);
+  return null;
+end $$;
+
+-- Admin only: a one-time code (8 characters, valid 7 days) for a new admin/staff member. It works
+-- only while its maker is still an owner/admin. The plain code is returned once; only its hash is stored.
+create or replace function public.create_invitation(p_org_id uuid, p_role text, p_label text)
+returns table (code text, expires_at timestamptz)
+language plpgsql security definer set search_path = public, pg_temp as $$
+#variable_conflict use_column
+declare
+  alphabet constant text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  clean_label text := nullif(btrim(p_label, E' \t\r\n'), '');
+  new_code text;
+  inv_id uuid;
+  inv_expires timestamptz;
+  rnd bytea;
+  b int;
+begin
+  if not public.is_org_admin(p_org_id) then
+    raise exception 'Hanya pemilik/admin yang dapat membuat kode undangan.';
+  end if;
+  if p_role is null or p_role not in ('admin', 'staff') then
+    raise exception 'Peran tidak valid.';
+  end if;
+  if char_length(clean_label) > 60 then
+    raise exception 'Keterangan maksimal 60 karakter.';
+  end if;
+  -- serialise per organisation so the limit holds under concurrent calls
+  perform 1 from public.organizations o where o.id = p_org_id for no key update;
+  if (select count(*) from public.invitations i
+      where i.org_id = p_org_id and i.accepted_at is null and i.expires_at > now()) >= 20 then
+    raise exception 'Sudah ada 20 kode undangan aktif. Hapus kode yang tidak dipakai dulu.';
+  end if;
+
+  insert into public.invitations as i (org_id, label, role, invited_by)
+  values (p_org_id, clean_label, p_role, auth.uid())
+  returning i.id, i.expires_at into inv_id, inv_expires;
+
+  loop
+    new_code := '';
+    while char_length(new_code) < 8 loop
+      rnd := uuid_send(gen_random_uuid());
+      for k in 0..15 loop
+        b := get_byte(rnd, k);
+        -- bytes 6 and 8 hold the UUID version/variant bits; values >= 248 would bias the modulo
+        continue when k in (6, 8) or b >= 248;
+        new_code := new_code || substr(alphabet, 1 + b % 31, 1);
+        exit when char_length(new_code) = 8;
+      end loop;
+    end loop;
+    begin
+      insert into public.invitation_codes (invitation_id, code_hash) values (inv_id, public.hash_code(new_code));
+      exit;
+    exception when unique_violation then
+      null; -- that code is already in use: draw another
+    end;
+  end loop;
+
+  return query select new_code, inv_expires;
+end $$;
+
+-- Owner only. The organisation always keeps at least one owner.
+create or replace function public.set_member_role(p_org_id uuid, p_user_id uuid, p_role text)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  target_role text;
+begin
+  -- serialise membership changes per organisation (two owners demoting each other at once)
+  perform 1 from public.organizations where id = p_org_id for no key update;
+  if not public.is_org_owner(p_org_id) then
+    raise exception 'Hanya pemilik yang dapat mengubah peran anggota.';
+  end if;
+  if p_role is null or p_role not in ('owner', 'admin', 'staff') then
+    raise exception 'Peran tidak valid.';
+  end if;
+  select role into target_role from public.organization_members where org_id = p_org_id and user_id = p_user_id;
+  if target_role is null then
+    raise exception 'Anggota tidak ditemukan.';
+  end if;
+  if target_role = 'owner' and p_role <> 'owner'
+     and (select count(*) from public.organization_members where org_id = p_org_id and role = 'owner') <= 1 then
+    raise exception 'Tidak dapat mengubah peran pemilik terakhir.';
+  end if;
+  update public.organization_members set role = p_role
+   where org_id = p_org_id and user_id = p_user_id and role <> p_role;
+  -- staff cannot invite: codes they made earlier stop working
+  if p_role = 'staff' then
+    update public.invitations set expires_at = now()
+     where org_id = p_org_id and invited_by = p_user_id and accepted_at is null and expires_at > now();
+  end if;
 end $$;
 
 create or replace function public.remove_member(p_org_id uuid, p_user_id uuid)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   owners int;
   target_role text;
 begin
+  perform 1 from public.organizations where id = p_org_id for no key update;
   if not public.is_org_admin(p_org_id) then
     raise exception 'Hanya pemilik/admin yang dapat menghapus anggota.';
   end if;
@@ -203,8 +361,17 @@ begin
   elsif target_role = 'admin' and not public.is_org_owner(p_org_id) then
     raise exception 'Hanya pemilik yang dapat menghapus admin.';
   end if;
+  -- codes the person made stop working too
+  update public.invitations set expires_at = now()
+   where org_id = p_org_id and invited_by = p_user_id and accepted_at is null and expires_at > now();
   delete from public.organization_members where org_id = p_org_id and user_id = p_user_id;
 end $$;
+
+-- v0.2 joined people by email on signup; membership now only comes from codes.
+drop trigger if exists on_auth_user_created on auth.users;
+drop function if exists public.handle_new_user();
+drop function if exists public.accept_invitations_for(uuid, text);
+drop function if exists public.add_member_by_email(uuid, text, text);
 
 -- ---------- business tables ----------
 -- Every table has unique (org_id, id) so children can reference parents with a composite FK.
@@ -274,7 +441,7 @@ create table if not exists public.tenants (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (org_id, id),
-  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null
+  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null (property_id)
 );
 
 create table if not exists public.leases (
@@ -378,9 +545,33 @@ create table if not exists public.expenses (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (category not in ('deposit_refund', 'rent_refund') or lease_id is not null),
-  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null,
+  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null (property_id),
   foreign key (org_id, lease_id) references public.leases (org_id, id) on delete restrict
 );
+
+-- Deleting a property clears only property_id on its tenants and expenses (v0.2 cleared org_id too,
+-- which failed). Replace older constraints in place.
+do $$
+declare
+  t text;
+  c record;
+begin
+  foreach t in array array['tenants', 'expenses'] loop
+    for c in
+      select con.conname from pg_constraint con
+       where con.conrelid = ('public.' || t)::regclass and con.contype = 'f'
+         and con.confrelid = 'public.properties'::regclass
+         and pg_get_constraintdef(con.oid) not like '%ON DELETE SET NULL (property_id)'
+    loop
+      execute format('alter table public.%I drop constraint %I', t, c.conname);
+    end loop;
+    if not exists (select 1 from pg_constraint con
+                    where con.conrelid = ('public.' || t)::regclass and con.contype = 'f'
+                      and con.confrelid = 'public.properties'::regclass) then
+      execute format('alter table public.%I add foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null (property_id)', t);
+    end if;
+  end loop;
+end $$;
 
 -- indexes
 create index if not exists properties_org_idx on public.properties (org_id);
@@ -415,12 +606,12 @@ end $$;
 -- make the database the source of truth online, so staff never need UPDATE on invoices to pay.
 
 create or replace function public.invoice_status_for(p_total bigint, p_paid bigint)
-returns text language sql immutable as $$
+returns text language sql immutable set search_path = public, pg_temp as $$
   select case when p_paid >= p_total then 'paid' when p_paid > 0 then 'partial' else 'unpaid' end;
 $$;
 
 create or replace function public.recalc_invoice_status(p_invoice uuid)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   inv record;
   paid bigint;
@@ -428,8 +619,8 @@ begin
   if p_invoice is null then return; end if;
   select id, org_id, total_amount, status into inv from public.invoices where id = p_invoice;
   if not found then return; end if;
-  -- callable through RPC too, so guard it
-  if not public.is_org_member(inv.org_id) then
+  -- callable through RPC too, so guard it (auth.uid() is null only for the operator)
+  if auth.uid() is not null and not public.is_org_member(inv.org_id) then
     raise exception 'Tidak memiliki akses.';
   end if;
   if inv.status = 'void' then return; end if;
@@ -440,7 +631,7 @@ begin
 end $$;
 
 create or replace function public.payments_recalc_trigger()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if tg_op = 'DELETE' then
     perform public.recalc_invoice_status(old.invoice_id);
@@ -459,10 +650,14 @@ create trigger payments_recalc
   for each row execute function public.payments_recalc_trigger();
 
 create or replace function public.invoices_recalc_trigger()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 declare paid bigint;
 begin
-  if new.status = 'void' then return new; end if;
+  -- voiding is an admin edit; an invoice inserted as void by anyone else is treated as a normal one
+  if new.status = 'void'
+     and (tg_op = 'UPDATE' or auth.uid() is null or public.is_org_admin(new.org_id)) then
+    return new;
+  end if;
   select coalesce(sum(amount), 0) into paid from public.payments where invoice_id = new.id and kind = 'rent';
   if tg_op = 'UPDATE' and new.total_amount < paid then
     raise exception 'Total tagihan tidak boleh lebih kecil dari jumlah yang sudah dibayar.';
@@ -478,7 +673,7 @@ create trigger invoices_recalc
 
 -- Refuse to void an invoice that still has rent payments (move/delete them first).
 create or replace function public.invoices_void_guard()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if new.status = 'void' and old.status <> 'void'
      and exists (select 1 from public.payments where invoice_id = new.id and kind = 'rent') then
@@ -492,35 +687,143 @@ create trigger invoices_void_guard
   before update of status on public.invoices
   for each row execute function public.invoices_void_guard();
 
+-- ---------- staff limits ----------
+-- Row-level rules are in the policies below; these triggers guard single columns. auth.uid() is null
+-- for the operator (SQL editor, service role), who is not limited.
+
+create or replace function public.rooms_price_guard()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if auth.uid() is not null
+     and (new.price_daily is distinct from old.price_daily
+       or new.price_weekly is distinct from old.price_weekly
+       or new.price_monthly is distinct from old.price_monthly)
+     and not public.is_org_admin(old.org_id) then
+    raise exception 'Hanya pemilik/admin yang dapat mengubah harga kamar.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists rooms_price_guard on public.rooms;
+create trigger rooms_price_guard
+  before update on public.rooms
+  for each row execute function public.rooms_price_guard();
+
+create or replace function public.leases_terms_guard()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if auth.uid() is not null
+     and (new.price_per_period is distinct from old.price_per_period
+       or new.deposit_amount is distinct from old.deposit_amount
+       or new.period_type is distinct from old.period_type)
+     and not public.is_org_admin(old.org_id) then
+    raise exception 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists leases_terms_guard on public.leases;
+create trigger leases_terms_guard
+  before update on public.leases
+  for each row execute function public.leases_terms_guard();
+
+-- created_by is always the signed-in user who inserted the row, and never changes afterwards.
+create or replace function public.set_created_by()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if auth.uid() is not null then
+    if tg_op = 'INSERT' then
+      new.created_by := auth.uid();
+    else
+      new.created_by := old.created_by;
+    end if;
+  end if;
+  return new;
+end $$;
+
+-- A row never moves to another organisation (someone in two organisations could otherwise carry
+-- tenants' data across).
+create or replace function public.keep_org_id()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if auth.uid() is not null and new.org_id is distinct from old.org_id then
+    raise exception 'Data tidak dapat dipindah ke organisasi lain.';
+  end if;
+  return new;
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['organizations', 'payments', 'expenses'] loop
+    execute format('drop trigger if exists set_created_by on public.%I', t);
+    execute format('create trigger set_created_by before insert or update of created_by on public.%I for each row execute function public.set_created_by()', t);
+  end loop;
+  foreach t in array array['properties', 'rooms', 'addon_catalog', 'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] loop
+    execute format('drop trigger if exists keep_org_id on public.%I', t);
+    execute format('create trigger keep_org_id before update of org_id on public.%I for each row execute function public.keep_org_id()', t);
+  end loop;
+end $$;
+
+-- ---------- audit log ----------
+-- Append-only history written by triggers. Owners/admins can read it; nobody can change it via the API.
+
+create table if not exists public.audit_log (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  table_name text not null,
+  row_id uuid,
+  action text not null check (action in ('insert', 'update', 'delete')),
+  changed_by uuid default auth.uid(),
+  changed_at timestamptz not null default now(),
+  old_data jsonb,
+  new_data jsonb
+);
+create index if not exists audit_log_org_changed_idx on public.audit_log (org_id, changed_at desc);
+
+create or replace function public.audit_row_change()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  old_row jsonb := case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) end;
+  new_row jsonb := case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) end;
+  any_row jsonb := coalesce(new_row, old_row);
+  org uuid := (case when tg_table_name = 'organizations' then any_row ->> 'id' else any_row ->> 'org_id' end)::uuid;
+begin
+  if tg_op = 'UPDATE' and old_row = new_row then return null; end if;
+  -- rows removed while an organisation is being deleted (operator only): its history goes with it
+  if not exists (select 1 from public.organizations where id = org) then return null; end if;
+  -- clock_timestamp keeps several changes made in one request in order
+  insert into public.audit_log (org_id, table_name, row_id, action, changed_by, changed_at, old_data, new_data)
+  values (org, tg_table_name, (any_row ->> 'id')::uuid, lower(tg_op), auth.uid(), clock_timestamp(), old_row, new_row);
+  return null;
+end $$;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['organizations', 'organization_members', 'invitations', 'properties', 'rooms', 'addon_catalog',
+                           'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] loop
+    execute format('drop trigger if exists audit_row_change on public.%I', t);
+    execute format('create trigger audit_row_change after insert or update or delete on public.%I for each row execute function public.audit_row_change()', t);
+  end loop;
+end $$;
+
 -- ---------- storage cleanup ----------
-
-create or replace function public.delete_tenant_ktp()
-returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  if old.ktp_image_path is not null then
-    delete from storage.objects where bucket_id = 'ktp' and name = old.ktp_image_path;
-  end if;
-  return old;
-end $$;
+-- Supabase refuses direct deletes from storage.objects; the app deletes the row first, then the file
+-- through the Storage API.
 drop trigger if exists tenants_delete_ktp on public.tenants;
-create trigger tenants_delete_ktp after delete on public.tenants for each row execute function public.delete_tenant_ktp();
-
-create or replace function public.delete_expense_receipt()
-returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  if old.receipt_path is not null then
-    delete from storage.objects where bucket_id = 'receipts' and name = old.receipt_path;
-  end if;
-  return old;
-end $$;
 drop trigger if exists expenses_delete_receipt on public.expenses;
-create trigger expenses_delete_receipt after delete on public.expenses for each row execute function public.delete_expense_receipt();
+drop function if exists public.delete_tenant_ktp();
+drop function if exists public.delete_expense_receipt();
 
 -- ---------- Row Level Security ----------
 
 alter table public.organizations enable row level security;
 alter table public.organization_members enable row level security;
 alter table public.invitations enable row level security;
+alter table public.invitation_codes enable row level security;
+alter table public.app_settings enable row level security;
+alter table public.join_attempts enable row level security;
 alter table public.properties enable row level security;
 alter table public.rooms enable row level security;
 alter table public.addon_catalog enable row level security;
@@ -530,8 +833,10 @@ alter table public.lease_addons enable row level security;
 alter table public.invoices enable row level security;
 alter table public.payments enable row level security;
 alter table public.expenses enable row level security;
+alter table public.audit_log enable row level security;
+-- invitation_codes, app_settings, join_attempts: no policies (and no grants) on purpose
 
--- organizations: created only by ensure_membership()/handle_new_user() (security definer)
+-- organizations: created only by join_with_code() (security definer)
 drop policy if exists org_select on public.organizations;
 create policy org_select on public.organizations for select using (public.is_org_member(id));
 drop policy if exists org_insert on public.organizations;
@@ -539,57 +844,61 @@ drop policy if exists org_update on public.organizations;
 create policy org_update on public.organizations for update using (public.is_org_admin(id)) with check (public.is_org_admin(id));
 drop policy if exists org_delete on public.organizations;
 
--- organization_members: membership changes go through the RPCs; owners may edit roles directly
+-- organization_members: read-only; changes go through join_with_code / set_member_role / remove_member
 drop policy if exists members_select on public.organization_members;
 create policy members_select on public.organization_members for select using (public.is_org_member(org_id));
 drop policy if exists members_insert on public.organization_members;
 drop policy if exists members_update on public.organization_members;
-create policy members_update on public.organization_members for update
-  using (public.is_org_owner(org_id)) with check (public.is_org_owner(org_id));
 drop policy if exists members_delete on public.organization_members;
 
--- invitations: admins manage; the invitee cannot see them (joins happen server-side)
+-- invitations: admins see and delete them; they are created by create_invitation()
 drop policy if exists invitations_all on public.invitations;
+drop policy if exists invitations_select on public.invitations;
 create policy invitations_select on public.invitations for select using (public.is_org_admin(org_id));
+drop policy if exists invitations_delete on public.invitations;
 create policy invitations_delete on public.invitations for delete using (public.is_org_admin(org_id));
+
+-- audit_log: owners/admins read; no insert/update/delete policy for anyone
+drop policy if exists audit_log_select on public.audit_log;
+create policy audit_log_select on public.audit_log for select using (public.is_org_admin(org_id));
 
 -- business tables
 do $$
-declare t text;
+declare
+  t text;
+  op text;
 begin
   foreach t in array array['properties', 'rooms', 'addon_catalog', 'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] loop
-    execute format('drop policy if exists %I_select on public.%I', t, t);
-    execute format('create policy %I_select on public.%I for select using (public.is_org_member(org_id))', t, t);
-    execute format('drop policy if exists %I_insert on public.%I', t, t);
-    execute format('create policy %I_insert on public.%I for insert with check (public.is_org_member(org_id))', t, t);
-    execute format('drop policy if exists %I_update on public.%I', t, t);
-    execute format('drop policy if exists %I_delete on public.%I', t, t);
+    foreach op in array array['select', 'insert', 'update', 'delete'] loop
+      execute format('drop policy if exists %I on public.%I', t || '_' || op, t);
+    end loop;
+    execute format('create policy %I on public.%I for select using (public.is_org_member(org_id))', t || '_select', t);
   end loop;
 
-  -- master data and leases: every member may edit
-  foreach t in array array['properties', 'rooms', 'addon_catalog', 'tenants', 'leases', 'lease_addons'] loop
-    execute format('create policy %I_update on public.%I for update using (public.is_org_member(org_id)) with check (public.is_org_member(org_id))', t, t);
+  -- insert: every member, except master data that carries prices or the bank account
+  foreach t in array array['tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] loop
+    execute format('create policy %I on public.%I for insert with check (public.is_org_member(org_id))', t || '_insert', t);
   end loop;
-  -- master data: members may delete (DB restricts rows that are referenced)
-  foreach t in array array['rooms', 'addon_catalog', 'tenants', 'lease_addons'] loop
-    execute format('create policy %I_delete on public.%I for delete using (public.is_org_member(org_id))', t, t);
+  foreach t in array array['properties', 'rooms', 'addon_catalog'] loop
+    execute format('create policy %I on public.%I for insert with check (public.is_org_admin(org_id))', t || '_insert', t);
   end loop;
-  -- properties, leases, invoices, payments, expenses: delete is admin-only
-  foreach t in array array['properties', 'leases', 'invoices', 'payments', 'expenses'] loop
-    execute format('create policy %I_delete on public.%I for delete using (public.is_org_admin(org_id))', t, t);
+
+  -- update: staff may edit rooms and leases (price columns guarded by triggers), tenants and add-ons
+  foreach t in array array['rooms', 'tenants', 'leases', 'lease_addons'] loop
+    execute format('create policy %I on public.%I for update using (public.is_org_member(org_id)) with check (public.is_org_member(org_id))', t || '_update', t);
+  end loop;
+  foreach t in array array['properties', 'addon_catalog', 'invoices', 'payments', 'expenses'] loop
+    execute format('create policy %I on public.%I for update using (public.is_org_admin(org_id)) with check (public.is_org_admin(org_id))', t || '_update', t);
+  end loop;
+
+  -- delete: staff may delete tenants and lease add-ons (the DB restricts rows still referenced)
+  foreach t in array array['tenants', 'lease_addons'] loop
+    execute format('create policy %I on public.%I for delete using (public.is_org_member(org_id))', t || '_delete', t);
+  end loop;
+  foreach t in array array['properties', 'rooms', 'addon_catalog', 'leases', 'invoices', 'payments', 'expenses'] loop
+    execute format('create policy %I on public.%I for delete using (public.is_org_admin(org_id))', t || '_delete', t);
   end loop;
 end $$;
-
--- invoices: editing (amounts, void) is admin-only; status is maintained by triggers
-create policy invoices_update on public.invoices for update
-  using (public.is_org_admin(org_id)) with check (public.is_org_admin(org_id));
--- payments / expenses: admins, or the member who recorded the row
-create policy payments_update on public.payments for update
-  using (public.is_org_admin(org_id) or created_by = auth.uid())
-  with check (public.is_org_member(org_id));
-create policy expenses_update on public.expenses for update
-  using (public.is_org_admin(org_id) or created_by = auth.uid())
-  with check (public.is_org_member(org_id));
 
 -- ---------- Storage (KTP photos & receipts) ----------
 -- Object paths are "<org_id>/<file>"; access is granted to members of that org.
@@ -601,7 +910,7 @@ values
 on conflict (id) do nothing;
 
 create or replace function public.path_org_id(p_name text)
-returns uuid language plpgsql immutable as $$
+returns uuid language plpgsql immutable set search_path = public, pg_temp as $$
 begin
   return (storage.foldername(p_name))[1]::uuid;
 exception when others then
@@ -622,33 +931,39 @@ create policy storage_org_delete on storage.objects for delete
   using (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)));
 
 -- ---------- grants: least privilege ----------
--- anon (not signed in) can do nothing in the public schema; authenticated users get DML under RLS
--- and may call the RPCs. Trigger functions are not callable through the API.
+-- Supabase grants ALL (including TRUNCATE, which ignores RLS) on new tables and EXECUTE on new
+-- functions to anon and authenticated. Take everything back, then grant exactly what the app uses:
+-- anon gets nothing; authenticated gets the table rights its policies need and the RPCs.
+-- Trigger functions need no grant (EXECUTE is not checked when a trigger fires).
 
-revoke all on all tables in schema public from anon;
-revoke all on all functions in schema public from anon;
-revoke all on all tables in schema public from authenticated;
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+revoke all on all functions in schema public from public, anon, authenticated;
 grant usage on schema public to authenticated;
-grant select, insert, update, delete on all tables in schema public to authenticated;
-revoke execute on all functions in schema public from public, authenticated;
+grant select, update on public.organizations to authenticated;
+grant select on public.organization_members to authenticated;
+grant select, delete on public.invitations to authenticated;
+grant select, insert, update, delete on public.properties, public.rooms, public.addon_catalog, public.tenants,
+  public.leases, public.lease_addons, public.invoices, public.payments, public.expenses to authenticated;
+grant select on public.audit_log to authenticated;
+-- RPCs
 grant execute on function public.ensure_membership() to authenticated;
-grant execute on function public.add_member_by_email(uuid, text, text) to authenticated;
+grant execute on function public.join_with_code(text) to authenticated;
+grant execute on function public.create_invitation(uuid, text, text) to authenticated;
+grant execute on function public.set_member_role(uuid, uuid, text) to authenticated;
 grant execute on function public.remove_member(uuid, uuid) to authenticated;
 grant execute on function public.recalc_invoice_status(uuid) to authenticated;
--- policy helpers are evaluated as the calling role and must stay executable
+-- policy and trigger helpers are evaluated as the calling role and must stay executable
 grant execute on function public.is_org_member(uuid) to authenticated;
 grant execute on function public.is_org_admin(uuid) to authenticated;
 grant execute on function public.is_org_owner(uuid) to authenticated;
 grant execute on function public.path_org_id(text) to authenticated;
 grant execute on function public.invoice_status_for(bigint, bigint) to authenticated;
--- trigger functions: the role performing the DML fires them
-grant execute on function public.handle_new_user() to supabase_auth_admin;
-grant execute on function public.accept_invitations_for(uuid, text) to supabase_auth_admin;
-grant execute on function public.set_updated_at() to authenticated;
-grant execute on function public.payments_recalc_trigger() to authenticated;
-grant execute on function public.invoices_recalc_trigger() to authenticated;
-grant execute on function public.invoices_void_guard() to authenticated;
-grant execute on function public.delete_tenant_ktp() to authenticated;
-grant execute on function public.delete_expense_receipt() to authenticated;
-alter default privileges in schema public revoke all on tables from anon;
-alter default privileges in schema public revoke execute on functions from anon, public;
+-- operator only
+grant execute on function public.set_setup_code(text) to service_role;
+-- objects added to public later get no access until granted explicitly
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;
+alter default privileges in schema public revoke execute on functions from public, anon, authenticated;
+
+commit;

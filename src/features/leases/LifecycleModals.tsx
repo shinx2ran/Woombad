@@ -11,16 +11,21 @@ import {
   openInvoicesSorted,
   roomAvailability,
   roomPriceFor,
+  unrecordedRentRefunds,
   validateSettlement,
   ROOM_AVAILABILITY_LABEL,
   type DepositSettlement,
+  type RentRefund,
 } from './leaseUtils'
 import { DepositSettlementForm, PriceField, Row } from './components'
 import type { LeaseActions, PartialDecision } from './useLeaseActions'
 
 const emptySettlement = (held: number): DepositSettlement => ({ refund: Math.max(0, held), rent: 0, damage: 0, damageNotes: '' })
 
-/** Per partially-paid invoice: refund the DP (expense rent_refund + void) or forfeit it (remaining -> discount, paid). SPEC 2b.4. */
+/**
+ * Per partially-paid invoice: refund the DP (invoice closed at the paid amount + expense rent_refund) or forfeit it
+ * (remaining -> discount, paid). Either way the invoice is closed, never voided (it has payments). SPEC 2b.4.
+ */
 function PartialDecisionList({
   invoices,
   payments,
@@ -44,7 +49,7 @@ function PartialDecisionList({
             <label className="flex items-start gap-2">
               <input type="radio" name={`dec-${inv.id}`} className="mt-0.5" checked={decisions[inv.id] === 'refund'} onChange={() => onChange({ ...decisions, [inv.id]: 'refund' })} />
               <span>
-                <strong>Kembalikan {formatRupiah(paid)}</strong> ke penyewa (pengeluaran 'Pengembalian Sewa'), tagihan dibatalkan.
+                <strong>Kembalikan {formatRupiah(paid)}</strong> ke penyewa (pengeluaran 'Pengembalian Sewa'), tagihan ditutup.
               </span>
             </label>
             <label className="flex items-start gap-2">
@@ -57,6 +62,17 @@ function PartialDecisionList({
         )
       })}
     </>
+  )
+}
+
+/** Refunds an interrupted checkout/cancel already closed the invoice for but did not record; recorded on submit. */
+function UnrecordedRefundsNote({ refunds }: { refunds: RentRefund[] }) {
+  if (refunds.length === 0) return null
+  return (
+    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      Pengembalian DP yang belum tercatat akan dicatat sebagai pengeluaran 'Pengembalian Sewa':{' '}
+      {refunds.map((r) => `${r.invoice.invoice_number} (${formatRupiah(r.amount)})`).join(', ')}.
+    </p>
   )
 }
 
@@ -93,6 +109,8 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
   }, [open])
 
   const future = useMemo(() => futureInvoicesAtCheckout(lease.id, invoices, payments, date), [lease.id, invoices, payments, date])
+  const unrecorded = useMemo(() => unrecordedRentRefunds(lease.id, invoices, payments, expenses), [lease.id, invoices, payments, expenses])
+  const paidAhead = future.paid.filter((i) => !unrecorded.some((r) => r.invoice.id === i.id))
   const open_ = useMemo(() => {
     const closedIds = new Set([...future.toVoid, ...future.partial].map((i) => i.id))
     return openInvoicesSorted(lease.id, invoices, payments).filter((i) => !closedIds.has(i.id))
@@ -101,9 +119,11 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
   const settlementError = balance.held > 0 ? validateSettlement(settlement, balance.held, rentCapacity) : null
   const dateError = !date ? 'Tanggal checkout wajib diisi.' : date < lease.start_date ? 'Tanggal checkout tidak boleh sebelum tanggal mulai sewa.' : null
   const missing = future.partial.some((i) => !decisions[i.id])
+  // Invoices after the checkout date must be voided or settled, which only owners/admins may do (SPEC 6.2).
+  const needsAdmin = !actions.canEditInvoices && (future.toVoid.length > 0 || future.partial.length > 0)
 
   const submit = async () => {
-    if (dateError || settlementError || missing) return
+    if (dateError || settlementError || missing || needsAdmin) return
     setSaving(true)
     try {
       await actions.checkout({
@@ -133,7 +153,7 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
           <Button variant="ghost" onClick={onClose}>
             Batal
           </Button>
-          <Button onClick={submit} loading={saving} disabled={Boolean(dateError || settlementError) || missing}>
+          <Button onClick={submit} loading={saving} disabled={Boolean(dateError || settlementError) || missing || needsAdmin}>
             Selesaikan checkout
           </Button>
         </>
@@ -147,6 +167,12 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
           {future.partial.length > 0 && <Row label="Tagihan DP setelah checkout → perlu keputusan" value={future.partial.length} />}
           <Row label="Sisa tagihan s/d checkout tetap piutang" value={formatRupiah(rentCapacity)} strong />
         </div>
+        {needsAdmin && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="checkout-needs-admin">
+            Ada tagihan untuk periode setelah tanggal checkout yang harus dibatalkan. Hanya pemilik/admin yang dapat membatalkan tagihan: minta
+            mereka melakukan checkout ini.
+          </p>
+        )}
         {future.toVoid.length > 0 && (
           <p className="text-xs text-slate-500">
             Dibatalkan: {future.toVoid.map((i) => `${i.invoice_number} (${formatDate(i.period_start)})`).join(', ')}.
@@ -157,13 +183,14 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
             Tagihan berikut sudah dibayar sebagian untuk periode <strong>setelah</strong> tanggal checkout. Pilih penyelesaiannya agar tidak ada piutang yang tersisa pada sewa yang sudah selesai.
           </p>
         )}
-        <PartialDecisionList invoices={future.partial} payments={payments} decisions={decisions} onChange={setDecisions} />
-        {future.paid.length > 0 && (
+        {!needsAdmin && <PartialDecisionList invoices={future.partial} payments={payments} decisions={decisions} onChange={setDecisions} />}
+        {paidAhead.length > 0 && (
           <p className="text-xs text-slate-500">
-            Sudah lunas untuk periode setelah checkout: {future.paid.map((i) => `${i.invoice_number} (${formatDate(i.period_start)} – ${formatDate(i.period_end)})`).join(', ')}. Bila uangnya
+            Sudah lunas untuk periode setelah checkout: {paidAhead.map((i) => `${i.invoice_number} (${formatDate(i.period_start)} – ${formatDate(i.period_end)})`).join(', ')}. Bila uangnya
             dikembalikan, catat sebagai pengeluaran 'Pengembalian Sewa' pada sewa ini.
           </p>
         )}
+        <UnrecordedRefundsNote refunds={unrecorded} />
         <DepositSettlementForm balance={balance} value={settlement} onChange={setSettlement} rentCapacity={rentCapacity} error={settlementError} />
       </div>
     </Modal>
@@ -189,6 +216,7 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
     const p = paidAmountFor(i.id, payments)
     return p > 0 && p < i.total_amount
   })
+  const unrecorded = useMemo(() => unrecordedRentRefunds(lease.id, invoices, payments, expenses), [lease.id, invoices, payments, expenses])
 
   useEffect(() => {
     if (!open) return
@@ -252,6 +280,7 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
           {date && <Row label="Sewa berakhir menjadi" value={formatDate(cancelledLeaseEndDate(lease, date))} />}
         </div>
         <PartialDecisionList invoices={partial} payments={payments} decisions={decisions} onChange={setDecisions} />
+        <UnrecordedRefundsNote refunds={unrecorded} />
         <DepositSettlementForm balance={balance} value={settlement} onChange={setSettlement} rentCapacity={0} error={settlementError} />
       </div>
     </Modal>
@@ -299,6 +328,8 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
 
   const pickRoom = (id: string) => {
     setRoomId(id)
+    // Staff keep the agreed price; changing it is admin-only (SPEC 6.2).
+    if (!actions.canEditLeaseTerms) return
     const r = rooms.find((x) => x.id === id)
     const p = roomPriceFor(r, lease.period_type)
     if (p != null) setPrice(p)
@@ -356,7 +387,12 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
           }))}
           hint={candidates.length === 0 ? 'Tidak ada kamar lain di kos ini.' : 'Hanya kamar kosong tanpa jadwal bentrok yang bisa dipilih.'}
         />
-        {target && (
+        {target && !actions.canEditLeaseTerms && (
+          <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+            Harga sewa tetap {formatRupiah(lease.price_per_period)} / {PERIOD_UNIT_LABEL[lease.period_type]}. Hanya pemilik/admin yang dapat mengubah harga sewa.
+          </p>
+        )}
+        {target && actions.canEditLeaseTerms && (
           <PriceField
             label={`Harga baru per ${PERIOD_UNIT_LABEL[lease.period_type]} (${PERIOD_TYPE_LABEL[lease.period_type]})`}
             value={price}

@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router'
 import { Button, Input } from '../../components/ui'
 import { useAuth } from '../../hooks/useAuth'
 import { AuthLayout } from './LoginPage'
+import { formatCodeInput } from './codeInput'
+import { errorMessage } from './networkError'
+import { readPendingCode } from './pendingCode'
 
 export function SignupPage() {
   const { auth } = useAuth()
@@ -13,6 +16,7 @@ export function SignupPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [needsConfirm, setNeedsConfirm] = useState(false)
+  const [pendingCode] = useState(() => formatCodeInput(readPendingCode()))
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -25,7 +29,7 @@ export function SignupPage() {
       if (session) navigate('/dashboard', { replace: true })
       else setNeedsConfirm(true)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal mendaftar.')
+      setError(errorMessage(err, 'Gagal mendaftar.'))
     } finally {
       setLoading(false)
     }
@@ -37,6 +41,16 @@ export function SignupPage() {
         <p className="text-sm text-slate-700">
           Kami mengirim tautan konfirmasi ke <strong>{email}</strong>. Klik tautan tersebut, lalu masuk.
         </p>
+        <p className="mt-3 text-sm text-slate-700">
+          {pendingCode ? (
+            <>
+              Setelah masuk, kode <strong className="font-mono">{pendingCode}</strong> dipakai otomatis. Jika diminta, ketik kode
+              itu.
+            </>
+          ) : (
+            'Setelah masuk, masukkan kode undangan, atau kode pemilik bila Anda pemilik yang baru memasang aplikasi.'
+          )}
+        </p>
         <Link to="/login" className="mt-4 inline-block text-sm font-medium text-brand-700 hover:underline">
           Ke halaman masuk
         </Link>
@@ -45,8 +59,19 @@ export function SignupPage() {
   }
 
   return (
-    <AuthLayout title="Buat akun" subtitle="Jika Anda diundang, gunakan email yang sama dengan undangan.">
+    <AuthLayout title="Buat akun">
       <form onSubmit={submit} className="space-y-4">
+        {pendingCode ? (
+          <p className="rounded-lg bg-brand-50 p-3 text-sm text-brand-900">
+            Kode <strong className="font-mono">{pendingCode}</strong> akan dipakai setelah akun dibuat.
+          </p>
+        ) : (
+          <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            Akun saja belum cukup untuk melihat data kos. Setelah akun dibuat, Anda diminta memasukkan kode:{' '}
+            <strong>kode undangan</strong> dari pesan WhatsApp yang Anda terima, atau <strong>kode pemilik</strong> bila Anda pemilik
+            yang baru memasang aplikasi.
+          </p>
+        )}
         <Input label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <Input
           label="Kata sandi"
