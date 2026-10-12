@@ -201,7 +201,9 @@ Layar Utama), tombol keluar, versi aplikasi.
 ### 5.3 Check-in cepat dengan KTP / Paspor
 - Modul bersama `src/features/scanner/` (dipindah dari `tenants`): `DocumentScanner` (kamera/galeri → OCR → deteksi
   otomatis **KTP** (NIK ditemukan) atau **Paspor** (MRZ ditemukan) → pratinjau hasil) dengan `onApply(prefill, image)`
-  di mana `prefill: TenantPrefill & { id_type, id_number?, nationality? }`.
+  di mana `prefill: ScanPrefill` (lihat `src/features/scanner/types.ts`). `/penyewa?new=1&scan=1` membuka form penyewa
+  dengan pemindai langsung terbuka (setara `/sewa/baru?scan=1`). Untuk paspor, lencana **nomor paspor terverifikasi**
+  (check digit nomor) adalah sinyal paling andal; check digit gabungan sering gagal karena OCR menghilangkan karakter `<`.
 - Domain `src/domain/passport.ts`: `parsePassportMrz(ocrText)` untuk MRZ TD3 (2 baris × 44 karakter): nama belakang,
   nama depan, nomor paspor, kewarganegaraan (alpha-3), tanggal lahir, jenis kelamin, kedaluwarsa, validasi check digit
   (toleran terhadap O/0, I/1, S/5 dari OCR). `passportToTenant(parsed)` → `TenantPrefill`-like dengan `id_type='passport'`.
