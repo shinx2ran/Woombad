@@ -188,12 +188,36 @@ Riwayat perubahan** (pemilik/admin) dan tidak bisa dihapus.
 
 | Kapan | Apa |
 |---|---|
-| Setiap minggu | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**, simpan di Google Drive atau laptop. Paket gratis Supabase tidak membuat cadangan otomatis. Foto tidak ikut dalam cadangan. |
+| Otomatis, setiap Minggu malam | GitHub Actions **Weekly encrypted backup** menyimpan salinan terenkripsi seluruh data (90 hari). Lihat [Cadangan otomatis](#cadangan-otomatis). |
+| Sebulan sekali | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**, simpan sendiri di Google Drive atau laptop. Aplikasi mengingatkan setelah 30 hari. Foto tidak ikut dalam cadangan. |
 | Otomatis, 3× sehari | GitHub Actions **Keep database awake** memanggil `keepalive()` (hanya membaca jam server, tidak mengubah data) agar proyek gratis tidak dijeda. Tidak perlu apa-apa. |
 | Bila GitHub mengirim email *"Keep database awake" failed* | Proyek kemungkinan dijeda. Buka dashboard Supabase → proyek Woombad → **Resume project**, tunggu beberapa menit. |
-| Bila GitHub mengirim email bahwa jadwal dimatikan | GitHub mematikan jadwal di repo publik setelah 60 hari tanpa commit. Buka repo → **Actions → Keep database awake → Enable workflow**. |
+| Bila GitHub mengirim email bahwa jadwal dimatikan | GitHub mematikan jadwal di repo publik setelah 60 hari tanpa commit. Buka repo → **Actions →** *Keep database awake* dan *Weekly encrypted backup* **→ Enable workflow**. |
+| Bila GitHub mengirim email *"Weekly encrypted backup" failed* | Biasanya proyek dijeda (lihat baris di atas) atau rahasia `BACKUP_DB_PASSWORD` belum diisi. |
 | Bila aplikasi tidak bisa memuat data | Aplikasi menampilkan penyebabnya. Bila proyek dijeda: dashboard Supabase → proyek Woombad → **Resume project**, tunggu beberapa menit. |
 | Lupa kata sandi | Lihat [di bawah](#lupa-kata-sandi). |
+
+### Cadangan otomatis
+
+Setiap Minggu pukul 21:07 WIB, GitHub Actions masuk ke database sebagai `woombad_backup`, sebuah akun yang
+**hanya** bisa menjalankan `export_backup()` (tidak bisa membaca tabel lain atau mengubah apa pun). Hasilnya dalam format
+yang sama dengan *Unduh cadangan lengkap*, dikompres, lalu **dienkripsi** dengan kunci publik `age` pemilik, dan
+disimpan sebagai *artifact* selama 90 hari (kira-kira 13 salinan terakhir). Repo ini publik, tetapi tanpa kunci rahasia
+pemilik berkas itu tidak bisa dibuka.
+
+| Siapa | Apa |
+|---|---|
+| Pemilik (sekali) | Simpan **kunci rahasia** `AGE-SECRET-KEY-1…` di dua tempat aman (mis. aplikasi catatan + kertas). Tanpa kunci ini cadangan otomatis tidak bisa dibuka. |
+| Pemilik (sekali) | Repo → **Settings → Secrets and variables → Actions → New repository secret**: nama `BACKUP_DB_PASSWORD`, isi kata sandi dari operator. |
+| Operator | Kata sandi akun cadangan bisa diganti kapan saja: `alter role woombad_backup password '…';` lalu perbarui rahasianya. |
+
+Memulihkan (operator): buka **Actions → Weekly encrypted backup →** run yang diinginkan → unduh artifact, lalu
+
+```
+age -d -i kunci-rahasia.txt woombad-cadangan-YYYY-MM-DD.json.gz.age | gunzip > cadangan.json
+```
+
+`cadangan.json` berisi satu cadangan per organisasi (`{ version, exportedAt, orgName, tables }`).
 
 ### Lupa kata sandi
 

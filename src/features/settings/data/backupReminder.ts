@@ -5,7 +5,8 @@ import { isSupabaseConfigured } from '../../../lib/supabase'
 // Per mode: a phone that ran Mode Demo keeps its localStorage when the same address switches to online mode.
 export const LAST_BACKUP_KEY = `woombad.lastBackupAt.${isSupabaseConfigured ? 'online' : 'demo'}`
 export const REMINDER_SNOOZE_KEY = 'woombad.backupReminderSnoozedAt'
-export const BACKUP_REMINDER_DAYS = 7
+// Online, an encrypted copy is also made every week (.github/workflows/backup.yml), so a monthly download is enough.
+export const BACKUP_REMINDER_DAYS = isSupabaseConfigured ? 30 : 7
 /** a dismissed banner comes back after this many days if there is still no backup */
 export const REMINDER_SNOOZE_DAYS = 3
 

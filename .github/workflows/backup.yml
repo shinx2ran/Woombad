@@ -1,0 +1,81 @@
+name: Weekly encrypted backup
+
+# Every Sunday night: export the whole database (public.export_backup(), the same format as
+# Pengaturan -> Data -> Unduh cadangan lengkap), compress it, encrypt it to the owner's age key and keep it
+# as a workflow artifact for 90 days. Only the holder of the private age key (kept by the owner, never on
+# GitHub) can open it, so the artifact is safe in a public repository.
+# It signs in as woombad_backup, a database login that can run export_backup() and nothing else.
+# Needs the repository secret BACKUP_DB_PASSWORD (README -> Cadangan otomatis).
+
+on:
+  schedule:
+    - cron: '7 14 * * 0' # Sunday 21:07 WIB
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PGUSER: woombad_backup.dttwvzsetibwwxbkecmy
+      PGPASSWORD: ${{ secrets.BACKUP_DB_PASSWORD }}
+      PGDATABASE: postgres
+      PGPORT: '5432'
+      PGSSLMODE: require
+      PGCONNECT_TIMEOUT: '15'
+      # public half of the owner's age key; the private half is never stored here
+      AGE_RECIPIENT: age1sqwpf2c3rnagjph30e6runrxuvlmaq793ws2mqjylsdt6skjtqnseecpfy
+    steps:
+      - name: Check the secret
+        run: |
+          if [ -z "$PGPASSWORD" ]; then
+            echo "::error::Repository secret BACKUP_DB_PASSWORD is missing (README -> Cadangan otomatis)."
+            exit 1
+          fi
+      - name: Install age and the PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq age postgresql-client > /dev/null
+      - name: Export, check and encrypt
+        id: export
+        run: |
+          set -euo pipefail
+          umask 077
+          ok=
+          # session-mode pooler (IPv4); try both Singapore clusters
+          for host in aws-1-ap-southeast-1.pooler.supabase.com aws-0-ap-southeast-1.pooler.supabase.com; do
+            if psql -h "$host" -X -At -v ON_ERROR_STOP=1 -c 'select public.export_backup()' > backup.json 2> psql.err; then
+              echo "Connected via $host"; ok=1; break
+            fi
+            echo "$host: $(head -c 300 psql.err)"
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::Could not reach the database. If the project is paused, open the Supabase dashboard and press Resume project."
+            exit 1
+          fi
+          # sanity check without printing any data: one file per organisation, row counts per table
+          python3 - <<'PY'
+          import json
+          files = json.load(open('backup.json'))
+          assert isinstance(files, list) and files, 'export is empty'
+          for f in files:
+              assert f['version'] == 1 and isinstance(f['tables'], dict), 'unexpected format'
+              counts = ', '.join(f'{t} {len(rows)}' for t, rows in sorted(f['tables'].items()))
+              print(f"{len(f['tables'])} tables: {counts}")
+          PY
+          name="woombad-cadangan-$(date -u +%Y-%m-%d)"
+          gzip -9 -c backup.json | age -r "$AGE_RECIPIENT" -o "$name.json.gz.age"
+          rm -f backup.json psql.err
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ls -l "$name.json.gz.age"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.export.outputs.name }}
+          path: ${{ steps.export.outputs.name }}.json.gz.age
+          retention-days: 90
+          if-no-files-found: error

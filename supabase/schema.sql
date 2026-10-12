@@ -938,6 +938,48 @@ returns timestamptz language sql stable set search_path = public, pg_temp as $$
   select now();
 $$;
 
+-- ---------- scheduled backups ----------
+-- A weekly GitHub Action (.github/workflows/backup.yml) signs in as woombad_backup, a login role that can do one
+-- thing: run export_backup(). It cannot read or change any table directly. Its password is set by the operator
+-- only, never in this file:  alter role woombad_backup password '...';
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'woombad_backup') then
+    create role woombad_backup login noinherit connection limit 2;
+  end if;
+end $$;
+alter role woombad_backup set statement_timeout = '60s';
+
+-- Every organisation as one backup file in the app's format ({ version, exportedAt, orgName, tables }, the same as
+-- Pengaturan -> Data -> Unduh cadangan lengkap). Code hashes, the setup code and join attempts are left out.
+create or replace function public.export_backup()
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  o record;
+  t text;
+  tables jsonb;
+  rows jsonb;
+  result jsonb := '[]'::jsonb;
+begin
+  for o in select * from public.organizations order by created_at, id loop
+    tables := jsonb_build_object('organizations', jsonb_build_array(to_jsonb(o)));
+    foreach t in array array['organization_members', 'invitations', 'properties', 'rooms', 'addon_catalog', 'tenants',
+                             'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] loop
+      execute format('select coalesce(jsonb_agg(to_jsonb(x) order by x.created_at, x.id), ''[]'') from public.%I x where x.org_id = $1', t)
+        into rows using o.id;
+      tables := tables || jsonb_build_object(t, rows);
+    end loop;
+    select coalesce(jsonb_agg(to_jsonb(a) order by a.changed_at, a.id), '[]') into rows from public.audit_log a where a.org_id = o.id;
+    tables := tables || jsonb_build_object('audit_log', rows);
+    result := result || jsonb_build_array(jsonb_build_object(
+      'version', 1,
+      'exportedAt', to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+      'orgName', o.name,
+      'tables', tables));
+  end loop;
+  return result;
+end $$;
+
 -- ---------- grants: least privilege ----------
 -- Supabase grants ALL (including TRUNCATE, which ignores RLS) on new tables and EXECUTE on new
 -- functions to anon and authenticated. Take everything back, then grant exactly what the app uses:
@@ -969,6 +1011,9 @@ grant execute on function public.path_org_id(text) to authenticated;
 grant execute on function public.invoice_status_for(bigint, bigint) to authenticated;
 -- the scheduled keep-alive ping uses the public key, i.e. the anon role
 grant execute on function public.keepalive() to anon;
+-- the weekly backup job
+grant usage on schema public to woombad_backup;
+grant execute on function public.export_backup() to woombad_backup;
 -- operator only
 grant execute on function public.set_setup_code(text) to service_role;
 -- objects added to public later get no access until granted explicitly
