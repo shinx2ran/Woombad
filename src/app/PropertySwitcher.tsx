@@ -7,7 +7,7 @@ export function PropertySwitcher({ className }: { className?: string }) {
   const { properties, selectedPropertyId, setSelectedPropertyId } = useOrg()
   if (properties.length <= 1) return null
   return (
-    <label className={clsx('relative inline-flex items-center', className)}>
+    <label className={clsx('relative inline-flex items-center', className)} data-dirty-ignore>
       <Building2 className="pointer-events-none absolute left-2.5 h-4 w-4 text-slate-500" aria-hidden />
       <select
         aria-label="Pilih kos"

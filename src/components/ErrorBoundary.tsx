@@ -1,5 +1,7 @@
 import { Component, useState, type ErrorInfo, type ReactNode } from 'react'
-import { isSupabaseConfigured } from '../lib/supabase'
+import { isSupabaseConfigured, signOutThisDevice } from '../lib/supabase'
+import { isNetworkError, NETWORK_ERROR_MESSAGE } from '../features/auth/networkError'
+import { serverProblemText, useServerStatus } from './serverStatus'
 import { clearDeviceData, datedFileName, deviceDataProblem, downloadText, readDeviceData } from './deviceData'
 
 // A new deploy removes old lazy chunks; a reload fetches the current ones.
@@ -16,14 +18,19 @@ const buttonBase = 'inline-flex h-11 items-center justify-center rounded-lg px-4
 /**
  * Last-resort screen. Uses no context, router or query hooks so it renders even when providers are broken.
  * In Mode Demo it offers to download or reset the raw data on this device (broken data is the usual cause).
+ * Online it offers to sign out (the login page is closed to a signed-in user, so this is the only way out).
  * `deviceDataBroken`: shown at start because the stored Mode Demo data cannot be opened.
  */
 export function ErrorScreen({ error, deviceDataBroken = false }: { error: unknown; deviceDataBroken?: boolean }) {
   const isDemo = !isSupabaseConfigured
   const [confirmReset, setConfirmReset] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [signingOut, setSigningOut] = useState(false)
+  const server = useServerStatus()
   const message = errorMessage(error)
   const isStaleChunk = message !== null && STALE_CHUNK_RE.test(message)
+  const isOffline = !deviceDataBroken && !isStaleChunk && isNetworkError(error)
+  const serverText = serverProblemText(server)
 
   const download = () => {
     const raw = readDeviceData()
@@ -44,6 +51,12 @@ export function ErrorScreen({ error, deviceDataBroken = false }: { error: unknow
     window.location.reload()
   }
 
+  const signOut = async () => {
+    setSigningOut(true)
+    await signOutThisDevice()
+    window.location.assign(`${import.meta.env.BASE_URL}login`)
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -53,8 +66,11 @@ export function ErrorScreen({ error, deviceDataBroken = false }: { error: unknow
             ? 'Data di perangkat ini rusak, jadi aplikasi tidak bisa dibuka. Unduh data ini dulu, lalu reset.'
             : isStaleChunk
               ? 'Aplikasi baru saja diperbarui. Tekan Muat ulang.'
-              : 'Aplikasi mengalami masalah. Coba muat ulang.'}
+              : isOffline
+                ? serverText.message
+                : 'Aplikasi mengalami masalah. Coba muat ulang.'}
         </p>
+        {isOffline && !isDemo && <p className="mt-2 text-sm text-slate-600">{serverText.hint}</p>}
 
         <div className="mt-4 flex flex-col gap-2">
           <button type="button" onClick={() => window.location.reload()} className={`${buttonBase} bg-brand-700 text-white hover:bg-brand-800`}>
@@ -64,6 +80,11 @@ export function ErrorScreen({ error, deviceDataBroken = false }: { error: unknow
             <a href={`${import.meta.env.BASE_URL}dashboard`} className={`${buttonBase} text-slate-700 hover:bg-slate-100`}>
               Buka Dashboard
             </a>
+          )}
+          {!isDemo && (
+            <button type="button" onClick={signOut} disabled={signingOut} className={`${buttonBase} text-slate-700 hover:bg-slate-100 disabled:opacity-60`}>
+              {signingOut ? 'Keluar…' : 'Keluar'}
+            </button>
           )}
         </div>
 
@@ -101,7 +122,7 @@ export function ErrorScreen({ error, deviceDataBroken = false }: { error: unknow
           </p>
         )}
 
-        {message && !isStaleChunk && (
+        {message && !isStaleChunk && message !== NETWORK_ERROR_MESSAGE && (
           <details className="mt-4 text-xs text-slate-500">
             <summary className="cursor-pointer">Detail teknis</summary>
             <p className="mt-1 break-words font-mono">{message}</p>

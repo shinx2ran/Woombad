@@ -1,10 +1,13 @@
-import { NavLink, Outlet, useNavigate } from 'react-router'
+import { useEffect } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { clsx } from 'clsx'
 import { LayoutDashboard, DoorOpen, Users, ReceiptText, Wallet, BarChart3, Settings, LogOut, FlaskConical } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { PropertySwitcher } from './PropertySwitcher'
 import { BackupReminderBanner } from './BackupReminderBanner'
+import { appUpdater } from './appUpdate'
+import { forgetOtherPages } from './dirtyState'
 
 export interface NavItem {
   to: string
@@ -33,6 +36,12 @@ export function AppShell() {
   const { auth, session } = useAuth()
   const { org, role, isLocalMode } = useOrg()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  // a new version that waited for unsaved work is applied on the next page change
+  useEffect(() => {
+    forgetOtherPages()
+    appUpdater.applyIfIdle()
+  }, [pathname])
   const items = NAV_ITEMS.filter((i) => !i.adminOnly || role !== 'staff')
   const mobileItems = items.filter((i) => MOBILE_NAV.includes(i.to))
 

@@ -29,10 +29,18 @@ export function DataCard({ isLocalMode, isAdmin }: { isLocalMode: boolean; isAdm
         ) : (
           <>
             <p className="text-sm text-slate-600">
-              Data tersimpan di proyek Supabase{host ? <> <code className="rounded bg-slate-100 px-1">{host}</code></> : null}. Semua
-              anggota melihat data yang sama secara langsung.{isAdmin && ' Ekspor laporan ke Excel ada di menu Laporan.'}
+              Data tersimpan online. Semua anggota melihat data yang sama secara langsung.
+              {isAdmin && ' Ekspor laporan ke Excel ada di menu Laporan.'}
             </p>
             {isAdmin && <OnlineBackupSection />}
+            {host && (
+              <details className="text-xs text-slate-500">
+                <summary className="cursor-pointer">Detail</summary>
+                <p className="mt-1">
+                  Proyek Supabase: <code className="break-all rounded bg-slate-100 px-1">{host}</code>
+                </p>
+              </details>
+            )}
           </>
         )}
       </CardBody>

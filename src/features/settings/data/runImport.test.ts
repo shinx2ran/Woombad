@@ -15,7 +15,7 @@ function planOf(rows: Partial<Record<ImportTable, PlannedRow[]>>): ImportPlan {
   for (const t of IMPORT_ORDER) {
     tables[t] = { rows: rows[t] ?? [], skipped: { exists: 0, invalid_id: 0, other_org: 0, invalid_data: 0, broken_ref: 0 } }
   }
-  return { tables, renumberedInvoices: 0 }
+  return { tables, renumberedInvoices: 0, partialSplits: [], sharedSplits: [], sample: { rows: 0, payments: 0, paymentsAmount: 0 } }
 }
 
 const planned = (id: string, deps: string[] = []): PlannedRow => ({ id, row: { id }, deps })

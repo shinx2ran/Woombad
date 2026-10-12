@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -8,14 +8,38 @@ import { VitePWA } from 'vite-plugin-pwa'
 // Root hosting (Cloudflare Pages, Netlify, Vercel, own domain) leaves it unset.
 const base = (process.env.VITE_BASE_PATH ?? '/').replace(/\/?$/, '/')
 
+// Pages of builds with registerType 'autoUpdate' reload only when a new service worker activates by itself. Until a
+// 'prompt' worker has been active once on this device, a new worker therefore takes over at once (so those pages still
+// update themselves); after that it waits until main.tsx applies it.
+const SW_HANDOVER = `const MARKER = 'woombad-sw-prompt'
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.has(MARKER).then((prompt) => (prompt ? undefined : self.skipWaiting())))
+})
+self.addEventListener('activate', (event) => {
+  event.waitUntil(caches.open(MARKER))
+})
+`
+
+function swHandover(): Plugin {
+  return {
+    name: 'woombad-sw-handover',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'sw-handover.js', source: SW_HANDOVER })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   base,
   plugins: [
     react(),
     tailwindcss(),
+    swHandover(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt': main.tsx applies a new version itself, and waits for a tap while a reload would lose work
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Woombad - Manajemen Kos',
@@ -36,6 +60,8 @@ export default defineConfig({
       workbox: {
         // tesseract.js language data and workers are large; cache them at runtime instead of precaching.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globIgnores: ['**/node_modules/**/*', 'sw-handover.js'],
+        importScripts: ['sw-handover.js'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: `${base}index.html`,
         navigateFallbackDenylist: [/^\/api\//],

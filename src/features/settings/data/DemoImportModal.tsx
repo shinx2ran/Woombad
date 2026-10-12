@@ -5,7 +5,7 @@ import { Badge, Button, LoadingState, Modal } from '../../../components/ui'
 import { readDeviceData } from '../../../components/deviceData'
 import { useOrg } from '../../../hooks/useOrg'
 import { translateDbError } from '../../../lib/repo/supabaseRepo'
-import { formatDateTime } from '../../../lib/format'
+import { formatDateTime, formatRupiah } from '../../../lib/format'
 import { BackupFileError, TABLE_LABEL, parseBackupText, type ParsedBackup } from './backupFormat'
 import {
   IMPORT_ORDER,
@@ -40,6 +40,17 @@ type Step =
 
 const kosCounts = (p: KosPreview) =>
   `${p.rooms} kamar · ${p.tenants} penyewa · ${p.leases} sewa · ${p.invoices} tagihan · ${p.payments} pembayaran · ${p.expenses} pengeluaran`
+
+/** A sample kos the owner added to or took over: say how much of it is his. */
+const ownSampleText = (p: KosPreview) =>
+  p.ownRows > 0
+    ? `Berisi ${p.ownRows} data yang Anda tambahkan${p.sampleRows > 0 ? ` dan ${p.sampleRows} data contoh` : ''}.`
+    : `Sudah Anda ubah di Mode Demo${p.sampleRows > 0 ? `; berisi ${p.sampleRows} data contoh` : ''}.`
+
+const quoteList = (names: string[]) => {
+  const shown = names.slice(0, 3).map((n) => `“${n}”`)
+  return names.length > 3 ? `${shown.join(', ')} dan ${names.length - 3} lainnya` : shown.join(', ')
+}
 
 const sampleCounts = (s: SampleOutsideKos) =>
   [
@@ -220,6 +231,7 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
                       {p.alreadyOnline && <Badge tone="info">Sudah pernah diimpor</Badge>}
                     </span>
                     <span className="mt-0.5 block text-xs text-slate-500">{kosCounts(p)}</span>
+                    {(p.usedSample || p.ownRows > 0) && <span className="mt-0.5 block text-xs text-slate-700">{ownSampleText(p)}</span>}
                   </span>
                 </label>
               </li>
@@ -260,6 +272,25 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
               </li>
             )}
           </ul>
+
+          {plan.sample.rows > 0 && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">
+              Ikut diimpor <strong>{plan.sample.rows} data contoh</strong> Mode Demo
+              {plan.sample.payments > 0 && <>, termasuk {plan.sample.payments} pembayaran contoh senilai {formatRupiah(plan.sample.paymentsAmount)}</>}.
+              Setelah online, data ini sulit dihapus. Hapus centang yang bukan milik Anda.
+            </p>
+          )}
+          {plan.sharedSplits.length > 0 && (
+            <p className="rounded-lg bg-slate-50 px-3 py-2">
+              Bagian {quoteList(plan.sharedSplits)} untuk kos contoh ikut sebagai pengeluaran bersama (tanpa kos), supaya jumlahnya utuh.
+            </p>
+          )}
+          {plan.partialSplits.length > 0 && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">
+              Pengeluaran yang dibagi rata ke beberapa kos hanya ikut sebagian: {quoteList(plan.partialSplits)}. Bagian untuk kos
+              yang tidak dicentang tidak ikut.
+            </p>
+          )}
 
           <div className="rounded-lg bg-slate-50 px-3 py-2">
             <p>

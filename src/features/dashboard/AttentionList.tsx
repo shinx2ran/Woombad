@@ -64,7 +64,7 @@ export function AttentionList({ sections, count }: { sections: AttentionSection[
 /** Small segmented control "Tanggal | Kamar" (radio semantics so screen readers announce the active choice). */
 function SortToggle({ value, onChange }: { value: AttentionSort; onChange: (sort: AttentionSort) => void }) {
   return (
-    <div role="radiogroup" aria-labelledby="attention-sort-label" className="inline-flex rounded-lg bg-slate-100 p-0.5">
+    <div role="radiogroup" aria-labelledby="attention-sort-label" className="inline-flex rounded-lg bg-slate-100 p-0.5" data-dirty-ignore>
       {ATTENTION_SORT_OPTIONS.map((opt) => {
         const active = opt.value === value
         return (

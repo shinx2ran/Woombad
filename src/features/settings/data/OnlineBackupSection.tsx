@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { Download, Upload } from 'lucide-react'
 import { Button, useToast } from '../../../components/ui'
 import { useOrg } from '../../../hooks/useOrg'
@@ -8,12 +9,26 @@ import { DemoImportModal } from './DemoImportModal'
 import { downloadBackup } from './backupFile'
 import { fetchOrgBackup } from './orgData'
 
-/** Online mode, owner/admin: full JSON backup and the move from Mode Demo. */
+/** Online mode, owner/admin: full JSON backup and the move from Mode Demo (?impor=demo, from the dashboard, opens it). */
 export function OnlineBackupSection() {
   const { repo } = useOrg()
   const toast = useToast()
+  const [params, setParams] = useSearchParams()
   const [downloading, setDownloading] = useState(false)
-  const [importOpen, setImportOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(() => params.get('impor') === 'demo')
+
+  const closeImport = () => {
+    setImportOpen(false)
+    if (params.has('impor')) {
+      setParams(
+        (p) => {
+          p.delete('impor')
+          return p
+        },
+        { replace: true },
+      )
+    }
+  }
 
   const download = async () => {
     setDownloading(true)
@@ -49,7 +64,7 @@ export function OnlineBackupSection() {
         </Button>
       </div>
 
-      {importOpen && <DemoImportModal onClose={() => setImportOpen(false)} />}
+      {importOpen && <DemoImportModal onClose={closeImport} />}
     </>
   )
 }

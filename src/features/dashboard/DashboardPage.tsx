@@ -16,7 +16,7 @@ import { CashflowChart } from './CashflowChart'
 import { useIsDesktop } from './useIsDesktop'
 
 export function DashboardPage() {
-  const { properties, selectedPropertyId, role } = useOrg()
+  const { properties, selectedPropertyId, role, isLocalMode } = useOrg()
   const isAdmin = role === 'owner' || role === 'admin'
   const showReportLink = isAdmin
   const { data, isPending, error } = useDashboardData()
@@ -53,7 +53,7 @@ export function DashboardPage() {
       ) : isPending || !data ? (
         <DashboardSkeleton />
       ) : data.totals.rooms === 0 ? (
-        <FirstRunChecklist totals={data.totals} isAdmin={isAdmin} />
+        <FirstRunChecklist totals={data.totals} isAdmin={isAdmin} isOnline={!isLocalMode} />
       ) : (
         <>
           <div className="sm:hidden">
