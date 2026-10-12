@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { Modal } from '../components/ui'
 import { createAppUpdater, UPDATE_CHECK_INTERVAL_MS, watchForUpdates } from './appUpdate'
-import { clearDirty, isDirty, markDirty, useDirtyWhile } from './dirtyState'
+import { clearDirty, forgetOtherPages, isDirty, markDirty, useDirtyWhile, watchPageInput } from './dirtyState'
 import { UpdateBanner } from './UpdateBanner'
 
 describe('dirtyState', () => {
@@ -50,6 +50,101 @@ describe('dirtyState', () => {
     expect(isDirty()).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Tutup' }))
     expect(isDirty()).toBe(false)
+  })
+})
+
+describe('watchPageInput', () => {
+  let stop: () => void
+  /** leave the page and come back: what was entered there is forgotten */
+  const leaveAndReturn = () => {
+    window.history.pushState(null, '', '/dashboard')
+    forgetOtherPages()
+    window.history.pushState(null, '', '/sewa/baru')
+  }
+  beforeEach(() => {
+    window.history.replaceState(null, '', '/sewa/baru')
+    stop = watchPageInput()
+  })
+  afterEach(() => {
+    stop()
+    leaveAndReturn()
+    cleanup()
+  })
+
+  it('marks the page dirty once something is typed or picked on it, until the user leaves the page', () => {
+    render(
+      <div>
+        <input aria-label="Nama" />
+        <select aria-label="Kos">
+          <option>Melati</option>
+          <option>Mawar</option>
+        </select>
+      </div>,
+    )
+    expect(isDirty()).toBe(false)
+    fireEvent.input(screen.getByLabelText('Nama'), { target: { value: 'Budi' } })
+    expect(isDirty()).toBe(true)
+    window.history.pushState(null, '', '/dashboard')
+    expect(isDirty()).toBe(false)
+    window.history.pushState(null, '', '/sewa/baru')
+    expect(isDirty()).toBe(false)
+
+    fireEvent.change(screen.getByLabelText('Kos'), { target: { value: 'Mawar' } })
+    // the shell's page-change hook keeps input of the page it arrived at
+    forgetOtherPages()
+    expect(isDirty()).toBe(true)
+    leaveAndReturn()
+    expect(isDirty()).toBe(false)
+  })
+
+  it('counts opening the camera and choice cards, not search boxes, the kos filter or plain buttons', () => {
+    render(
+      <div>
+        <input type="search" aria-label="Cari" />
+        <label data-dirty-ignore>
+          <select aria-label="Pilih kos">
+            <option value="all">Semua kos</option>
+            <option value="k1">Kos Melati</option>
+          </select>
+        </label>
+        <div role="radiogroup" data-dirty-ignore>
+          <button type="button" role="radio" aria-checked="false">
+            Kamar
+          </button>
+        </div>
+        <button type="button">Isi sendiri</button>
+        <input type="file" aria-label="Kamera" />
+        <button type="button" aria-pressed="false">
+          <span>A1</span>
+        </button>
+      </div>,
+    )
+    fireEvent.input(screen.getByLabelText('Cari'), { target: { value: 'Budi' } })
+    fireEvent.change(screen.getByLabelText('Pilih kos'), { target: { value: 'k1' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Kamar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Isi sendiri' }))
+    expect(isDirty()).toBe(false)
+
+    fireEvent.click(screen.getByLabelText('Kamera'))
+    expect(isDirty()).toBe(true)
+    leaveAndReturn()
+    expect(isDirty()).toBe(false)
+    fireEvent.click(screen.getByText('A1'))
+    expect(isDirty()).toBe(true)
+  })
+
+  it('holds back a new version while the page has input, and applies it on the next page', () => {
+    const reload = vi.fn()
+    const activate = vi.fn(async () => {})
+    const u = createAppUpdater({ isDirty, reload })
+    render(<textarea aria-label="Catatan" />)
+    fireEvent.input(screen.getByLabelText('Catatan'), { target: { value: 'Bayar minggu depan' } })
+    u.needRefresh(activate)
+    expect(activate).not.toHaveBeenCalled()
+    expect(u.isPending()).toBe(true)
+    window.history.pushState(null, '', '/sewa/123')
+    u.applyIfIdle()
+    expect(activate).toHaveBeenCalledTimes(1)
   })
 })
 

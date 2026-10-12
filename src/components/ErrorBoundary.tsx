@@ -1,6 +1,7 @@
 import { Component, useState, type ErrorInfo, type ReactNode } from 'react'
 import { isSupabaseConfigured, signOutThisDevice } from '../lib/supabase'
 import { isNetworkError, NETWORK_ERROR_MESSAGE } from '../features/auth/networkError'
+import { serverProblemText, useServerStatus } from './serverStatus'
 import { clearDeviceData, datedFileName, deviceDataProblem, downloadText, readDeviceData } from './deviceData'
 
 // A new deploy removes old lazy chunks; a reload fetches the current ones.
@@ -25,9 +26,11 @@ export function ErrorScreen({ error, deviceDataBroken = false }: { error: unknow
   const [confirmReset, setConfirmReset] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [signingOut, setSigningOut] = useState(false)
+  const server = useServerStatus()
   const message = errorMessage(error)
   const isStaleChunk = message !== null && STALE_CHUNK_RE.test(message)
   const isOffline = !deviceDataBroken && !isStaleChunk && isNetworkError(error)
+  const serverText = serverProblemText(server)
 
   const download = () => {
     const raw = readDeviceData()
@@ -64,15 +67,10 @@ export function ErrorScreen({ error, deviceDataBroken = false }: { error: unknow
             : isStaleChunk
               ? 'Aplikasi baru saja diperbarui. Tekan Muat ulang.'
               : isOffline
-                ? NETWORK_ERROR_MESSAGE
+                ? serverText.message
                 : 'Aplikasi mengalami masalah. Coba muat ulang.'}
         </p>
-        {isOffline && !isDemo && (
-          <p className="mt-2 text-sm text-slate-600">
-            Jika internet lancar, proyek Supabase mungkin sedang dijeda. Pemilik kos: buka dashboard Supabase → proyek Woombad →
-            Restore project, lalu tunggu beberapa menit.
-          </p>
-        )}
+        {isOffline && !isDemo && <p className="mt-2 text-sm text-slate-600">{serverText.hint}</p>}
 
         <div className="mt-4 flex flex-col gap-2">
           <button type="button" onClick={() => window.location.reload()} className={`${buttonBase} bg-brand-700 text-white hover:bg-brand-800`}>

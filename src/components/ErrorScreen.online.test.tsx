@@ -3,14 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const signOutThisDevice = vi.fn(async () => {})
-vi.mock('../lib/supabase', () => ({ isSupabaseConfigured: true, signOutThisDevice: () => signOutThisDevice() }))
+vi.mock('../lib/supabase', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/supabase')>()),
+  isSupabaseConfigured: true,
+  signOutThisDevice: () => signOutThisDevice(),
+}))
 
+import { watchedFetch } from '../lib/supabase'
 import { ErrorScreen } from './ErrorBoundary'
 
 describe('ErrorScreen (online)', () => {
   let assign: ReturnType<typeof vi.fn>
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await watchedFetch('https://x.supabase.co/rest/v1/', undefined, async () => new Response('[]'))
     assign = vi.fn()
     vi.stubGlobal('location', { ...window.location, reload: vi.fn(), assign })
     signOutThisDevice.mockClear()
@@ -33,6 +39,14 @@ describe('ErrorScreen (online)', () => {
     render(<ErrorScreen error={new Error('Gagal memuat')} />)
     expect(screen.getByText('Tidak dapat terhubung ke server. Periksa koneksi internet.')).toBeTruthy()
     expect(screen.getByText('Gagal memuat')).toBeTruthy()
+  })
+
+  it('says so when Supabase answered that the project is paused', async () => {
+    await watchedFetch('https://x.supabase.co/rest/v1/organization_members', undefined, async () => new Response('', { status: 540 })).catch(() => {})
+    render(<ErrorScreen error={new Error('Tidak dapat terhubung ke server. Periksa koneksi internet.')} />)
+    expect(screen.getByText('Server Woombad sedang dijeda karena lama tidak dipakai.')).toBeTruthy()
+    expect(screen.getByText(/Restore project/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Keluar' })).toBeTruthy()
   })
 
   it('keeps the generic text for other errors, without the Supabase hint', () => {

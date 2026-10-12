@@ -74,6 +74,10 @@ export interface ImportPlan {
   renumberedInvoices: number
   /** split expenses ("… (1/3)") this import brings over only in part, by description without the suffix */
   partialSplits: string[]
+  /** split expenses whose parts on unticked Mode Demo sample kos come along as shared expenses (kos cleared) */
+  sharedSplits: string[]
+  /** Mode Demo sample rows in this plan (a ticked sample kos, or includeSample), and the sample payments among them */
+  sample: { rows: number; payments: number; paymentsAmount: number }
 }
 
 export interface KosPreview {
@@ -87,11 +91,15 @@ export interface KosPreview {
   expenses: number
   /** the kos itself was imported before (its rows will be skipped as "sudah ada") */
   alreadyOnline: boolean
-  /** a Mode Demo sample kos the owner never touched (not selected by default) */
+  /** a Mode Demo sample kos the owner did not take over (not selected by default) */
   sample: boolean
-  /** a Mode Demo sample kos the owner used: he added rows under it or changed it (selected by default) */
+  /**
+   * a Mode Demo sample kos the owner took over (selected by default): he edited the kos itself or added rooms,
+   * tenants, leases, invoices or payments under it. Edits of sample rows, his own expenses and parts of a
+   * split expense ("Bagi rata ke semua kos") do not count: they happen while just trying the app out.
+   */
   usedSample: boolean
-  /** sample kos only: rows under it the owner added, and sample rows under it */
+  /** sample kos only: rows under it the owner added (without parts of a split expense), and sample rows under it */
   ownRows: number
   sampleRows: number
 }
@@ -360,6 +368,37 @@ function wasChanged(row: BackupRow): boolean {
   return typeof row.updated_at === 'string' && typeof row.created_at === 'string' && row.updated_at !== row.created_at
 }
 
+const SPLIT_RE = /^(.*) \((\d+)\/(\d+)\)$/
+
+interface SplitGroup {
+  name: string
+  ids: string[]
+}
+
+/**
+ * "Bagi rata ke semua kos" saves one expense per kos, described "… (i/N)", in one insert (same created_at).
+ * The owner's groups that span several kos, by expense id. In Mode Demo they also cover the sample kos.
+ */
+function splitGroups(expenses: readonly BackupRow[], isSample: (row: BackupRow) => boolean): Map<string, SplitGroup> {
+  const groups = new Map<string, SplitGroup & { kos: Set<string> }>()
+  for (const e of expenses) {
+    const m = typeof e.description === 'string' ? SPLIT_RE.exec(e.description) : null
+    const id = key(e.id)
+    if (!m || Number(m[3]) < 2 || id === null || isSample(e)) continue
+    const groupKey = JSON.stringify([m[1], m[3], e.expense_date, e.created_at])
+    const g = groups.get(groupKey) ?? { name: m[1], ids: [], kos: new Set<string>() }
+    g.ids.push(id)
+    g.kos.add(key(e.property_id) ?? '')
+    groups.set(groupKey, g)
+  }
+  const byId = new Map<string, SplitGroup>()
+  for (const g of groups.values()) if (g.kos.size > 1) for (const id of g.ids) byId.set(id, g)
+  return byId
+}
+
+/** Tables where a row the owner added under a sample kos means he took the kos over. */
+const TAKE_OVER_TABLES: ReadonlySet<ImportTable> = new Set(['rooms', 'addon_catalog', 'tenants', 'leases', 'lease_addons', 'invoices', 'payments'])
+
 /** Kos of the backup's own organisation, sorted by name. */
 export function backupProperties(backup: ParsedBackup): BackupRow[] {
   const orgId = sourceOrgId(backup)
@@ -402,6 +441,7 @@ export function previewBackup(backup: ParsedBackup, existing: ExistingOnline = e
     return pid === null || !allPropertyIds.has(pid)
   }
   const withLease = leaseTenantIds(backup)
+  const splitParts = splitGroups(t.expenses, isSample)
 
   const properties = backupProperties(backup).map((p): KosPreview => {
     const pid = key(p.id) ?? ''
@@ -416,32 +456,35 @@ export function previewBackup(backup: ParsedBackup, existing: ExistingOnline = e
       const tid = key(tn.id)
       if (tid && !withLease.has(tid)) tenants.add(tid)
     }
-    // A sample kos is the owner's once he added or changed anything that selecting it imports (e.g. renamed it).
+    // A sample kos becomes the owner's only on clear signs (see KosPreview.usedSample): importing it also brings its
+    // sample tenants and payments online, where they are hard to remove.
     const fromSample = isSample(p)
     let ownRows = 0
     let sampleRows = 0
-    let changed = fromSample && wasChanged(p)
+    let takenOver = fromSample && wasChanged(p)
     if (fromSample) {
       const leaseIds = new Set(leases.map((l) => key(l.id)))
-      const under = [
-        ...rooms,
-        ...of(t.addon_catalog),
-        ...t.tenants.filter((tn) => tenants.has(key(tn.id) ?? '')),
-        ...leases,
-        ...t.lease_addons.filter((la) => leaseIds.has(key(la.lease_id))),
-        ...invoices,
-        ...payments,
-        ...expenses,
+      const under: [ImportTable, BackupRow[]][] = [
+        ['rooms', rooms],
+        ['addon_catalog', of(t.addon_catalog)],
+        ['tenants', t.tenants.filter((tn) => tenants.has(key(tn.id) ?? ''))],
+        ['leases', leases],
+        ['lease_addons', t.lease_addons.filter((la) => leaseIds.has(key(la.lease_id)))],
+        ['invoices', invoices],
+        ['payments', payments],
+        ['expenses', expenses.filter((e) => !splitParts.has(key(e.id) ?? ''))],
       ]
-      for (const r of under) {
-        if (!isSample(r)) ownRows++
-        else {
-          sampleRows++
-          if (wasChanged(r)) changed = true
+      for (const [table, rows] of under) {
+        for (const r of rows) {
+          if (isSample(r)) sampleRows++
+          else {
+            ownRows++
+            if (TAKE_OVER_TABLES.has(table)) takenOver = true
+          }
         }
       }
     }
-    const usedSample = fromSample && (ownRows > 0 || changed)
+    const usedSample = fromSample && takenOver
     return {
       id: p.id,
       name: typeof p.name === 'string' && p.name.trim() ? p.name : 'Tanpa nama',
@@ -474,7 +517,7 @@ export function sampleOutsideKosCount(preview: BackupPreview): number {
   return preview.sample.expenses + preview.sample.addons + preview.sample.tenants
 }
 
-/** Default selection: the owner's kos (also sample kos he used) and shared expenses; untouched sample data stays unticked. */
+/** Default selection: the owner's kos (also sample kos he took over) and shared expenses; other sample data stays unticked. */
 export function defaultSelection(preview: BackupPreview): ImportSelection {
   return {
     propertyIds: preview.properties.filter((p) => !p.sample).map((p) => p.id),
@@ -503,26 +546,13 @@ function freeInvoiceNumber(original: string, taken: ReadonlySet<string>): string
   return `${original}-${i}`
 }
 
-const SPLIT_RE = /^(.*) \((\d+)\/(\d+)\)$/
-
-/**
- * "Bagi rata ke semua kos" saves one expense per kos, described "… (i/N)", in one insert (same created_at).
- * Descriptions of such groups this import brings over only in part: some parts are neither in the plan nor online.
- */
-function partialSplitExpenses(expenses: readonly BackupRow[], planned: ReadonlySet<string>, online: ReadonlySet<string>): string[] {
-  const groups = new Map<string, { name: string; planned: number; covered: number; total: number }>()
-  for (const e of expenses) {
-    const m = typeof e.description === 'string' ? SPLIT_RE.exec(e.description) : null
-    if (!m || Number(m[3]) < 2) continue
-    const groupKey = JSON.stringify([m[1], m[3], e.expense_date, e.created_at])
-    const g = groups.get(groupKey) ?? { name: m[1], planned: 0, covered: 0, total: 0 }
-    const id = key(e.id) ?? ''
-    g.total++
-    if (planned.has(id)) g.planned++
-    if (planned.has(id) || online.has(id)) g.covered++
-    groups.set(groupKey, g)
+/** Names of split groups this import brings over only in part: some parts are neither in the plan nor online. */
+function partialSplitExpenses(groups: Iterable<SplitGroup>, planned: ReadonlySet<string>, online: ReadonlySet<string>): string[] {
+  const names: string[] = []
+  for (const g of new Set(groups)) {
+    if (g.ids.some((id) => planned.has(id)) && g.ids.some((id) => !planned.has(id) && !online.has(id))) names.push(g.name)
   }
-  return [...groups.values()].filter((g) => g.planned > 0 && g.covered < g.total).map((g) => g.name)
+  return names
 }
 
 export function emptySkipped(): Record<SkipReason, number> {
@@ -538,7 +568,9 @@ export function emptySkipped(): Record<SkipReason, number> {
  * expenses of the selected kos, plus — with includeShared — expenses without a kos (or whose kos no longer
  * exists in the backup; they become shared, as ON DELETE SET NULL would have made them).
  * Mode Demo sample rows of a selected kos follow the kos; sample rows outside any kos (shared expenses,
- * org-wide add-ons, tenants) are imported only with includeSample.
+ * org-wide add-ons, tenants) are imported only with includeSample. Parts of the owner's split expense that sit on
+ * an unticked sample kos come along as shared expenses when the rest of the group is imported, so the total stays
+ * whole without importing the sample kos.
  *
  * Skipped (counted per reason): non-UUID ids, rows of another organisation, ids already online, rows that
  * break a column rule, and rows whose parent is neither imported nor online. A tenant's missing home kos is
@@ -651,14 +683,51 @@ export function planDemoImport(backup: ParsedBackup, selection: ImportSelection,
 
   for (const p of t.payments) if (inSelected(p)) take('payments', p)
 
+  const toShared = (row: Record<string, unknown>) => void (row.property_id = null)
+  const splitParts = splitGroups(t.expenses, isSample)
+  const sampleKos = new Set(t.properties.filter(isSample).map((p) => key(p.id)))
+  const leftOnSampleKos: BackupRow[] = []
   for (const e of t.expenses) {
     const pid = key(e.property_id)
     const ownKos = pid !== null && backupPropertyIds.has(pid)
+    if (ownKos && !selected.has(pid) && sampleKos.has(pid) && splitParts.has(key(e.id) ?? '')) leftOnSampleKos.push(e)
     if (ownKos ? !selected.has(pid) : !outsideKos(e, selection.includeShared)) continue
-    take('expenses', e, { adjust: ownKos ? undefined : (row) => void (row.property_id = null) })
+    take('expenses', e, { adjust: ownKos ? undefined : toShared })
+  }
+  const sharedSplits = new Set<string>()
+  for (const e of leftOnSampleKos) {
+    const group = splitParts.get(key(e.id) ?? '')!
+    if (!group.ids.some((id) => planned.has(id) || existing.ids.expenses.has(id))) continue
+    const before = tables.expenses.rows.length
+    take('expenses', e, { adjust: toShared })
+    if (tables.expenses.rows.length > before) sharedSplits.add(group.name)
   }
 
-  return { tables, renumberedInvoices, partialSplits: partialSplitExpenses(t.expenses, planned, existing.ids.expenses) }
+  return {
+    tables,
+    renumberedInvoices,
+    partialSplits: partialSplitExpenses(splitParts.values(), planned, existing.ids.expenses),
+    sharedSplits: [...sharedSplits],
+    sample: sampleInPlan(backup, tables, isSample),
+  }
+}
+
+/** Mode Demo sample rows the plan would import, and the sample payments among them. */
+function sampleInPlan(backup: ParsedBackup, tables: Record<ImportTable, TablePlan>, isSample: (row: BackupRow) => boolean): ImportPlan['sample'] {
+  const sample = { rows: 0, payments: 0, paymentsAmount: 0 }
+  for (const table of IMPORT_ORDER) {
+    const raw = new Map(backup.tables[table].map((r) => [key(r.id), r]))
+    for (const { id, row } of tables[table].rows) {
+      const source = raw.get(id)
+      if (!source || !isSample(source)) continue
+      sample.rows++
+      if (table === 'payments') {
+        sample.payments++
+        sample.paymentsAmount += row.amount as number
+      }
+    }
+  }
+  return sample
 }
 
 export function plannedCount(plan: ImportPlan): number {

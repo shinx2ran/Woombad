@@ -8,8 +8,11 @@ import { isSupabaseConfigured } from './lib/supabase'
 import { requestPersistentStorage } from './features/settings/data/backupReminder'
 import { appUpdater, watchForUpdates } from './app/appUpdate'
 import { UpdateBanner } from './app/UpdateBanner'
+import { watchPageInput } from './app/dirtyState'
 
-// Service worker: a new version reloads the page at once, or waits for "Muat ulang" while a reload would lose work.
+// Service worker: a new version reloads the page at once, or waits for "Muat ulang" while a reload would lose work
+// (an open dialog, or anything entered on the current page).
+watchPageInput()
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh: () => appUpdater.needRefresh(() => updateSW()),

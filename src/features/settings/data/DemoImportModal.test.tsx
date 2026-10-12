@@ -91,7 +91,7 @@ describe('DemoImportModal', () => {
     expect(await repo.list('addon_catalog')).toEqual([])
   })
 
-  it('ticks a sample kos the owner used, says how much of it is his, and warns about a split expense left in part', async () => {
+  it('ticks a sample kos the owner used, says how much of it is his, and warns about the sample data it brings along', async () => {
     const { db, ownKosId } = ownerDemoDb()
     const melati = db.properties.find((p) => p.name === 'Kos Melati')!
     const lease = db.leases.find((l) => l.property_id === melati.id)!
@@ -113,12 +113,48 @@ describe('DemoImportModal', () => {
     expect(await screen.findByText('Kos Melati')).toBeTruthy()
     expect(checkbox(/Kos Melati/).checked).toBe(true)
     expect(checkbox(/Kos Melati/).parentElement?.textContent).not.toContain('Contoh')
-    expect(screen.getByText(/^Berisi 2 data yang Anda tambahkan dan \d+ data contoh\.$/)).toBeTruthy()
+    // the payment is his; the part of the split expense does not count
+    expect(screen.getByText(/^Berisi 1 data yang Anda tambahkan dan \d+ data contoh\.$/)).toBeTruthy()
     expect(checkbox(/Kos Anggrek/).checked).toBe(false)
-    expect(screen.queryByText(/hanya ikut sebagian/)).toBeNull()
+    const melatiPayments = db.payments.filter((p) => p.property_id === melati.id && p.created_at !== later.created_at)
+    expect(screen.getByText(new RegExp(`termasuk ${melatiPayments.length} pembayaran contoh senilai`))).toBeTruthy()
+    expect(screen.getByText(/Setelah online, data ini sulit dihapus/)).toBeTruthy()
 
+    // unticked, its part of the split expense comes along as a shared expense instead of asking to tick the kos
     fireEvent.click(checkbox(/Kos Melati/))
-    expect(screen.getByText(/dibagi rata ke beberapa kos hanya ikut sebagian: “Iklan Facebook”/)).toBeTruthy()
+    expect(screen.queryByText(/sulit dihapus/)).toBeNull()
+    expect(screen.getByText(/Bagian “Iklan Facebook” untuk kos contoh ikut sebagai pengeluaran bersama/)).toBeTruthy()
+    expect(screen.queryByText(/hanya ikut sebagian/)).toBeNull()
+  })
+
+  it('keeps sample kos unticked when the owner only split an expense over every kos', async () => {
+    const { db, ownKosId } = ownerDemoDb()
+    const later = { created_at: '2026-10-14T09:00:00.000Z', updated_at: '2026-10-14T09:00:00.000Z' }
+    const kos = [...db.properties.filter((p) => p.id !== ownKosId).map((p) => p.id), ownKosId]
+    for (const [i, pid] of kos.entries()) {
+      db.expenses.push({
+        id: crypto.randomUUID(), org_id: DEMO_ORG_ID, property_id: pid, lease_id: null, category: 'utilities', amount: 100_000,
+        expense_date: '2026-10-14', description: `Wifi (${i + 1}/3)`, vendor: null, receipt_path: null, created_by: null, ...later,
+      })
+    }
+    renderModal()
+    pickFile(JSON.stringify(buildBackupFile(db, 'Kos Pak Budi')))
+
+    expect(await screen.findByText('Kos Mawar')).toBeTruthy()
+    expect(checkbox(/Kos Melati/).checked).toBe(false)
+    expect(checkbox(/Kos Anggrek/).checked).toBe(false)
+    expect(screen.queryByText(/sulit dihapus/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Impor 6 data' }))
+    expect(await screen.findByText('Impor selesai. 6 data masuk.')).toBeTruthy()
+    const expenses = await state.repo!.list('expenses')
+    expect(expenses.filter((e) => e.description.startsWith('Wifi')).map((e) => [e.description, e.property_id === null])).toEqual(
+      expect.arrayContaining([
+        ['Wifi (1/3)', true],
+        ['Wifi (2/3)', true],
+        ['Wifi (3/3)', false],
+      ]),
+    )
+    expect(await state.repo!.list('payments')).toEqual([])
   })
 
   it('imports a sample kos the owner ticks and shows the result', async () => {

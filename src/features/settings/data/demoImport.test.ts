@@ -248,23 +248,50 @@ function ownerUsedSampleBackup() {
 }
 
 describe('Mode Demo sample kos the owner used', () => {
-  it('is the owner\'s once he added rows under it: ticked by default, with the count of his own rows', () => {
+  const rowOfAny = (plan: ImportPlan, id: string) => IMPORT_ORDER.map((t) => rowOf(plan, t, id)).find(Boolean)
+
+  it('is the owner\'s once he added invoices or payments under it: ticked by default, with the count of his own rows', () => {
     const { backup, melati, anggrek } = ownerUsedSampleBackup()
     const preview = previewBackup(backup)
     const m = preview.properties.find((p) => p.id === melati.id)!
-    // invoice, two payments, deposit refund and one part of the split expense
-    expect(m).toMatchObject({ sample: false, usedSample: true, ownRows: 5 })
+    // invoice, two payments and the deposit refund; the part of the split expense does not count
+    expect(m).toMatchObject({ sample: false, usedSample: true, ownRows: 4 })
     expect(m.sampleRows).toBeGreaterThan(20)
-    // Anggrek only got one part of the split expense: also used
-    expect(preview.properties.find((p) => p.id === anggrek.id)).toMatchObject({ sample: false, usedSample: true, ownRows: 1 })
-    expect(defaultSelection(preview).propertyIds).toEqual([anggrek.id, u(101), melati.id])
+    // Anggrek only got one part of the split expense: still sample data
+    expect(preview.properties.find((p) => p.id === anggrek.id)).toMatchObject({ sample: true, usedSample: false, ownRows: 0 })
+    expect(defaultSelection(preview).propertyIds).toEqual([u(101), melati.id])
   })
 
-  it('imports the owner\'s rows inside it by default, so none of them stays behind', () => {
-    const { backup } = ownerUsedSampleBackup()
+  it('imports the owner\'s rows inside it by default; the split part on the unticked sample kos comes along as shared', () => {
+    const { backup, anggrek } = ownerUsedSampleBackup()
     const plan = planDemoImport(backup, all(backup))
     const planned = new Set(plannedIds(plan))
     for (const id of [201, 211, 212, 221, 231, 232, 233].map(u)) expect(planned.has(id), id).toBe(true)
+    expect(rowOf(plan, 'expenses', u(232))?.property_id).toBeNull()
+    expect(ids(plan, 'properties')).not.toContain(anggrek.id)
+    expect(plan.partialSplits).toEqual([])
+    expect(plan.sharedSplits).toEqual(['Iklan Facebook'])
+  })
+
+  it('own kos + one split expense over every kos: the sample kos stay unticked and no sample payments are planned', () => {
+    const backup = ownerDemoBackup()
+    const t = backup.tables
+    const sampleKos = t.properties.filter((p) => p.name !== 'Kos Mawar').map((p) => p.id)
+    t.expenses.push(
+      ...[...sampleKos, u(101)].map((pid, i) => expense(u(241 + i), pid, { ...LATER, description: `Wifi (${i + 1}/3)` }) as BackupRow),
+    )
+    const preview = previewBackup(backup)
+    for (const id of sampleKos) expect(preview.properties.find((p) => p.id === id)).toMatchObject({ sample: true, usedSample: false, ownRows: 0 })
+    expect(defaultSelection(preview).propertyIds).toEqual([u(101)])
+
+    const plan = planDemoImport(backup, all(backup))
+    expect(ids(plan, 'properties')).toEqual([u(101)])
+    expect(ids(plan, 'payments')).toEqual([u(161)])
+    expect(plan.sample).toEqual({ rows: 0, payments: 0, paymentsAmount: 0 })
+    // the whole Wifi bill stays in the books: the parts of the sample kos become shared expenses
+    expect([241, 242, 243].map((n) => rowOfAny(plan, u(n))?.property_id)).toEqual([null, null, u(101)])
+    expect(sumAmounts(plan)).toBe(1_100_000 + 300_000)
+    expect(plan.sharedSplits).toEqual(['Wifi'])
     expect(plan.partialSplits).toEqual([])
   })
 
@@ -281,22 +308,43 @@ describe('Mode Demo sample kos the owner used', () => {
     expect(defaultSelection(preview).propertyIds).toEqual([melati.id, u(101)])
   })
 
-  it('a changed sample row under the kos (a new room price) also makes it the owner\'s', () => {
+  it('trying things out on a sample kos (a new room price, an expense) does not take it over', () => {
     const backup = ownerDemoBackup()
     const anggrek = backup.tables.properties.find((p) => p.name === 'Kos Anggrek')!
     const room = backup.tables.rooms.find((r) => r.property_id === anggrek.id)!
     Object.assign(room, { price_monthly: 1_100_000, updated_at: LATER.updated_at })
-    expect(previewBackup(backup).properties.find((p) => p.id === anggrek.id)).toMatchObject({ sample: false, usedSample: true, ownRows: 0 })
+    backup.tables.expenses.push(expense(u(251), anggrek.id, LATER) as BackupRow)
+    const preview = previewBackup(backup)
+    // his expense is shown as his, but the kos stays sample data and unticked
+    expect(preview.properties.find((p) => p.id === anggrek.id)).toMatchObject({ sample: true, usedSample: false, ownRows: 1 })
+    expect(defaultSelection(preview).propertyIds).toEqual([u(101)])
   })
 
-  it('reports a split expense that would be imported only in part', () => {
-    const { backup, melati, anggrek } = ownerUsedSampleBackup()
-    expect(planDemoImport(backup, { propertyIds: [u(101)], includeShared: true }).partialSplits).toEqual(['Iklan Facebook'])
-    expect(planDemoImport(backup, { propertyIds: [u(101), melati.id, anggrek.id], includeShared: true }).partialSplits).toEqual([])
+  it('reports a split expense that would be imported only in part (parts on the owner\'s unticked kos)', () => {
+    const backup = ownerDemoBackup()
+    backup.tables.properties.push(property(u(102), 'Kos Kenanga', LATER) as BackupRow)
+    backup.tables.expenses.push(
+      ...[u(101), u(102)].map((pid, i) => expense(u(261 + i), pid, { ...LATER, description: `Listrik (${i + 1}/2)` }) as BackupRow),
+    )
+    const only = (propertyIds: string[], existing?: ExistingOnline) => planDemoImport(backup, { propertyIds, includeShared: true }, existing)
+    expect(only([u(101)]).partialSplits).toEqual(['Listrik'])
+    expect(only([u(101)]).sharedSplits).toEqual([])
+    expect(rowOf(only([u(101)]), 'expenses', u(262))).toBeUndefined()
+    expect(only([u(101), u(102)]).partialSplits).toEqual([])
     // parts already online count as present; a group with no part in this import is not reported
-    const online = existingOf({ expenses: [{ id: u(231) }, { id: u(232) }] })
-    expect(planDemoImport(backup, { propertyIds: [u(101)], includeShared: true }, online).partialSplits).toEqual([])
-    expect(planDemoImport(backup, { propertyIds: [], includeShared: true }).partialSplits).toEqual([])
+    expect(only([u(101)], existingOf({ expenses: [{ id: u(262) }] })).partialSplits).toEqual([])
+    expect(only([]).partialSplits).toEqual([])
+  })
+
+  it('counts the sample rows and sample payments a ticked sample kos would bring online', () => {
+    const backup = ownerDemoBackup()
+    expect(planDemoImport(backup, all(backup)).sample).toEqual({ rows: 0, payments: 0, paymentsAmount: 0 })
+    const melati = backup.tables.properties.find((p) => p.name === 'Kos Melati')!
+    const melatiPayments = backup.tables.payments.filter((p) => p.property_id === melati.id)
+    const plan = planDemoImport(backup, { propertyIds: [u(101), melati.id], includeShared: true })
+    expect(plan.sample.payments).toBe(melatiPayments.length)
+    expect(plan.sample.paymentsAmount).toBe(melatiPayments.reduce((s, p) => s + (p.amount as number), 0))
+    expect(plan.sample.rows).toBe(plannedCount(plan) - OWN_IDS.length)
   })
 })
 
