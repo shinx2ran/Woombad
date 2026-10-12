@@ -7,10 +7,12 @@ dist-ssr
 dev-dist
 *.local
 
-# Env (never commit Supabase keys)
+# Env: only .env.example and .env.production are committed. .env.production holds the PUBLIC Supabase URL and
+# publishable key (checked by scripts/check-public-config.mjs); never commit the secret / service_role key.
 .env
 .env.*
 !.env.example
+!/.env.production
 
 # Logs
 logs
