@@ -930,10 +930,18 @@ drop policy if exists storage_org_delete on storage.objects;
 create policy storage_org_delete on storage.objects for delete
   using (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)));
 
+-- ---------- keep-alive ----------
+-- Free Supabase projects are paused after about a week with too few database requests. A scheduled GitHub
+-- Action (.github/workflows/keepalive.yml) calls this a few times a day. It reads no table and changes nothing.
+create or replace function public.keepalive()
+returns timestamptz language sql stable set search_path = public, pg_temp as $$
+  select now();
+$$;
+
 -- ---------- grants: least privilege ----------
 -- Supabase grants ALL (including TRUNCATE, which ignores RLS) on new tables and EXECUTE on new
 -- functions to anon and authenticated. Take everything back, then grant exactly what the app uses:
--- anon gets nothing; authenticated gets the table rights its policies need and the RPCs.
+-- anon gets only keepalive(); authenticated gets the table rights its policies need and the RPCs.
 -- Trigger functions need no grant (EXECUTE is not checked when a trigger fires).
 
 revoke all on all tables in schema public from anon, authenticated;
@@ -959,6 +967,8 @@ grant execute on function public.is_org_admin(uuid) to authenticated;
 grant execute on function public.is_org_owner(uuid) to authenticated;
 grant execute on function public.path_org_id(text) to authenticated;
 grant execute on function public.invoice_status_for(bigint, bigint) to authenticated;
+-- the scheduled keep-alive ping uses the public key, i.e. the anon role
+grant execute on function public.keepalive() to anon;
 -- operator only
 grant execute on function public.set_setup_code(text) to service_role;
 -- objects added to public later get no access until granted explicitly
