@@ -199,14 +199,33 @@ export function expiringLeases(leases: Lease[], todayISO: string, withinDays: nu
 }
 
 /**
+ * Natural room-name order for sorting (SPEC 5.1): localeCompare with numeric: true and sensitivity 'base',
+ * so 'A1' < 'A2' < 'A10' and 'a1' equals 'A1' (returns 0). Negative when a sorts before b.
+ */
+export function compareRoomNames(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+}
+
+/**
+ * Room comparator for lists spanning several properties: by property_id (plain string compare) first, then
+ * compareRoomNames on the names. Callers that want "nama kos lalu nama kamar" and have the properties at
+ * hand can map property_id to its name before comparing; this keeps the domain free of property lookups.
+ */
+export function compareRooms(a: Room, b: Room): number {
+  if (a.property_id !== b.property_id) return a.property_id < b.property_id ? -1 : 1
+  return compareRoomNames(a.name, b.name)
+}
+
+/**
  * Rooms with status 'active' that have neither an occupant nor a reservation on the date, for the
- * "kamar kosong" list, sorted by name (numeric-aware). A room booked by a future-start active lease is
- * "Dipesan", not kosong (SPEC §2a / §2b.8), so it is left out; `reservedRoomIds` lists those rooms.
+ * "kamar kosong" list, sorted by name with compareRoomNames (A1 < A2 < A10). A room booked by a
+ * future-start active lease is "Dipesan", not kosong (SPEC §2a / §2b.8), so it is left out;
+ * `reservedRoomIds` lists those rooms.
  */
 export function vacantRooms(rooms: Room[], leases: Lease[], dateISO: string): Room[] {
   const occupiedIds = occupiedRoomIds(leases, dateISO)
   const reservedIds = reservedRoomIds(leases, dateISO)
   return rooms
     .filter((r) => r.status === 'active' && !occupiedIds.has(r.id) && !reservedIds.has(r.id))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+    .sort((a, b) => compareRoomNames(a.name, b.name))
 }

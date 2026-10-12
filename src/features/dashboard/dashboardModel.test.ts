@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import type { Invoice, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../../types/db'
 import {
+  amountDueAsOf,
   buildAttentionSections,
   buildExpiringItems,
   buildLookups,
   buildRecentPayments,
   buildVacantGroups,
+  ATTENTION_SORT_STORAGE_KEY,
+  compareAttentionByDate,
+  compareAttentionByRoom,
   deltaText,
+  parseAttentionSort,
+  sortAttentionSections,
   dueLabel,
   extensionQuestionText,
   formatCompactRupiah,
@@ -41,6 +47,9 @@ const tenant = (id: string, full_name: string): Tenant => ({
   property_id: null,
   full_name,
   nik: null,
+  id_type: 'ktp',
+  id_number: null,
+  nationality: null,
   phone: '0812',
   gender: null,
   birth_place: null,
@@ -76,6 +85,7 @@ const invoice = (id: string, lease_id: string, period_start: string, period_end:
   property_id: 'pA',
   lease_id,
   invoice_number: id,
+  period_type: null,
   period_start,
   period_end,
   quantity: 1,
@@ -233,8 +243,114 @@ describe('buildAttentionSections', () => {
     expect(overdue.amount).toBe(1_500_000)
   })
 
+  it('quotes only what is due: an invoice issued early is left out of amount and counted as not yet due', () => {
+    // l1 owes Oct (due 2026-10-01, overdue); the owner issued Nov early (due 2026-11-01, 21 days ahead).
+    const inv = [...invoices, invoice('i1n', 'l1', '2026-11-01', '2026-11-30', 'unpaid', 1_650_000)]
+    const sections = buildAttentionSections(leases, inv, payments, [], lookups, TODAY)
+    const overdue = sections[0].items[0]
+    expect(overdue.lease.id).toBe('l1')
+    expect(overdue.summary.outstanding).toBe(3_150_000)
+    expect(overdue.dueInvoices.map((i) => i.id)).toEqual(['i1'])
+    expect(overdue.dueAmount).toBe(1_500_000)
+    expect(overdue.notYetDueAmount).toBe(1_650_000)
+    expect(overdue.amount).toBe(1_500_000)
+    expect(overdue.openInvoiceCount).toBe(2)
+    expect(overdue.summary.nextDueDate).toBe('2026-10-01')
+  })
+
+  it('counts an invoice due within the due-soon window (today + 3 days) as due', () => {
+    const inv = [...invoices, invoice('i1n', 'l1', '2026-10-14', '2026-11-13', 'unpaid', 1_000_000)]
+    const overdue = buildAttentionSections(leases, inv, payments, [], lookups, TODAY)[0].items[0]
+    expect(overdue.dueInvoices.map((i) => i.id)).toEqual(['i1', 'i1n'])
+    expect(overdue.amount).toBe(2_500_000)
+    expect(overdue.notYetDueAmount).toBe(0)
+  })
+
+  it('amountDueAsOf sums remaining amounts of open invoices due on or before the date', () => {
+    const inv = [
+      invoice('a', 'l1', '2026-09-01', '2026-09-30', 'partial'),
+      invoice('b', 'l1', '2026-10-01', '2026-10-31', 'unpaid'),
+      invoice('c', 'l1', '2026-11-01', '2026-11-30', 'unpaid'),
+      invoice('d', 'l1', '2026-08-01', '2026-08-31', 'void'),
+      invoice('e', 'l2', '2026-10-01', '2026-10-31', 'unpaid'),
+    ]
+    const pays = [payment('pa', 'a', 'l1', 400_000, '2026-09-02')]
+    const due = amountDueAsOf('l1', inv, pays, '2026-10-01')
+    expect(due.invoices.map((i) => i.id)).toEqual(['a', 'b'])
+    expect(due.amount).toBe(2_600_000)
+    expect(amountDueAsOf('l1', inv, pays, '2026-08-31').amount).toBe(0)
+  })
+
   it('returns no sections when everything is paid ahead', () => {
     expect(buildAttentionSections([leases[3]], invoices, payments, [], lookups, TODAY)).toEqual([])
+  })
+})
+
+describe('attention sort (SPEC 5.1: Urut Tanggal | Kamar)', () => {
+  // Five overdue leases across two kos: Kos Anggrek (pB) rooms 101/103, Kos Melati (pA) rooms A1/A2/A10.
+  const extraRooms = [...rooms, room('r10', 'pA', 'A10')]
+  const lk = buildLookups(tenants, extraRooms, properties)
+  const mk = (id: string, room_id: string, tenant_id: string, start: string): Lease => ({
+    ...lease(id, 'r1', tenant_id, start, '2026-12-31'),
+    room_id,
+    property_id: extraRooms.find((r) => r.id === room_id)!.property_id,
+  })
+  const leases = [
+    mk('lA10', 'r10', 't1', '2026-09-20'),
+    mk('lA2', 'r2', 't2', '2026-09-05'),
+    mk('l103', 'r5', 't3', '2026-09-01'),
+    mk('lA1', 'r1', 't4', '2026-09-25'),
+    mk('l101', 'r3', 't1', '2026-09-15'),
+  ]
+  // Every lease billed one month starting on its start date, unpaid -> overdue, nextDueDate = start date.
+  const invoices = leases.map((l) => invoice(`i-${l.id}`, l.id, l.start_date, '2026-10-31', 'unpaid'))
+  const sections = buildAttentionSections(leases, invoices, [], [], lk, TODAY)
+
+  it('parseAttentionSort accepts only known values and defaults to date', () => {
+    expect(parseAttentionSort('room')).toBe('room')
+    expect(parseAttentionSort('date')).toBe('date')
+    expect(parseAttentionSort(null)).toBe('date')
+    expect(parseAttentionSort('kamar')).toBe('date')
+    expect(ATTENTION_SORT_STORAGE_KEY).toBe('woombad.dashboard.attentionSort')
+  })
+
+  it('buildAttentionSections orders by next due date ascending (the "Tanggal" order)', () => {
+    expect(sections.map((s) => s.group)).toEqual(['overdue'])
+    expect(sections[0].items.map((i) => i.lease.id)).toEqual(['l103', 'lA2', 'l101', 'lA10', 'lA1'])
+    expect(sections[0].items.map((i) => i.summary.nextDueDate)).toEqual(['2026-09-01', '2026-09-05', '2026-09-15', '2026-09-20', '2026-09-25'])
+    expect(sortAttentionSections(sections, 'date')).toEqual(sections)
+  })
+
+  it('"Kamar" orders by kos name, then natural room name (A1 < A2 < A10)', () => {
+    const byRoom = sortAttentionSections(sections, 'room')
+    expect(byRoom[0].items.map((i) => `${i.property?.name} ${i.room?.name}`)).toEqual([
+      'Kos Anggrek 101',
+      'Kos Anggrek 103',
+      'Kos Melati A1',
+      'Kos Melati A2',
+      'Kos Melati A10',
+    ])
+    // does not mutate the input, and switching back restores the date order
+    expect(sections[0].items[0].lease.id).toBe('l103')
+    expect(sortAttentionSections(byRoom, 'date')[0].items.map((i) => i.lease.id)).toEqual(['l103', 'lA2', 'l101', 'lA10', 'lA1'])
+  })
+
+  it('sorts inside each group only; group order stays overdue, due_soon, unbilled', () => {
+    const upcoming = mk('lUp', 'r1', 't2', '2026-10-25') // unbilled, starts in 14 days
+    const all = buildAttentionSections([...leases, upcoming], invoices, [], [], lk, TODAY)
+    expect(sortAttentionSections(all, 'room').map((s) => s.group)).toEqual(['overdue', 'unbilled'])
+    expect(compareAttentionByRoom(all[0].items[0], all[0].items[0])).toBe(0)
+    expect(compareAttentionByDate(all[0].items[0], all[1].items[0])).toBeLessThan(0)
+  })
+
+  it('same kos and room name falls back to the next due date', () => {
+    const twin = [room('x1', 'pA', '1'), room('x2', 'pA', '1')]
+    const lk2 = buildLookups(tenants, twin, properties)
+    const a = { ...lease('la', 'r1', 't1', '2026-09-10', '2026-12-31'), room_id: 'x1' }
+    const b = { ...lease('lb', 'r1', 't2', '2026-09-02', '2026-12-31'), room_id: 'x2' }
+    const inv = [invoice('ia', 'la', '2026-09-10', '2026-10-09', 'unpaid'), invoice('ib', 'lb', '2026-09-02', '2026-10-01', 'unpaid')]
+    const s = sortAttentionSections(buildAttentionSections([a, b], inv, [], [], lk2, TODAY), 'room')
+    expect(s[0].items.map((i) => i.lease.id)).toEqual(['lb', 'la'])
   })
 })
 

@@ -7,7 +7,7 @@ import { useTable } from '../../hooks/useTable'
 import { todayISO } from '../../lib/format'
 import type { Lease, Property, Room, Tenant } from '../../types/db'
 import { TenantFormModal } from './TenantFormModal'
-import { currentStayFor, describeRoom, filterTenantsByProperty, initials, matchesTenantSearch } from './tenantUtils'
+import { currentStayFor, describeIdentity, describeRoom, filterTenantsByProperty, initials, matchesTenantSearch } from './tenantUtils'
 
 export function TenantsPage() {
   const { properties, propertyFilterIds, selectedPropertyId } = useOrg()
@@ -17,6 +17,8 @@ export function TenantsPage() {
   const [search, setSearch] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
   const formOpen = searchParams.get('new') === '1'
+  // /penyewa?new=1&scan=1 opens the form with the document scanner ready (check-in shortcut)
+  const autoScan = formOpen && searchParams.get('scan') === '1'
 
   const openForm = useCallback(() => {
     const next = new URLSearchParams(searchParams)
@@ -27,6 +29,7 @@ export function TenantsPage() {
   const closeForm = useCallback(() => {
     const next = new URLSearchParams(searchParams)
     next.delete('new')
+    next.delete('scan')
     setSearchParams(next, { replace: true })
   }, [searchParams, setSearchParams])
 
@@ -63,7 +66,7 @@ export function TenantsPage() {
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari nama, NIK, atau nomor HP…"
+          placeholder="Cari nama, NIK/paspor, atau nomor HP…"
           aria-label="Cari penyewa"
           className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
         />
@@ -80,7 +83,7 @@ export function TenantsPage() {
           <EmptyState
             icon={<Users className="h-10 w-10" />}
             title="Belum ada penyewa"
-            description={selectedPropertyId === 'all' ? 'Tambahkan penyewa pertama Anda. Data KTP bisa diisi otomatis lewat Scan KTP.' : `Belum ada penyewa terdaftar di ${kosName}.`}
+            description={selectedPropertyId === 'all' ? 'Tambahkan penyewa pertama Anda. Data KTP atau paspor bisa diisi otomatis lewat Scan KTP / Paspor.' : `Belum ada penyewa terdaftar di ${kosName}.`}
             action={
               <Button icon={<UserPlus className="h-4 w-4" />} onClick={openForm}>
                 Tambah Penyewa
@@ -108,7 +111,7 @@ export function TenantsPage() {
         <Plus className="h-6 w-6" />
       </button>
 
-      <TenantFormModal open={formOpen} onClose={closeForm} />
+      <TenantFormModal open={formOpen} onClose={closeForm} autoScan={autoScan} />
     </>
   )
 }
@@ -130,6 +133,7 @@ function TenantRow({
 }) {
   const stay = currentStayFor(tenant.id, leases, today)
   const kos = tenant.property_id ? properties.find((p) => p.id === tenant.property_id)?.name : null
+  const identity = describeIdentity(tenant)
   return (
     <li>
       <Link to={`/penyewa/${tenant.id}`} className="flex items-center gap-3 px-3 py-3 hover:bg-brand-50/50 sm:px-4">
@@ -147,7 +151,7 @@ function TenantRow({
             ) : (
               <span className="italic">Belum ada nomor HP</span>
             )}
-            {tenant.nik && <span className="tabular-nums">NIK {tenant.nik}</span>}
+            {identity.text && <span className="tabular-nums">{identity.text}</span>}
             {showKos && kos && !stay && <span>{kos}</span>}
           </span>
           <span className="mt-1.5 block">

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { Lease, Room } from '../types/db'
 import {
   bucketEnd,
+  compareRoomNames,
+  compareRooms,
   expiringLeases,
   isLeaseActiveOn,
   isLeaseReservedOn,
@@ -452,5 +454,34 @@ describe('vacantRooms', () => {
     const leases = [makeLease({ room_id: 'r1', end_date: '2026-03-15' })]
     expect(vacantRooms(rooms, leases, '2026-03-15')).toEqual([])
     expect(vacantRooms(rooms, leases, '2026-03-16')).toEqual([])
+  })
+})
+
+describe('compareRoomNames / compareRooms (SPEC 5.1)', () => {
+  it('orders room names naturally: A1 < A2 < A10, case-insensitive', () => {
+    expect(compareRoomNames('A2', 'A10')).toBeLessThan(0)
+    expect(compareRoomNames('A10', 'A2')).toBeGreaterThan(0)
+    expect(compareRoomNames('A1', 'A2')).toBeLessThan(0)
+    expect(compareRoomNames('a1', 'A1')).toBe(0)
+    expect(compareRoomNames('Kamar 3', 'Kamar 12')).toBeLessThan(0)
+    expect(compareRoomNames('B1', 'A10')).toBeGreaterThan(0)
+    const names = ['A10', 'a2', 'B1', 'A1', 'A3']
+    expect([...names].sort(compareRoomNames)).toEqual(['A1', 'a2', 'A3', 'A10', 'B1'])
+  })
+  it('compareRooms sorts by property_id first, then natural room name', () => {
+    const rooms = [
+      makeRoom({ id: '1', property_id: 'kos-b', name: 'A1' }),
+      makeRoom({ id: '2', property_id: 'kos-a', name: 'A10' }),
+      makeRoom({ id: '3', property_id: 'kos-a', name: 'A2' }),
+      makeRoom({ id: '4', property_id: 'kos-b', name: 'a0' }),
+    ]
+    expect([...rooms].sort(compareRooms).map((r) => r.id)).toEqual(['3', '2', '4', '1'])
+    expect(compareRooms(rooms[1], rooms[2])).toBeGreaterThan(0)
+    expect(compareRooms(rooms[2], rooms[0])).toBeLessThan(0)
+    expect(compareRooms(rooms[0], makeRoom({ property_id: 'kos-b', name: 'a1' }))).toBe(0)
+  })
+  it('vacantRooms uses the same comparator (A1 < A2 < A10, case-insensitive)', () => {
+    const rooms = [makeRoom({ id: 'r10', name: 'a10' }), makeRoom({ id: 'r2', name: 'A2' }), makeRoom({ id: 'r1', name: 'A1' })]
+    expect(vacantRooms(rooms, [], '2026-03-15').map((r) => r.id)).toEqual(['r1', 'r2', 'r10'])
   })
 })

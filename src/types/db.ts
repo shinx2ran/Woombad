@@ -63,6 +63,10 @@ export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number]
 export const GENDERS = ['L', 'P'] as const
 export type Gender = (typeof GENDERS)[number]
 
+/** Identity document used at check-in. KTP keeps its number in `nik`; passports use `id_number`. */
+export const ID_TYPES = ['ktp', 'passport', 'other'] as const
+export type IdType = (typeof ID_TYPES)[number]
+
 // ---------- Row types ----------
 
 interface BaseRow {
@@ -129,7 +133,13 @@ export interface Tenant extends TimestampedRow {
   /** home property; null when not yet assigned */
   property_id: string | null
   full_name: string
+  /** KTP number (16 digits) when id_type = 'ktp' */
   nik: string | null
+  id_type: IdType
+  /** passport (or other document) number when id_type != 'ktp' */
+  id_number: string | null
+  /** ISO 3166-1 alpha-3 from the passport MRZ (e.g. 'AUS'), or null for Indonesians */
+  nationality: string | null
   phone: string | null
   gender: Gender | null
   birth_place: string | null
@@ -174,6 +184,11 @@ export interface Invoice extends TimestampedRow {
   property_id: string
   lease_id: string
   invoice_number: string
+  /**
+   * Period type this invoice was billed with. null = the lease's period_type at the time (older rows).
+   * A lease can switch type on extension (daily guest becomes monthly), so each invoice remembers its own.
+   */
+  period_type: PeriodType | null
   period_start: string
   period_end: string
   /** number of periods billed, e.g. 3 (days) or 1 (month) */
@@ -346,4 +361,10 @@ export const ADDON_BILLING_LABEL: Record<AddonBilling, string> = {
 export const GENDER_LABEL: Record<Gender, string> = {
   L: 'Laki-laki',
   P: 'Perempuan',
+}
+
+export const ID_TYPE_LABEL: Record<IdType, string> = {
+  ktp: 'KTP',
+  passport: 'Paspor',
+  other: 'Lainnya',
 }

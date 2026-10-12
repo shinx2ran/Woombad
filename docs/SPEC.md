@@ -176,3 +176,46 @@ Layar Utama), tombol keluar, versi aplikasi.
   (akhir bulan, tahun kabisat, qty > 1, tagihan void, bayar lebih, deposit, rentang kosong).
 - `npm run typecheck` dan `npm run build` harus bersih.
 - `npm run e2e` (Playwright) smoke test di Mode Demo.
+
+## 5. Perubahan v0.2 (umpan balik pemilik setelah mencoba)
+
+### 5.1 Urutan penyewa menurut jatuh tempo / nomor kamar
+- Halaman **Sewa** punya kontrol urutan: **Jatuh tempo terdekat** (default: `nextDueDate` naik; terlambat otomatis di
+  atas), **Nomor kamar** (nama kos lalu nama kamar, urutan alami A1 < A2 < A10 via `compareRoomNames`), **Nama penyewa**.
+  Pilihan disimpan di `useSearchParams` (`?urut=`). Tanggal jatuh tempo berikutnya tampil jelas di setiap kartu.
+- Dashboard **Perlu perhatian**: toggle kecil **Tanggal | Kamar** untuk urutan di dalam tiap grup.
+
+### 5.2 Perpanjangan dengan jenis periode berbeda (harian → mingguan/bulanan)
+- `invoices.period_type` (baru, nullable) menyimpan jenis periode tagihan itu; `null` = jenis sewa saat itu.
+  Label satuan tagihan memakai `invoice.period_type ?? lease.period_type`.
+- `InvoiceDraftInput` mendapat override `periodType?: PeriodType` dan `pricePerPeriod?: number`; `InvoiceDraft`
+  mendapat `period_type`. Saat jenis berbeda dari `lease.period_type`, rantai tagihan tidak lagi selaras grid →
+  `billedPeriodCount` = null → periode berikutnya mulai **sehari setelah** `period_end` terakhir (aturan fallback yang
+  sudah ada). Bila `periodStart` dioverride, berlaku seperti biasa.
+- Modal **Buat tagihan berikutnya**: pilihan jenis periode (segmented Harian/Mingguan/Bulanan, default jenis sewa);
+  mengganti jenis mengisi ulang harga dari tarif kamar untuk jenis itu (bisa diubah). Saat simpan: tagihan dibuat dengan
+  `period_type`; jika jenis atau harga berubah dan centang **"Jadikan jenis/harga tetap sewa ini"** aktif (default aktif
+  bila jenis berubah), `leases.period_type` dan `price_per_period` ikut diperbarui dan `leases.notes` mendapat catatan
+  otomatis "Ganti ke Bulanan Rp X mulai <tanggal>".
+
+### 5.3 Check-in cepat dengan KTP / Paspor
+- Modul bersama `src/features/scanner/` (dipindah dari `tenants`): `DocumentScanner` (kamera/galeri → OCR → deteksi
+  otomatis **KTP** (NIK ditemukan) atau **Paspor** (MRZ ditemukan) → pratinjau hasil) dengan `onApply(prefill, image)`
+  di mana `prefill: ScanPrefill` (lihat `src/features/scanner/types.ts`). `/penyewa?new=1&scan=1` membuka form penyewa
+  dengan pemindai langsung terbuka (setara `/sewa/baru?scan=1`). Untuk paspor, lencana **nomor paspor terverifikasi**
+  (check digit nomor) adalah sinyal paling andal; check digit gabungan sering gagal karena OCR menghilangkan karakter `<`.
+- Domain `src/domain/passport.ts`: `parsePassportMrz(ocrText)` untuk MRZ TD3 (2 baris × 44 karakter): nama belakang,
+  nama depan, nomor paspor, kewarganegaraan (alpha-3), tanggal lahir, jenis kelamin, kedaluwarsa, validasi check digit
+  (toleran terhadap O/0, I/1, S/5 dari OCR). `passportToTenant(parsed)` → `TenantPrefill`-like dengan `id_type='passport'`.
+- `tenants.id_type` ('ktp'|'passport'|'other'), `id_number`, `nationality` (baru). Form penyewa menampilkan NIK untuk KTP,
+  nomor paspor + kewarganegaraan untuk paspor.
+- Wizard **Sewa baru** diurutkan ulang untuk check-in: (1) **Penyewa** dengan tombol besar **Scan KTP / Paspor** (dan
+  pilih penyewa lama), (2) Kos & kamar, (3) **Jenis sewa** sebagai tiga tombol besar Harian/Mingguan/Bulanan dengan tarif
+  kamar, jumlah periode, **Harga disepakati** (lihat 5.4), (4) Add-on (tertutup default), (5) **Pembayaran**: Lunas / DP /
+  Belum bayar + deposit, lalu simpan. `?scan=1` langsung membuka pemindai (dashboard: tombol cepat **Check-in**).
+
+### 5.4 Harga bisa dinegosiasi
+- Tarif kamar = **harga standar**; sewa menyimpan **harga disepakati** (`price_per_period`). Semua form harga dapat diubah
+  dan menampilkan "Harga standar Rp X" sebagai petunjuk; bila berbeda tampilkan selisih ("Diskon Rp Y" / "Lebih Rp Y").
+- Detail sewa menampilkan "Harga disepakati Rp X · standar Rp Y". Modal perpanjangan selalu mengizinkan harga khusus untuk
+  tagihan itu (override `pricePerPeriod`), dengan centang untuk menjadikannya harga tetap sewa (5.2).

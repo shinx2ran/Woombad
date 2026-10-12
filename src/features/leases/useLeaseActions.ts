@@ -6,7 +6,7 @@
 import { useMemo } from 'react'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
-import type { AddonBilling, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, Room } from '../../types/db'
+import type { AddonBilling, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
 import {
   buildInvoiceDraft,
   deriveInvoiceStatus,
@@ -16,7 +16,18 @@ import {
   type InvoiceDraftInput,
 } from '../../domain/billing'
 import { formatRupiah } from '../../lib/format'
-import { allocateAcrossInvoices, appendMoveNote, cancelledLeaseEndDate, futureInvoicesAtCheckout, openInvoicesSorted, type DepositSettlement } from './leaseUtils'
+import {
+  addonAmountUpdates,
+  allocateAcrossInvoices,
+  appendMoveNote,
+  cancelledLeaseEndDate,
+  extensionLeasePatch,
+  futureInvoicesAtCheckout,
+  invoiceInsertFromDraft,
+  invoicesToPinType,
+  openInvoicesSorted,
+  type DepositSettlement,
+} from './leaseUtils'
 
 export interface IssueInvoiceInput {
   lease: Lease
@@ -24,6 +35,19 @@ export interface IssueInvoiceInput {
   quantity: number
   periodEnd?: string
   baseAmount?: number
+  /** period type for this invoice (SPEC 5.2); default the lease's */
+  periodType?: PeriodType
+  /** agreed price per period for this invoice (SPEC 5.4); always pass it when periodType differs */
+  pricePerPeriod?: number
+  /** 'Jadikan jenis/harga tetap sewa ini': copy type/price to the lease and append a note */
+  makePermanent?: boolean
+  /** add-ons amount override for this invoice (permanentSwitchAddonsAmount when the new type is made permanent) */
+  addonsAmount?: number
+  /**
+   * new per_period add-on amounts by id, expressed per NEW unit; written to lease_addons only when the type
+   * switch is made permanent (see rescaledAddonDefaults)
+   */
+  addonAmounts?: Record<string, number>
   extraAmount?: number
   discountAmount?: number
   notes: string | null
@@ -106,22 +130,8 @@ export function useLeaseActions() {
       for (let attempt = 0; ; attempt++) {
         const draft = buildInvoiceDraft({ ...input, orgInvoices })
         try {
-          const invoice = await repo.insert('invoices', {
-            property_id: input.lease.property_id,
-            lease_id: input.lease.id,
-            invoice_number: draft.invoice_number,
-            period_start: draft.period_start,
-            period_end: draft.period_end,
-            quantity: draft.quantity,
-            base_amount: draft.base_amount,
-            addons_amount: draft.addons_amount,
-            extra_amount: draft.extra_amount,
-            discount_amount: draft.discount_amount,
-            total_amount: draft.total_amount,
-            due_date: draft.due_date,
-            status: deriveInvoiceStatus(draft.total_amount, 0, 'unpaid'),
-            notes,
-          })
+          // period_type = the draft's effective type (SPEC 5.2), not necessarily the lease's.
+          const invoice = await repo.insert('invoices', invoiceInsertFromDraft(input.lease, draft, notes))
           return { invoice, draft }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -135,6 +145,10 @@ export function useLeaseActions() {
     }
 
     async function issueInvoice(input: IssueInvoiceInput): Promise<Invoice> {
+      const typeSwitch = (input.makePermanent ?? false) && input.periodType !== undefined && input.periodType !== input.lease.period_type
+      if (typeSwitch && !canWriteInvoiceStatus && invoicesToPinType(input.lease, input.existingInvoices, input.periodType).length > 0) {
+        throw new Error('Hanya admin yang dapat mengganti jenis sewa secara tetap (tagihan lama perlu ditandai jenisnya).')
+      }
       const { invoice, draft } = await insertFromDraft(
         {
           lease: input.lease,
@@ -142,6 +156,9 @@ export function useLeaseActions() {
           quantity: input.quantity,
           periodEnd: input.periodEnd,
           baseAmount: input.baseAmount,
+          periodType: input.periodType,
+          pricePerPeriod: input.pricePerPeriod,
+          addonsAmount: input.addonsAmount,
           extraAmount: input.extraAmount,
           discountAmount: input.discountAmount,
           existingInvoices: input.existingInvoices,
@@ -149,10 +166,31 @@ export function useLeaseActions() {
         },
         input.notes,
       )
-      if (draft.new_lease_end_date !== input.lease.end_date) {
-        await repo.update('leases', input.lease.id, { end_date: draft.new_lease_end_date })
+      // end_date follows the new invoice (SPEC 2b.10); a type/price switch made permanent updates the lease
+      // terms and leaves a note (SPEC 5.2).
+      const patch = extensionLeasePatch(input.lease, draft, input.makePermanent ?? false)
+      if (patch) {
+        try {
+          if (patch.period_type !== undefined && patch.period_type !== input.lease.period_type) {
+            // Old invoices storing null mean "the lease's type at the time": pin them before the lease changes.
+            for (const inv of invoicesToPinType(input.lease, input.existingInvoices, patch.period_type)) {
+              await repo.update('invoices', inv.id, { period_type: input.lease.period_type })
+            }
+          }
+          await repo.update('leases', input.lease.id, patch)
+          if (patch.period_type !== undefined && patch.period_type !== input.lease.period_type && input.addonAmounts) {
+            // Per-period add-ons follow the new unit, so the next invoices bill them per new period.
+            for (const u of addonAmountUpdates(input.addons, input.addonAmounts)) {
+              await repo.update('lease_addons', u.id, { amount: u.amount })
+            }
+          }
+        } catch (err) {
+          await invalidate('invoices', 'leases', 'lease_addons')
+          const detail = err instanceof Error ? err.message : 'kesalahan tak dikenal'
+          throw new Error(`Tagihan ${invoice.invoice_number} sudah dibuat, tetapi data sewa gagal diperbarui: ${detail}`)
+        }
       }
-      await invalidate('invoices', 'leases')
+      await invalidate('invoices', 'leases', 'lease_addons')
       return invoice
     }
 

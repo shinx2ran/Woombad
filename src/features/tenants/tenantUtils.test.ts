@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Lease, Payment, Tenant } from '../../types/db'
 import {
-  applyPrefill,
+  applyScanPrefill,
   currentStayFor,
+  describeIdentity,
   describeRoom,
-  diffPrefill,
   EMPTY_TENANT_FORM,
   filterTenantsByProperty,
+  formToScanPrefill,
   formToTenantPayload,
+  identityColumns,
   initialTenantForm,
   initials,
   leasesOfTenant,
@@ -26,6 +28,9 @@ function tenant(partial: Partial<Tenant> = {}): Tenant {
     property_id: 'kosA',
     full_name: 'Budi Santoso',
     nik: '3273010503900001',
+    id_type: 'ktp',
+    id_number: null,
+    nationality: null,
     phone: '+6281234567801',
     gender: 'L',
     birth_place: 'Bandung',
@@ -224,29 +229,103 @@ describe('history helpers', () => {
   })
 })
 
-describe('OCR prefill merge', () => {
-  it('pre-checks empty fields and leaves typed, different values unchecked', () => {
-    const current = { ...EMPTY_TENANT_FORM, full_name: 'Budi S', nik: '3273010503900001' }
-    const diff = diffPrefill({ full_name: 'Budi Santoso', nik: '3273010503900001', gender: 'L', birth_date: '1990-03-05' }, current)
-    expect(diff.map((d) => d.key)).toEqual(['full_name', 'nik', 'gender', 'birth_date'])
-    expect(diff.find((d) => d.key === 'full_name')?.apply).toBe(false) // user typed something else
-    expect(diff.find((d) => d.key === 'nik')?.apply).toBe(true) // equal
-    expect(diff.find((d) => d.key === 'gender')?.apply).toBe(true) // empty
+describe('identity columns (KTP / Paspor / Lainnya)', () => {
+  const base = { ...EMPTY_TENANT_FORM, full_name: 'John Smith', property_id: 'kosA' }
+
+  it('KTP keeps the NIK and clears passport columns', () => {
+    const p = formToTenantPayload({ ...base, id_type: 'ktp', nik: '3273 0105 0390 0001', id_number: 'N123', nationality: 'AUS' })
+    expect(p).toMatchObject({ id_type: 'ktp', nik: '3273010503900001', id_number: null, nationality: null })
   })
 
-  it('applyPrefill only writes checked entries and never touches phone', () => {
-    const current = { ...EMPTY_TENANT_FORM, full_name: 'Budi S', phone: '0812' }
-    const diff = diffPrefill({ full_name: 'Budi Santoso', gender: 'P', address: 'Jl. Melati' }, current)
-    const next = applyPrefill(current, diff)
+  it('passport keeps id_number (upper-cased, no spaces) + nationality code and clears nik', () => {
+    const p = formToTenantPayload({ ...base, id_type: 'passport', nik: '3273010503900001', id_number: ' n123 4567 ', nationality: 'aus' })
+    expect(p).toMatchObject({ id_type: 'passport', nik: null, id_number: 'N1234567', nationality: 'AUS' })
+    expect(formToTenantPayload({ ...base, id_type: 'passport', nationality: 'Australia' }).nationality).toBe('Australia')
+    expect(formToTenantPayload({ ...base, id_type: 'passport' })).toMatchObject({ id_number: null, nationality: null })
+  })
+
+  it('other keeps only id_number', () => {
+    expect(identityColumns({ id_type: 'other', nik: '1', id_number: 'sim-123', nationality: 'AUS' })).toEqual({ id_type: 'other', nik: null, id_number: 'SIM-123', nationality: null })
+  })
+
+  it('round-trips a passport row through the form', () => {
+    const t = tenant({ id_type: 'passport', nik: null, id_number: 'N1234567', nationality: 'AUS' })
+    const form = tenantToForm(t)
+    expect(form).toMatchObject({ id_type: 'passport', nik: '', id_number: 'N1234567', nationality: 'AUS' })
+    expect(formToTenantPayload(form)).toMatchObject({ id_type: 'passport', nik: null, id_number: 'N1234567', nationality: 'AUS' })
+  })
+
+  it('validates the number of the selected document only', () => {
+    expect(validateTenantForm({ ...base, id_type: 'passport', nik: 'abc', id_number: 'N1234567' })).toEqual({})
+    expect(validateTenantForm({ ...base, id_type: 'passport', id_number: 'N1' }).id_number).toMatch(/paspor/i)
+    expect(validateTenantForm({ ...base, id_type: 'passport', id_number: 'N12#4567' }).id_number).toBeDefined()
+    expect(validateTenantForm({ ...base, id_type: 'passport', nationality: '123' }).nationality).toBeDefined()
+    expect(validateTenantForm({ ...base, id_type: 'passport', nationality: 'AUS' })).toEqual({})
+    expect(validateTenantForm({ ...base, id_type: 'other', id_number: 'SIM-12345' })).toEqual({})
+    expect(validateTenantForm({ ...base, id_type: 'ktp', nik: '12345' }).nik).toBeDefined()
+  })
+
+  it('describeIdentity labels the document and its number', () => {
+    expect(describeIdentity(tenant())).toEqual({ label: 'KTP', number: '3273010503900001', text: 'KTP 3273010503900001' })
+    expect(describeIdentity(tenant({ id_type: 'passport', nik: null, id_number: 'N1234567', nationality: 'AUS' })).text).toBe('Paspor N1234567 · AUS')
+    expect(describeIdentity(tenant({ id_type: 'passport', nik: null, id_number: 'N1234567', nationality: null })).text).toBe('Paspor N1234567')
+    expect(describeIdentity(tenant({ id_type: 'other', nik: null, id_number: 'X1' })).text).toBe('Lainnya X1')
+    expect(describeIdentity(tenant({ nik: null }))).toEqual({ label: 'KTP', number: null, text: null })
+  })
+
+  it('search also matches the passport number', () => {
+    const t = tenant({ id_type: 'passport', nik: null, id_number: 'N1234567' })
+    expect(matchesTenantSearch(t, 'n1234')).toBe(true)
+    expect(matchesTenantSearch(t, '3273')).toBe(false)
+  })
+
+  it('an alphanumeric passport query never matches through phone digits', () => {
+    const smith = tenant({ id: 'js', full_name: 'John Robert Smith', id_type: 'passport', nik: null, id_number: 'PA1234567', phone: null })
+    const budi = tenant({ phone: '+6281234567801' }) // phone contains 1234
+    expect(matchesTenantSearch(smith, 'pa1234')).toBe(true)
+    expect(matchesTenantSearch(budi, 'pa1234')).toBe(false)
+    expect(matchesTenantSearch(smith, 'PA 1234 567')).toBe(true) // spaces ignored, case-insensitive
+    expect(matchesTenantSearch(tenant({ id_type: 'passport', nik: null, id_number: 'pa1234567' }), 'PA1234')).toBe(true)
+    // phone-looking queries still search the phone
+    expect(matchesTenantSearch(budi, '1234')).toBe(true)
+    expect(matchesTenantSearch(budi, '(0812) 345-67')).toBe(true)
+    expect(matchesTenantSearch(budi, '12')).toBe(false) // fewer than 3 digits: no phone match
+  })
+})
+
+describe('scanner glue', () => {
+  it('formToScanPrefill turns empty strings into undefined and keeps id_type', () => {
+    const cur = formToScanPrefill({ ...EMPTY_TENANT_FORM, full_name: 'Budi', id_type: 'passport' })
+    expect(cur).toMatchObject({ id_type: 'passport', full_name: 'Budi' })
+    expect(cur.nik).toBeUndefined()
+    expect(cur.gender).toBeUndefined()
+  })
+
+  it('applyScanPrefill switches the document type, writes present fields and never touches phone', () => {
+    const current = { ...EMPTY_TENANT_FORM, full_name: 'Budi S', phone: '0812', nik: '3273010503900001' }
+    const next = applyScanPrefill(current, { id_type: 'passport', id_number: 'N1234567', nationality: 'AUS', gender: 'P', address: 'Jl. Melati' })
     expect(next.full_name).toBe('Budi S')
+    expect(next.id_type).toBe('passport')
+    expect(next.id_number).toBe('N1234567')
+    expect(next.nationality).toBe('AUS')
     expect(next.gender).toBe('P')
     expect(next.address).toBe('Jl. Melati')
     expect(next.phone).toBe('0812')
-    const forced = applyPrefill(current, diff.map((d) => ({ ...d, apply: true })))
-    expect(forced.full_name).toBe('Budi Santoso')
+    expect(next.nik).toBe('3273010503900001') // kept in the form; identityColumns drops it on save
+    const ktp = applyScanPrefill(next, { id_type: 'ktp', nik: '1111111111111111', full_name: 'Budi Santoso' })
+    expect(ktp.id_type).toBe('ktp')
+    expect(ktp.nik).toBe('1111111111111111')
+    expect(ktp.full_name).toBe('Budi Santoso')
   })
 
-  it('skips empty detected values', () => {
-    expect(diffPrefill({ full_name: '', occupation: 'Guru' }, EMPTY_TENANT_FORM).map((d) => d.key)).toEqual(['occupation'])
+  it('a declined type switch (prefill keeps the current type) keeps the stored NIK in the saved payload', () => {
+    const current = { ...EMPTY_TENANT_FORM, property_id: 'kosA', nik: '3273011501900003' }
+    // what the scanner hands over when "Jenis identitas: KTP → Paspor" stays unchecked
+    const next = applyScanPrefill(current, { id_type: 'ktp', full_name: 'John Robert Smith', gender: 'L' })
+    const payload = formToTenantPayload(next)
+    expect(payload).toMatchObject({ id_type: 'ktp', nik: '3273011501900003', id_number: null, nationality: null, full_name: 'John Robert Smith', gender: 'L' })
+    // accepted: the passport columns are saved and the NIK is cleared
+    const switched = formToTenantPayload(applyScanPrefill(current, { id_type: 'passport', id_number: 'pa1234567', nationality: 'aus' }))
+    expect(switched).toMatchObject({ id_type: 'passport', nik: null, id_number: 'PA1234567', nationality: 'AUS' })
   })
 })

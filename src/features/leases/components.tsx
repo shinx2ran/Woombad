@@ -1,10 +1,159 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { clsx } from 'clsx'
-import { MoreHorizontal } from 'lucide-react'
+import { AlertTriangle, CalendarClock, MoreHorizontal } from 'lucide-react'
 import { Badge, MoneyInput, Input } from '../../components/ui'
 import type { DepositBalance } from '../../domain/billing'
+import type { PeriodType } from '../../types/db'
+import { PERIOD_TYPES, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { formatDate, formatRupiah } from '../../lib/format'
-import { BILLING_STATE_META, type DepositSettlement, type DisplayBillingState, type TimelineSegment } from './leaseUtils'
+import {
+  BILLING_STATE_META,
+  priceDelta,
+  priceDeltaText,
+  type DepositSettlement,
+  type DisplayBillingState,
+  type DueLabel,
+  type TimelineSegment,
+} from './leaseUtils'
+
+// ---------- negotiated price (SPEC 5.4) ----------
+
+/**
+ * Money input for an agreed price with the room's standard rate as a hint ('Harga standar Rp X / bulan') and,
+ * when the price differs, the difference inline ('Diskon Rp Y' / 'Lebih Rp Y').
+ */
+export function PriceField({
+  label,
+  value,
+  onChange,
+  standard,
+  unit,
+  error,
+  required,
+  extraHint,
+  missingText,
+}: {
+  /** hint when there is no standard rate (default: the room has no rate for this type) */
+  missingText?: string
+  label: string
+  value: number
+  onChange: (v: number) => void
+  /** room's standard rate for the selected type; null/undefined = not set */
+  standard: number | null | undefined
+  /** 'malam' | 'minggu' | 'bulan' */
+  unit: string
+  error?: string
+  required?: boolean
+  extraHint?: string
+}) {
+  const delta = priceDelta(value, standard)
+  return (
+    <div className="flex flex-col gap-1">
+      <MoneyInput label={label} value={value} onChange={onChange} error={error} required={required} />
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500" data-testid="price-hint">
+        <span>{standard == null ? (missingText ?? `Harga standar kamar per ${unit} belum diatur.`) : `Harga standar ${formatRupiah(standard)} / ${unit}`}</span>
+        {delta.kind === 'discount' && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700">{priceDeltaText(delta)}</span>}
+        {delta.kind === 'more' && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800">{priceDeltaText(delta)}</span>}
+        {standard != null && (delta.kind === 'discount' || delta.kind === 'more') && (
+          <button type="button" className="font-medium text-brand-700 hover:underline" onClick={() => onChange(standard)}>
+            Pakai harga standar
+          </button>
+        )}
+      </p>
+      {extraHint && <p className="text-xs text-slate-500">{extraHint}</p>}
+    </div>
+  )
+}
+
+// ---------- period type picker ----------
+
+/**
+ * Harian / Mingguan / Bulanan. `variant='segmented'` is a compact segmented control (extension modal);
+ * `variant='cards'` renders three large tap targets with the room's standard price per type (check-in wizard).
+ */
+export function PeriodTypePicker({
+  value,
+  onChange,
+  prices,
+  variant = 'segmented',
+  label = 'Jenis periode',
+}: {
+  value: PeriodType
+  onChange: (type: PeriodType) => void
+  prices?: Record<PeriodType, number | null>
+  variant?: 'segmented' | 'cards'
+  label?: string
+}) {
+  if (variant === 'cards') {
+    return (
+      <div role="radiogroup" aria-label={label} className="grid grid-cols-3 gap-2">
+        {PERIOD_TYPES.map((t) => {
+          const selected = t === value
+          const price = prices?.[t]
+          return (
+            <button
+              key={t}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(t)}
+              className={clsx(
+                'flex min-h-20 flex-col items-center justify-center gap-0.5 rounded-xl border-2 px-1 py-3 text-center transition-colors',
+                selected ? 'border-brand-600 bg-brand-50 text-brand-900' : 'border-slate-200 bg-white text-slate-800 hover:border-brand-300',
+              )}
+            >
+              <span className="text-base font-semibold">{PERIOD_TYPE_LABEL[t]}</span>
+              {prices && (
+                <span className={clsx('text-xs tabular-nums', selected ? 'text-brand-800' : 'text-slate-500')}>
+                  {price != null ? formatRupiah(price) : 'Tarif belum diatur'}
+                </span>
+              )}
+              <span className="text-[11px] text-slate-400">per {PERIOD_UNIT_LABEL[t]}</span>
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <div role="radiogroup" aria-label={label} className="grid grid-cols-3 rounded-lg border border-slate-200 bg-white p-1 text-sm">
+        {PERIOD_TYPES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="radio"
+            aria-checked={t === value}
+            onClick={() => onChange(t)}
+            className={clsx('min-h-11 rounded-md px-2 py-2 font-medium transition-colors sm:min-h-0 sm:py-1.5', t === value ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-slate-100')}
+          >
+            {PERIOD_TYPE_LABEL[t]}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ---------- next due line (SPEC 5.1) ----------
+
+const DUE_TONE_CLASS: Record<DueLabel['tone'], string> = {
+  danger: 'bg-red-50 text-red-800',
+  warning: 'bg-amber-50 text-amber-800',
+  info: 'bg-sky-50 text-sky-800',
+  neutral: 'bg-slate-50 text-slate-700',
+}
+
+export function DueLine({ due }: { due: DueLabel }) {
+  const Icon = due.tone === 'danger' ? AlertTriangle : CalendarClock
+  return (
+    <p className={clsx('flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold', DUE_TONE_CLASS[due.tone])} data-testid="due-line">
+      <Icon className="h-4 w-4 shrink-0" aria-hidden />
+      <span className="min-w-0 truncate">{due.text}</span>
+    </p>
+  )
+}
 
 export function BillingStateBadge({ state }: { state: DisplayBillingState }) {
   const meta = BILLING_STATE_META[state]

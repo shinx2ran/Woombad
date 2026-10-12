@@ -65,6 +65,9 @@ function makeTenant(overrides: Partial<Tenant> = {}): Tenant {
     property_id: 'kos-a',
     full_name: 'Budi',
     nik: null,
+    id_type: 'ktp',
+    id_number: null,
+    nationality: null,
     phone: null,
     gender: null,
     birth_place: null,
@@ -129,6 +132,7 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
     property_id: 'kos-a',
     lease_id: 'lease-budi',
     invoice_number: 'INV-001',
+    period_type: null,
     period_start: '2026-03-01',
     period_end: '2026-03-31',
     quantity: 1,
@@ -466,12 +470,15 @@ describe('buildTenantsSheet', () => {
     const ctx = makeContext()
     const sheet = buildTenantsSheet(ctx, undefined, TODAY)
     expect(sheet.name).toBe('Penyewa')
-    expect(headers(sheet)).toEqual(['Nama', 'Telepon', 'NIK', 'Jenis Kelamin', 'Kos', 'Kamar', 'Status Sewa', 'Alamat', 'Pekerjaan'])
+    expect(headers(sheet)).toEqual(['Nama', 'Telepon', 'NIK', 'Jenis Identitas', 'Nomor Identitas', 'Kewarganegaraan', 'Jenis Kelamin', 'Kos', 'Kamar', 'Status Sewa', 'Alamat', 'Pekerjaan'])
     expect(sheet.rows).toEqual([
       {
         full_name: 'Budi Santoso',
         phone: '0812',
         nik: '3171',
+        id_type: 'KTP',
+        id_number: '3171',
+        nationality: '-',
         gender: 'Laki-laki',
         property: 'Kos Mawar',
         room: 'A1',
@@ -483,6 +490,9 @@ describe('buildTenantsSheet', () => {
         full_name: 'Sari Dewi',
         phone: '-',
         nik: '-',
+        id_type: 'KTP',
+        id_number: '-',
+        nationality: '-',
         gender: 'Perempuan',
         // lease ended with checkout 2026-02-28 does not count today; kos comes from the tenant's home property
         property: 'Kos Melati',
@@ -965,5 +975,24 @@ describe('exportFileName', () => {
     expect(slugify('Kos Mawar & Melati')).toBe('kos-mawar-melati')
     expect(slugify('---')).toBe('')
     expect(slugify('ABC123')).toBe('abc123')
+  })
+})
+
+
+describe('buildTenantsSheet identity columns', () => {
+  it('exports the document type, number and nationality for KTP and passport tenants', () => {
+    const ctx = makeContext()
+    ctx.leases = []
+    ctx.tenants = [
+      makeTenant({ id: 't-ktp', full_name: 'Budi Santoso', nik: '3273010101900001', id_type: 'ktp', id_number: null, nationality: null }),
+      makeTenant({ id: 't-pass', full_name: 'John Smith', nik: null, id_type: 'passport', id_number: 'PA1234567', nationality: 'AUS' }),
+    ]
+    const sheet = buildTenantsSheet(ctx, undefined, '2026-10-12')
+    const headers = sheet.columns.map((c) => c.header)
+    expect(headers).toEqual(expect.arrayContaining(['Jenis Identitas', 'Nomor Identitas', 'Kewarganegaraan']))
+    const budi = sheet.rows.find((r) => r.full_name === 'Budi Santoso')!
+    const john = sheet.rows.find((r) => r.full_name === 'John Smith')!
+    expect(budi).toMatchObject({ id_type: 'KTP', id_number: '3273010101900001', nationality: '-' })
+    expect(john).toMatchObject({ id_type: 'Paspor', id_number: 'PA1234567', nationality: 'AUS', nik: '-' })
   })
 })
