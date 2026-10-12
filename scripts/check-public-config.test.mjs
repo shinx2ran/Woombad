@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkEnvText, checkEnvVars, secretProblems } from './check-public-config.mjs'
+import { checkEnvText, checkEnvVars, keyProblems, secretProblems } from './check-public-config.mjs'
 import { CODE_ALPHABET, newCode } from './new-setup-code.mjs'
 
 // Fixtures are built at runtime so no key-shaped literal lands in the repository.
@@ -9,17 +9,26 @@ const anonJwt = jwt({ iss: 'supabase', ref: 'abcdefghijklmnop', role: 'anon' })
 const serviceJwt = jwt({ iss: 'supabase', ref: 'abcdefghijklmnop', role: 'service_role' })
 const secretKey = ['sb', 'secret', 'x'.repeat(32)].join('_')
 const publishableKey = ['sb', 'publishable', 'x'.repeat(32)].join('_')
+const notPublishable = 'VITE_SUPABASE_ANON_KEY must be the publishable key (sb_publishable_...), not a legacy anon key'
 
 describe('checkEnvText', () => {
-  it('accepts the public URL with a publishable or anon key', () => {
+  it('accepts the public URL with a publishable key, quoted or not', () => {
     const url = 'VITE_SUPABASE_URL=https://abcdefghijklmnop.supabase.co'
     expect(checkEnvText(`# public\n${url}\nVITE_SUPABASE_ANON_KEY=${publishableKey}\n`)).toEqual([])
-    expect(checkEnvText(`${url}\r\nVITE_SUPABASE_ANON_KEY="${anonJwt}"\r\n`)).toEqual([])
+    expect(checkEnvText(`${url}\r\nVITE_SUPABASE_ANON_KEY="${publishableKey}"\r\n`)).toEqual([])
+    expect(checkEnvText('VITE_SUPABASE_URL=\nVITE_SUPABASE_ANON_KEY=\n')).toEqual([])
+  })
+
+  it('rejects a legacy anon key, which breaks once the legacy keys are disabled', () => {
+    expect(checkEnvText(`VITE_SUPABASE_ANON_KEY="${anonJwt}"`)).toEqual([`line 1: ${notPublishable}`])
   })
 
   it('rejects secret keys, also in comments', () => {
-    expect(checkEnvText(`VITE_SUPABASE_ANON_KEY=${secretKey}`)).toEqual(['line 1: contains a Supabase secret key (sb_secret_...)'])
-    expect(checkEnvText(`VITE_SUPABASE_ANON_KEY=${serviceJwt}`)).toEqual(['line 1: contains a service_role JWT'])
+    expect(checkEnvText(`VITE_SUPABASE_ANON_KEY=${secretKey}`)).toEqual([
+      'line 1: contains a Supabase secret key (sb_secret_...)',
+      `line 1: ${notPublishable}`,
+    ])
+    expect(checkEnvText(`VITE_SUPABASE_ANON_KEY=${serviceJwt}`)).toEqual(['line 1: contains a service_role JWT', `line 1: ${notPublishable}`])
     expect(checkEnvText(`\n# old: ${serviceJwt}`)).toEqual(['line 2: contains a service_role JWT'])
     expect(checkEnvText('VITE_DB=postgresql://postgres:pw@db.example.supabase.co:5432/postgres')).toHaveLength(1)
   })
@@ -32,13 +41,26 @@ describe('checkEnvText', () => {
 
   it('never echoes the secret value', () => {
     expect(checkEnvText(`SERVICE_KEY=${serviceJwt}`).join('\n')).not.toContain(serviceJwt)
+    expect(checkEnvText(`VITE_SUPABASE_ANON_KEY=${anonJwt}`).join('\n')).not.toContain(anonJwt)
   })
 })
 
 describe('checkEnvVars', () => {
   it('checks only non-empty VITE_ variables', () => {
-    expect(checkEnvVars({ VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: anonJwt, OTHER: secretKey })).toEqual([])
-    expect(checkEnvVars({ VITE_SUPABASE_ANON_KEY: secretKey })).toEqual(['VITE_SUPABASE_ANON_KEY: contains a Supabase secret key (sb_secret_...)'])
+    expect(checkEnvVars({ VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: publishableKey, OTHER: secretKey })).toEqual([])
+    expect(checkEnvVars({ VITE_SUPABASE_ANON_KEY: secretKey })).toEqual([
+      'VITE_SUPABASE_ANON_KEY: contains a Supabase secret key (sb_secret_...)',
+      `VITE_SUPABASE_ANON_KEY: ${notPublishable}`,
+    ])
+    expect(checkEnvVars({ VITE_SUPABASE_ANON_KEY: anonJwt })).toEqual([`VITE_SUPABASE_ANON_KEY: ${notPublishable}`])
+  })
+})
+
+describe('keyProblems', () => {
+  it('applies only to the app key', () => {
+    expect(keyProblems('VITE_SUPABASE_URL', 'https://abcdefghijklmnop.supabase.co')).toEqual([])
+    expect(keyProblems('VITE_SUPABASE_ANON_KEY', '')).toEqual([])
+    expect(keyProblems('VITE_SUPABASE_ANON_KEY', publishableKey)).toEqual([])
   })
 })
 

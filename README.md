@@ -38,7 +38,8 @@ node scripts/check-public-config.mjs   # memastikan .env.production tidak memuat
 ```
 
 Build Mode Demo walaupun `.env.production` ada: `VITE_SUPABASE_URL= VITE_SUPABASE_ANON_KEY= npm run build`
-(variabel kosong di terminal mengalahkan isi berkas `.env`).
+(variabel kosong di terminal mengalahkan isi berkas `.env`). Uji Playwright (`npm run e2e`) memakai Mode Demo, jadi
+jalankan build seperti ini dulu.
 
 ## Alamat aplikasi (sudah otomatis)
 
@@ -82,7 +83,9 @@ Lewati langkah ini bila isinya hanya data contoh.
    `select public.set_setup_code('ABCD-EFGH');` yang dicetaknya di SQL Editor. Berikan kodenya kepada pemilik secara
    pribadi. Kode ini sekali pakai; bila hilang sebelum dipakai, buat kode baru dengan cara yang sama.
 4. **Konfigurasi publik**: buat berkas `.env.production` di akar repo dengan **Project URL** (Project Settings →
-   Data API) dan **Publishable key** (Project Settings → API Keys):
+   Data API) dan **Publishable key** `sb_publishable_…` (Project Settings → API Keys). Jangan pakai *anon key* lama;
+   pemeriksaan build menolaknya karena kunci itu berhenti bekerja bila kunci lama dimatikan (lihat
+   [Mana yang rahasia?](#mana-yang-rahasia)).
 
    ```
    VITE_SUPABASE_URL=https://<ref>.supabase.co
@@ -90,8 +93,8 @@ Lewati langkah ini bila isinya hanya data contoh.
    ```
 
    Jalankan `node scripts/check-public-config.mjs`, lalu commit ke `master` (setelah pemilik selesai langkah 1).
-   Dalam ±2 menit GitHub Actions memublikasikan versi online. Secret GitHub `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` tidak diperlukan; bila
-   diisi, nilainya menggantikan `.env.production`.
+   Dalam ±2 menit GitHub Actions memublikasikan versi online. Secret GitHub `VITE_SUPABASE_URL` /
+   `VITE_SUPABASE_ANON_KEY` tidak diperlukan; bila diisi, nilainya menggantikan `.env.production`.
 
 ### 3. Pemilik: atur login di Supabase
 
@@ -105,11 +108,13 @@ Buka dashboard Supabase → proyek Woombad → **Authentication**:
 | URL Configuration → **Redirect URLs** → *Add URL* | `https://shinx2ran.github.io/Woombad/reset-sandi` |
 
 *Confirm email* dimatikan karena akun baru tetap tidak bisa melihat apa pun tanpa kode. *Redirect URL* dipakai saat
-**Lupa kata sandi?**.
+**Lupa kata sandi?**. Email bawaan Supabase hanya terkirim ke email akun Supabase Anda, jadi tautan reset hanya sampai
+ke pemilik (lihat [Lupa kata sandi](#lupa-kata-sandi)).
 
 ### 4. Pemilik: buat akun pemilik
 
-1. Buka **https://shinx2ran.github.io/Woombad/** → **Buat akun** (email + kata sandi minimal 8 karakter).
+1. Buka **https://shinx2ran.github.io/Woombad/** → **Buat akun** dengan **email yang sama dengan akun Supabase**
+   (supaya **Lupa kata sandi?** bisa dipakai) dan kata sandi minimal 8 karakter.
 2. Muncul layar **Masukkan kode** → ketik **kode pemilik** dari operator → **Gabung**.
 3. Organisasi "Kos Saya" dibuat dan Anda menjadi **Pemilik**.
 
@@ -147,19 +152,28 @@ langkah (aplikasi authenticator) di keduanya:
 |---|---|---|
 | **Pemilik** | Bapak (akun pertama) | Semua, termasuk mengubah peran anggota dan menghapus admin. |
 | **Admin** | Istri | Semua data: kos & rekening, kamar & harga, sewa, pembayaran, pengeluaran, Laporan, undang anggota, cadangan, Riwayat perubahan. Tidak bisa mengubah peran anggota atau menghapus admin lain. |
-| **Staf** | Pegawai / penjaga kos | Tambah/ubah penyewa, sewa baru, perpanjangan, tagihan, catat pembayaran & pengeluaran. **Tidak bisa** mengubah harga kamar/sewa, data kos & rekening, daftar add-on, atau pembayaran/pengeluaran yang sudah dicatat; tidak melihat Laporan. |
+| **Staf** | Pegawai / penjaga kos | Tambah/ubah penyewa, sewa baru, perpanjangan, tagihan, catat pembayaran & pengeluaran. **Tidak bisa** mengubah harga kamar/sewa, data kos & rekening, daftar add-on, atau pembayaran/pengeluaran yang sudah dicatat. Menu **Laporan** tidak ditampilkan. |
 
-Batasan ini dijaga oleh database, bukan hanya oleh tampilan aplikasi.
+Batasan ubah/hapus dijaga oleh database, bukan hanya oleh tampilan aplikasi. Staf tetap bisa **melihat** angka
+pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disembunyikan.
 
 ### Mana yang rahasia?
 
 | Hal | Rahasia? | Keterangan |
 |---|---|---|
-| Project URL + *Publishable key* (atau *anon key* lama) | Tidak | Memang publik: ikut di dalam aplikasi dan di `.env.production`. Data tetap aman karena dilindungi Row Level Security — hanya anggota yang bisa membaca data kosnya. |
-| *Secret key* (`sb_secret_…`) atau *service_role key* lama | **Ya, sangat** | Membuka semua data tanpa batas. Jangan pernah dikirim (WhatsApp, email), ditempel di aplikasi, atau di-commit ke GitHub. Build otomatis gagal bila kunci ini ada di `.env.production`. Bila bocor: buat kunci baru di Supabase (Project Settings → API Keys) dan hapus yang lama. |
+| Project URL + *Publishable key* (`sb_publishable_…`) | Tidak | Memang publik: ikut di dalam aplikasi dan di `.env.production`. Data tetap aman karena dilindungi Row Level Security — hanya anggota yang bisa membaca data kosnya. |
+| *Secret key* (`sb_secret_…`) atau *service_role key* lama | **Ya, sangat** | Membuka semua data tanpa batas. Jangan pernah dikirim (WhatsApp, email), ditempel di aplikasi, atau di-commit ke GitHub. Build otomatis gagal bila kunci ini ada di `.env.production`. Bila bocor: lihat di bawah. |
 | Kata sandi database | Ya | Tidak dipakai aplikasi; simpan di pengelola sandi. |
 | Kode pemilik | Ya, sampai dipakai | Sekali pakai. |
 | Kode undangan | Ya | Hanya untuk orang yang dituju. Sekali pakai, berlaku 7 hari. Salah kirim? Hapus undangannya di **Pengaturan → Anggota**. |
+
+**Bila kunci rahasia bocor**: buka Supabase → Project Settings → **API Keys**. Membuat kunci baru saja **tidak**
+mematikan kunci yang bocor.
+
+| Kunci yang bocor | Yang dilakukan |
+|---|---|
+| *Secret key* (`sb_secret_…`) | Buat *secret key* baru, lalu **hapus** kunci yang bocor. |
+| *service_role key* lama | Tab **Legacy API Keys** → **matikan** (*disable*) kunci lama. Kunci lama tidak bisa dihapus satu per satu; *anon key* lama ikut mati, tetapi aplikasi tetap jalan karena memakai *publishable key*. |
 
 Keamanan lain: siapa pun bisa membuat akun, tetapi akun itu **tidak melihat apa pun** sampai memasukkan kode yang
 benar (10 kali salah dalam 1 jam → diblokir 1 jam). Penghapusan data keuangan (tagihan yang sudah dibayar, sewa yang
@@ -172,7 +186,26 @@ Riwayat perubahan** (pemilik/admin) dan tidak bisa dihapus.
 |---|---|
 | Setiap minggu | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**, simpan di Google Drive atau laptop. Paket gratis Supabase tidak membuat cadangan otomatis. Foto tidak ikut dalam cadangan. |
 | Bila aplikasi tidak bisa memuat data | Proyek Supabase dijeda setelah 7 hari tanpa aktivitas (membuka aplikasi sudah dihitung aktivitas). Buka dashboard Supabase → proyek Woombad → **Restore project**, tunggu beberapa menit. |
-| Lupa kata sandi | Layar **Masuk** → **Lupa kata sandi?** → buka tautan di email. |
+| Lupa kata sandi | Lihat [di bawah](#lupa-kata-sandi). |
+
+### Lupa kata sandi
+
+Email bawaan Supabase hanya terkirim ke email akun Supabase (pemilik), paling banyak 2 email per jam. Email ke
+alamat lain ditolak, jadi istri dan staf **tidak** menerima tautan reset.
+
+| Siapa | Caranya |
+|---|---|
+| Pemilik (email sama dengan akun Supabase) | Layar **Masuk** → isi email → **Lupa kata sandi?** → buka tautan di email. |
+| Istri / staf | Minta kata sandi sementara lewat pemilik. Di Chrome/Safari (bukan dari ikon di layar utama), masuk dengan kata sandi itu, lalu buka **https://shinx2ran.github.io/Woombad/reset-sandi** di browser yang sama dan buat kata sandi baru. |
+
+Operator membuat kata sandi sementara:
+
+1. Jalankan `node scripts/temp-password.mjs <email orangnya>`.
+2. Tempel SQL yang dicetak di **SQL Editor** → **Run**. Harus muncul 1 baris; 0 baris berarti emailnya salah.
+3. Kirim kata sandi sementara ke orangnya secara pribadi.
+
+Agar **Lupa kata sandi?** berfungsi untuk semua orang, pasang layanan pengirim email sendiri di **Authentication →
+Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cukup.
 
 ## Alur pemakaian sehari-hari
 

@@ -39,6 +39,9 @@ jobs:
           key="$(printf '%s' "$SECRET_KEY" | tr -d '[:space:]')"
           if [ -n "$url" ]; then echo "VITE_SUPABASE_URL=$url" >> "$GITHUB_ENV"; fi
           if [ -n "$key" ]; then echo "VITE_SUPABASE_ANON_KEY=$key" >> "$GITHUB_ENV"; fi
+      # Deploy does not wait for CI, so test the checker (and the env priority above) right before relying on it.
+      - name: Test the public config check
+        run: npx vitest run --root scripts
       - name: Check public config (no secret keys)
         run: node scripts/check-public-config.mjs
       - name: Build (sub-path /Woombad/)
