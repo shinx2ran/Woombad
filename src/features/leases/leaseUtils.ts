@@ -2,7 +2,7 @@
  * UI-side helpers for the leases module. Money/date rules live in src/domain; these functions only
  * arrange domain results for display (sorting, search, timeline segments, form conventions).
  */
-import type { Invoice, Lease, LeaseAddon, OrgInsert, Payment, PeriodType, Room, Tenant, Update } from '../../types/db'
+import type { Expense, Invoice, Lease, LeaseAddon, OrgInsert, Payment, PeriodType, Room, Tenant, Update } from '../../types/db'
 import { PERIOD_TYPE_LABEL } from '../../types/db'
 import type { BillingState, ExtraBreakdown, InvoiceDraft, LeaseBillingSummary } from '../../domain/billing'
 import {
@@ -334,6 +334,115 @@ export function futureInvoicesAtCheckout(leaseId: string, invoices: Invoice[], p
     else out.paid.push(inv)
   }
   return out
+}
+
+// ---------- closing partially-paid invoices (SPEC 2b.4) ----------
+
+/** 'refund' = the paid part goes back to the tenant (expense rent_refund); 'forfeit' = the DP stays revenue. */
+export type PartialDecision = 'refund' | 'forfeit'
+
+/** Line added to the notes of an invoice closed by a refund; it also marks a refund still to record. */
+const REFUND_NOTE_RE = /(^|\n)DP dikembalikan \(/
+
+/**
+ * Patch that closes a partially-paid invoice for good. Never a void: the database refuses to void an invoice
+ * with rent payments (invoices_void_guard). The unpaid rest becomes discount, total = paid, so the invoice is
+ * paid and owes nothing; the note says which decision closed it.
+ */
+export function closePartialInvoicePatch(inv: Invoice, paid: number, decision: PartialDecision, reason: string): Update<'invoices'> {
+  const note = decision === 'refund' ? `DP dikembalikan (${reason})` : `Sisa dianggap hangus (${reason})`
+  return {
+    discount_amount: inv.discount_amount + (inv.total_amount - paid),
+    total_amount: paid,
+    status: 'paid',
+    notes: [inv.notes, note].filter(Boolean).join('\n'),
+  }
+}
+
+/** Another device changed the lease's bills after this screen loaded them (see leaseDataChanged). */
+export const LEASE_DATA_CHANGED_MESSAGE = 'Tagihan atau pembayaran sewa ini baru saja diubah dari perangkat lain. Periksa angka terbaru di layar, lalu coba lagi.'
+
+/**
+ * True when a fresh read no longer matches what a checkout/cancel was computed from: a touched invoice (voided,
+ * closed, refunded or paid from the deposit) is gone or its rent paid changed, or the lease has a live invoice the
+ * screen does not show. Writing anyway would get refused half-way (void guard, total below paid) or refund the
+ * wrong amount. `freshPayments` must hold every payment of the touched invoices.
+ */
+export function leaseDataChanged(leaseId: string, screenInvoices: Invoice[], screenPayments: Payment[], touched: Invoice[], freshInvoices: Invoice[], freshPayments: Payment[]): boolean {
+  const fresh = new Map(freshInvoices.filter((i) => i.lease_id === leaseId).map((i) => [i.id, i]))
+  for (const inv of touched) {
+    if (!fresh.has(inv.id) || paidAmountFor(inv.id, screenPayments) !== paidAmountFor(inv.id, freshPayments)) return true
+  }
+  const shown = new Set(screenInvoices.map((i) => i.id))
+  return [...fresh.values()].some((i) => i.status !== 'void' && !shown.has(i.id))
+}
+
+export interface InvoiceWrite {
+  id: string
+  patch: Update<'invoices'>
+}
+
+/**
+ * Invoice writes of a checkout/cancel, built from fresh rows so the patch keeps what another device changed (notes,
+ * extra) and still meets total = base + add-ons + extra - discount. Closes come before voids: a refused close then
+ * leaves nothing behind. Rows an earlier attempt already closed or voided are skipped.
+ */
+export function closingInvoiceWrites(toVoid: Invoice[], partial: Invoice[], fresh: Invoice[], payments: Payment[], decisions: Record<string, PartialDecision>, reason: string): InvoiceWrite[] {
+  const byId = new Map(fresh.map((i) => [i.id, i]))
+  const out: InvoiceWrite[] = []
+  for (const inv of partial) {
+    const row = byId.get(inv.id) ?? inv
+    const paid = paidAmountFor(inv.id, payments)
+    if (row.total_amount > paid) out.push({ id: inv.id, patch: closePartialInvoicePatch(row, paid, decisions[inv.id], reason) })
+  }
+  for (const inv of toVoid) if ((byId.get(inv.id) ?? inv).status !== 'void') out.push({ id: inv.id, patch: { status: 'void' } })
+  return out
+}
+
+/** The rent_refund expense for a refunded invoice; its description names the invoice number (hasRentRefundFor). */
+export function rentRefundExpense(lease: Lease, inv: Invoice, amount: number, dateISO: string, reason: string): OrgInsert<'expenses'> {
+  return {
+    property_id: lease.property_id,
+    lease_id: lease.id,
+    category: 'rent_refund',
+    amount,
+    expense_date: dateISO,
+    description: `Pengembalian DP tagihan ${inv.invoice_number} (${reason})`,
+    vendor: null,
+    receipt_path: null,
+  }
+}
+
+/** True when the lease already has a rent_refund expense naming this invoice number. */
+export function hasRentRefundFor(expenses: Expense[], leaseId: string, invoiceNumber: string): boolean {
+  return expenses.some((e) => e.category === 'rent_refund' && e.lease_id === leaseId && e.description.split(/[\s()]+/).includes(invoiceNumber))
+}
+
+export interface RentRefund {
+  invoice: Invoice
+  amount: number
+}
+
+/**
+ * Invoices of the lease already closed by a refund ('DP dikembalikan (...)' note) whose rent_refund expense is
+ * missing: a checkout/cancel that stopped after closing them records it on the next attempt.
+ */
+export function unrecordedRentRefunds(leaseId: string, invoices: Invoice[], payments: Payment[], expenses: Expense[]): RentRefund[] {
+  return invoices
+    .filter((inv) => inv.lease_id === leaseId && inv.status !== 'void' && REFUND_NOTE_RE.test(inv.notes ?? ''))
+    .map((inv) => ({ invoice: inv, amount: paidAmountFor(inv.id, payments) }))
+    .filter((r) => r.amount > 0 && !hasRentRefundFor(expenses, leaseId, r.invoice.invoice_number))
+}
+
+/**
+ * rent_refund expenses to insert for a checkout/cancel: one per invoice refunded now (its paid part) plus the
+ * unrecorded ones, never one that already exists, so retrying after a failure does not refund twice.
+ */
+export function rentRefundsToRecord(leaseId: string, refundedNow: Invoice[], invoices: Invoice[], payments: Payment[], expenses: Expense[]): RentRefund[] {
+  const out = new Map<string, RentRefund>()
+  for (const inv of refundedNow) out.set(inv.id, { invoice: inv, amount: paidAmountFor(inv.id, payments) })
+  for (const r of unrecordedRentRefunds(leaseId, invoices, payments, expenses)) if (!out.has(r.invoice.id)) out.set(r.invoice.id, r)
+  return [...out.values()].filter((r) => r.amount > 0 && !hasRentRefundFor(expenses, leaseId, r.invoice.invoice_number))
 }
 
 // ---------- open invoices & deposit settlement ----------

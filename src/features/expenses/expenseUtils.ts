@@ -9,6 +9,7 @@ import type { Expense, ExpenseCategory, Lease, MemberRole, OrgInsert, Room, Tena
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABEL, REFUND_CATEGORIES } from '../../types/db'
 import { inRange, parseISODate, toISODate, type DateRange } from '../../domain/period'
 import { formatDate, formatRupiah } from '../../lib/format'
+import { DELETE_DENIED_MESSAGE, UPDATE_DENIED_MESSAGE } from '../../lib/repo/types'
 
 // ---------- categories ----------
 
@@ -256,8 +257,7 @@ export function splitExpenseRows(draft: ExpenseDraft, propertyIds: string[]): Or
 
 /** Shown to staff on a recorded expense (mirrors the admin-only `expenses_update` / `expenses_delete` policies). */
 export const EDIT_DENIED_HINT = 'Hanya pemilik/admin yang dapat mengubah atau menghapus pengeluaran.'
-export const UPDATE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk mengubahnya.'
-export const DELETE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk menghapusnya.'
+export { DELETE_DENIED_MESSAGE, UPDATE_DENIED_MESSAGE }
 
 /**
  * Client-side mirror of the database policies `expenses_update` / `expenses_delete` (SPEC 6.2): only owners and
