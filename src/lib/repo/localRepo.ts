@@ -21,12 +21,29 @@ function loadDb(): Db {
     const db = emptyDb()
     for (const t of TABLE_NAMES) {
       const rows = parsed[t]
-      if (Array.isArray(rows)) (db as Record<string, unknown[]>)[t] = rows
+      if (Array.isArray(rows)) (db as Record<string, unknown[]>)[t] = rows.map((r) => withColumnDefaults(t, r as unknown as Record<string, unknown>))
     }
     return db
   } catch {
     return emptyDb()
   }
+}
+
+/** Columns added after the first release default to null (like a DB migration) for rows stored earlier. */
+const COLUMN_DEFAULTS: Partial<Record<TableName, Record<string, unknown>>> = {
+  invoices: { period_type: null },
+  tenants: { id_type: 'ktp', id_number: null, nationality: null },
+  payments: { created_by: null },
+  expenses: { lease_id: null, created_by: null },
+  properties: { payment_info: null },
+}
+
+function withColumnDefaults(table: TableName, row: Record<string, unknown>): Record<string, unknown> {
+  const defaults = COLUMN_DEFAULTS[table]
+  if (!defaults) return row
+  const next = { ...row }
+  for (const [k, v] of Object.entries(defaults)) if (next[k] === undefined) next[k] = v
+  return next
 }
 
 function saveDb(db: Db) {

@@ -45,7 +45,8 @@ konfigurasi fallback SPA sudah disertakan (`public/_redirects`, `vercel.json`).
 ## Mengaktifkan mode online (Supabase) — sekali saja, ±15 menit
 
 1. Buat akun di <https://supabase.com> → **New project** (region Singapore paling dekat).
-2. Buka **SQL Editor** → tempel seluruh isi `supabase/schema.sql` → **Run**.
+2. Buka **SQL Editor** → tempel seluruh isi `supabase/schema.sql` → **Run**. (Sudah pernah memasang versi lama? Jalankan
+   juga file di `supabase/migrations/` yang lebih baru dari tanggal pemasangan Anda.)
 3. **Authentication → Providers → Email**: biarkan *Confirm email* **aktif** (sekali konfirmasi per akun), dan di
    **Authentication → Sign In / Providers** naikkan *Minimum password length* ke **8**. Di **Authentication → URL
    Configuration** isi *Site URL* dengan alamat aplikasi Anda dan tambahkan `https://<alamat-aplikasi>/reset-sandi` ke

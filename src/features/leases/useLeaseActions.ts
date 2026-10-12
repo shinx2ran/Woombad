@@ -110,6 +110,7 @@ export function useLeaseActions() {
             property_id: input.lease.property_id,
             lease_id: input.lease.id,
             invoice_number: draft.invoice_number,
+            period_type: input.lease.period_type,
             period_start: draft.period_start,
             period_end: draft.period_end,
             quantity: draft.quantity,

@@ -76,6 +76,9 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
     property_id,
     full_name,
     nik: null,
+    id_type: 'ktp',
+    id_number: null,
+    nationality: null,
     phone,
     gender,
     birth_place: null,
@@ -157,6 +160,7 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
       db.invoices.push({
         id: invoiceId, org_id: DEMO_ORG_ID, property_id: room.property_id, lease_id: leaseId,
         invoice_number: `INV-${toDateISO(ps).replace(/-/g, '').slice(0, 6)}-${String(db.invoices.length + 1).padStart(4, '0')}`,
+        period_type: 'monthly',
         period_start: toDateISO(ps), period_end: toDateISO(pe), quantity: 1,
         base_amount: lease.price_per_period, addons_amount: addonsTotal, extra_amount: 0, discount_amount: 0,
         total_amount: total, due_date: toDateISO(ps), status, notes: null, ...ts,
@@ -190,6 +194,7 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
     db.invoices.push({
       id: invoiceId, org_id: DEMO_ORG_ID, property_id: room.property_id, lease_id: leaseId,
       invoice_number: `INV-${toDateISO(s).replace(/-/g, '').slice(0, 6)}-${String(db.invoices.length + 1).padStart(4, '0')}`,
+      period_type: 'daily',
       period_start: toDateISO(s), period_end: toDateISO(e), quantity: nights,
       base_amount: total, addons_amount: 0, extra_amount: 0, discount_amount: 0, total_amount: total,
       due_date: toDateISO(s), status: 'paid', notes: null, ...ts,

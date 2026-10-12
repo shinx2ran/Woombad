@@ -66,6 +66,7 @@ function makeInvoice(overrides: Partial<Invoice> = {}): Invoice {
     property_id: 'kos-a',
     lease_id: 'lease-1',
     invoice_number: 'INV-001',
+    period_type: null,
     period_start: '2026-03-01',
     period_end: '2026-03-31',
     quantity: 1,

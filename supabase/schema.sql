@@ -256,6 +256,9 @@ create table if not exists public.tenants (
   property_id uuid,
   full_name text not null,
   nik text,
+  id_type text not null default 'ktp' check (id_type in ('ktp', 'passport', 'other')),
+  id_number text,
+  nationality text,
   phone text,
   gender text check (gender is null or gender in ('L', 'P')),
   birth_place text,
@@ -314,6 +317,8 @@ create table if not exists public.invoices (
   property_id uuid not null,
   lease_id uuid not null,
   invoice_number text not null,
+  -- period type this invoice was billed with (null = lease's type at the time; leases may switch type)
+  period_type text check (period_type is null or period_type in ('daily', 'weekly', 'monthly')),
   period_start date not null,
   period_end date not null,
   quantity int not null default 1 check (quantity >= 1),
