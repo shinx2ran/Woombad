@@ -65,15 +65,17 @@ export function PropertiesPage() {
             : 'Daftarkan kos Anda untuk mulai mengelola kamar.'
         }
         actions={
-          <Button
-            icon={<Plus className="h-4 w-4" />}
-            onClick={() => {
-              setEditing(null)
-              setFormOpen(true)
-            }}
-          >
-            Tambah Kos
-          </Button>
+          isAdmin ? (
+            <Button
+              icon={<Plus className="h-4 w-4" />}
+              onClick={() => {
+                setEditing(null)
+                setFormOpen(true)
+              }}
+            >
+              Tambah Kos
+            </Button>
+          ) : undefined
         }
       />
 
@@ -91,11 +93,13 @@ export function PropertiesPage() {
         <EmptyState
           icon={<Building2 className="h-10 w-10" />}
           title="Belum ada kos"
-          description="Tambahkan kos pertama Anda, lalu isi daftar kamarnya."
+          description={isAdmin ? 'Tambahkan kos pertama Anda, lalu isi daftar kamarnya.' : 'Kos ditambahkan oleh pemilik atau admin.'}
           action={
-            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setFormOpen(true)}>
-              Tambah Kos
-            </Button>
+            isAdmin ? (
+              <Button icon={<Plus className="h-4 w-4" />} onClick={() => setFormOpen(true)}>
+                Tambah Kos
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -116,7 +120,7 @@ export function PropertiesPage() {
         </div>
       )}
 
-      <PropertyFormModal open={formOpen} property={editing} onClose={() => setFormOpen(false)} />
+      {isAdmin && <PropertyFormModal open={formOpen} property={editing} onClose={() => setFormOpen(false)} />}
 
       <ConfirmDialog
         open={deleting !== null}
@@ -177,11 +181,12 @@ function PropertyCard({
           <p className="text-xs text-slate-500">Belum ada kamar. Buka kos untuk menambahkan.</p>
         )}
       </Link>
-      <div className="flex items-center justify-end gap-1 border-t border-slate-100 px-2 py-1.5">
-        <Button variant="ghost" size="sm" icon={<Pencil className="h-4 w-4" />} onClick={onEdit}>
-          Ubah
-        </Button>
-        {isAdmin && (
+      {/* Kos (incl. payment_info used in WhatsApp reminders) is admin-only: SPEC 6.2. */}
+      {isAdmin && (
+        <div className="flex items-center justify-end gap-1 border-t border-slate-100 px-2 py-1.5">
+          <Button variant="ghost" size="sm" icon={<Pencil className="h-4 w-4" />} onClick={onEdit}>
+            Ubah
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -193,8 +198,8 @@ function PropertyCard({
           >
             Hapus
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </Card>
   )
 }

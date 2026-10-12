@@ -5,7 +5,7 @@ import {
   ORDERED_CATEGORIES,
   SHARED_VALUE,
   UPDATE_DENIED_MESSAGE,
-  canEditExpense,
+  canEditExpenses,
   categoryOptionLabel,
   expenseDeltaText,
   filterExpenses,
@@ -190,23 +190,13 @@ describe('operatingExpenseRows', () => {
   })
 })
 
-describe('canEditExpense (mirror of the expenses_update RLS policy)', () => {
-  const mine = mkExpense({ id: 'm', created_by: 'u-staff' })
-  const theirs = mkExpense({ id: 't', created_by: 'u-owner' })
-  const legacy = mkExpense({ id: 'l', created_by: null })
-
-  it('lets owners and admins edit every row', () => {
-    for (const role of ['owner', 'admin'] as const) {
-      expect(canEditExpense(role, 'u-x', mine)).toBe(true)
-      expect(canEditExpense(role, 'u-x', theirs)).toBe(true)
-      expect(canEditExpense(role, undefined, legacy)).toBe(true)
-    }
+describe('canEditExpenses (mirror of the admin-only expenses_update / expenses_delete policies)', () => {
+  it('lets owners and admins edit and delete', () => {
+    expect(canEditExpenses('owner')).toBe(true)
+    expect(canEditExpenses('admin')).toBe(true)
   })
-  it('lets staff edit only rows they recorded', () => {
-    expect(canEditExpense('staff', 'u-staff', mine)).toBe(true)
-    expect(canEditExpense('staff', 'u-staff', theirs)).toBe(false)
-    expect(canEditExpense('staff', 'u-staff', legacy)).toBe(false)
-    expect(canEditExpense('staff', undefined, legacy)).toBe(false)
+  it('never lets staff edit or delete, not even rows they recorded', () => {
+    expect(canEditExpenses('staff')).toBe(false)
   })
 })
 

@@ -19,7 +19,6 @@ import {
   useToast,
   type Column,
 } from '../../components/ui'
-import { useOrg } from '../../hooks/useOrg'
 import type { Invoice, LeaseAddon, Payment } from '../../types/db'
 import { PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { buildInvoiceDraft, depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
@@ -42,13 +41,12 @@ type Confirm =
 
 export function LeaseDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const { role } = useOrg()
   const data = useLeaseData()
   const actions = useLeaseActions()
   const toast = useToast()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const isAdmin = role !== 'staff'
+  const isAdmin = actions.isAdmin
   const today = todayISO()
 
   const [modal, setModal] = useState<ModalKind | null>(null)
@@ -72,12 +70,13 @@ export function LeaseDetailPage() {
   const deposit = useMemo(() => (lease ? depositBalance(lease, data.payments, data.expenses) : null), [lease, data.payments, data.expenses])
   const timeline = useMemo(() => (lease ? invoiceTimeline(lease, data.invoices, data.payments, today) : []), [lease, data.invoices, data.payments, today])
 
-  // Deep links from other modules: /sewa/:id?action=bayar|tagih
+  // Deep links from other modules: /sewa/:id?action=bayar|tagih|checkout
   useEffect(() => {
     const action = params.get('action')
     if (!action || !lease) return
     if (action === 'bayar') setModal('pay')
     else if (action === 'tagih') setModal('invoice')
+    else if (action === 'checkout' && lease.status === 'active') setModal('checkout')
     const next = new URLSearchParams(params)
     next.delete('action')
     setParams(next, { replace: true })
@@ -184,8 +183,9 @@ export function LeaseDetailPage() {
     if (deposit.shortfall > 0 || deposit.agreed > 0) {
       menuItems.push({ label: 'Catat deposit diterima', icon: <PiggyBank className="h-4 w-4" />, onClick: () => setModal('deposit') })
     }
-    // Checkout voids future invoices and 'Batalkan sewa' edits invoices: admin only (SPEC section 3).
-    if (isAdmin) menuItems.push({ label: 'Checkout', hint: 'Penyewa keluar; selesaikan jaminan', icon: <DoorOpen className="h-4 w-4" />, onClick: () => setModal('checkout') })
+    // Staff may check out (SPEC 6.2; the modal explains when future invoices need an admin). 'Batalkan sewa'
+    // voids invoices: admin only.
+    menuItems.push({ label: 'Checkout', hint: 'Penyewa keluar; selesaikan jaminan', icon: <DoorOpen className="h-4 w-4" />, onClick: () => setModal('checkout') })
     if (isAdmin) menuItems.push({ label: 'Batalkan sewa', hint: 'Sewa tidak pernah berjalan', icon: <Ban className="h-4 w-4" />, danger: true, onClick: () => setModal('cancel') })
   }
 

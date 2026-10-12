@@ -4,23 +4,23 @@ import { Camera, Trash2 } from 'lucide-react'
 import { Button, Field, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate, useTable } from '../../hooks/useTable'
-import { newId } from '../../lib/ids'
 import { formatRupiah } from '../../lib/format'
 import type { ExpenseCategory } from '../../types/db'
 import {
   EXPENSE_TEMPLATES,
   ORDERED_CATEGORIES,
   SHARED_VALUE,
+  canEditExpenses,
   categoryOptionLabel,
   isRefundCategory,
   leaseLabel,
   saveErrorMessage,
   splitEvenly,
-  splitExpenseRows,
   validateExpenseForm,
   type ExpenseDraft,
   type ExpenseFormErrors,
 } from './expenseUtils'
+import { saveExpense } from './saveExpense'
 
 export type ExpenseFormMode = 'create' | 'edit' | 'duplicate'
 
@@ -36,7 +36,8 @@ export interface ExpenseFormModalProps {
   onSaved?: (expenseDate: string) => void
 }
 
-const MAX_RECEIPT_BYTES = 8 * 1024 * 1024
+// Same limit as the `receipts` bucket (supabase/schema.sql): a bigger photo would be refused by Storage.
+const MAX_RECEIPT_BYTES = 5 * 1024 * 1024
 
 function initialPropertyValue(initial: ExpenseDraft, mode: ExpenseFormMode, selectedPropertyId: string): string {
   // Edit / duplicate keep the row's kos ("Bersama" when null); a brand-new row follows the global filter when
@@ -50,7 +51,7 @@ function initialPropertyValue(initial: ExpenseDraft, mode: ExpenseFormMode, sele
  * so state can be initialised from props without sync effects.
  */
 export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onSaved }: ExpenseFormModalProps) {
-  const { repo, properties, selectedPropertyId, isLocalMode } = useOrg()
+  const { repo, role, properties, selectedPropertyId, isLocalMode } = useOrg()
   const invalidate = useInvalidate()
   const toast = useToast()
   const leasesQuery = useTable('leases')
@@ -115,7 +116,7 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] ?? null
     if (picked && picked.size > MAX_RECEIPT_BYTES) {
-      toast.error('Ukuran foto maksimal 8 MB.')
+      toast.error('Ukuran foto maksimal 5 MB.')
       e.target.value = ''
       return
     }
@@ -145,49 +146,20 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
         receipt_path: removeReceipt ? null : initial.receipt_path,
       }
 
-      // 1) Persist the row(s) first. A write the database refuses (e.g. staff editing someone else's row under
-      //    the `expenses_update` policy) fails here, before any file reaches the bucket, so nothing is orphaned.
-      let savedIds: string[]
-      let successMessage: string
-      if (isEdit && editingId) {
-        await repo.update('expenses', editingId, draft)
-        savedIds = [editingId]
-        successMessage = 'Pengeluaran diperbarui.'
-      } else if (canSplit && split) {
-        const rows = await repo.insertMany(
-          'expenses',
-          splitExpenseRows(
-            draft,
-            properties.map((p) => p.id),
-          ),
-        )
-        savedIds = rows.map((r) => r.id)
-        successMessage = `${rows.length} pengeluaran dicatat (dibagi rata ke semua kos).`
-      } else {
-        const row = await repo.insert('expenses', draft)
-        savedIds = [row.id]
-        successMessage = 'Pengeluaran dicatat.'
-      }
-
-      // 2) Receipt: upload only once the row exists, then attach it. A failed upload keeps the saved row.
-      let receiptWarning: string | null = null
-      let receiptPath = draft.receipt_path
-      if (file) {
-        try {
-          const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-          const uploaded = await repo.uploadFile('receipts', `${newId()}.${ext}`, file, file.type || undefined)
-          if (uploaded) {
-            await Promise.all(savedIds.map((id) => repo.update('expenses', id, { receipt_path: uploaded })))
-            receiptPath = uploaded
-          }
-        } catch {
-          receiptWarning = 'Pengeluaran tersimpan, tetapi foto struk gagal diunggah. Coba unggah lagi lewat "Ubah".'
-        }
-      }
-      // Old file no longer referenced by this row (removed or replaced): best-effort clean-up.
-      if (isEdit && initial.receipt_path && initial.receipt_path !== receiptPath) {
-        await repo.removeFile('receipts', initial.receipt_path).catch(() => undefined)
-      }
+      const splitPropertyIds = canSplit && split ? properties.map((p) => p.id) : undefined
+      const { count, receiptWarning } = await saveExpense(repo, {
+        draft,
+        editingId: isEdit ? editingId : undefined,
+        splitPropertyIds,
+        file,
+        previousReceiptPath: isEdit ? initial.receipt_path : null,
+        canEdit: canEditExpenses(role),
+      })
+      const successMessage = isEdit
+        ? 'Pengeluaran diperbarui.'
+        : splitPropertyIds
+          ? `${count} pengeluaran dicatat (dibagi rata ke semua kos).`
+          : 'Pengeluaran dicatat.'
 
       await invalidate('expenses')
       if (receiptWarning) toast.error(receiptWarning)
@@ -360,7 +332,7 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
 
         <Input label="Vendor / penerima" placeholder="Contoh: PLN, Pak Udin" value={vendor} onChange={(e) => setVendor(e.target.value)} />
 
-        <Field label="Foto struk" hint={isLocalMode ? 'Mode Demo: foto tidak disimpan (butuh Supabase Storage, bucket "receipts").' : 'Opsional, maks. 8 MB.'}>
+        <Field label="Foto struk" hint={isLocalMode ? 'Mode Demo: foto tidak disimpan (butuh Supabase Storage, bucket "receipts").' : 'Opsional, maks. 5 MB.'}>
           <div className="flex flex-wrap items-center gap-3">
             <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
               <Camera className="h-4 w-4" />

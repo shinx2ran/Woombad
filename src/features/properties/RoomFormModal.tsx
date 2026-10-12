@@ -38,18 +38,23 @@ interface BulkValues {
   pad: boolean
 }
 
-/** Create one room, create many at once ("Tambah banyak"), or edit an existing room. */
+/**
+ * Create one room, create many at once ("Tambah banyak"), or edit an existing room. Staff only edit existing
+ * rooms and never the prices (the database rejects price changes by staff, SPEC 6.2): those fields are read-only.
+ */
 export function RoomFormModal({
   open,
   property,
   room,
   existingRooms,
+  isAdmin,
   onClose,
 }: {
   open: boolean
   property: Property
   room: Room | null
   existingRooms: Room[]
+  isAdmin: boolean
   onClose: () => void
 }) {
   const { repo } = useOrg()
@@ -112,7 +117,7 @@ export function RoomFormModal({
     const patch = {
       name: values.name.trim(),
       floor: blankToNull(values.floor),
-      ...pricePatch(),
+      ...(isAdmin ? pricePatch() : {}),
       status: values.status,
       notes: blankToNull(values.notes),
     }
@@ -121,7 +126,7 @@ export function RoomFormModal({
         await update.mutateAsync({ id: room.id, patch })
         toast.success(`Kamar ${patch.name} disimpan.`)
       } else {
-        await insert.mutateAsync({ property_id: property.id, ...patch })
+        await insert.mutateAsync({ property_id: property.id, ...pricePatch(), ...patch })
         toast.success(`Kamar ${patch.name} ditambahkan.`)
       }
       onClose()
@@ -274,12 +279,16 @@ export function RoomFormModal({
 
         <fieldset className="space-y-3">
           <legend className="text-sm font-medium text-slate-700">Harga default</legend>
-          <MoneyInput label="Bulanan" value={values.price_monthly} onChange={(v) => set('price_monthly', v)} error={errors.price_monthly} min={0} />
+          <MoneyInput label="Bulanan" value={values.price_monthly} onChange={(v) => set('price_monthly', v)} error={errors.price_monthly} min={0} disabled={!isAdmin} />
           <div className="grid grid-cols-2 gap-3">
-            <MoneyInput label="Mingguan" value={values.price_weekly} onChange={(v) => set('price_weekly', v)} error={errors.price_weekly} min={0} />
-            <MoneyInput label="Harian" value={values.price_daily} onChange={(v) => set('price_daily', v)} error={errors.price_daily} min={0} />
+            <MoneyInput label="Mingguan" value={values.price_weekly} onChange={(v) => set('price_weekly', v)} error={errors.price_weekly} min={0} disabled={!isAdmin} />
+            <MoneyInput label="Harian" value={values.price_daily} onChange={(v) => set('price_daily', v)} error={errors.price_daily} min={0} disabled={!isAdmin} />
           </div>
-          <p className="text-xs text-slate-500">Harga ini menjadi isian awal saat membuat sewa; harga tiap sewa tetap bisa diubah.</p>
+          <p className="text-xs text-slate-500">
+            {isAdmin
+              ? 'Harga ini menjadi isian awal saat membuat sewa; harga tiap sewa tetap bisa diubah.'
+              : 'Hanya pemilik/admin yang dapat mengubah harga kamar.'}
+          </p>
         </fieldset>
 
         <Select

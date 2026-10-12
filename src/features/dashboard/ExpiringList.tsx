@@ -9,9 +9,8 @@ import { SectionCard, SectionEmpty } from './SectionCard'
  * "Akan berakhir": active leases ending within EXPIRING_WITHIN_DAYS that owe nothing (leases with an open
  * bill are under "Perlu perhatian", SPEC 2b.12). The decision here is perpanjang (buat tagihan berikutnya)
  * or checkout, so the actions and the WhatsApp text are about the stay ending, not about a bill.
- * `canCheckout` is false for staff: checkout is admin-only on the lease page.
  */
-export function ExpiringList({ items, canCheckout = true }: { items: ExpiringItem[]; canCheckout?: boolean }) {
+export function ExpiringList({ items }: { items: ExpiringItem[] }) {
   return (
     <SectionCard title={`Akan berakhir ≤ ${EXPIRING_WITHIN_DAYS} hari`} count={items.length} countTone="warning" linkTo="/sewa">
       {items.length === 0 ? (
@@ -19,7 +18,7 @@ export function ExpiringList({ items, canCheckout = true }: { items: ExpiringIte
       ) : (
         <ul className="divide-y divide-slate-100">
           {items.map((item) => (
-            <ExpiringRow key={item.lease.id} item={item} canCheckout={canCheckout} />
+            <ExpiringRow key={item.lease.id} item={item} />
           ))}
         </ul>
       )}
@@ -27,7 +26,7 @@ export function ExpiringList({ items, canCheckout = true }: { items: ExpiringIte
   )
 }
 
-function ExpiringRow({ item, canCheckout }: { item: ExpiringItem; canCheckout: boolean }) {
+function ExpiringRow({ item }: { item: ExpiringItem }) {
   const { lease, tenant, room, property, daysLeft } = item
   const tenantName = tenant?.full_name ?? 'Penyewa'
   const roomName = room?.name ?? '-'
@@ -74,21 +73,19 @@ function ExpiringRow({ item, canCheckout }: { item: ExpiringItem; canCheckout: b
           </span>
         )}
       </div>
-      <div className={canCheckout ? 'mt-2 grid grid-cols-2 gap-2' : 'mt-2 grid gap-2'}>
+      <div className="mt-2 grid grid-cols-2 gap-2">
         <Link
           to={`/sewa/${lease.id}?action=tagih`}
           className="inline-flex h-9 items-center justify-center rounded-lg bg-brand-700 px-3 text-sm font-medium text-white hover:bg-brand-800"
         >
           Perpanjang
         </Link>
-        {canCheckout && (
-          <Link
-            to={`/sewa/${lease.id}?action=checkout`}
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50"
-          >
-            Checkout
-          </Link>
-        )}
+        <Link
+          to={`/sewa/${lease.id}?action=checkout`}
+          className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50"
+        >
+          Checkout
+        </Link>
       </div>
     </li>
   )

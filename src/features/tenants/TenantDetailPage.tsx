@@ -94,8 +94,20 @@ export function TenantDetailPage() {
 
   const confirmDelete = async () => {
     try {
+      // Row first, photo second (SPEC 6.4): a refused delete (tenant still has leases) must keep the KTP photo.
       await remove.mutateAsync(t.id)
-      toast.success(`Penyewa ${t.full_name} dihapus.`)
+      // A delete filtered out by RLS affects 0 rows without an error: only touch the file once the row is gone.
+      if (await repo.get('tenants', t.id)) throw new Error('Penyewa tidak dapat dihapus. Anda mungkin tidak memiliki izin.')
+      let photoKept = false
+      if (t.ktp_image_path) {
+        try {
+          await repo.removeFile('ktp', t.ktp_image_path)
+        } catch {
+          photoKept = true
+        }
+      }
+      if (photoKept) toast.error(`Penyewa ${t.full_name} dihapus, tetapi foto dokumen gagal dihapus dari penyimpanan.`)
+      else toast.success(`Penyewa ${t.full_name} dihapus.`)
       navigate('/penyewa', { replace: true })
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gagal menghapus penyewa.')

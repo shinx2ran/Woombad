@@ -18,7 +18,6 @@ import {
   useToast,
   type Column,
 } from '../../components/ui'
-import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate, useTable } from '../../hooks/useTable'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
@@ -27,13 +26,14 @@ import { expensesByCategory, operatingExpensesInRange } from '../../domain/finan
 import { EXPENSE_CATEGORY_LABEL, type Expense, type ExpenseCategory } from '../../types/db'
 import { ExpenseFormModal, type ExpenseFormMode } from './ExpenseFormModal'
 import { ReceiptModal } from './ReceiptModal'
+import { removeReceiptIfUnused } from './receiptFiles'
 import {
   CATEGORY_COLOR,
   CATEGORY_TONE,
   DELETE_DENIED_MESSAGE,
   EDIT_DENIED_HINT,
   ORDERED_CATEGORIES,
-  canEditExpense,
+  canEditExpenses,
   dateHeading,
   expenseDeltaText,
   filterExpenses,
@@ -102,14 +102,13 @@ function useHeaderOffset(): number {
 
 export function ExpensesPage() {
   const { role, repo, properties, selectedPropertyId, propertyFilterIds, financePropertyIds } = useOrg()
-  const { session } = useAuth()
   const invalidate = useInvalidate()
   const toast = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
-  // SPEC §2b: staff never see delete for financial data. Editing follows the `expenses_update` RLS policy
-  // (admins: any row; staff: only rows they recorded) so a denied update is never attempted.
-  const canDelete = role !== 'staff'
-  const canEdit = (e: Expense) => canEditExpense(role, session?.user.id, e)
+  // SPEC 6.2: staff record expenses but never edit or delete them (admin-only policies), so a denied write is
+  // never attempted; the server still refuses it if the UI is bypassed.
+  const canEdit = canEditExpenses(role)
+  const canDelete = canEdit
   const today = todayISO()
 
   const expensesQuery = useTable('expenses')
@@ -185,13 +184,22 @@ export function ExpensesPage() {
     if (!deleting) return
     setDeleteBusy(true)
     try {
+      // Row first, file second (SPEC 6.4): a refused delete must never lose the receipt.
       await repo.remove('expenses', deleting.id)
       // A delete that RLS filters out affects 0 rows without an error: confirm the row is really gone before
       // reporting success (and before touching its receipt file).
       if (await repo.get('expenses', deleting.id)) throw new Error(DELETE_DENIED_MESSAGE)
-      if (deleting.receipt_path) await repo.removeFile('receipts', deleting.receipt_path).catch(() => undefined)
+      let fileWarning = false
+      if (deleting.receipt_path) {
+        try {
+          await removeReceiptIfUnused(repo, deleting.receipt_path)
+        } catch {
+          fileWarning = true
+        }
+      }
       await invalidate('expenses')
-      toast.success('Pengeluaran dihapus.')
+      if (fileWarning) toast.error('Pengeluaran dihapus, tetapi foto struk gagal dihapus dari penyimpanan.')
+      else toast.success('Pengeluaran dihapus.')
       setDeleting(null)
       setSheet(null)
     } catch (err) {
@@ -286,11 +294,7 @@ export function ExpensesPage() {
         <div className="flex items-center justify-end gap-0.5" onClick={(ev) => ev.stopPropagation()}>
           {e.receipt_path && <IconButton label="Lihat struk" onClick={() => setReceiptPath(e.receipt_path)} icon={<Paperclip className="h-4 w-4" />} />}
           <IconButton label="Duplikat ke bulan ini" onClick={() => openDuplicate(e)} icon={<Copy className="h-4 w-4" />} />
-          {canEdit(e) ? (
-            <IconButton label="Ubah" onClick={() => openEdit(e)} icon={<Pencil className="h-4 w-4" />} />
-          ) : (
-            <IconButton label={EDIT_DENIED_HINT} icon={<Pencil className="h-4 w-4" />} disabled />
-          )}
+          {canEdit && <IconButton label="Ubah" onClick={() => openEdit(e)} icon={<Pencil className="h-4 w-4" />} />}
           {canDelete && <IconButton label="Hapus" onClick={() => setDeleting(e)} icon={<Trash2 className="h-4 w-4" />} danger />}
         </div>
       ),
@@ -458,7 +462,7 @@ export function ExpensesPage() {
                   columns={columns}
                   rows={rows}
                   rowKey={(e) => e.id}
-                  onRowClick={(e) => (canEdit(e) ? openEdit(e) : setSheet(e))}
+                  onRowClick={(e) => (canEdit ? openEdit(e) : setSheet(e))}
                   footer={
                     <tr>
                       <td colSpan={5} className="px-3 py-2.5 text-slate-600">
@@ -505,7 +509,7 @@ export function ExpensesPage() {
               )}
             </dl>
             <div className="grid gap-2">
-              {canEdit(sheet) ? (
+              {canEdit ? (
                 <Button variant="outline" fullWidth icon={<Pencil className="h-4 w-4" />} onClick={() => openEdit(sheet)}>
                   Ubah
                 </Button>
