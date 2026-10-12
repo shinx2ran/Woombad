@@ -5,7 +5,7 @@ import type { Invoice, Lease, MemberRole, Payment } from '../../types/db'
 import { LocalRepo, emptyLocalDb } from '../../lib/repo/localRepo'
 import { DELETE_DENIED_MESSAGE, VOID_PAID_INVOICE_MESSAGE, bindOrg, type OrgRepo } from '../../lib/repo/types'
 import { outstandingInvoices, summarizeFinance } from '../../domain/finance'
-import type { DepositSettlement } from './leaseUtils'
+import { LEASE_DATA_CHANGED_MESSAGE, type DepositSettlement } from './leaseUtils'
 
 const state: { repo: OrgRepo | null; role: MemberRole } = { repo: null, role: 'owner' }
 const invalidate = vi.fn(async (..._tables: string[]) => undefined)
@@ -162,12 +162,14 @@ describe('checkout with a part-paid invoice after the checkout date', () => {
     expect(summarizeFinance(after.payments, after.expenses, after.invoices, { start: '2026-09-01', end: '2026-12-31' }).revenue).toBe(500_000)
   })
 
-  it('a refused invoice write leaves no expense or payment behind', async () => {
+  it('a refused close comes first: nothing is voided, no expense or payment is left behind', async () => {
     await seed({ deposit: 1_000_000 })
     const before = await data()
+    const updates: string[] = []
     const failing: OrgRepo = {
       ...repo,
       update: (async (table: string, id: string, patch: never) => {
+        updates.push(`${table}:${id}`)
         if (table === 'invoices' && id === OCT) throw new Error('Total tagihan tidak boleh lebih kecil dari jumlah yang sudah dibayar.')
         return repo.update(table as 'invoices', id, patch)
       }) as OrgRepo['update'],
@@ -183,12 +185,36 @@ describe('checkout with a part-paid invoice after the checkout date', () => {
         partialDecisions: { [OCT]: 'refund' },
       }),
     ).rejects.toThrow('Total tagihan')
+    expect(updates).toEqual([`invoices:${OCT}`])
     const after = await data()
+    expect(after.invoices).toEqual(before.invoices)
     expect(after.expenses).toEqual([])
     expect(after.payments).toHaveLength(before.payments.length)
     expect(after.lease.status).toBe('active')
     // the screen is refreshed after a failure too
     expect(invalidate).toHaveBeenCalledWith('leases', 'invoices', 'payments', 'expenses')
+  })
+
+  it('a later invoice issued on another device after the screen loaded: refused before any write', async () => {
+    await seed()
+    const before = await data()
+    await repo.insert('invoices', { ...byId(before.invoices, NOV), id: 'inv-dec', invoice_number: 'INV-202612-0001', period_start: '2026-12-01', period_end: '2026-12-31', due_date: '2026-12-01' } as never)
+    const mid = await data()
+    await expect(
+      actions().checkout({ lease, checkoutDate: '2026-09-20', invoices: before.invoices, payments: before.payments, settlement: noSettlement(), partialDecisions: { [OCT]: 'forfeit' } }),
+    ).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    expect(await data()).toEqual(mid)
+    expect(invalidate).toHaveBeenCalledWith('leases', 'invoices', 'payments', 'expenses')
+  })
+
+  it('staff without invoices to close still checks out (the fresh read is only a read)', async () => {
+    await seed({ deposit: 1_000_000 })
+    state.role = 'staff'
+    const before = await data()
+    await actions().checkout({ lease, checkoutDate: '2026-11-20', invoices: before.invoices, payments: before.payments, settlement: { ...noSettlement(), rent: 1_000_000 }, partialDecisions: {} })
+    const after = await data()
+    expect(after.lease).toMatchObject({ status: 'ended', checkout_date: '2026-11-20' })
+    expect(after.payments.filter((p) => p.method === 'deposit').map((p) => [p.invoice_id, p.amount])).toEqual([[SEP, 1_000_000]])
   })
 
   it('staff is refused before any write', async () => {
@@ -258,6 +284,42 @@ describe('cancel', () => {
       actions().cancelLease({ lease, invoices: before.invoices, payments: before.payments, partialDecisions: {}, settlement: noSettlement(), dateISO: '2026-09-15' }),
     ).rejects.toThrow('Pilih penyelesaian untuk tagihan INV-202610-0001.')
     expect((await data()).invoices.map((i) => i.status)).toEqual(before.invoices.map((i) => i.status))
+  })
+
+  it.each([
+    ['recorded', async () => void (await repo.insert('payments', { property_id: 'P1', invoice_id: OCT, lease_id: lease.id, amount: 100_000, paid_at: '2026-09-12', method: 'cash', kind: 'rent', notes: null }))],
+    ['deleted', async () => repo.remove('payments', ((await repo.list('payments', { where: { invoice_id: OCT } })) as Payment[])[0].id)],
+  ])('a payment %s on another device after the screen loaded: refused before anything is voided or closed', async (_label, otherDevice) => {
+    await seed()
+    const before = await data()
+    await otherDevice()
+    const mid = await data()
+    await expect(
+      actions().cancelLease({ lease, invoices: before.invoices, payments: before.payments, partialDecisions: { [OCT]: 'refund' }, settlement: noSettlement(), dateISO: '2026-09-15' }),
+    ).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    const after = await data()
+    expect(after).toEqual(mid)
+    expect(after.invoices.map((i) => i.status)).toEqual(before.invoices.map((i) => i.status))
+    expect(invalidate).toHaveBeenCalledWith('leases', 'invoices', 'payments', 'expenses')
+  })
+
+  it('an invoice edited on another device is closed from its fresh row (its notes and extra stay, the total adds up)', async () => {
+    await seed()
+    const before = await data()
+    await repo.update('invoices', OCT, { extra_amount: 50_000, total_amount: 1_550_000, notes: 'Listrik: 50000' })
+    await actions().cancelLease({ lease, invoices: before.invoices, payments: before.payments, partialDecisions: { [OCT]: 'refund' }, settlement: noSettlement(), dateISO: '2026-09-15' })
+    const oct = byId((await data()).invoices, OCT)
+    expect(oct).toMatchObject({ status: 'paid', total_amount: 500_000, extra_amount: 50_000, discount_amount: 1_050_000, notes: 'Listrik: 50000\nDP dikembalikan (sewa dibatalkan)' })
+    expect(oct.base_amount + oct.addons_amount + oct.extra_amount - oct.discount_amount).toBe(oct.total_amount)
+  })
+
+  it('deposit for rent on a cancel is refused before any write', async () => {
+    await seed({ deposit: 1_000_000 })
+    const before = await data()
+    await expect(
+      actions().cancelLease({ lease, invoices: before.invoices, payments: before.payments, partialDecisions: { [OCT]: 'forfeit' }, settlement: { ...noSettlement(), rent: 500_000, refund: 500_000 }, dateISO: '2026-09-15' }),
+    ).rejects.toThrow('Jumlah melebihi total sisa tagihan.')
+    expect(await data()).toEqual(before)
   })
 
   it("a DP refunded on a lease that never started: nothing owed, revenue 0", async () => {

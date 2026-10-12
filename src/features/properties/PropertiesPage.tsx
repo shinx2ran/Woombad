@@ -49,7 +49,10 @@ export function PropertiesPage() {
       toast.success(`Kos "${deleting.name}" dihapus.`)
       setDeleting(null)
     } catch (err) {
+      // refresh: a kos already deleted on another device then disappears instead of failing on every retry
+      void refreshProperties()
       toast.error(err instanceof Error ? err.message : 'Gagal menghapus kos.')
+      setDeleting(null)
     }
   }
 

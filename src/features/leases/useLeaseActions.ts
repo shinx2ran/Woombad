@@ -17,19 +17,24 @@ import {
 } from '../../domain/billing'
 import { formatRupiah } from '../../lib/format'
 import {
+  LEASE_DATA_CHANGED_MESSAGE,
   addonAmountUpdates,
   allocateAcrossInvoices,
   appendMoveNote,
   cancelledLeaseEndDate,
-  closePartialInvoicePatch,
+  closingInvoiceWrites,
   extensionLeasePatch,
   futureInvoicesAtCheckout,
   invoiceInsertFromDraft,
   invoicesToPinType,
+  leaseDataChanged,
   openInvoicesSorted,
   rentRefundExpense,
   rentRefundsToRecord,
+  unrecordedRentRefunds,
+  type Allocation,
   type DepositSettlement,
+  type InvoiceWrite,
   type PartialDecision,
 } from './leaseUtils'
 
@@ -334,7 +339,8 @@ export function useLeaseActions() {
       await invalidate('payments', 'invoices')
     }
 
-    async function settleDeposit(lease: Lease, s: DepositSettlement, dateISO: string, openInvoices: Invoice[], payments: Payment[]): Promise<void> {
+    /** `allocations` = settlement.rent spread over open invoices (allocateAcrossInvoices), computed before any write. */
+    async function settleDeposit(lease: Lease, s: DepositSettlement, dateISO: string, allocations: Allocation[]): Promise<void> {
       if (s.refund > 0) {
         await repo.insert('expenses', {
           property_id: lease.property_id,
@@ -347,21 +353,18 @@ export function useLeaseActions() {
           receipt_path: null,
         })
       }
-      if (s.rent > 0) {
-        const allocations = allocateAcrossInvoices(s.rent, openInvoices, payments)
-        for (const a of allocations) {
-          await repo.insert('payments', {
-            property_id: a.invoice.property_id,
-            invoice_id: a.invoice.id,
-            lease_id: lease.id,
-            amount: a.amount,
-            paid_at: dateISO,
-            method: 'deposit',
-            kind: 'rent',
-            notes: 'Potong jaminan untuk sewa',
-          })
-          await syncInvoiceStatus(a.invoice.id)
-        }
+      for (const a of allocations) {
+        await repo.insert('payments', {
+          property_id: a.invoice.property_id,
+          invoice_id: a.invoice.id,
+          lease_id: lease.id,
+          amount: a.amount,
+          paid_at: dateISO,
+          method: 'deposit',
+          kind: 'rent',
+          notes: 'Potong jaminan untuk sewa',
+        })
+        await syncInvoiceStatus(a.invoice.id)
       }
       if (s.damage > 0) {
         await repo.insert('payments', {
@@ -378,15 +381,24 @@ export function useLeaseActions() {
     }
 
     /**
-     * Invoice writes of a checkout/cancel, all of them before any expense or payment insert, so a write the
-     * database refuses (e.g. a stale total) leaves nothing else behind. Unpaid invoices are voided; a partially
-     * paid one is closed per decision (closePartialInvoicePatch), never voided (SPEC 2b.4).
+     * Re-read the lease's invoices and the payments of the touched ones right before a checkout/cancel writes. When
+     * another device changed them since the screen loaded, nothing is written (leaseDataChanged); otherwise the
+     * fresh invoice rows are returned for the patches.
      */
-    async function closeInvoices(toVoid: Invoice[], partial: Invoice[], payments: Payment[], decisions: Record<string, PartialDecision>, reason: string): Promise<void> {
-      for (const inv of toVoid) await repo.update('invoices', inv.id, { status: 'void' })
-      for (const inv of partial) {
-        await repo.update('invoices', inv.id, closePartialInvoicePatch(inv, paidAmountFor(inv.id, payments), decisions[inv.id], reason))
-      }
+    async function freshLeaseInvoices(lease: Lease, invoices: Invoice[], payments: Payment[], touched: Invoice[]): Promise<Invoice[]> {
+      const fresh = await repo.list('invoices', { where: { lease_id: lease.id } })
+      const ids = [...new Set(touched.map((i) => i.id))]
+      const freshPayments = ids.length > 0 ? await repo.list('payments', { where: { invoice_id: ids } }) : []
+      if (leaseDataChanged(lease.id, invoices, payments, touched, fresh, freshPayments)) throw new Error(LEASE_DATA_CHANGED_MESSAGE)
+      return fresh
+    }
+
+    /**
+     * Invoice writes of a checkout/cancel (closingInvoiceWrites: closes, then voids), all of them before any expense
+     * or payment insert. A partially paid invoice is closed per decision, never voided (SPEC 2b.4).
+     */
+    async function closeInvoices(writes: InvoiceWrite[]): Promise<void> {
+      for (const w of writes) await repo.update('invoices', w.id, w.patch)
     }
 
     /**
@@ -407,10 +419,16 @@ export function useLeaseActions() {
       }
     }
 
+    /** Invoices already closed by a refund ('DP dikembalikan'): recordRentRefunds may still record theirs. */
+    function refundNoted(lease: Lease, invoices: Invoice[], payments: Payment[]): Invoice[] {
+      return unrecordedRentRefunds(lease.id, invoices, payments, []).map((r) => r.invoice)
+    }
+
     /**
      * SPEC 2b.5. Invoices whose period starts after the checkout date: unpaid -> void; partially paid -> the
      * caller's decision (refund / forfeit) so no receivable survives on an ended lease; fully paid are left as
      * they are. Invoices up to the checkout date stay receivable and may absorb the deposit (settlement.rent).
+     * Everything is checked before the first write.
      */
     async function checkout(input: CheckoutInput): Promise<void> {
       const { lease, checkoutDate, invoices, payments, settlement, partialDecisions } = input
@@ -419,13 +437,16 @@ export function useLeaseActions() {
       const future = futureInvoicesAtCheckout(lease.id, invoices, payments, checkoutDate)
       if ((future.toVoid.length > 0 || future.partial.length > 0) && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       requireDecisions(future.partial, partialDecisions)
+      const closedIds = new Set([...future.toVoid, ...future.partial].map((i) => i.id))
+      const open = openInvoicesSorted(lease.id, invoices, payments).filter((i) => !closedIds.has(i.id))
+      const allocations = settlement.rent > 0 ? allocateAcrossInvoices(settlement.rent, open, payments) : []
+      const refunded = future.partial.filter((inv) => partialDecisions[inv.id] === 'refund')
+      const touched = [...future.toVoid, ...future.partial, ...allocations.map((a) => a.invoice), ...refundNoted(lease, invoices, payments)]
       try {
-        await closeInvoices(future.toVoid, future.partial, payments, partialDecisions, 'checkout')
-        const refunded = future.partial.filter((inv) => partialDecisions[inv.id] === 'refund')
+        const fresh = await freshLeaseInvoices(lease, invoices, payments, touched)
+        await closeInvoices(closingInvoiceWrites(future.toVoid, future.partial, fresh, payments, partialDecisions, 'checkout'))
         await recordRentRefunds(lease, refunded, invoices, payments, checkoutDate, 'checkout')
-        const closedIds = new Set([...future.toVoid, ...future.partial].map((i) => i.id))
-        const open = openInvoicesSorted(lease.id, invoices, payments).filter((i) => !closedIds.has(i.id))
-        await settleDeposit(lease, settlement, checkoutDate, open, payments)
+        await settleDeposit(lease, settlement, checkoutDate, allocations)
         await repo.update('leases', lease.id, {
           status: 'ended',
           checkout_date: checkoutDate,
@@ -449,11 +470,15 @@ export function useLeaseActions() {
       })
       if ((unpaid.length > 0 || partial.length > 0) && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       requireDecisions(partial, partialDecisions)
+      // nothing stays open on a cancelled lease: deposit for rent is refused here, before any write
+      const allocations = settlement.rent > 0 ? allocateAcrossInvoices(settlement.rent, [], payments) : []
+      const refunded = partial.filter((inv) => partialDecisions[inv.id] === 'refund')
+      const touched = [...unpaid, ...partial, ...refundNoted(lease, invoices, payments)]
       try {
-        await closeInvoices(unpaid, partial, payments, partialDecisions, 'sewa dibatalkan')
-        const refunded = partial.filter((inv) => partialDecisions[inv.id] === 'refund')
+        const fresh = await freshLeaseInvoices(lease, invoices, payments, touched)
+        await closeInvoices(closingInvoiceWrites(unpaid, partial, fresh, payments, partialDecisions, 'sewa dibatalkan'))
         await recordRentRefunds(lease, refunded, invoices, payments, dateISO, 'sewa dibatalkan')
-        await settleDeposit(lease, settlement, dateISO, [], payments)
+        await settleDeposit(lease, settlement, dateISO, allocations)
         // end_date never drops below start_date (DB check constraint) when a lease that has not started is cancelled.
         await repo.update('leases', lease.id, { status: 'cancelled', end_date: cancelledLeaseEndDate(lease, dateISO) })
       } finally {

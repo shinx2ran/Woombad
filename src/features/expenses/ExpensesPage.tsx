@@ -200,7 +200,10 @@ export function ExpensesPage() {
       setDeleting(null)
       setSheet(null)
     } catch (err) {
+      // refresh: an expense already deleted on another device then disappears instead of failing on every retry
+      void invalidate('expenses')
       toast.error(err instanceof Error ? err.message : 'Gagal menghapus pengeluaran.')
+      setDeleting(null)
     } finally {
       setDeleteBusy(false)
     }

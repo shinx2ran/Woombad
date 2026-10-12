@@ -359,6 +359,46 @@ export function closePartialInvoicePatch(inv: Invoice, paid: number, decision: P
   }
 }
 
+/** Another device changed the lease's bills after this screen loaded them (see leaseDataChanged). */
+export const LEASE_DATA_CHANGED_MESSAGE = 'Tagihan atau pembayaran sewa ini baru saja diubah dari perangkat lain. Periksa angka terbaru di layar, lalu coba lagi.'
+
+/**
+ * True when a fresh read no longer matches what a checkout/cancel was computed from: a touched invoice (voided,
+ * closed, refunded or paid from the deposit) is gone or its rent paid changed, or the lease has a live invoice the
+ * screen does not show. Writing anyway would get refused half-way (void guard, total below paid) or refund the
+ * wrong amount. `freshPayments` must hold every payment of the touched invoices.
+ */
+export function leaseDataChanged(leaseId: string, screenInvoices: Invoice[], screenPayments: Payment[], touched: Invoice[], freshInvoices: Invoice[], freshPayments: Payment[]): boolean {
+  const fresh = new Map(freshInvoices.filter((i) => i.lease_id === leaseId).map((i) => [i.id, i]))
+  for (const inv of touched) {
+    if (!fresh.has(inv.id) || paidAmountFor(inv.id, screenPayments) !== paidAmountFor(inv.id, freshPayments)) return true
+  }
+  const shown = new Set(screenInvoices.map((i) => i.id))
+  return [...fresh.values()].some((i) => i.status !== 'void' && !shown.has(i.id))
+}
+
+export interface InvoiceWrite {
+  id: string
+  patch: Update<'invoices'>
+}
+
+/**
+ * Invoice writes of a checkout/cancel, built from fresh rows so the patch keeps what another device changed (notes,
+ * extra) and still meets total = base + add-ons + extra - discount. Closes come before voids: a refused close then
+ * leaves nothing behind. Rows an earlier attempt already closed or voided are skipped.
+ */
+export function closingInvoiceWrites(toVoid: Invoice[], partial: Invoice[], fresh: Invoice[], payments: Payment[], decisions: Record<string, PartialDecision>, reason: string): InvoiceWrite[] {
+  const byId = new Map(fresh.map((i) => [i.id, i]))
+  const out: InvoiceWrite[] = []
+  for (const inv of partial) {
+    const row = byId.get(inv.id) ?? inv
+    const paid = paidAmountFor(inv.id, payments)
+    if (row.total_amount > paid) out.push({ id: inv.id, patch: closePartialInvoicePatch(row, paid, decisions[inv.id], reason) })
+  }
+  for (const inv of toVoid) if ((byId.get(inv.id) ?? inv).status !== 'void') out.push({ id: inv.id, patch: { status: 'void' } })
+  return out
+}
+
 /** The rent_refund expense for a refunded invoice; its description names the invoice number (hasRentRefundFor). */
 export function rentRefundExpense(lease: Lease, inv: Invoice, amount: number, dateISO: string, reason: string): OrgInsert<'expenses'> {
   return {

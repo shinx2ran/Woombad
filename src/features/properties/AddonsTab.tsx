@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Info, Package, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, LoadingState, useToast } from '../../components/ui'
-import { useRemove, useTable } from '../../hooks/useTable'
+import { useInvalidate, useRemove, useTable } from '../../hooks/useTable'
 import { formatRupiah } from '../../lib/format'
 import { ADDON_BILLING_LABEL, type AddonCatalogItem, type Property } from '../../types/db'
 import { AddonFormModal } from './AddonFormModal'
@@ -14,6 +14,7 @@ export function AddonsTab({ property, isAdmin }: { property: Property; isAdmin: 
   const toast = useToast()
   const catalog = useTable('addon_catalog')
   const remove = useRemove('addon_catalog')
+  const invalidate = useInvalidate()
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<AddonCatalogItem | null>(null)
   const [deleting, setDeleting] = useState<AddonCatalogItem | null>(null)
@@ -37,7 +38,10 @@ export function AddonsTab({ property, isAdmin }: { property: Property; isAdmin: 
       toast.success(`Add-on "${deleting.name}" dihapus dari katalog.`)
       setDeleting(null)
     } catch (err) {
+      // refresh: an add-on already deleted on another device then disappears instead of failing on every retry
+      void invalidate('addon_catalog')
       toast.error(err instanceof Error ? err.message : 'Gagal menghapus add-on.')
+      setDeleting(null)
     }
   }
 

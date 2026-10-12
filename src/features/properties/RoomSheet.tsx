@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { AlertTriangle, Copy, ExternalLink, KeyRound, Pencil, Trash2, Wrench } from 'lucide-react'
 import { Button, ConfirmDialog, Modal, useToast } from '../../components/ui'
-import { useRemove, useUpdate } from '../../hooks/useTable'
+import { useInvalidate, useRemove, useUpdate } from '../../hooks/useTable'
 import { formatDate, formatRupiah } from '../../lib/format'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL, type Room } from '../../types/db'
 import type { RoomWithState } from './RoomsTab'
@@ -35,6 +35,7 @@ export function RoomSheet({
   const navigate = useNavigate()
   const update = useUpdate('rooms')
   const remove = useRemove('rooms')
+  const invalidate = useInvalidate()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmMaintenance, setConfirmMaintenance] = useState(false)
 
@@ -66,7 +67,10 @@ export function RoomSheet({
       setConfirmDelete(false)
       onClose()
     } catch (err) {
+      // refresh: a room already deleted on another device then disappears instead of failing on every retry
+      void invalidate('rooms')
       toast.error(err instanceof Error ? err.message : 'Gagal menghapus kamar.')
+      setConfirmDelete(false)
     }
   }
 
