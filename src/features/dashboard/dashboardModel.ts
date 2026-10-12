@@ -3,8 +3,8 @@
  * that exist in src/domain are delegated there; this file only assembles view models.
  */
 import type { Invoice, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../../types/db'
-import { computeAddonsAmount, isPaidUpAndEnding as domainIsPaidUpAndEnding, paidAmountFor, summarizeLeaseBilling, type BillingState, type LeaseBillingSummary } from '../../domain/billing'
-import { expiringLeases, isLeaseActiveOn, isLeaseReservedOn, reservedRoomIds, vacantRooms } from '../../domain/occupancy'
+import { computeAddonsAmount, isPaidUpAndEnding as domainIsPaidUpAndEnding, nextDueSortKey, paidAmountFor, summarizeLeaseBilling, type BillingState, type LeaseBillingSummary } from '../../domain/billing'
+import { compareRoomNames, expiringLeases, isLeaseActiveOn, isLeaseReservedOn, reservedRoomIds, vacantRooms } from '../../domain/occupancy'
 import { daysBetween, parseISODate, rangeForPreset, toISODate, type DateRange } from '../../domain/period'
 import { formatDate } from '../../lib/format'
 import { subMonths } from 'date-fns'
@@ -120,15 +120,56 @@ export function buildAttentionSections(
   const sections: AttentionSection[] = []
   for (const group of ATTENTION_ORDER) {
     const items = byGroup.get(group)!
-    items.sort((a, b) => {
-      const da = a.summary.daysUntilDue ?? 0
-      const db = b.summary.daysUntilDue ?? 0
-      if (da !== db) return da - db
-      return (a.tenant?.full_name ?? '').localeCompare(b.tenant?.full_name ?? '')
-    })
+    items.sort(compareAttentionByDate)
     if (items.length > 0) sections.push({ group, items })
   }
   return sections
+}
+
+/** Order of the rows inside each "Perlu perhatian" group (SPEC 5.1): 'date' = jatuh tempo terdekat, 'room' = kos lalu kamar. */
+export type AttentionSort = 'date' | 'room'
+
+export const ATTENTION_SORT_OPTIONS: { value: AttentionSort; label: string }[] = [
+  { value: 'date', label: 'Tanggal' },
+  { value: 'room', label: 'Kamar' },
+]
+
+/** localStorage key that remembers the chosen AttentionSort on this device. */
+export const ATTENTION_SORT_STORAGE_KEY = 'woombad.dashboard.attentionSort'
+
+/** Stored value -> AttentionSort; anything unknown (null, old values) falls back to 'date'. */
+export function parseAttentionSort(value: string | null | undefined): AttentionSort {
+  return value === 'room' ? 'room' : 'date'
+}
+
+function compareTenantNames(a: AttentionItem, b: AttentionItem): number {
+  return (a.tenant?.full_name ?? '').localeCompare(b.tenant?.full_name ?? '')
+}
+
+/** Earliest next due date first (nextDueSortKey; the most overdue on top), then tenant name. */
+export function compareAttentionByDate(a: AttentionItem, b: AttentionItem): number {
+  const ka = nextDueSortKey(a.summary)
+  const kb = nextDueSortKey(b.summary)
+  if (ka !== kb) return ka < kb ? -1 : 1
+  return compareTenantNames(a, b)
+}
+
+/** Kos name, then natural room name (compareRoomNames: A1 < A2 < A10), then next due date. */
+export function compareAttentionByRoom(a: AttentionItem, b: AttentionItem): number {
+  const pa = a.property?.name ?? ''
+  const pb = b.property?.name ?? ''
+  const byProperty = pa.localeCompare(pb, undefined, { sensitivity: 'base' })
+  if (byProperty !== 0) return byProperty
+  if (a.lease.property_id !== b.lease.property_id) return a.lease.property_id < b.lease.property_id ? -1 : 1
+  const byRoom = compareRoomNames(a.room?.name ?? '', b.room?.name ?? '')
+  if (byRoom !== 0) return byRoom
+  return compareAttentionByDate(a, b)
+}
+
+/** Re-sorts the rows inside every group (group order stays overdue, due_soon, unbilled). Returns new arrays. */
+export function sortAttentionSections(sections: AttentionSection[], sort: AttentionSort): AttentionSection[] {
+  const compare = sort === 'room' ? compareAttentionByRoom : compareAttentionByDate
+  return sections.map((section) => ({ ...section, items: [...section.items].sort(compare) }))
 }
 
 export interface ExpiringItem {
