@@ -95,9 +95,8 @@ export function TenantDetailPage() {
   const confirmDelete = async () => {
     try {
       // Row first, photo second (SPEC 6.4): a refused delete (tenant still has leases) must keep the KTP photo.
+      // remove() throws when nothing was deleted, so the file is only touched once the row is gone.
       await remove.mutateAsync(t.id)
-      // A delete filtered out by RLS affects 0 rows without an error: only touch the file once the row is gone.
-      if (await repo.get('tenants', t.id)) throw new Error('Penyewa tidak dapat dihapus. Anda mungkin tidak memiliki izin.')
       let photoKept = false
       if (t.ktp_image_path) {
         try {

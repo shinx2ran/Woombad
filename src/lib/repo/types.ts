@@ -27,6 +27,14 @@ export class NotMemberError extends Error {
   }
 }
 
+/** A write that reached no row: the row is gone, or row-level security hides it from this member. */
+export const UPDATE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk mengubahnya.'
+export const DELETE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk menghapusnya.'
+/** ON DELETE RESTRICT: another row still points at the one being deleted. */
+export const IN_USE_MESSAGE = 'Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.'
+/** Same text as the invoices_void_guard trigger in supabase/schema.sql. */
+export const VOID_PAID_INVOICE_MESSAGE = 'Tagihan yang sudah ada pembayarannya tidak dapat dibatalkan.'
+
 export interface CreatedInvitation {
   /** plain code, formatted 'ABCD-EFGH'; shown once, the database keeps only a hash */
   code: string

@@ -2,7 +2,7 @@ import type { Insert, Row, TableName, Update } from '../../types/db'
 import { TABLE_NAMES } from '../../types/db'
 import { newId } from '../ids'
 import type { CreatedInvitation, ListOptions, Repo, StorageBucket } from './types'
-import { CODE_ALPHABET, formatCode } from './types'
+import { CODE_ALPHABET, DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, UPDATE_DENIED_MESSAGE, VOID_PAID_INVOICE_MESSAGE, formatCode } from './types'
 import type { MemberRole } from '../../types/db'
 
 export const STORAGE_KEY = 'woombad.local.db.v1'
@@ -160,7 +160,11 @@ export class LocalRepo implements Repo {
   async update<T extends TableName>(table: T, id: string, patch: Update<T>, orgId?: string): Promise<Row<T>> {
     const rows = this.db[table] as Row<T>[]
     const idx = rows.findIndex((r) => r.id === id && (!orgId || rec(r).org_id === orgId))
-    if (idx < 0) throw new Error(`Data tidak ditemukan (${table}/${id})`)
+    if (idx < 0) throw new Error(UPDATE_DENIED_MESSAGE)
+    // invoices_void_guard: an invoice with rent payments cannot be voided
+    if (table === 'invoices' && rec(patch).status === 'void' && rec(rows[idx]).status !== 'void' && this.db.payments.some((p) => p.invoice_id === id && p.kind === 'rent')) {
+      throw new Error(VOID_PAID_INVOICE_MESSAGE)
+    }
     const next = { ...rows[idx], ...patch } as Record<string, unknown>
     if (hasUpdatedAt(table)) next.updated_at = new Date().toISOString()
     rows[idx] = next as unknown as Row<T>
@@ -171,10 +175,10 @@ export class LocalRepo implements Repo {
   async remove<T extends TableName>(table: T, id: string, orgId?: string): Promise<void> {
     const rows = this.db[table] as Row<T>[]
     const idx = rows.findIndex((r) => r.id === id && (!orgId || rec(r).org_id === orgId))
-    if (idx >= 0 && this.isReferenced(table, id)) {
-      throw new Error('Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.')
-    }
-    if (idx >= 0) rows.splice(idx, 1)
+    // like SupabaseRepo: deleting nothing is an error, never a silent success
+    if (idx < 0) throw new Error(DELETE_DENIED_MESSAGE)
+    if (this.isReferenced(table, id)) throw new Error(IN_USE_MESSAGE)
+    rows.splice(idx, 1)
     saveDb(this.db)
   }
 

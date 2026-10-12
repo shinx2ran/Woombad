@@ -30,7 +30,6 @@ import { removeReceiptIfUnused } from './receiptFiles'
 import {
   CATEGORY_COLOR,
   CATEGORY_TONE,
-  DELETE_DENIED_MESSAGE,
   EDIT_DENIED_HINT,
   ORDERED_CATEGORIES,
   canEditExpenses,
@@ -184,11 +183,9 @@ export function ExpensesPage() {
     if (!deleting) return
     setDeleteBusy(true)
     try {
-      // Row first, file second (SPEC 6.4): a refused delete must never lose the receipt.
+      // Row first, file second (SPEC 6.4): a refused delete must never lose the receipt. remove() throws when
+      // nothing was deleted (RLS filters a forbidden delete down to 0 rows without an error).
       await repo.remove('expenses', deleting.id)
-      // A delete that RLS filters out affects 0 rows without an error: confirm the row is really gone before
-      // reporting success (and before touching its receipt file).
-      if (await repo.get('expenses', deleting.id)) throw new Error(DELETE_DENIED_MESSAGE)
       let fileWarning = false
       if (deleting.receipt_path) {
         try {

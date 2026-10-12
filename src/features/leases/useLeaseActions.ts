@@ -6,7 +6,7 @@
 import { useMemo } from 'react'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
-import type { AddonBilling, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
+import type { AddonBilling, Invoice, Lease, LeaseAddon, OrgTableName, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
 import {
   buildInvoiceDraft,
   deriveInvoiceStatus,
@@ -21,13 +21,19 @@ import {
   allocateAcrossInvoices,
   appendMoveNote,
   cancelledLeaseEndDate,
+  closePartialInvoicePatch,
   extensionLeasePatch,
   futureInvoicesAtCheckout,
   invoiceInsertFromDraft,
   invoicesToPinType,
   openInvoicesSorted,
+  rentRefundExpense,
+  rentRefundsToRecord,
   type DepositSettlement,
+  type PartialDecision,
 } from './leaseUtils'
+
+export type { PartialDecision } from './leaseUtils'
 
 export interface IssueInvoiceInput {
   lease: Lease
@@ -77,8 +83,6 @@ export interface RentPaymentResult {
   remaining: number
   excessRecorded: number
 }
-
-export type PartialDecision = 'refund' | 'forfeit'
 
 export interface CheckoutInput {
   lease: Lease
@@ -297,6 +301,16 @@ export function useLeaseActions() {
       if (covered !== null && covered < lease.end_date) await repo.update('leases', lease.id, { end_date: covered })
     }
 
+    /** Delete one row; when the delete is refused or finds nothing, refresh the table so the screen shows the truth. */
+    async function removeRow(table: OrgTableName, id: string): Promise<void> {
+      try {
+        await repo.remove(table, id)
+      } catch (err) {
+        await invalidate(table)
+        throw err
+      }
+    }
+
     async function voidInvoice(invoice: Invoice, lease: Lease, leaseInvoices: Invoice[], payments: Payment[]): Promise<void> {
       if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       if (paidAmountFor(invoice.id, payments) > 0) throw new Error('Tagihan sudah memiliki pembayaran. Hapus pembayaran dulu atau kecilkan total lewat diskon.')
@@ -308,14 +322,14 @@ export function useLeaseActions() {
     async function deleteInvoice(invoice: Invoice, lease: Lease, leaseInvoices: Invoice[], payments: Payment[]): Promise<void> {
       if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       if (paidAmountFor(invoice.id, payments) > 0) throw new Error('Tagihan sudah memiliki pembayaran dan tidak dapat dihapus.')
-      await repo.remove('invoices', invoice.id)
+      await removeRow('invoices', invoice.id)
       await shrinkLeaseEnd(lease, leaseInvoices.filter((i) => i.id !== invoice.id))
       await invalidate('invoices', 'leases')
     }
 
     async function deletePayment(payment: Payment): Promise<void> {
       if (!isAdmin) throw new Error('Hanya pemilik/admin yang dapat menghapus pembayaran.')
-      await repo.remove('payments', payment.id)
+      await removeRow('payments', payment.id)
       if (payment.invoice_id) await syncInvoiceStatus(payment.invoice_id)
       await invalidate('payments', 'invoices')
     }
@@ -364,32 +378,32 @@ export function useLeaseActions() {
     }
 
     /**
-     * Close a partially-paid invoice that will never be owed in full (SPEC 2b.4; also used for invoices after the
-     * checkout date): 'refund' = expense rent_refund (+ lease_id) for the paid part and void the invoice;
-     * 'forfeit' = the remaining amount becomes discount, total = paid, status paid (the DP stays revenue).
+     * Invoice writes of a checkout/cancel, all of them before any expense or payment insert, so a write the
+     * database refuses (e.g. a stale total) leaves nothing else behind. Unpaid invoices are voided; a partially
+     * paid one is closed per decision (closePartialInvoicePatch), never voided (SPEC 2b.4).
      */
-    async function resolvePartialInvoice(lease: Lease, inv: Invoice, paid: number, decision: PartialDecision | undefined, dateISO: string, reason: string): Promise<void> {
-      if (!decision) throw new Error(`Pilih penyelesaian untuk tagihan ${inv.invoice_number}.`)
-      if (decision === 'refund') {
-        await repo.insert('expenses', {
-          property_id: lease.property_id,
-          lease_id: lease.id,
-          category: 'rent_refund',
-          amount: paid,
-          expense_date: dateISO,
-          description: `Pengembalian DP tagihan ${inv.invoice_number} (${reason})`,
-          vendor: null,
-          receipt_path: null,
-        })
-        await repo.update('invoices', inv.id, { status: 'void' })
-      } else {
-        const remaining = inv.total_amount - paid
-        await repo.update('invoices', inv.id, {
-          discount_amount: inv.discount_amount + remaining,
-          total_amount: paid,
-          status: 'paid',
-          notes: [inv.notes, `Sisa dianggap hangus (${reason})`].filter(Boolean).join('\n'),
-        })
+    async function closeInvoices(toVoid: Invoice[], partial: Invoice[], payments: Payment[], decisions: Record<string, PartialDecision>, reason: string): Promise<void> {
+      for (const inv of toVoid) await repo.update('invoices', inv.id, { status: 'void' })
+      for (const inv of partial) {
+        await repo.update('invoices', inv.id, closePartialInvoicePatch(inv, paidAmountFor(inv.id, payments), decisions[inv.id], reason))
+      }
+    }
+
+    /**
+     * 'refund': one rent_refund expense (+ lease_id) per refunded invoice. Existing refunds are read fresh, so a
+     * retry after a failure never records one twice and still records one an earlier attempt missed.
+     */
+    async function recordRentRefunds(lease: Lease, refundedNow: Invoice[], invoices: Invoice[], payments: Payment[], dateISO: string, reason: string): Promise<void> {
+      if (rentRefundsToRecord(lease.id, refundedNow, invoices, payments, []).length === 0) return
+      const existing = await repo.list('expenses', { where: { lease_id: lease.id, category: 'rent_refund' } })
+      for (const r of rentRefundsToRecord(lease.id, refundedNow, invoices, payments, existing)) {
+        await repo.insert('expenses', rentRefundExpense(lease, r.invoice, r.amount, dateISO, reason))
+      }
+    }
+
+    function requireDecisions(partial: Invoice[], decisions: Record<string, PartialDecision>): void {
+      for (const inv of partial) {
+        if (!decisions[inv.id]) throw new Error(`Pilih penyelesaian untuk tagihan ${inv.invoice_number}.`)
       }
     }
 
@@ -404,40 +418,47 @@ export function useLeaseActions() {
       if (checkoutDate < lease.start_date) throw new Error('Tanggal checkout tidak boleh sebelum tanggal mulai sewa.')
       const future = futureInvoicesAtCheckout(lease.id, invoices, payments, checkoutDate)
       if ((future.toVoid.length > 0 || future.partial.length > 0) && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
-      for (const inv of future.partial) {
-        if (!partialDecisions[inv.id]) throw new Error(`Pilih penyelesaian untuk tagihan ${inv.invoice_number}.`)
+      requireDecisions(future.partial, partialDecisions)
+      try {
+        await closeInvoices(future.toVoid, future.partial, payments, partialDecisions, 'checkout')
+        const refunded = future.partial.filter((inv) => partialDecisions[inv.id] === 'refund')
+        await recordRentRefunds(lease, refunded, invoices, payments, checkoutDate, 'checkout')
+        const closedIds = new Set([...future.toVoid, ...future.partial].map((i) => i.id))
+        const open = openInvoicesSorted(lease.id, invoices, payments).filter((i) => !closedIds.has(i.id))
+        await settleDeposit(lease, settlement, checkoutDate, open, payments)
+        await repo.update('leases', lease.id, {
+          status: 'ended',
+          checkout_date: checkoutDate,
+          end_date: minISO(lease.end_date, checkoutDate),
+        })
+      } finally {
+        // also after a failure, so the screen shows what was saved
+        await invalidate('leases', 'invoices', 'payments', 'expenses')
       }
-      for (const inv of future.toVoid) await repo.update('invoices', inv.id, { status: 'void' })
-      for (const inv of future.partial) await resolvePartialInvoice(lease, inv, paidAmountFor(inv.id, payments), partialDecisions[inv.id], checkoutDate, 'checkout')
-      const closedIds = new Set([...future.toVoid, ...future.partial].map((i) => i.id))
-      const open = openInvoicesSorted(lease.id, invoices, payments).filter((i) => !closedIds.has(i.id))
-      await settleDeposit(lease, settlement, checkoutDate, open, payments)
-      await repo.update('leases', lease.id, {
-        status: 'ended',
-        checkout_date: checkoutDate,
-        end_date: minISO(lease.end_date, checkoutDate),
-      })
-      await invalidate('leases', 'invoices', 'payments', 'expenses')
     }
 
+    /** SPEC 2b.4: void unpaid invoices, close partial ones per decision, settle the deposit, status cancelled. */
     async function cancelLease(input: CancelInput): Promise<void> {
       const { lease, invoices, payments, partialDecisions, settlement, dateISO } = input
       if (!dateISO) throw new Error('Tanggal pembatalan wajib diisi.')
-      const touchesInvoices = invoices.some((inv) => inv.lease_id === lease.id && inv.status !== 'void' && paidAmountFor(inv.id, payments) < inv.total_amount)
-      if (touchesInvoices && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
-      for (const inv of invoices) {
-        if (inv.lease_id !== lease.id || inv.status === 'void') continue
+      const live = invoices.filter((inv) => inv.lease_id === lease.id && inv.status !== 'void')
+      const unpaid = live.filter((inv) => paidAmountFor(inv.id, payments) === 0)
+      const partial = live.filter((inv) => {
         const paid = paidAmountFor(inv.id, payments)
-        if (paid === 0) {
-          await repo.update('invoices', inv.id, { status: 'void' })
-        } else if (paid < inv.total_amount) {
-          await resolvePartialInvoice(lease, inv, paid, partialDecisions[inv.id], dateISO, 'sewa dibatalkan')
-        }
+        return paid > 0 && paid < inv.total_amount
+      })
+      if ((unpaid.length > 0 || partial.length > 0) && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
+      requireDecisions(partial, partialDecisions)
+      try {
+        await closeInvoices(unpaid, partial, payments, partialDecisions, 'sewa dibatalkan')
+        const refunded = partial.filter((inv) => partialDecisions[inv.id] === 'refund')
+        await recordRentRefunds(lease, refunded, invoices, payments, dateISO, 'sewa dibatalkan')
+        await settleDeposit(lease, settlement, dateISO, [], payments)
+        // end_date never drops below start_date (DB check constraint) when a lease that has not started is cancelled.
+        await repo.update('leases', lease.id, { status: 'cancelled', end_date: cancelledLeaseEndDate(lease, dateISO) })
+      } finally {
+        await invalidate('leases', 'invoices', 'payments', 'expenses')
       }
-      await settleDeposit(lease, settlement, dateISO, [], payments)
-      // end_date never drops below start_date (DB check constraint) when a lease that has not started is cancelled.
-      await repo.update('leases', lease.id, { status: 'cancelled', end_date: cancelledLeaseEndDate(lease, dateISO) })
-      await invalidate('leases', 'invoices', 'payments', 'expenses')
     }
 
     async function moveRoom(lease: Lease, fromRoom: Room | undefined, toRoom: Room, newPrice: number | null, dateISO: string): Promise<void> {
@@ -459,7 +480,7 @@ export function useLeaseActions() {
     }
 
     async function removeAddon(addon: LeaseAddon): Promise<void> {
-      await repo.remove('lease_addons', addon.id)
+      await removeRow('lease_addons', addon.id)
       await invalidate('lease_addons')
     }
 

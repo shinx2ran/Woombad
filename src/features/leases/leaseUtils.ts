@@ -2,7 +2,7 @@
  * UI-side helpers for the leases module. Money/date rules live in src/domain; these functions only
  * arrange domain results for display (sorting, search, timeline segments, form conventions).
  */
-import type { Invoice, Lease, LeaseAddon, OrgInsert, Payment, PeriodType, Room, Tenant, Update } from '../../types/db'
+import type { Expense, Invoice, Lease, LeaseAddon, OrgInsert, Payment, PeriodType, Room, Tenant, Update } from '../../types/db'
 import { PERIOD_TYPE_LABEL } from '../../types/db'
 import type { BillingState, ExtraBreakdown, InvoiceDraft, LeaseBillingSummary } from '../../domain/billing'
 import {
@@ -334,6 +334,75 @@ export function futureInvoicesAtCheckout(leaseId: string, invoices: Invoice[], p
     else out.paid.push(inv)
   }
   return out
+}
+
+// ---------- closing partially-paid invoices (SPEC 2b.4) ----------
+
+/** 'refund' = the paid part goes back to the tenant (expense rent_refund); 'forfeit' = the DP stays revenue. */
+export type PartialDecision = 'refund' | 'forfeit'
+
+/** Line added to the notes of an invoice closed by a refund; it also marks a refund still to record. */
+const REFUND_NOTE_RE = /(^|\n)DP dikembalikan \(/
+
+/**
+ * Patch that closes a partially-paid invoice for good. Never a void: the database refuses to void an invoice
+ * with rent payments (invoices_void_guard). The unpaid rest becomes discount, total = paid, so the invoice is
+ * paid and owes nothing; the note says which decision closed it.
+ */
+export function closePartialInvoicePatch(inv: Invoice, paid: number, decision: PartialDecision, reason: string): Update<'invoices'> {
+  const note = decision === 'refund' ? `DP dikembalikan (${reason})` : `Sisa dianggap hangus (${reason})`
+  return {
+    discount_amount: inv.discount_amount + (inv.total_amount - paid),
+    total_amount: paid,
+    status: 'paid',
+    notes: [inv.notes, note].filter(Boolean).join('\n'),
+  }
+}
+
+/** The rent_refund expense for a refunded invoice; its description names the invoice number (hasRentRefundFor). */
+export function rentRefundExpense(lease: Lease, inv: Invoice, amount: number, dateISO: string, reason: string): OrgInsert<'expenses'> {
+  return {
+    property_id: lease.property_id,
+    lease_id: lease.id,
+    category: 'rent_refund',
+    amount,
+    expense_date: dateISO,
+    description: `Pengembalian DP tagihan ${inv.invoice_number} (${reason})`,
+    vendor: null,
+    receipt_path: null,
+  }
+}
+
+/** True when the lease already has a rent_refund expense naming this invoice number. */
+export function hasRentRefundFor(expenses: Expense[], leaseId: string, invoiceNumber: string): boolean {
+  return expenses.some((e) => e.category === 'rent_refund' && e.lease_id === leaseId && e.description.split(/[\s()]+/).includes(invoiceNumber))
+}
+
+export interface RentRefund {
+  invoice: Invoice
+  amount: number
+}
+
+/**
+ * Invoices of the lease already closed by a refund ('DP dikembalikan (...)' note) whose rent_refund expense is
+ * missing: a checkout/cancel that stopped after closing them records it on the next attempt.
+ */
+export function unrecordedRentRefunds(leaseId: string, invoices: Invoice[], payments: Payment[], expenses: Expense[]): RentRefund[] {
+  return invoices
+    .filter((inv) => inv.lease_id === leaseId && inv.status !== 'void' && REFUND_NOTE_RE.test(inv.notes ?? ''))
+    .map((inv) => ({ invoice: inv, amount: paidAmountFor(inv.id, payments) }))
+    .filter((r) => r.amount > 0 && !hasRentRefundFor(expenses, leaseId, r.invoice.invoice_number))
+}
+
+/**
+ * rent_refund expenses to insert for a checkout/cancel: one per invoice refunded now (its paid part) plus the
+ * unrecorded ones, never one that already exists, so retrying after a failure does not refund twice.
+ */
+export function rentRefundsToRecord(leaseId: string, refundedNow: Invoice[], invoices: Invoice[], payments: Payment[], expenses: Expense[]): RentRefund[] {
+  const out = new Map<string, RentRefund>()
+  for (const inv of refundedNow) out.set(inv.id, { invoice: inv, amount: paidAmountFor(inv.id, payments) })
+  for (const r of unrecordedRentRefunds(leaseId, invoices, payments, expenses)) if (!out.has(r.invoice.id)) out.set(r.invoice.id, r)
+  return [...out.values()].filter((r) => r.amount > 0 && !hasRentRefundFor(expenses, leaseId, r.invoice.invoice_number))
 }
 
 // ---------- open invoices & deposit settlement ----------
