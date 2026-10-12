@@ -146,26 +146,72 @@ export function describeUnsupportedImage(file: Blob): string | null {
 const MRZ_LIKE_RE = /^[A-Z0-9<]{38,80}$/
 const FILLER_NOISE_RE = /[«»‹›({[]/g
 const MRZ_JUNK_RE = /[\s.,'"`\-_:;|]/g
-/** runs of K / L / I touching a '<': the way tesseract reads long '<<<<' filler in Courier-like fonts */
-const FILLER_RUN_RE = /<[KLI]{2,}|[KLI]{2,}(?=<)/g
+/** filler as tesseract reads a long '<<<<' run in Courier-like fonts: '<' mixed with K / L / I */
+const FILLER_ONLY_RE = /^[<KLI]+$/
+/** first line of a TD3 MRZ: 'P', type or filler, 3-character issuing state */
+const MRZ_LINE1_RE = /^P[A-Z0-9<][A-Z0-9<]{3}/
+/** TD3 line 2: positions 28..41 hold the optional personal number (mostly '<' filler) */
+const LINE2_PERSONAL_START = 28
+const LINE2_PERSONAL_END = 42
+
+/**
+ * Line 1 (names from position 5: SURNAME<<GIVEN<NAMES<<<…). A correctly read name field contains '<<' once
+ * (the surname / given-names separator) before the filler, so the filler starts at the first '<<' *after*
+ * that separator (or right after it for a mononym). Only when everything from there to the end of the line
+ * is '<' or K / L / I is it rewritten to '<'; the names themselves are never touched, whatever letters they
+ * contain (HILL, LILY, MALIK, WILLI, NIKKI…). Over-long lines are cut to 44 characters.
+ */
+function repairMrzLine1(line: string): string {
+  let out = line
+  const separator = out.indexOf('<<', 5)
+  if (separator >= 0) {
+    const afterSeparator = separator + 2
+    const fillerStart = out.startsWith('<', afterSeparator) ? afterSeparator : out.indexOf('<<', afterSeparator)
+    if (fillerStart >= 0) {
+      const tail = out.slice(fillerStart)
+      if (FILLER_ONLY_RE.test(tail)) out = out.slice(0, fillerStart) + '<'.repeat(tail.length)
+    }
+  }
+  return out.length > 44 ? out.slice(0, 44) : out
+}
+
+/**
+ * Line 2: the document number, nationality, dates and sex (positions 0..27) are never changed. Only the
+ * personal-number field (28..41, before the last two check digits) is repaired, and only when it holds
+ * nothing but '<' and K / L / I (an empty personal number misread); it then becomes all '<'.
+ */
+function repairMrzLine2(line: string): string {
+  const end = Math.min(LINE2_PERSONAL_END, line.length - 2)
+  if (end <= LINE2_PERSONAL_START) return line
+  const field = line.slice(LINE2_PERSONAL_START, end)
+  if (!field.includes('<') || !FILLER_ONLY_RE.test(field)) return line
+  return line.slice(0, LINE2_PERSONAL_START) + '<'.repeat(field.length) + line.slice(end)
+}
 
 /**
  * Repair what OCR typically does to the '<' filler of an MRZ before `detectDocument` / `parsePassportMrz`
- * see it (the domain parser tolerates the usual letter/digit confusions but needs lines of 40-46 chars):
- * - runs of K/L/I adjacent to a '<' become '<' of the same length;
- * - line 1 (starts with 'P', holds only names after position 5) is cut to 44 characters when OCR made it
- *   longer, since anything past the names field is filler noise.
- * Lines that do not look like an MRZ line are returned unchanged.
+ * see it (the domain parser tolerates the usual letter/digit confusions but needs lines of 40-46 chars).
+ * Only the trailing filler of line 1 and the personal-number filler of line 2 are rewritten (see
+ * repairMrzLine1 / repairMrzLine2), so a correctly read name or document number always survives. Line 2 is
+ * the MRZ-like line right after line 1 (it may itself start with 'P'). Other lines are returned unchanged.
  */
 export function repairMrzText(text: string): string {
+  let previousWasLine1 = false
   return text
     .split(/\r?\n/)
     .map((line) => {
+      if (line.trim() === '') return line
       const cleaned = line.toUpperCase().replace(FILLER_NOISE_RE, '<').replace(MRZ_JUNK_RE, '')
-      if (!MRZ_LIKE_RE.test(cleaned) || !cleaned.includes('<')) return line
-      let out = cleaned.replace(FILLER_RUN_RE, (m) => '<'.repeat(m.length))
-      if (out.startsWith('P') && out.length > 44) out = out.slice(0, 44)
-      return out
+      const mrzLike = MRZ_LIKE_RE.test(cleaned) && cleaned.includes('<')
+      const isLine2 = previousWasLine1
+      previousWasLine1 = false
+      if (!mrzLike) return line
+      if (isLine2) return repairMrzLine2(cleaned)
+      if (MRZ_LINE1_RE.test(cleaned)) {
+        previousWasLine1 = true
+        return repairMrzLine1(cleaned)
+      }
+      return line
     })
     .join('\n')
 }
@@ -257,14 +303,52 @@ export async function preprocessImage(file: Blob): Promise<Blob> {
   return canvasToBlob(canvas, 'image/jpeg', 0.92)
 }
 
+/** Thrown by `recognizeDocument` when its `signal` is aborted (the scanner was closed); not a user error. */
+export class ScanAbortedError extends Error {
+  constructor() {
+    super('Scan dibatalkan.')
+    this.name = 'ScanAbortedError'
+  }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new ScanAbortedError()
+}
+
+/** Settle with `promise`, or reject with ScanAbortedError as soon as `signal` aborts. */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.reject(new ScanAbortedError())
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new ScanAbortedError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (err: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(err)
+      },
+    )
+  })
+}
+
 /**
  * Full pipeline. `onProgress` is called with 0..100. Throws an Error with an Indonesian message on failure;
- * the tesseract worker is always terminated.
+ * the tesseract worker is always terminated. When `signal` aborts (e.g. the form was closed mid-scan) the
+ * worker is terminated right away, no further progress is reported and the promise rejects with
+ * ScanAbortedError.
  */
-export async function recognizeDocument(file: Blob, onProgress: (p: OcrProgress) => void): Promise<DocumentScanResult> {
-  onProgress({ phase: 'preprocess', percent: 2, status: 'Memproses gambar…', downloading: false })
+export async function recognizeDocument(file: Blob, onProgress: (p: OcrProgress) => void, signal?: AbortSignal): Promise<DocumentScanResult> {
+  const report = (p: OcrProgress) => {
+    if (!signal?.aborted) onProgress(p)
+  }
+  report({ phase: 'preprocess', percent: 2, status: 'Memproses gambar…', downloading: false })
   const image = await preprocessImage(file)
-  onProgress({ phase: 'preprocess', percent: 10, status: 'Gambar siap', downloading: false })
+  throwIfAborted(signal)
+  report({ phase: 'preprocess', percent: 10, status: 'Gambar siap', downloading: false })
 
   let tesseract: typeof import('tesseract.js')
   try {
@@ -272,24 +356,31 @@ export async function recognizeDocument(file: Blob, onProgress: (p: OcrProgress)
   } catch {
     throw new Error('Komponen OCR tidak bisa dimuat. Periksa koneksi internet lalu coba lagi.')
   }
+  throwIfAborted(signal)
 
   const firstRun = !hasOcrDataCached()
   let worker: Awaited<ReturnType<typeof tesseract.createWorker>> | null = null
   try {
-    worker = await tesseract.createWorker(OCR_LANGS, undefined, {
+    const creating = tesseract.createWorker(OCR_LANGS, undefined, {
       logger: (m) => {
         const mapped = mapOcrProgress(m.status, m.progress)
-        onProgress({ ...mapped, downloading: mapped.downloading && firstRun })
+        report({ ...mapped, downloading: mapped.downloading && firstRun })
       },
       errorHandler: () => {
         /* surfaced through the rejected promise below */
       },
     })
-    const { data } = await worker.recognize(image)
+    // Aborted while the worker was still starting: terminate it as soon as it exists.
+    const terminateLate = () => void creating.then((w) => w.terminate()).catch(() => undefined)
+    signal?.addEventListener('abort', terminateLate, { once: true })
+    worker = await untilAborted(creating, signal)
+    signal?.removeEventListener('abort', terminateLate)
+    const { data } = await untilAborted(worker.recognize(image), signal)
     markOcrDataCached()
-    onProgress({ phase: 'parse', percent: 100, status: 'Selesai', downloading: false })
+    report({ phase: 'parse', percent: 100, status: 'Selesai', downloading: false })
     return { text: data.text, ocrConfidence: Math.round(data.confidence ?? 0), image, ...interpretOcrText(data.text) }
   } catch (err) {
+    if (err instanceof ScanAbortedError || signal?.aborted) throw new ScanAbortedError()
     const detail = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false
     throw new Error(

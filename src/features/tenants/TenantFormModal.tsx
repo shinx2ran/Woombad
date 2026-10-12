@@ -84,6 +84,8 @@ export function TenantFormModal({
   const [values, setValues] = useState<TenantFormValues>(() => initialTenantForm(selectedPropertyId, properties))
   const [errors, setErrors] = useState<TenantFormErrors>({})
   const [scannerOpen, setScannerOpen] = useState(false)
+  /** autoStart for the scanner (check-in deep link); true only until the scanner is first closed */
+  const [scanAutoStart, setScanAutoStart] = useState(false)
   const [ktpImage, setKtpImage] = useState<Blob | null>(null)
   const [saveKtpPhoto, setSaveKtpPhoto] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -96,10 +98,18 @@ export function TenantFormModal({
     setValues(tenant ? tenantToForm(tenant) : initialTenantForm(selectedPropertyId, properties))
     setErrors({})
     setScannerOpen(autoScan && !tenant)
+    setScanAutoStart(autoScan && !tenant)
     setKtpImage(null)
     setSaveKtpPhoto(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tenant?.id])
+
+  // The ?scan=1 shortcut opens the file picker only on the scanner's first mount; once the scanner was
+  // closed (manual entry, applied, or "Tutup scanner"), reopening it shows the normal panel.
+  const closeScanner = () => {
+    setScanAutoStart(false)
+    setScannerOpen(false)
+  }
 
   const set = <K extends keyof TenantFormValues>(key: K, value: TenantFormValues[K]) => {
     setValues((v) => ({ ...v, [key]: value }))
@@ -143,7 +153,7 @@ export function TenantFormModal({
             await invalidate('tenants')
           }
         } catch (err) {
-          toast.error(`Data penyewa tersimpan, tetapi foto KTP gagal diunggah: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'}`)
+          toast.error(`Data penyewa tersimpan, tetapi foto dokumen gagal diunggah: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'}`)
         }
       }
       toast.success(isEdit ? 'Data penyewa diperbarui.' : `Penyewa ${saved.full_name} ditambahkan.`)
@@ -178,13 +188,14 @@ export function TenantFormModal({
       <form id="tenant-form" onSubmit={submit} className="space-y-6" noValidate>
         {/* Scan KTP / Paspor */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <Button
               type="button"
               variant={scannerOpen ? 'ghost' : 'secondary'}
-              size="sm"
-              icon={scannerOpen ? <X className="h-4 w-4" /> : <ScanLine className="h-4 w-4" />}
-              onClick={() => setScannerOpen((o) => !o)}
+              size="lg"
+              className="w-full sm:w-auto"
+              icon={scannerOpen ? <X className="h-5 w-5" /> : <ScanLine className="h-5 w-5" />}
+              onClick={() => (scannerOpen ? closeScanner() : setScannerOpen(true))}
             >
               {scannerOpen ? 'Tutup scanner' : 'Scan KTP / Paspor'}
             </Button>
@@ -193,13 +204,13 @@ export function TenantFormModal({
           {scannerOpen && (
             <DocumentScanner
               current={scannerCurrent}
-              autoStart={autoScan && !isEdit}
-              onCancel={() => setScannerOpen(false)}
+              autoStart={scanAutoStart}
+              onCancel={closeScanner}
               onApply={(prefill, image) => {
                 setValues((v) => applyScanPrefill(v, prefill))
                 setErrors({})
                 setKtpImage(image)
-                setScannerOpen(false)
+                closeScanner()
               }}
             />
           )}
@@ -224,7 +235,7 @@ export function TenantFormModal({
               value={values.phone}
               onChange={(e) => set('phone', e.target.value)}
               error={errors.phone}
-              hint="Tidak ada di KTP, isi manual. Contoh: 0812-3456-7890"
+              hint="Tidak ada di KTP/paspor, isi manual. Contoh: 0812-3456-7890"
               placeholder="08xx"
             />
             <Select

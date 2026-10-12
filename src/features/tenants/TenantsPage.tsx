@@ -83,7 +83,7 @@ export function TenantsPage() {
           <EmptyState
             icon={<Users className="h-10 w-10" />}
             title="Belum ada penyewa"
-            description={selectedPropertyId === 'all' ? 'Tambahkan penyewa pertama Anda. Data KTP bisa diisi otomatis lewat Scan KTP.' : `Belum ada penyewa terdaftar di ${kosName}.`}
+            description={selectedPropertyId === 'all' ? 'Tambahkan penyewa pertama Anda. Data KTP atau paspor bisa diisi otomatis lewat Scan KTP / Paspor.' : `Belum ada penyewa terdaftar di ${kosName}.`}
             action={
               <Button icon={<UserPlus className="h-4 w-4" />} onClick={openForm}>
                 Tambah Penyewa

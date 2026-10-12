@@ -73,6 +73,49 @@ N1234567<7AUS9001011M3001019<<<<<<<<<<<<O2`
     expect(out.lines[0]).toBe('PASSPORT AUSTRALIA')
   })
 
+  it('never changes correctly read names that contain K / L / I next to a filler', () => {
+    const cases: [string, string][] = [
+      ['HILL<<JOHN', 'John Hill'],
+      ['SMITH<<LILY', 'Lily Smith'],
+      ['MALIK<<ALI', 'Ali Malik'],
+      ['WILLI<<KIKI', 'Kiki Willi'],
+      ['NIKKI<<ANNA', 'Anna Nikki'],
+      ['TAN<<LI<KAI', 'Li Kai Tan'],
+      ['KILL<<LIKI<ILI', 'Liki Ili Kill'],
+    ]
+    const line2 = mrzLine2('N1234567', 'AUS', '900101', 'M', '300101')
+    for (const [names, expected] of cases) {
+      const line1 = `P<AUS${names}`.padEnd(44, '<')
+      const text = `${line1}\n${line2}`
+      expect(repairMrzText(text)).toBe(text)
+      const out = interpretOcrText(text, NOW)
+      expect(out.kind).toBe('passport')
+      expect(out.prefill.full_name).toBe(expected)
+      expect(out.confidence).toBe(1)
+    }
+  })
+
+  it('never changes a passport number, nationality or dates in line 2 (even ending in K / L / I or starting with P)', () => {
+    for (const number of ['AB12KL', 'X1234LI', 'P1234567K', 'PKLI']) {
+      const line1 = 'P<AUSSMITH<<JOHN'.padEnd(44, '<')
+      const line2 = mrzLine2(number, 'AUS', '900101', 'M', '300101')
+      const text = `${line1}\n${line2}`
+      expect(repairMrzText(text)).toBe(text)
+      const out = interpretOcrText(text, NOW)
+      expect(out.prefill.id_number).toBe(number)
+      expect(out.passport?.checks.number).toBe(true)
+    }
+  })
+
+  it('repairs an empty personal number misread as K / L / I but keeps a real one', () => {
+    const line1 = 'P<AUSSMITH<<JOHN'.padEnd(44, '<')
+    const good = mrzLine2('N1234567', 'AUS', '900101', 'M', '300101')
+    const misread = good.slice(0, 28) + '<<KLKLLK<<<<<<' + good.slice(42)
+    expect(repairMrzText(`${line1}\n${misread}`).split('\n')[1]).toBe(good)
+    const withPersonal = good.slice(0, 28) + 'AB1234KL<<<<<<' + good.slice(42)
+    expect(repairMrzText(`${line1}\n${withPersonal}`).split('\n')[1]).toBe(withPersonal)
+  })
+
   it('leaves KTP text and short lines alone', () => {
     expect(repairMrzText(KTP_TEXT)).toBe(KTP_TEXT)
     expect(repairMrzText('KLKL<<<')).toBe('KLKL<<<')

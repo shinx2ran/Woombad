@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent 
 import { BookUser, Camera, Check, FileQuestionMark, IdCard, Keyboard, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Upload } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Badge, Button, useToast } from '../../components/ui'
-import { hasOcrDataCached, recognizeDocument, type DocumentScanResult, type OcrProgress } from './ocr'
-import { diffScanPrefill, displayPrefillValue, selectedPrefill, type PrefillDiff } from './prefill'
+import { ID_TYPE_LABEL } from '../../types/db'
+import { hasOcrDataCached, recognizeDocument, ScanAbortedError, type DocumentScanResult, type OcrProgress } from './ocr'
+import { diffScanPrefill, displayPrefillValue, idTypeChange, lockIdentityRows, selectedPrefill, type IdTypeChange, type PrefillDiff } from './prefill'
 import { DOCUMENT_KIND_LABEL, type ScanPrefill, type ScanPrefillKey } from './types'
 
 type ScanState =
@@ -16,6 +17,13 @@ const PHONE_NOTICE = 'Nomor HP tidak ada di KTP/paspor, isi manual.'
 export const UNKNOWN_DOCUMENT_NOTICE = 'Dokumen tidak dikenali, coba foto lebih jelas.'
 export const PASSPORT_NUMBER_OK = 'Nomor paspor terverifikasi'
 export const PASSPORT_NUMBER_CHECK = 'Periksa nomor paspor'
+export const PASSPORT_NUMBER_MISMATCH = 'Digit kontrol tidak cocok, bandingkan dengan paspor.'
+
+/** 'KTP → Paspor (NIK 3273… akan dihapus)' */
+export function describeIdTypeChange(change: IdTypeChange): string {
+  const base = `${ID_TYPE_LABEL[change.from]} → ${ID_TYPE_LABEL[change.to]}`
+  return change.dropped ? `${base} (${change.dropped.label} ${change.dropped.value} akan dihapus)` : base
+}
 
 export interface DocumentScannerProps {
   /** receives the accepted values (always with `id_type`) and the preprocessed JPEG (null when none) */
@@ -65,15 +73,22 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
   const [dragging, setDragging] = useState(false)
   /** manual checkbox overrides, keyed by field; anything not here follows the diff default */
   const [overrides, setOverrides] = useState<Partial<Record<ScanPrefillKey, boolean>>>({})
+  /** manual choice for the identity-type switch (undefined = follow idTypeChange's default) */
+  const [typeOverride, setTypeOverride] = useState<boolean | undefined>(undefined)
   const cameraRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const previewRef = useRef<string | null>(null)
+  /** the running scan; aborted on unmount or when a new scan starts so the OCR worker stops */
+  const scanRef = useRef<AbortController | null>(null)
   const firstRun = !hasOcrDataCached()
 
-  // Release the preview object URL when the component unmounts or a new scan starts.
+  // On unmount: stop a running OCR (worker + downloads) and release the preview object URL.
   useEffect(
     () => () => {
+      scanRef.current?.abort()
+      scanRef.current = null
       if (previewRef.current) URL.revokeObjectURL(previewRef.current)
+      previewRef.current = null
     },
     [],
   )
@@ -89,17 +104,32 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
       URL.revokeObjectURL(previewRef.current)
       previewRef.current = null
     }
+    scanRef.current?.abort()
+    const controller = new AbortController()
+    scanRef.current = controller
     setOverrides({})
+    setTypeOverride(undefined)
     setState({ status: 'running', progress: { phase: 'preprocess', percent: 0, status: 'Memulai…', downloading: false } })
     try {
-      const result = await recognizeDocument(file, (progress) => setState({ status: 'running', progress }))
+      const result = await recognizeDocument(
+        file,
+        (progress) => {
+          if (!controller.signal.aborted) setState({ status: 'running', progress })
+        },
+        controller.signal,
+      )
+      // Closed (unmounted) or superseded while OCR ran: no preview URL, no state update.
+      if (controller.signal.aborted) return
       const previewUrl = URL.createObjectURL(result.image)
       previewRef.current = previewUrl
       setState({ status: 'review', result, previewUrl })
       if (result.kind === 'unknown') toast.error(UNKNOWN_DOCUMENT_NOTICE)
     } catch (err) {
+      if (controller.signal.aborted || err instanceof ScanAbortedError) return
       toast.error(err instanceof Error ? err.message : 'Scan dokumen gagal.')
       setState({ status: 'idle' })
+    } finally {
+      if (scanRef.current === controller) scanRef.current = null
     }
   }
 
@@ -118,30 +148,40 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
 
   // Always compare against the form values as they are *now*, so text typed while the scan was running
   // (or while reviewing) is never overwritten by default.
-  const diff = useMemo<PrefillDiff[]>(() => {
+  // A scan of another document type than the form holds (KTP -> Paspor …) is a reviewable row of its own:
+  // unchecked by default when switching would drop a number the form holds.
+  const typeChange = useMemo<IdTypeChange | null>(() => {
+    if (state.status !== 'review' || state.result.kind === 'unknown') return null
+    const change = idTypeChange(state.result.prefill, current)
+    return change && typeOverride !== undefined ? { ...change, apply: typeOverride } : change
+  }, [state, current, typeOverride])
+
+  const diff = useMemo<(PrefillDiff & { locked: boolean })[]>(() => {
     if (state.status !== 'review') return []
-    return diffScanPrefill(state.result.prefill, current).map((d) => {
+    const rows = diffScanPrefill(state.result.prefill, current).map((d) => {
       const override = overrides[d.key]
       return override === undefined ? d : { ...d, apply: override }
     })
-  }, [state, current, overrides])
+    return lockIdentityRows(state.result.prefill, rows, typeChange)
+  }, [state, current, overrides, typeChange])
 
   const toggle = (key: ScanPrefillKey) => {
     const entry = diff.find((d) => d.key === key)
-    if (!entry) return
+    if (!entry || entry.locked) return
     setOverrides((prev) => ({ ...prev, [key]: !entry.apply }))
   }
 
   const reset = () => {
     setOverrides({})
+    setTypeOverride(undefined)
     setState({ status: 'idle' })
   }
 
   const apply = () => {
     if (state.status !== 'review') return
-    const applied = diff.filter((d) => d.apply).length
+    const applied = diff.filter((d) => d.apply).length + (typeChange?.apply ? 1 : 0)
     const label = DOCUMENT_KIND_LABEL[state.result.kind]
-    onApply(selectedPrefill(state.result.prefill, diff), state.result.image)
+    onApply(selectedPrefill(state.result.prefill, diff, typeChange), state.result.image)
     toast.success(applied > 0 ? `${applied} data dari ${label} diterapkan ke formulir.` : 'Foto dokumen disimpan, tidak ada data yang diubah.')
     reset()
   }
@@ -247,22 +287,56 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
                 Tidak ditemukan NIK maupun kode MRZ paspor. Pastikan seluruh dokumen terfoto tanpa pantulan, atau isi data secara manual.
               </p>
             </div>
-          ) : diff.length === 0 ? (
+          ) : diff.length === 0 && !typeChange ? (
             <p className="rounded-lg bg-white p-3 text-slate-600">Tidak ada data yang terbaca dari foto ini. Coba foto ulang dengan cahaya lebih terang dan tanpa pantulan.</p>
           ) : (
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+              {typeChange && (
+                <li data-testid="scanner-id-type-row">
+                  <label className="flex cursor-pointer items-start gap-3 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={typeChange.apply}
+                      onChange={() => setTypeOverride(!typeChange.apply)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">Jenis identitas</span>
+                      <span className="block break-words text-slate-900">{describeIdTypeChange(typeChange)}</span>
+                      {typeChange.dropped && (
+                        <span className="block text-xs text-amber-700">
+                          {typeChange.apply
+                            ? `${typeChange.dropped.label} lama tidak disimpan lagi.`
+                            : `Tidak dicentang: tetap ${ID_TYPE_LABEL[typeChange.from]}, hanya data lain yang diterapkan.`}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                </li>
+              )}
               {diff.map((d) => (
                 <li key={d.key}>
-                  <label className="flex cursor-pointer items-start gap-3 px-3 py-2">
-                    <input type="checkbox" checked={d.apply} onChange={() => toggle(d.key)} className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+                  <label className={clsx('flex items-start gap-3 px-3 py-2', d.locked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer')}>
+                    <input
+                      type="checkbox"
+                      checked={d.apply}
+                      disabled={d.locked}
+                      onChange={() => toggle(d.key)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block text-xs font-medium uppercase tracking-wide text-slate-500">{d.label}</span>
                       <span className="block break-words text-slate-900">{displayPrefillValue(d.key, d.detected)}</span>
                       {d.key === 'id_number' && state.result.passport && !state.result.passport.checks.number && (
-                        <span className="block text-xs text-amber-700">Digit kontrol tidak cocok, bandingkan dengan paspor.</span>
+                        <span className="block text-xs text-amber-700">{PASSPORT_NUMBER_MISMATCH}</span>
                       )}
-                      {d.current !== '' && d.current !== d.detected && (
-                        <span className="block text-xs text-amber-700">Saat ini: {displayPrefillValue(d.key, d.current)} (akan diganti jika dicentang)</span>
+                      {d.locked ? (
+                        <span className="block text-xs text-slate-500">Centang &quot;Jenis identitas&quot; untuk memakai data ini.</span>
+                      ) : (
+                        d.current !== '' &&
+                        d.current !== d.detected && (
+                          <span className="block text-xs text-amber-700">Saat ini: {displayPrefillValue(d.key, d.current)} (akan diganti jika dicentang)</span>
+                        )
                       )}
                     </span>
                   </label>
