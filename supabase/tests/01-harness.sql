@@ -223,6 +223,12 @@ begin
     (select string_agg(attname || ':' || attnotnull, ',' order by array_position(array['label', 'expires_at', 'accepted_by'], attname::text))
        from pg_attribute where attrelid = 'public.invitations'::regclass and attname in ('label', 'expires_at', 'accepted_by') and not attisdropped));
   perform zz.ok(p_grp, 'app_settings has its single row', (select count(*) = 1 from public.app_settings where id = 1));
+  -- deleting a property clears only property_id (clearing org_id as well would fail)
+  perform zz.eq(p_grp, 'tenants/expenses -> properties: on delete set null (property_id)',
+    'expenses:SET NULL (property_id),tenants:SET NULL (property_id)',
+    (select string_agg(r.relname || ':' || coalesce(substring(pg_get_constraintdef(c.oid) from 'SET NULL \(property_id\)$'), pg_get_constraintdef(c.oid)), ',' order by r.relname)
+       from pg_constraint c join pg_class r on r.oid = c.conrelid
+      where c.contype = 'f' and c.confrelid = 'public.properties'::regclass and r.relname in ('tenants', 'expenses')));
   -- audit triggers on all twelve tables
   perform zz.chk(p_grp, 'audit trigger on every audited table', '^12$', (select count(*)::text from pg_trigger where tgname = 'audit_row_change'));
 end $$;

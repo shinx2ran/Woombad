@@ -196,6 +196,8 @@ declare
   added int;
 begin
   if me is null then raise exception 'Belum masuk.'; end if;
+  -- one attempt per account at a time, so parallel requests cannot get past the limit
+  perform pg_advisory_xact_lock(hashtextextended('join_with_code:' || me::text, 0));
   delete from public.join_attempts where user_id = me and attempted_at < now() - interval '1 day';
   if (select count(*) from public.join_attempts
       where user_id = me and attempted_at > now() - interval '1 hour') >= 10 then
@@ -206,12 +208,15 @@ begin
     h := public.hash_code(p_code);
 
     -- the row lock makes a code usable once, even when two people enter it at the same moment
-    select i.id, i.org_id, i.role into inv
+    select i.id, i.org_id, i.role, i.invited_by into inv
       from public.invitation_codes c
       join public.invitations i on i.id = c.invitation_id
      where c.code_hash = h and i.accepted_at is null and i.expires_at > now()
        for update of i;
-    if found then
+    -- a code only works while whoever made it may still invite (checked after the lock, so a
+    -- removal or demotion committed meanwhile counts)
+    if found and exists (select 1 from public.organization_members m
+                          where m.org_id = inv.org_id and m.user_id = inv.invited_by and m.role in ('owner', 'admin')) then
       insert into public.organization_members (org_id, user_id, email, role)
       values (inv.org_id, me, (select u.email from auth.users u where u.id = me), inv.role)
       on conflict (org_id, user_id) do nothing;
@@ -241,8 +246,8 @@ begin
   return null;
 end $$;
 
--- Admin only: a one-time code (8 characters, valid 7 days) for a new admin/staff member.
--- The plain code is returned once; only its hash is stored.
+-- Admin only: a one-time code (8 characters, valid 7 days) for a new admin/staff member. It works
+-- only while its maker is still an owner/admin. The plain code is returned once; only its hash is stored.
 create or replace function public.create_invitation(p_org_id uuid, p_role text, p_label text)
 returns table (code text, expires_at timestamptz)
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -323,6 +328,11 @@ begin
   end if;
   update public.organization_members set role = p_role
    where org_id = p_org_id and user_id = p_user_id and role <> p_role;
+  -- staff cannot invite: codes they made earlier stop working
+  if p_role = 'staff' then
+    update public.invitations set expires_at = now()
+     where org_id = p_org_id and invited_by = p_user_id and accepted_at is null and expires_at > now();
+  end if;
 end $$;
 
 create or replace function public.remove_member(p_org_id uuid, p_user_id uuid)
@@ -351,6 +361,9 @@ begin
   elsif target_role = 'admin' and not public.is_org_owner(p_org_id) then
     raise exception 'Hanya pemilik yang dapat menghapus admin.';
   end if;
+  -- codes the person made stop working too
+  update public.invitations set expires_at = now()
+   where org_id = p_org_id and invited_by = p_user_id and accepted_at is null and expires_at > now();
   delete from public.organization_members where org_id = p_org_id and user_id = p_user_id;
 end $$;
 
@@ -428,7 +441,7 @@ create table if not exists public.tenants (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (org_id, id),
-  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null
+  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null (property_id)
 );
 
 create table if not exists public.leases (
@@ -532,9 +545,33 @@ create table if not exists public.expenses (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (category not in ('deposit_refund', 'rent_refund') or lease_id is not null),
-  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null,
+  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null (property_id),
   foreign key (org_id, lease_id) references public.leases (org_id, id) on delete restrict
 );
+
+-- Deleting a property clears only property_id on its tenants and expenses (v0.2 cleared org_id too,
+-- which failed). Replace older constraints in place.
+do $$
+declare
+  t text;
+  c record;
+begin
+  foreach t in array array['tenants', 'expenses'] loop
+    for c in
+      select con.conname from pg_constraint con
+       where con.conrelid = ('public.' || t)::regclass and con.contype = 'f'
+         and con.confrelid = 'public.properties'::regclass
+         and pg_get_constraintdef(con.oid) not like '%ON DELETE SET NULL (property_id)'
+    loop
+      execute format('alter table public.%I drop constraint %I', t, c.conname);
+    end loop;
+    if not exists (select 1 from pg_constraint con
+                    where con.conrelid = ('public.' || t)::regclass and con.contype = 'f'
+                      and con.confrelid = 'public.properties'::regclass) then
+      execute format('alter table public.%I add foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null (property_id)', t);
+    end if;
+  end loop;
+end $$;
 
 -- indexes
 create index if not exists properties_org_idx on public.properties (org_id);

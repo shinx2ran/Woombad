@@ -226,6 +226,41 @@ begin
   perform zz.eq('rate-limit', 'an hour later the valid code works', 'val:' || zz.id('org1'), zz.join(zz.id('guesser'), c));
 end $$;
 
+-- One account's attempts are checked one at a time, so parallel requests cannot get past the limit
+select zz.user('burst', '66666666-6666-6666-6666-666666666601', 'burst@example.com');
+select zz.user('burst2', '66666666-6666-6666-6666-666666666602', 'burst2@example.com');
+insert into public.join_attempts (user_id) select zz.id('burst') from generate_series(1, 9);
+select zz.dbl_open('c1', zz.id('burst'));
+select set_config('zz.pid', zz.dbl_open('c2', zz.id('burst'))::text, false);
+select zz.dblink_exec('c1', 'begin');
+select zz.eq('rate-limit-race', '10th wrong code (transaction still open)', 'NULL',
+  (select coalesce(r, 'NULL') from zz.dblink('c1', 'select public.join_with_code(''WRONG-0010'')::text') as t(r text)));
+select zz.dblink_send_query('c2', 'select public.join_with_code(''WRONG-0011'')::text');
+select zz.eq('rate-limit-race', 'a parallel attempt by the same account waits for it', 'Lock', zz.wait_for_lock(current_setting('zz.pid')::int));
+select zz.dblink_exec('c1', 'commit');
+select zz.eq('rate-limit-race', '... and is refused once the first commits', '0', (select count(*)::text from zz.dblink_get_result('c2', false) as t(r text)));
+select zz.chk('rate-limit-race', '... with the rate-limit message', 'Terlalu banyak percobaan', zz.dblink_error_message('c2'));
+select * from zz.dblink_get_result('c2', false) as t(r text);
+select zz.dblink_disconnect('c1'), zz.dblink_disconnect('c2');
+select zz.eq('rate-limit-race', 'exactly 10 failures recorded', '10', (select count(*)::text from public.join_attempts where user_id = zz.id('burst')));
+do $$
+declare answered int := 0;
+begin
+  for i in 1..20 loop
+    perform zz.dbl_open('burst' || i, zz.id('burst2'));
+  end loop;
+  for i in 1..20 loop
+    perform zz.dblink_send_query('burst' || i, format('select public.join_with_code(%L)::text', 'WRONG' || lpad(i::text, 3, '0')));
+  end loop;
+  for i in 1..20 loop
+    answered := answered + (select count(*) from zz.dblink_get_result('burst' || i, false) as t(r text));
+    perform * from zz.dblink_get_result('burst' || i, false) as t(r text);
+    perform zz.dblink_disconnect('burst' || i);
+  end loop;
+  perform zz.eq('rate-limit-race', '20 wrong codes sent at once: 10 answered, the rest refused', '10', answered::text);
+  perform zz.eq('rate-limit-race', '... and 10 failures recorded', '10', (select count(*)::text from public.join_attempts where user_id = zz.id('burst2')));
+end $$;
+
 -- 6. Roles (owner only) and removing members
 do $$
 declare
@@ -288,6 +323,68 @@ select zz.dblink_disconnect('c1'), zz.dblink_disconnect('c2');
 select zz.eq('roles-race', 'the first change won, one owner left', 'owner@example.com:owner,wife@example.com:admin',
   (select string_agg(email || ':' || role, ',' order by email) from public.organization_members where user_id in (zz.id('owner'), zz.id('wife'))));
 
+-- Codes stop working once whoever made them can no longer invite (removed, or demoted to staff)
+select zz.user('rejoin', '77777777-7777-7777-7777-777777777771', 'rejoin@example.com');
+do $$
+declare
+  org uuid := zz.id('org1');
+  r uuid := zz.id('racer');
+  q text := 'select public.set_member_role(%L, %L, %L)';
+begin
+  perform zz.invite('dm-admin', r, org, 'admin', 'Dari admin');
+  perform zz.eq('revoke-codes', 'owner demotes an admin to staff', 'ok:1', zz.att(zz.id('owner'), format(q, org, r, 'staff'), true));
+  perform zz.eq('revoke-codes', '... the codes she made are expired', '0', (select count(*)::text from public.invitations
+    where invited_by = r and accepted_at is null and expires_at > now()));
+  perform zz.eq('revoke-codes', '... her admin code no longer works', 'val:NULL', zz.join(zz.id('rejoin'), zz.code('dm-admin')));
+  perform zz.eq('revoke-codes', 'promoted to admin again', 'ok:1', zz.att(zz.id('owner'), format(q, org, r, 'admin'), true));
+  perform zz.eq('revoke-codes', '... the old code stays expired', 'val:NULL', zz.join(zz.id('rejoin'), zz.code('dm-admin')));
+
+  perform zz.invite('rm-admin', r, org, 'admin', 'Sebelum dihapus');
+  perform zz.invite('rm-staff', r, org, 'staff', 'Sebelum dihapus 2');
+  perform zz.eq('revoke-codes', 'owner removes the admin', 'ok:1', zz.att(zz.id('owner'), format('select public.remove_member(%L, %L)', org, r), true));
+  perform zz.eq('revoke-codes', '... the codes she made are expired', '0', (select count(*)::text from public.invitations
+    where invited_by = r and accepted_at is null and expires_at > now()));
+  perform zz.eq('revoke-codes', 'she cannot re-join with her own admin code', 'val:NULL', zz.join(r, zz.code('rm-admin')));
+  perform zz.chk('revoke-codes', '... and is still not a member', '^err:WB001', zz.val(r, 'select public.ensure_membership()'));
+  perform zz.eq('revoke-codes', 'a second account cannot join with her code either', 'val:NULL', zz.join(zz.id('rejoin'), zz.code('rm-staff')));
+  -- even an unexpired code (say, extended by the operator) only works while its maker may invite
+  update public.invitations set expires_at = now() + interval '1 day' where invited_by = r and accepted_at is null;
+  perform zz.eq('revoke-codes', 'unexpired admin code from a removed admin -> null', 'val:NULL', zz.join(zz.id('rejoin'), zz.code('rm-admin')));
+  perform zz.eq('revoke-codes', 'unexpired code, same account re-joining -> null', 'val:NULL', zz.join(r, zz.code('rm-staff')));
+  perform zz.eq('revoke-codes', '... neither became a member', '0', (select count(*)::text from public.organization_members where user_id in (r, zz.id('rejoin'))));
+  -- the maker's account was deleted (invited_by is cleared)
+  perform zz.invite('orphan', zz.id('wife'), org, 'staff', 'Akun dihapus');
+  update public.invitations set invited_by = null where label = 'Akun dihapus';
+  perform zz.eq('revoke-codes', 'code whose maker no longer exists -> null', 'val:NULL', zz.join(zz.id('rejoin'), zz.code('orphan')));
+  perform zz.invite('still-ok', zz.id('wife'), org, 'staff', 'Masih berlaku');
+  perform zz.eq('revoke-codes', 'a code from an admin who is still there works', 'val:' || org, zz.join(zz.id('rejoin'), zz.code('still-ok')));
+  perform zz.eq('revoke-codes', 'clean up', 'ok:1', zz.att(zz.id('owner'), format('select public.remove_member(%L, %L)', org, zz.id('rejoin')), true));
+  delete from public.invitations where label in ('Dari admin', 'Sebelum dihapus', 'Sebelum dihapus 2', 'Akun dihapus', 'Masih berlaku');
+end $$;
+
+-- An admin is removed while someone is entering her code: whoever commits second loses
+select zz.user('rejoin2', '77777777-7777-7777-7777-777777777772', 'rejoin2@example.com');
+select zz.user('admin2', '77777777-7777-7777-7777-777777777773', 'admin2@example.com');
+select zz.join(zz.id('admin2'), zz.invite('admin2', zz.id('owner'), zz.id('org1'), 'admin', 'Admin 2'));
+select zz.invite('race-rm', zz.id('admin2'), zz.id('org1'), 'staff', 'Rebutan hapus');
+select zz.dbl_open('c1', zz.id('owner'));
+select set_config('zz.pid', zz.dbl_open('c2', zz.id('rejoin2'))::text, false);
+-- the join's transaction starts first, so its now() is earlier than the removal's
+select zz.dblink_exec('c2', 'begin');
+select pg_sleep(0.01);
+select zz.dblink_exec('c1', 'begin');
+select * from zz.dblink('c1', format('select public.remove_member(%L, %L)::text', zz.id('org1'), zz.id('admin2'))) as t(r text);
+select zz.dblink_send_query('c2', format('select public.join_with_code(%L)::text', zz.code('race-rm')));
+select zz.eq('revoke-race', 'the join waits for the removal', 'Lock', zz.wait_for_lock(current_setting('zz.pid')::int));
+select zz.dblink_exec('c1', 'commit');
+select zz.eq('revoke-race', '... and gets null once the removal commits', 'NULL', (select coalesce(r, 'NULL') from zz.dblink_get_result('c2') as t(r text)));
+select * from zz.dblink_get_result('c2') as t(r text);
+select zz.dblink_exec('c2', 'commit');
+select zz.dblink_disconnect('c1'), zz.dblink_disconnect('c2');
+select zz.eq('revoke-race', 'neither the removed admin nor the new account is a member', '0',
+  (select count(*)::text from public.organization_members where user_id in (zz.id('admin2'), zz.id('rejoin2'))));
+delete from public.invitations where label in ('Admin 2', 'Rebutan hapus');
+
 -- 7. Business rows and invoice triggers (as the owner, through RLS)
 insert into zz.ids values
   ('prop1', 'a1000000-0000-0000-0000-000000000001'), ('room1', 'a1000000-0000-0000-0000-000000000002'),
@@ -296,6 +393,9 @@ insert into zz.ids values
   ('addon1', 'a1000000-0000-0000-0000-000000000007'), ('pay_staff', 'a1000000-0000-0000-0000-000000000008'),
   ('exp_staff', 'a1000000-0000-0000-0000-000000000009'), ('lease_addon1', 'a1000000-0000-0000-0000-00000000000a'),
   ('tenant_loose', 'a1000000-0000-0000-0000-00000000000b'), ('tenant_move', 'a1000000-0000-0000-0000-00000000000c'),
+  ('exp_receipt', 'a1000000-0000-0000-0000-00000000000d'), ('prop2', 'a1000000-0000-0000-0000-00000000000e'),
+  ('tenant_p2', 'a1000000-0000-0000-0000-00000000000f'), ('exp_p2', 'a1000000-0000-0000-0000-000000000010'),
+  ('prop3', 'a1000000-0000-0000-0000-000000000011'), ('exp_p3', 'a1000000-0000-0000-0000-000000000012'),
   ('org9', '99999999-0000-0000-0000-000000000009');
 do $$
 declare
@@ -397,6 +497,20 @@ begin
   perform zz.eq('staff-limits', 'staff cannot edit own expense', 'ok:0', zz.att(s, format('update public.expenses set amount = 1 where id = %L', zz.id('exp_staff'))));
   perform zz.eq('staff-limits', 'staff cannot delete own expense', 'ok:0', zz.att(s, format('delete from public.expenses where id = %L', zz.id('exp_staff'))));
   perform zz.eq('staff-limits', 'admin edits the expense', 'ok:1', zz.att(a, format('update public.expenses set description = ''Sapu lidi'' where id = %L', zz.id('exp_staff')), true));
+  -- receipts: staff upload the photo first and save it with the new expense (they cannot update it later)
+  perform zz.eq('staff-receipt', 'staff uploads a receipt photo', 'ok:1', zz.att(s, format('insert into storage.objects (bucket_id, name) values (%L, %L)',
+    'receipts', org || '/nota-staf.jpg'), true));
+  perform zz.eq('staff-receipt', 'staff records an expense with that receipt in one insert', 'val:' || org || '/nota-staf.jpg', zz.val(s, format(
+    'with i as (insert into public.expenses (id, org_id, property_id, category, amount, expense_date, description, receipt_path) values (%L, %L, %L, %L, 25000, %L, %L, %L) returning receipt_path) select receipt_path from i',
+    zz.id('exp_receipt'), org, zz.id('prop1'), 'supplies', '2026-03-10', 'Sapu', org || '/nota-staf.jpg'), true));
+  perform zz.eq('staff-receipt', '... staff can see it and open the photo', 'val:1', zz.val(s, format(
+    'select count(*) from public.expenses e join storage.objects o on o.bucket_id = ''receipts'' and o.name = e.receipt_path where e.id = %L', zz.id('exp_receipt'))));
+  perform zz.eq('staff-receipt', 'staff cannot attach a receipt afterwards (UPDATE is admin only)', 'ok:0', zz.att(s, format(
+    'update public.expenses set receipt_path = %L where id = %L', org || '/lain.jpg', zz.id('exp_staff'))));
+  perform zz.eq('staff-receipt', 'if saving fails, staff can remove the uploaded photo', 'ok:1', zz.att(s, format(
+    'delete from storage.objects where bucket_id = %L and name = %L', 'receipts', org || '/nota-staf.jpg')));
+  perform zz.eq('staff-receipt', 'admin replaces the receipt of an expense', 'ok:1', zz.att(a, format(
+    'update public.expenses set receipt_path = %L where id = %L', org || '/nota-baru.jpg', zz.id('exp_receipt'))));
   perform zz.eq('staff-limits', 'staff cannot change an invoice', 'ok:0', zz.att(s, 'update public.invoices set discount_amount = total_amount, total_amount = 0'));
   -- created_by is always the author
   perform zz.eq('created-by', 'staff payment claiming the owner as author -> staff', 'val:' || s, zz.val(s, format(
@@ -434,6 +548,32 @@ begin
   perform zz.eq('void-insert', 'operator may insert a void invoice', 'val:void', zz.su(format(
     'with i as (insert into public.invoices (org_id, property_id, lease_id, invoice_number, period_start, period_end, base_amount, total_amount, due_date, status) values (%L, %L, %L, %L, %L, %L, 5, 5, %L, %L) returning status) select status from i',
     org, zz.id('prop1'), zz.id('lease1'), 'INV-VOID-3', '2026-07-01', '2026-07-01', '2026-07-01', 'void')));
+end $$;
+
+-- Deleting a kos keeps its tenants and expenses: only their property is cleared, never the organisation
+do $$
+declare
+  a uuid := zz.id('wife');
+  s uuid := zz.id('staff');
+  org uuid := zz.id('org1');
+begin
+  perform zz.eq('delete-property', 'admin adds a kos', 'ok:1', zz.att(a, format('insert into public.properties (id, org_id, name) values (%L, %L, %L)', zz.id('prop2'), org, 'Kos Baru'), true));
+  perform zz.eq('delete-property', 'staff adds a tenant to it', 'ok:1', zz.att(s, format('insert into public.tenants (id, org_id, property_id, full_name) values (%L, %L, %L, %L)',
+    zz.id('tenant_p2'), org, zz.id('prop2'), 'Calon'), true));
+  perform zz.eq('delete-property', 'staff records an expense for it', 'ok:1', zz.att(s, format('insert into public.expenses (id, org_id, property_id, category, amount, expense_date, description) values (%L, %L, %L, %L, 1000, %L, %L)',
+    zz.id('exp_p2'), org, zz.id('prop2'), 'supplies', '2026-03-01', 'Cat'), true));
+  perform zz.eq('delete-property', 'admin deletes the kos (no rooms)', 'ok:1', zz.att(a, format('delete from public.properties where id = %L', zz.id('prop2')), true));
+  perform zz.eq('delete-property', '... the expense stays, without a kos', org || '|-', (select org_id || '|' || coalesce(property_id::text, '-') from public.expenses where id = zz.id('exp_p2')));
+  perform zz.eq('delete-property', '... the tenant stays, without a kos', org || '|-', (select org_id || '|' || coalesce(property_id::text, '-') from public.tenants where id = zz.id('tenant_p2')));
+  perform zz.ok('delete-property', '... and the history has the cleared property', exists (select 1 from public.audit_log where table_name = 'expenses' and action = 'update'
+    and row_id = zz.id('exp_p2') and changed_by = a and old_data ->> 'property_id' = zz.id('prop2')::text and new_data ->> 'property_id' is null));
+  insert into public.properties (id, org_id, name) values (zz.id('prop3'), org, 'Kos Operator');
+  insert into public.expenses (id, org_id, property_id, category, amount, expense_date, description) values (zz.id('exp_p3'), org, zz.id('prop3'), 'supplies', 1000, '2026-03-01', 'Cat');
+  perform zz.eq('delete-property', 'operator deletes a kos that has an expense', 'val:1', zz.su(format('with d as (delete from public.properties where id = %L returning 1) select count(*) from d', zz.id('prop3')), true));
+  perform zz.eq('delete-property', '... the expense stays, without a kos', org || '|-', (select org_id || '|' || coalesce(property_id::text, '-') from public.expenses where id = zz.id('exp_p3')));
+  perform zz.chk('delete-property', 'a kos with rooms and leases cannot be deleted', '^err:23503', zz.att(a, format('delete from public.properties where id = %L', zz.id('prop1'))));
+  delete from public.tenants where id = zz.id('tenant_p2');
+  delete from public.expenses where id in (zz.id('exp_p2'), zz.id('exp_p3'));
 end $$;
 
 -- 9. Audit log

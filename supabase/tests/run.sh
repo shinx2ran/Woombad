@@ -5,7 +5,7 @@
 #   fresh    empty database
 #   twice    schema.sql applied twice, then once more over the attack-test data (30-reapply.sql)
 #   upgrade  v0.2 schema with v0.2 data, then schema.sql (11-upgrade.sql)
-# Needs psql as a superuser on PostgreSQL >= 13 with the dblink extension (postgresql-contrib), e.g.
+# Needs psql as a superuser on PostgreSQL >= 15 with the dblink extension (postgresql-contrib), e.g.
 #   PSQL="psql -h localhost -U postgres" supabase/tests/run.sh
 # Databases are named ${DB_PREFIX}_<scenario> (default wb_db_test_*), dropped and recreated on each run.
 # Prints a summary and exits non-zero if any check fails or any file errors. Logs: $LOG_DIR.
@@ -14,6 +14,7 @@ cd "$(dirname "$0")/../.."
 PSQL=${PSQL:-psql}
 PREFIX=${DB_PREFIX:-wb_db_test}
 LOG_DIR=${LOG_DIR:-$(mktemp -d)}
+mkdir -p "$LOG_DIR"
 export PGOPTIONS="${PGOPTIONS:-} -c client_min_messages=warning"
 
 T=supabase/tests

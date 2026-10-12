@@ -117,6 +117,9 @@ begin
   perform zz.chk('F-admin', 'F2 admin changes own role directly', '^err:42501', zz.att(a, format('update public.organization_members set role = ''owner'' where user_id = %L', a)));
   perform zz.chk('F-admin', 'F3 admin removes the owner', 'Hanya pemilik yang dapat menghapus pemilik lain', zz.att(a, format('select public.remove_member(%L, %L)', org, zz.id('owner'))));
   perform zz.chk('F-admin', 'F4 admin makes a code for a second admin', '^val:[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$', zz.val(a, format('select code from public.create_invitation(%L, %L, %L)', org, 'admin', 'Adik')));
+  -- kept: a way back in after being removed (G1)
+  perform zz.invite('backdoor', a, org, 'admin', 'Cadangan');
+  perform zz.invite('backdoor2', a, org, 'staff', 'Cadangan 2');
 end $$;
 
 -- G. Owner account taken over: how much can be wiped through the API, and what the history keeps
@@ -126,6 +129,9 @@ declare
   org uuid := zz.id('org');
 begin
   perform zz.eq('G-takeover', 'G1 remove wife', 'ok:1', zz.att(o, format('select public.remove_member(%L, %L)', org, zz.id('wife')), true));
+  perform zz.eq('G-takeover', 'G1a the removed admin re-joins with a code she made -> null', 'val:NULL', zz.join(zz.id('wife'), zz.code('backdoor')));
+  perform zz.eq('G-takeover', 'G1b ... or has a new account join with her other code -> null', 'val:NULL', zz.join(zz.id('stranger'), zz.code('backdoor2')));
+  perform zz.eq('G-takeover', 'G1c neither is a member', '0', (select count(*)::text from public.organization_members where user_id in (zz.id('wife'), zz.id('stranger'))));
   perform zz.eq('G-takeover', 'G2 delete payments', 'ok:3', zz.att(o, 'delete from public.payments', true));
   perform zz.eq('G-takeover', 'G3 delete expenses', 'ok:1', zz.att(o, 'delete from public.expenses', true));
   perform zz.eq('G-takeover', 'G4 delete invoices', 'ok:2', zz.att(o, 'delete from public.invoices', true));
