@@ -88,12 +88,15 @@ function SortToggle({ value, onChange }: { value: AttentionSort; onChange: (sort
 }
 
 function AttentionRow({ item }: { item: AttentionItem }) {
-  const { lease, tenant, room, property, summary, group, openInvoice, openInvoiceCount, amount, nextPeriodAmount } = item
+  const { lease, tenant, room, property, summary, group, dueInvoices, dueAmount, notYetDueAmount, amount, nextPeriodAmount } = item
   const style = GROUP_STYLE[group]
   const tenantName = tenant?.full_name ?? 'Penyewa'
   const roomName = room?.name ?? '-'
   const propertyName = property?.name ?? '-'
   const nextStart = summary.nextDueDate ?? lease.start_date
+  // Only invoices due now (or within the due-soon window) are quoted; an invoice issued early is not "due" on
+  // the overdue date, so it is left out of the amount and the reminder (shown as a secondary line instead).
+  const quotedInvoice = dueInvoices.length === 1 ? dueInvoices[0] : undefined
   const wa = whatsappLink(
     tenant?.phone,
     reminderText({
@@ -102,13 +105,17 @@ function AttentionRow({ item }: { item: AttentionItem }) {
       propertyName,
       outstanding: amount,
       dueDate: nextStart,
-      periodStart: openInvoiceCount === 1 ? openInvoice?.period_start : undefined,
-      periodEnd: openInvoiceCount === 1 ? openInvoice?.period_end : undefined,
+      periodStart: quotedInvoice?.period_start,
+      periodEnd: quotedInvoice?.period_end,
       paymentInfo: property?.payment_info,
     }),
   )
   const amountLine =
-    summary.outstanding > 0 ? (
+    dueAmount > 0 ? (
+      <>
+        Sisa <span className="font-semibold text-slate-900">{formatRupiah(dueAmount)}</span>
+      </>
+    ) : summary.outstanding > 0 ? (
       <>
         Sisa <span className="font-semibold text-slate-900">{formatRupiah(summary.outstanding)}</span>
       </>
@@ -135,6 +142,11 @@ function AttentionRow({ item }: { item: AttentionItem }) {
             </Badge>
           </p>
           <p className="mt-1 text-sm text-slate-700">{amountLine}</p>
+          {dueAmount > 0 && notYetDueAmount > 0 ? (
+            <p className="text-xs text-slate-500" data-testid="attention-total-outstanding">
+              Total {formatRupiah(summary.outstanding)} termasuk {formatRupiah(notYetDueAmount)} belum jatuh tempo
+            </p>
+          ) : null}
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
             <Badge tone={style.tone}>{dueLabel(summary.daysUntilDue, group === 'due_soon')}</Badge>
             <span className="inline-flex items-center gap-1" data-testid="attention-due-date">
