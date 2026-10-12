@@ -4,7 +4,6 @@ import { FileUp, Smartphone } from 'lucide-react'
 import { Badge, Button, LoadingState, Modal } from '../../../components/ui'
 import { readDeviceData } from '../../../components/deviceData'
 import { useOrg } from '../../../hooks/useOrg'
-import { DEMO_ORG_ID } from '../../../lib/repo/demoSeed'
 import { translateDbError } from '../../../lib/repo/supabaseRepo'
 import { formatDateTime } from '../../../lib/format'
 import { BackupFileError, TABLE_LABEL, parseBackupText, type ParsedBackup } from './backupFormat'
@@ -17,12 +16,14 @@ import {
   planDemoImport,
   plannedCount,
   previewBackup,
+  sampleOutsideKosCount,
   skippedByReason,
   skippedCount,
   type BackupPreview,
   type ExistingOnline,
   type ImportSelection,
   type KosPreview,
+  type SampleOutsideKos,
   type SkipReason,
 } from './demoImport'
 import { fetchExistingOnline } from './orgData'
@@ -39,6 +40,15 @@ type Step =
 
 const kosCounts = (p: KosPreview) =>
   `${p.rooms} kamar · ${p.tenants} penyewa · ${p.leases} sewa · ${p.invoices} tagihan · ${p.payments} pembayaran · ${p.expenses} pengeluaran`
+
+const sampleCounts = (s: SampleOutsideKos) =>
+  [
+    s.expenses > 0 && `${s.expenses} pengeluaran bersama`,
+    s.addons > 0 && `${s.addons} add-on`,
+    s.tenants > 0 && `${s.tenants} penyewa tanpa kos`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
 function reasonsText(skipped: Record<SkipReason, number>): string {
   return SKIP_REASONS.filter((r) => skipped[r] > 0)
@@ -65,7 +75,7 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [step, setStep] = useState<Step>({ kind: 'source' })
   const [error, setError] = useState<string | null>(null)
-  const [selection, setSelection] = useState<ImportSelection>({ propertyIds: [], includeShared: false })
+  const [selection, setSelection] = useState<ImportSelection>({ propertyIds: [], includeShared: false, includeSample: false })
   const [deviceBackup] = useState(readDeviceBackup)
 
   const plan = useMemo(
@@ -117,6 +127,7 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
   }
 
   const busy = step.kind === 'checking' || step.kind === 'running'
+  const sampleOutside = step.kind === 'preview' ? sampleOutsideKosCount(step.preview) : 0
   const total = plan ? plannedCount(plan) : 0
   const planSkipped = plan ? skippedByReason(plan) : emptySkipped()
 
@@ -185,8 +196,11 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
             Dari: <strong>{step.backup.orgName ?? 'Mode Demo'}</strong>
             {step.backup.exportedAt && <> · dicadangkan {formatDateTime(step.backup.exportedAt)}</>}
           </p>
-          {step.backup.tables.organizations[0]?.id === DEMO_ORG_ID && /\(Demo\)/.test(step.backup.orgName ?? '') && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">File ini mungkin berisi data contoh. Centang hanya kos milik Anda.</p>
+          {(step.preview.properties.some((p) => p.sample) || sampleOutside > 0) && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">
+              Data bertanda <strong>Contoh</strong> adalah data contoh Mode Demo dan tidak dicentang
+              {sampleOutside > 0 && ', termasuk pengeluaran bersama dan add-on contoh'}. Centang hanya bila memang milik Anda.
+            </p>
           )}
           {step.preview.properties.length === 0 && <p className="text-slate-500">Tidak ada kos di file ini.</p>}
           <ul className="space-y-2">
@@ -202,6 +216,7 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-slate-900">{p.name}</span>
+                      {p.sample && <Badge tone="warning">Contoh</Badge>}
                       {p.alreadyOnline && <Badge tone="info">Sudah pernah diimpor</Badge>}
                     </span>
                     <span className="mt-0.5 block text-xs text-slate-500">{kosCounts(p)}</span>
@@ -221,6 +236,25 @@ export function DemoImportModal({ onClose }: { onClose: () => void }) {
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium text-slate-900">Pengeluaran bersama (tanpa kos)</span>
                     <span className="mt-0.5 block text-xs text-slate-500">{step.preview.sharedExpenses} pengeluaran</span>
+                  </span>
+                </label>
+              </li>
+            )}
+            {sampleOutside > 0 && (
+              <li>
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-brand-700"
+                    checked={selection.includeSample === true}
+                    onChange={(e) => setSelection((s) => ({ ...s, includeSample: e.target.checked }))}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-slate-900">Data contoh tanpa kos</span>
+                      <Badge tone="warning">Contoh</Badge>
+                    </span>
+                    <span className="mt-0.5 block text-xs text-slate-500">{sampleCounts(step.preview.sample)}</span>
                   </span>
                 </label>
               </li>

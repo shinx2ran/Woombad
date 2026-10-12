@@ -8,6 +8,7 @@
  * explicitly (missing ones get the database default) because a bulk insert turns missing keys into NULL.
  */
 import { invoiceNumber } from '../../../domain/billing'
+import { DEMO_ORG_ID } from '../../../lib/repo/demoSeed'
 import {
   ADDON_BILLINGS,
   EXPENSE_CATEGORIES,
@@ -42,8 +43,10 @@ export const SKIP_REASON_LABEL: Record<SkipReason, string> = {
 export interface ImportSelection {
   /** kos (property ids from the backup) to import */
   propertyIds: readonly string[]
-  /** also import expenses without a kos ("Bersama") */
+  /** also import the owner's expenses without a kos ("Bersama") */
   includeShared: boolean
+  /** also import Mode Demo sample rows that belong to no kos (shared expenses, org-wide add-ons, tenants) */
+  includeSample?: boolean
 }
 
 /** What is already in the online organisation (ids per table, lowercase) — skipped, but valid as references. */
@@ -82,12 +85,22 @@ export interface KosPreview {
   expenses: number
   /** the kos itself was imported before (its rows will be skipped as "sudah ada") */
   alreadyOnline: boolean
+  /** a Mode Demo sample kos (not selected by default) */
+  sample: boolean
+}
+
+export interface SampleOutsideKos {
+  expenses: number
+  addons: number
+  tenants: number
 }
 
 export interface BackupPreview {
   properties: KosPreview[]
-  /** expenses without a kos (or whose kos no longer exists in the backup) */
+  /** the owner's expenses without a kos (or whose kos no longer exists in the backup) */
   sharedExpenses: number
+  /** Mode Demo sample rows that belong to no kos; imported only with includeSample */
+  sample: SampleOutsideKos
 }
 
 // ---------------------------------------------------------------- columns
@@ -323,6 +336,18 @@ function fromSourceOrg(row: BackupRow, orgId: string | null): boolean {
   return orgId === null || row.org_id === undefined || row.org_id === null || row.org_id === orgId
 }
 
+/**
+ * Detects the Mode Demo sample data (buildDemoDb): every seeded row has the demo organisation's id and exactly
+ * the organizations row's created_at, while rows the owner added later carry their own, later timestamp.
+ * Never matches a backup of an online organisation.
+ */
+export function sampleRowCheck(backup: ParsedBackup): (row: BackupRow) => boolean {
+  const org = backup.tables.organizations[0]
+  const stamp = org?.id === DEMO_ORG_ID && typeof org.created_at === 'string' ? org.created_at : null
+  if (stamp === null) return () => false
+  return (row) => row.org_id === DEMO_ORG_ID && row.created_at === stamp
+}
+
 /** Kos of the backup's own organisation, sorted by name. */
 export function backupProperties(backup: ParsedBackup): BackupRow[] {
   const orgId = sourceOrgId(backup)
@@ -358,7 +383,12 @@ function leaseTenantIds(backup: ParsedBackup): Set<string> {
 /** Per-kos counts for the preview (rows of the backup, before any skipping). */
 export function previewBackup(backup: ParsedBackup, existing: ExistingOnline = emptyExisting()): BackupPreview {
   const t = backup.tables
+  const isSample = sampleRowCheck(backup)
   const allPropertyIds = new Set(t.properties.map((p) => key(p.id)))
+  const withoutKos = (r: BackupRow) => {
+    const pid = key(r.property_id)
+    return pid === null || !allPropertyIds.has(pid)
+  }
   const withLease = leaseTenantIds(backup)
   const count = (rows: BackupRow[], pid: string) => rows.filter((r) => key(r.property_id) === pid).length
 
@@ -383,18 +413,32 @@ export function previewBackup(backup: ParsedBackup, existing: ExistingOnline = e
       payments: count(t.payments, pid),
       expenses: count(t.expenses, pid),
       alreadyOnline: existing.ids.properties.has(pid),
+      sample: isSample(p),
     }
   })
-  const sharedExpenses = t.expenses.filter((e) => {
-    const pid = key(e.property_id)
-    return pid === null || !allPropertyIds.has(pid)
-  }).length
-  return { properties, sharedExpenses }
+  const sharedExpenses = t.expenses.filter(withoutKos)
+  return {
+    properties,
+    sharedExpenses: sharedExpenses.filter((e) => !isSample(e)).length,
+    sample: {
+      expenses: sharedExpenses.filter(isSample).length,
+      addons: t.addon_catalog.filter((a) => key(a.property_id) === null && isSample(a)).length,
+      tenants: t.tenants.filter((tn) => isSample(tn) && withoutKos(tn) && !withLease.has(key(tn.id) ?? '')).length,
+    },
+  }
 }
 
-/** Default selection: every kos, plus shared expenses when there are any. */
+export function sampleOutsideKosCount(preview: BackupPreview): number {
+  return preview.sample.expenses + preview.sample.addons + preview.sample.tenants
+}
+
+/** Default selection: the owner's kos and shared expenses; Mode Demo sample data stays unticked. */
 export function defaultSelection(preview: BackupPreview): ImportSelection {
-  return { propertyIds: preview.properties.map((p) => p.id), includeShared: preview.sharedExpenses > 0 }
+  return {
+    propertyIds: preview.properties.filter((p) => !p.sample).map((p) => p.id),
+    includeShared: preview.sharedExpenses > 0,
+    includeSample: false,
+  }
 }
 
 // ---------------------------------------------------------------- plan
@@ -429,6 +473,8 @@ export function emptySkipped(): Record<SkipReason, number> {
  * leases plus tenants without any lease whose home kos is selected, unset or gone (when any kos is selected);
  * expenses of the selected kos, plus — with includeShared — expenses without a kos (or whose kos no longer
  * exists in the backup; they become shared, as ON DELETE SET NULL would have made them).
+ * Mode Demo sample rows of a selected kos follow the kos; sample rows outside any kos (shared expenses,
+ * org-wide add-ons, tenants) are imported only with includeSample.
  *
  * Skipped (counted per reason): non-UUID ids, rows of another organisation, ids already online, rows that
  * break a column rule, and rows whose parent is neither imported nor online. A tenant's missing home kos is
@@ -439,6 +485,9 @@ export function planDemoImport(backup: ParsedBackup, selection: ImportSelection,
   const orgId = sourceOrgId(backup)
   const selected = new Set(selection.propertyIds.map((id) => id.toLowerCase()))
   const anySelected = selected.size > 0
+  const isSample = sampleRowCheck(backup)
+  /** rows outside any kos: the owner's follow `own`, sample rows need includeSample */
+  const outsideKos = (r: BackupRow, own: boolean) => (isSample(r) ? selection.includeSample === true : own)
   const backupPropertyIds = new Set(t.properties.map((p) => key(p.id)).filter((id): id is string => id !== null))
 
   const tables = {} as Record<ImportTable, TablePlan>
@@ -492,7 +541,7 @@ export function planDemoImport(backup: ParsedBackup, selection: ImportSelection,
   for (const r of t.rooms) if (inSelected(r)) take('rooms', r)
   for (const a of t.addon_catalog) {
     const pid = key(a.property_id)
-    if (pid === null ? anySelected : selected.has(pid)) take('addon_catalog', a)
+    if (pid === null ? outsideKos(a, anySelected) : selected.has(pid)) take('addon_catalog', a)
   }
 
   // Tenants follow the leases that will be imported (decided on kos + room; the tenant itself comes next).
@@ -506,7 +555,8 @@ export function planDemoImport(backup: ParsedBackup, selection: ImportSelection,
   for (const tn of t.tenants) {
     const id = key(tn.id) ?? ''
     const pid = key(tn.property_id)
-    const leaseless = !withLease.has(id) && anySelected && (pid === null || !backupPropertyIds.has(pid) || selected.has(pid))
+    const homeless = pid === null || !backupPropertyIds.has(pid)
+    const leaseless = !withLease.has(id) && (homeless ? outsideKos(tn, anySelected) : selected.has(pid))
     if (neededTenants.has(id) || leaseless) take('tenants', tn)
   }
 
@@ -540,7 +590,7 @@ export function planDemoImport(backup: ParsedBackup, selection: ImportSelection,
   for (const e of t.expenses) {
     const pid = key(e.property_id)
     const ownKos = pid !== null && backupPropertyIds.has(pid)
-    if (ownKos ? !selected.has(pid) : !selection.includeShared) continue
+    if (ownKos ? !selected.has(pid) : !outsideKos(e, selection.includeShared)) continue
     take('expenses', e, { adjust: ownKos ? undefined : (row) => void (row.property_id = null) })
   }
 

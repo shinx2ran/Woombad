@@ -4,7 +4,7 @@ import { LocalRepo, emptyLocalDb } from '../../../lib/repo/localRepo'
 import { bindOrg } from '../../../lib/repo/types'
 import { TABLE_NAMES, type TableName } from '../../../types/db'
 import type { BackupRow, ParsedBackup } from './backupFormat'
-import { IMPORT_ORDER, defaultSelection, planDemoImport, plannedCount, previewBackup, type ImportPlan, type ImportTable, type PlannedRow } from './demoImport'
+import { IMPORT_ORDER, planDemoImport, plannedCount, previewBackup, type ImportPlan, type ImportSelection, type ImportTable, type PlannedRow } from './demoImport'
 import { fetchExistingOnline } from './orgData'
 import { importedCount, runImportPlan, type InsertRows } from './runImport'
 
@@ -111,7 +111,8 @@ describe('demo import end to end (LocalRepo as the online organisation)', () => 
   it('imports every row with the new org_id and intact references, then skips everything on a second run', async () => {
     const backup = demoBackup()
     const repo = onlineOrg()
-    const selection = defaultSelection(previewBackup(backup))
+    // everything ticked, the sample data included
+    const selection: ImportSelection = { propertyIds: previewBackup(backup).properties.map((p) => p.id), includeShared: true, includeSample: true }
     const plan = planDemoImport(backup, selection, await fetchExistingOnline(repo))
     const result = await runImportPlan(plan, (table, rows) => repo.insertMany(table, rows as never))
     expect(result.error).toBeNull()

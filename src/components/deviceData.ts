@@ -1,4 +1,5 @@
 import { todayISO } from '../lib/format'
+import { TABLE_NAMES } from '../types/db'
 
 /** localStorage key of the Mode Demo database (same key as src/lib/repo/localRepo.ts). */
 export const LOCAL_DB_KEY = 'woombad.local.db.v1'
@@ -10,6 +11,33 @@ export function readDeviceData(): string | null {
   } catch {
     return null
   }
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * Why the stored Mode Demo data cannot be opened, or null when it can (or nothing is stored). Without this
+ * check the app would read such data as empty and replace it with sample data on start.
+ */
+export function deviceDataProblem(raw: string | null): string | null {
+  if (raw === null) return null
+  let data: unknown
+  try {
+    data = JSON.parse(raw)
+  } catch {
+    return 'Data di perangkat ini bukan JSON yang valid.'
+  }
+  if (!isPlainObject(data)) return 'Data di perangkat ini tidak berisi tabel.'
+  let hasRows = false
+  for (const table of TABLE_NAMES) {
+    const rows = data[table]
+    if (rows === undefined) continue
+    if (!Array.isArray(rows) || !rows.every(isPlainObject)) return `Tabel "${table}" di perangkat ini rusak.`
+    if (rows.length > 0) hasRows = true
+  }
+  const orgs = data.organizations
+  if (hasRows && (!Array.isArray(orgs) || orgs.length === 0)) return 'Data organisasi di perangkat ini hilang.'
+  return null
 }
 
 export function clearDeviceData(): void {

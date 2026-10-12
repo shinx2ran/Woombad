@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.tsx'
-import { AppErrorBoundary } from './components/ErrorBoundary'
+import { AppErrorBoundary, DeviceDataGate } from './components/ErrorBoundary'
 import { isSupabaseConfigured } from './lib/supabase'
 import { requestPersistentStorage } from './features/settings/data/backupReminder'
 
@@ -16,7 +16,9 @@ if (!isSupabaseConfigured) void requestPersistentStorage()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AppErrorBoundary>
-      <App />
+      <DeviceDataGate>
+        <App />
+      </DeviceDataGate>
     </AppErrorBoundary>
   </StrictMode>,
 )

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
-import { AppErrorBoundary, ErrorScreen } from './ErrorBoundary'
+import { AppErrorBoundary, DeviceDataGate, ErrorScreen } from './ErrorBoundary'
 import { LOCAL_DB_KEY } from './deviceData'
 import { RouteErrorPage } from '../app/RouteErrorPage'
 
@@ -86,6 +86,61 @@ describe('AppErrorBoundary', () => {
     render(<ErrorScreen error={new TypeError('Failed to fetch dynamically imported module: /assets/SettingsPage-abc.js')} />)
     expect(screen.getByText('Aplikasi baru saja diperbarui. Tekan Muat ulang.')).toBeTruthy()
     expect(screen.queryByText('Detail teknis')).toBeNull()
+  })
+})
+
+describe('DeviceDataGate', () => {
+  let reload: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    reload = vi.fn()
+    vi.stubGlobal('location', { ...window.location, reload })
+    localStorage.clear()
+  })
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  const renderGate = () =>
+    render(
+      <DeviceDataGate>
+        <p>Isi aplikasi</p>
+      </DeviceDataGate>,
+    )
+
+  it('opens the app when nothing is stored yet or the stored data can be read', () => {
+    renderGate()
+    expect(screen.getByText('Isi aplikasi')).toBeTruthy()
+    cleanup()
+    localStorage.setItem(LOCAL_DB_KEY, JSON.stringify({ organizations: [{ id: 'demo-org', name: 'Kos' }], properties: [] }))
+    renderGate()
+    expect(screen.getByText('Isi aplikasi')).toBeTruthy()
+  })
+
+  it('keeps unreadable data and offers download and reset instead of opening the app (which would replace it)', () => {
+    localStorage.setItem(LOCAL_DB_KEY, '{"properties": [rusak')
+    renderGate()
+    expect(screen.queryByText('Isi aplikasi')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Terjadi kesalahan' })).toBeTruthy()
+    expect(screen.getByText(/Data di perangkat ini rusak/)).toBeTruthy()
+    expect(screen.getByText('Data di perangkat ini bukan JSON yang valid.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Unduh data perangkat ini' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Buka Dashboard' })).toBeNull()
+    expect(localStorage.getItem(LOCAL_DB_KEY)).toBe('{"properties": [rusak')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset data di perangkat ini' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ya, reset' }))
+    expect(localStorage.getItem(LOCAL_DB_KEY)).toBeNull()
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops at the error screen when the organisation is missing but other data is not', () => {
+    localStorage.setItem(LOCAL_DB_KEY, JSON.stringify({ organizations: [], properties: [{ id: 'p1', name: 'Kos Mawar' }] }))
+    renderGate()
+    expect(screen.queryByText('Isi aplikasi')).toBeNull()
+    expect(screen.getByText('Data organisasi di perangkat ini hilang.')).toBeTruthy()
   })
 })
 

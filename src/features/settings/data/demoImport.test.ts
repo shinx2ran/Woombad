@@ -12,6 +12,7 @@ import {
   planDemoImport,
   plannedCount,
   previewBackup,
+  sampleOutsideKosCount,
   skippedByReason,
   sourceOrgId,
   type ExistingOnline,
@@ -53,10 +54,13 @@ const expense = (id: string, property_id: string | null, extra: Record<string, u
   id, property_id, lease_id: null, category: 'utilities', amount: 100_000, expense_date: '2026-01-05', description: 'Listrik', vendor: null, receipt_path: null, created_by: null, ...ts, ...extra,
 })
 
-/** Two kos (K1, K2), one room/tenant/lease/invoice/payment each, plus kos-specific and shared expenses. */
+/**
+ * Two kos (K1, K2), one room/tenant/lease/invoice/payment each, plus kos-specific and shared expenses.
+ * All rows were added by the owner after the organisation was created (so none of them is sample data).
+ */
 function smallBackup(): ParsedBackup {
   return backupFrom({
-    organizations: [{ id: ORG, name: 'Kos Saya', created_by: 'local-user', created_at: ts.created_at }],
+    organizations: [{ id: ORG, name: 'Kos Saya', created_by: 'local-user', created_at: '2025-12-01T00:00:00.000Z' }],
     properties: [property(u(1), 'Kos Melati'), property(u(2), 'Kos Anggrek')],
     rooms: [room(u(11), u(1)), room(u(12), u(2), 'B1')],
     tenants: [tenant(u(21), u(1)), tenant(u(22), u(2))],
@@ -82,19 +86,20 @@ function existingOf(rows: Partial<Record<ImportTable, { id: string; invoice_numb
 const all = (b: ParsedBackup) => defaultSelection(previewBackup(b))
 
 describe('previewBackup', () => {
-  it('counts rows per kos in the demo seed and the shared expenses', () => {
+  it('counts rows per kos in the demo seed and its shared expenses as sample data', () => {
     const backup = demoBackup()
     const preview = previewBackup(backup)
     expect(preview.properties.map((p) => p.name)).toEqual(['Kos Anggrek', 'Kos Melati'])
     const melati = preview.properties.find((p) => p.name === 'Kos Melati')!
     const anggrek = preview.properties.find((p) => p.name === 'Kos Anggrek')!
-    expect(melati).toMatchObject({ rooms: 6, leases: 4, tenants: 4, alreadyOnline: false })
-    expect(anggrek).toMatchObject({ rooms: 4, leases: 3, tenants: 3 })
+    expect(melati).toMatchObject({ rooms: 6, leases: 4, tenants: 4, alreadyOnline: false, sample: true })
+    expect(anggrek).toMatchObject({ rooms: 4, leases: 3, tenants: 3, sample: true })
     const t = backup.tables
     expect(melati.invoices + anggrek.invoices).toBe(t.invoices.length)
     expect(melati.payments + anggrek.payments).toBe(t.payments.length)
-    expect(melati.expenses + anggrek.expenses + preview.sharedExpenses).toBe(t.expenses.length)
-    expect(preview.sharedExpenses).toBe(t.expenses.filter((e) => e.property_id === null).length)
+    expect(melati.expenses + anggrek.expenses + preview.sample.expenses).toBe(t.expenses.length)
+    expect(preview.sharedExpenses).toBe(0)
+    expect(preview.sample).toEqual({ expenses: t.expenses.filter((e) => e.property_id === null).length, addons: 4, tenants: 0 })
   })
 
   it('counts tenants without a lease under their home kos and marks kos that are already online', () => {
@@ -118,16 +123,114 @@ describe('previewBackup', () => {
 
   it('selects every kos by default and shared expenses only when there are some', () => {
     const backup = smallBackup()
-    expect(defaultSelection(previewBackup(backup))).toEqual({ propertyIds: [u(2), u(1)], includeShared: true })
+    expect(previewBackup(backup).properties.some((p) => p.sample)).toBe(false)
+    expect(defaultSelection(previewBackup(backup))).toEqual({ propertyIds: [u(2), u(1)], includeShared: true, includeSample: false })
     backup.tables.expenses = backup.tables.expenses.filter((e) => e.property_id !== null)
     expect(defaultSelection(previewBackup(backup)).includeShared).toBe(false)
   })
 })
 
+const LATER = { org_id: ORG, created_at: '2026-10-13T08:00:00.000Z', updated_at: '2026-10-13T08:00:00.000Z' }
+/** Rows the owner added to his Mode Demo next to the sample data (ids 1xx), in import order. */
+const OWN_IDS = [101, 111, 181, 121, 131, 151, 161, 171, 172].map(u)
+
+/** The owner's Mode Demo: the sample seed, his own kos "Kos Mawar" added a day later, the organisation renamed. */
+function ownerDemoBackup(): ParsedBackup {
+  const backup = demoBackup()
+  const t = backup.tables
+  t.organizations[0].name = 'Kos Pak Budi'
+  backup.orgName = 'Kos Pak Budi'
+  t.properties.push(property(u(101), 'Kos Mawar', LATER) as BackupRow)
+  t.rooms.push({ ...room(u(111), u(101), 'M1'), ...LATER } as BackupRow)
+  t.tenants.push(tenant(u(121), u(101), LATER) as BackupRow)
+  t.leases.push(lease(u(131), u(101), u(111), u(121), LATER) as BackupRow)
+  t.invoices.push(invoice(u(151), u(101), u(131), 'INV-202610-0100', LATER) as BackupRow)
+  t.payments.push(payment(u(161), u(101), u(151), u(131), LATER) as BackupRow)
+  t.expenses.push(
+    expense(u(171), u(101), LATER) as BackupRow,
+    expense(u(172), null, { ...LATER, category: 'wages', description: 'Gaji penjaga Kos Mawar', amount: 1_000_000 }) as BackupRow,
+  )
+  t.addon_catalog.push({ id: u(181), property_id: null, name: 'Galon', default_price: 20_000, billing: 'per_period', ...LATER } as BackupRow)
+  return backup
+}
+
+const plannedIds = (plan: ImportPlan) => IMPORT_ORDER.flatMap((t) => ids(plan, t))
+const sumAmounts = (plan: ImportPlan) => plan.tables.expenses.rows.reduce((s, r) => s + (r.row.amount as number), 0)
+
+describe('Mode Demo sample data', () => {
+  it('marks the sample kos and leaves them, the sample shared expenses and the sample add-ons unticked', () => {
+    const backup = ownerDemoBackup()
+    const preview = previewBackup(backup)
+    expect(preview.properties.map((p) => [p.name, p.sample])).toEqual([
+      ['Kos Anggrek', true],
+      ['Kos Mawar', false],
+      ['Kos Melati', true],
+    ])
+    expect(preview.sharedExpenses).toBe(1)
+    expect(preview.sample).toEqual({ expenses: 7, addons: 4, tenants: 0 })
+    expect(sampleOutsideKosCount(preview)).toBe(11)
+    expect(defaultSelection(preview)).toEqual({ propertyIds: [u(101)], includeShared: true, includeSample: false })
+  })
+
+  it('imports only the owner\'s own rows by default (no fake wages, PBB or add-ons in the online books)', () => {
+    const backup = ownerDemoBackup()
+    for (const selection of [all(backup), { propertyIds: [u(101)], includeShared: true }]) {
+      const plan = planDemoImport(backup, selection)
+      expect(plannedIds(plan)).toEqual(OWN_IDS)
+      expect(ids(plan, 'expenses')).toEqual([u(171), u(172)])
+      expect(sumAmounts(plan)).toBe(1_100_000)
+      expect(ids(plan, 'addon_catalog')).toEqual([u(181)])
+      expect(Object.values(skippedByReason(plan)).every((n) => n === 0)).toBe(true)
+    }
+  })
+
+  it('imports a sample kos the owner ticks, and the sample rows outside any kos only when asked', () => {
+    const backup = ownerDemoBackup()
+    const melati = previewBackup(backup).properties.find((p) => p.name === 'Kos Melati')!
+    const t = backup.tables
+    const melatiExpenses = t.expenses.filter((e) => e.property_id === melati.id).length
+    const sampleShared = t.expenses.filter((e) => e.property_id === null && e.created_at !== LATER.created_at).length
+
+    const withKos = planDemoImport(backup, { propertyIds: [melati.id], includeShared: false })
+    expect(ids(withKos, 'properties')).toEqual([melati.id])
+    expect(ids(withKos, 'rooms')).toHaveLength(6)
+    expect(ids(withKos, 'leases')).toHaveLength(4)
+    expect(ids(withKos, 'expenses')).toHaveLength(melatiExpenses)
+    expect(ids(withKos, 'addon_catalog')).toEqual([u(181)]) // the owner's org-wide add-on follows any kos
+
+    const withSample = planDemoImport(backup, { propertyIds: [], includeShared: false, includeSample: true })
+    expect(ids(withSample, 'expenses')).toHaveLength(sampleShared)
+    expect(sumAmounts(withSample)).toBe(9_500_000)
+    expect(ids(withSample, 'addon_catalog')).toHaveLength(4)
+    expect(ids(withSample, 'properties')).toEqual([])
+  })
+
+  it('treats a sample tenant without lease or kos as sample data outside any kos', () => {
+    const backup = ownerDemoBackup()
+    const stamp = backup.tables.organizations[0].created_at as string
+    backup.tables.tenants.push(tenant(u(129), u(98), { created_at: stamp, updated_at: stamp }) as BackupRow)
+    expect(previewBackup(backup).sample.tenants).toBe(1)
+    expect(ids(planDemoImport(backup, all(backup)), 'tenants')).toEqual([u(121)])
+    expect(ids(planDemoImport(backup, { ...all(backup), includeSample: true }), 'tenants')).toEqual([u(121), u(129)])
+  })
+
+  it('never marks rows of an online organisation as sample data', () => {
+    const backup = smallBackup()
+    const orgId = u(900)
+    backup.tables.organizations[0] = { ...backup.tables.organizations[0], id: orgId, created_at: ts.created_at }
+    for (const table of TABLE_NAMES) for (const r of backup.tables[table]) if ('org_id' in r) r.org_id = orgId
+    const preview = previewBackup(backup)
+    expect(preview.properties.every((p) => !p.sample)).toBe(true)
+    expect(sampleOutsideKosCount(preview)).toBe(0)
+    expect(defaultSelection(preview).propertyIds).toHaveLength(2)
+  })
+})
+
 describe('planDemoImport: selection', () => {
-  it('imports the whole demo seed, in dependency order, without server columns', () => {
+  it('imports the whole demo seed when everything is ticked, in dependency order, without server columns', () => {
     const backup = demoBackup()
-    const plan = planDemoImport(backup, all(backup))
+    const kos = previewBackup(backup).properties.map((p) => p.id)
+    const plan = planDemoImport(backup, { propertyIds: kos, includeShared: true, includeSample: true })
     for (const t of IMPORT_ORDER) {
       expect(plan.tables[t].rows.length, t).toBe(backup.tables[t].length)
     }

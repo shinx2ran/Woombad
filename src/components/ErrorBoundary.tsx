@@ -1,6 +1,6 @@
 import { Component, useState, type ErrorInfo, type ReactNode } from 'react'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { clearDeviceData, datedFileName, downloadText, readDeviceData } from './deviceData'
+import { clearDeviceData, datedFileName, deviceDataProblem, downloadText, readDeviceData } from './deviceData'
 
 // A new deploy removes old lazy chunks; a reload fetches the current ones.
 const STALE_CHUNK_RE = /dynamically imported module|Importing a module script failed|error loading dynamically/i
@@ -16,8 +16,9 @@ const buttonBase = 'inline-flex h-11 items-center justify-center rounded-lg px-4
 /**
  * Last-resort screen. Uses no context, router or query hooks so it renders even when providers are broken.
  * In Mode Demo it offers to download or reset the raw data on this device (broken data is the usual cause).
+ * `deviceDataBroken`: shown at start because the stored Mode Demo data cannot be opened.
  */
-export function ErrorScreen({ error }: { error: unknown }) {
+export function ErrorScreen({ error, deviceDataBroken = false }: { error: unknown; deviceDataBroken?: boolean }) {
   const isDemo = !isSupabaseConfigured
   const [confirmReset, setConfirmReset] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -48,21 +49,27 @@ export function ErrorScreen({ error }: { error: unknown }) {
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h1 className="text-lg font-semibold text-slate-900">Terjadi kesalahan</h1>
         <p className="mt-2 text-sm text-slate-600">
-          {isStaleChunk ? 'Aplikasi baru saja diperbarui. Tekan Muat ulang.' : 'Aplikasi mengalami masalah. Coba muat ulang.'}
+          {deviceDataBroken
+            ? 'Data di perangkat ini rusak, jadi aplikasi tidak bisa dibuka. Unduh data ini dulu, lalu reset.'
+            : isStaleChunk
+              ? 'Aplikasi baru saja diperbarui. Tekan Muat ulang.'
+              : 'Aplikasi mengalami masalah. Coba muat ulang.'}
         </p>
 
         <div className="mt-4 flex flex-col gap-2">
           <button type="button" onClick={() => window.location.reload()} className={`${buttonBase} bg-brand-700 text-white hover:bg-brand-800`}>
             Muat ulang
           </button>
-          <a href={`${import.meta.env.BASE_URL}dashboard`} className={`${buttonBase} text-slate-700 hover:bg-slate-100`}>
-            Buka Dashboard
-          </a>
+          {!deviceDataBroken && (
+            <a href={`${import.meta.env.BASE_URL}dashboard`} className={`${buttonBase} text-slate-700 hover:bg-slate-100`}>
+              Buka Dashboard
+            </a>
+          )}
         </div>
 
         {isDemo && (
           <div className="mt-5 border-t border-slate-100 pt-4">
-            <p className="text-sm text-slate-600">Jika masalah berulang, data di perangkat ini mungkin rusak.</p>
+            {!deviceDataBroken && <p className="text-sm text-slate-600">Jika masalah berulang, data di perangkat ini mungkin rusak.</p>}
             <div className="mt-3 flex flex-col gap-2">
               <button type="button" onClick={download} className={`${buttonBase} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}>
                 Unduh data perangkat ini
@@ -108,6 +115,15 @@ export function ErrorScreen({ error }: { error: unknown }) {
 interface BoundaryState {
   hasError: boolean
   error: unknown
+}
+
+/**
+ * Mode Demo: when the data on this device cannot be opened, show the error screen (download / reset) instead of
+ * the app, which would otherwise read it as empty and overwrite it with sample data. Checked once at start.
+ */
+export function DeviceDataGate({ children }: { children: ReactNode }) {
+  const [problem] = useState(() => (isSupabaseConfigured ? null : deviceDataProblem(readDeviceData())))
+  return problem ? <ErrorScreen error={new Error(problem)} deviceDataBroken /> : children
 }
 
 /** App-level boundary around all providers; route errors are caught by the router's errorElement first. */
