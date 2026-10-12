@@ -197,6 +197,18 @@ begin
        from pg_proc p where p.pronamespace = 'public'::regnamespace
         and has_function_privilege('anon', p.oid, 'EXECUTE')
         and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')));
+  perform zz.eq(p_grp, 'functions executable by woombad_backup: export_backup only', 'export_backup()',
+    (select string_agg(p.oid::regprocedure::text, ',' order by p.oid::regprocedure::text)
+       from pg_proc p where p.pronamespace = 'public'::regnamespace
+        and has_function_privilege('woombad_backup', p.oid, 'EXECUTE')
+        and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')));
+  perform zz.ok(p_grp, 'woombad_backup has no table privileges in public', not exists (
+    select 1 from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'v', 'm', 'S')
+       and has_table_privilege('woombad_backup', c.oid, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')));
+  perform zz.ok(p_grp, 'woombad_backup: login, no superpowers', (
+    select r.rolcanlogin and not r.rolsuper and not r.rolcreaterole and not r.rolcreatedb and not r.rolbypassrls
+           and not r.rolinherit and r.rolconnlimit = 2
+      from pg_roles r where r.rolname = 'woombad_backup'));
   perform zz.ok(p_grp, 'keepalive reads nothing (sql, not security definer)', (
     select not p.prosecdef and l.lanname = 'sql' and p.provolatile = 's'
       from pg_proc p join pg_language l on l.oid = p.prolang where p.oid = 'public.keepalive()'::regprocedure));

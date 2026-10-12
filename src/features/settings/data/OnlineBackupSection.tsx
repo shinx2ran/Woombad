@@ -47,8 +47,9 @@ export function OnlineBackupSection() {
       <div className="space-y-2 border-t border-slate-100 pt-3">
         <p className="text-sm font-medium text-slate-900">Cadangan</p>
         <p className="text-sm text-slate-600">
-          Paket gratis Supabase tidak membuat cadangan otomatis. Unduh cadangan seminggu sekali dan simpan di tempat aman (mis.
-          Google Drive). Foto KTP dan struk tidak ikut. File ini berisi data pribadi penyewa, jangan dibagikan.
+          Salinan terenkripsi dibuat otomatis setiap Minggu malam dan disimpan 90 hari. Unduh juga cadangan sebulan sekali dan
+          simpan sendiri di tempat aman (mis. Google Drive). Foto KTP dan struk tidak ikut. File ini berisi data pribadi
+          penyewa, jangan dibagikan.
         </p>
         <BackupStatus />
         <Button variant="outline" icon={<Download className="h-4 w-4" />} onClick={download} loading={downloading}>
