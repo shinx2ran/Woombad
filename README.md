@@ -124,7 +124,8 @@ Masih tampil Mode Demo? Tutup aplikasi sepenuhnya, lalu buka lagi (aplikasi memp
 
 Lakukan sebelum mengisi data baru:
 
-1. **Pengaturan → Data → Impor dari Mode Demo** → pilih berkas dari langkah 1.
+1. **Pengaturan → Data → Impor dari Mode Demo** → pilih berkas dari langkah 1 (atau, di HP/tablet yang dulu dipakai
+   untuk Mode Demo, **Pakai data Mode Demo di perangkat ini**).
 2. Pilih kos yang mau diimpor (dan pengeluaran Bersama bila perlu) → **Impor**.
 3. Periksa ringkasan jumlah data. Foto KTP/struk tidak ikut; unggah ulang bila perlu.
 
@@ -196,7 +197,7 @@ alamat lain ditolak, jadi istri dan staf **tidak** menerima tautan reset.
 | Siapa | Caranya |
 |---|---|
 | Pemilik (email sama dengan akun Supabase) | Layar **Masuk** → isi email → **Lupa kata sandi?** → buka tautan di email. |
-| Istri / staf | Minta kata sandi sementara lewat pemilik. Di Chrome/Safari (bukan dari ikon di layar utama), masuk dengan kata sandi itu, lalu buka **https://shinx2ran.github.io/Woombad/reset-sandi** di browser yang sama dan buat kata sandi baru. |
+| Istri / staf | Minta kata sandi sementara lewat pemilik. Masuk dengan kata sandi itu, lalu **Pengaturan → Tentang → Ganti kata sandi**. |
 
 Operator membuat kata sandi sementara:
 

@@ -34,5 +34,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   const password = tempPassword()
   console.log(`Kata sandi sementara: ${password}\n\n${resetPasswordSql(email, password)}`)
-  console.log('\nThe SQL must return 1 row (0 rows: wrong email). Send the password privately; the user changes it at /reset-sandi.')
+  console.log('\nThe SQL must return 1 row (0 rows: wrong email). Send the password privately; the user changes it in Pengaturan -> Tentang -> Ganti kata sandi.')
 }
