@@ -1,0 +1,275 @@
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { ScanLine, X } from 'lucide-react'
+import { Button, Input, Modal, Select, Textarea, useToast } from '../../components/ui'
+import { useOrg } from '../../hooks/useOrg'
+import { useInsert, useInvalidate, useUpdate } from '../../hooks/useTable'
+import { GENDER_LABEL, GENDERS, type Tenant } from '../../types/db'
+import { isValidNik } from '../../domain/ktp'
+import { KtpScanner } from './KtpScanner'
+import {
+  formToTenantPayload,
+  initialTenantForm,
+  tenantToForm,
+  validateTenantForm,
+  type TenantFormErrors,
+  type TenantFormValues,
+} from './tenantUtils'
+
+const RELIGION_OPTIONS = ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Konghucu', 'Lainnya']
+const MARITAL_OPTIONS = ['Belum Kawin', 'Kawin', 'Cerai Hidup', 'Cerai Mati']
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</legend>
+      {children}
+    </fieldset>
+  )
+}
+
+/** Free-text field with suggestions (datalist) so OCR values like "Islam" or "Kawin" still fit. */
+function SuggestInput({
+  label,
+  value,
+  onChange,
+  options,
+  listId,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options: string[]
+  listId: string
+}) {
+  return (
+    <>
+      <Input label={label} value={value} onChange={(e) => onChange(e.target.value)} list={listId} autoComplete="off" />
+      <datalist id={listId}>
+        {options.map((o) => (
+          <option key={o} value={o} />
+        ))}
+      </datalist>
+    </>
+  )
+}
+
+/**
+ * Create / edit tenant form in a Modal (bottom sheet on phones). Includes the optional "Scan KTP" panel,
+ * which prefills fields via OCR; in Supabase mode the scanned photo can be uploaded to the `ktp` bucket.
+ */
+export function TenantFormModal({
+  open,
+  onClose,
+  tenant,
+  onSaved,
+}: {
+  open: boolean
+  onClose: () => void
+  /** existing row when editing; null/undefined when creating */
+  tenant?: Tenant | null
+  onSaved?: (saved: Tenant) => void
+}) {
+  const { properties, selectedPropertyId, repo, isLocalMode } = useOrg()
+  const toast = useToast()
+  const insert = useInsert('tenants')
+  const update = useUpdate('tenants')
+  const invalidate = useInvalidate()
+
+  const [values, setValues] = useState<TenantFormValues>(() => initialTenantForm(selectedPropertyId, properties))
+  const [errors, setErrors] = useState<TenantFormErrors>({})
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [ktpImage, setKtpImage] = useState<Blob | null>(null)
+  const [saveKtpPhoto, setSaveKtpPhoto] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const isEdit = Boolean(tenant)
+
+  // Reset whenever the modal opens or switches between rows.
+  useEffect(() => {
+    if (!open) return
+    setValues(tenant ? tenantToForm(tenant) : initialTenantForm(selectedPropertyId, properties))
+    setErrors({})
+    setScannerOpen(false)
+    setKtpImage(null)
+    setSaveKtpPhoto(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tenant?.id])
+
+  const set = <K extends keyof TenantFormValues>(key: K, value: TenantFormValues[K]) => {
+    setValues((v) => ({ ...v, [key]: value }))
+    if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }))
+  }
+
+  const nikDigits = values.nik.replace(/\s+/g, '')
+  const nikHint =
+    nikDigits === ''
+      ? '16 digit, tertera di KTP.'
+      : isValidNik(nikDigits)
+        ? 'Format NIK valid (16 digit).'
+        : `NIK harus 16 digit (saat ini ${nikDigits.length} digit).`
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    const errs = validateTenantForm(values)
+    setErrors(errs)
+    if (Object.keys(errs).length > 0) {
+      toast.error('Periksa kembali data yang ditandai merah.')
+      return
+    }
+    setSaving(true)
+    try {
+      const payload = formToTenantPayload(values)
+      let saved: Tenant
+      if (tenant) {
+        const { ktp_image_path: _keep, ...patch } = payload
+        saved = await update.mutateAsync({ id: tenant.id, patch })
+      } else {
+        saved = await insert.mutateAsync(payload)
+      }
+      if (ktpImage && !isLocalMode && saveKtpPhoto) {
+        try {
+          const path = await repo.uploadFile('ktp', `${saved.id}.jpg`, ktpImage, 'image/jpeg')
+          if (path) {
+            saved = await repo.update('tenants', saved.id, { ktp_image_path: path })
+            await invalidate('tenants')
+          }
+        } catch (err) {
+          toast.error(`Data penyewa tersimpan, tetapi foto KTP gagal diunggah: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'}`)
+        }
+      }
+      toast.success(isEdit ? 'Data penyewa diperbarui.' : `Penyewa ${saved.full_name} ditambahkan.`)
+      onSaved?.(saved)
+      onClose()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Gagal menyimpan penyewa.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const propertyOptions = properties.map((p) => ({ value: p.id, label: p.name }))
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={isEdit ? 'Ubah Penyewa' : 'Tambah Penyewa'}
+      size="lg"
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>
+            Batal
+          </Button>
+          <Button type="submit" form="tenant-form" loading={saving}>
+            {isEdit ? 'Simpan perubahan' : 'Simpan'}
+          </Button>
+        </>
+      }
+    >
+      <form id="tenant-form" onSubmit={submit} className="space-y-6" noValidate>
+        {/* Scan KTP */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant={scannerOpen ? 'ghost' : 'secondary'}
+              size="sm"
+              icon={scannerOpen ? <X className="h-4 w-4" /> : <ScanLine className="h-4 w-4" />}
+              onClick={() => setScannerOpen((o) => !o)}
+            >
+              {scannerOpen ? 'Tutup scan KTP' : 'Scan KTP'}
+            </Button>
+            {ktpImage && <span className="text-xs text-emerald-700">Foto KTP siap</span>}
+          </div>
+          {scannerOpen && (
+            <KtpScanner
+              current={values}
+              onApply={(next, image) => {
+                setValues(next)
+                setErrors({})
+                setKtpImage(image)
+                setScannerOpen(false)
+              }}
+            />
+          )}
+          {ktpImage &&
+            (isLocalMode ? (
+              <p className="text-xs text-slate-500">Foto hanya tersimpan di mode online.</p>
+            ) : (
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={saveKtpPhoto} onChange={(e) => setSaveKtpPhoto(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600" />
+                Simpan foto KTP
+              </label>
+            ))}
+        </div>
+
+        <Section title="Data diri">
+          <Input label="Nama lengkap" required value={values.full_name} onChange={(e) => set('full_name', e.target.value)} error={errors.full_name} autoComplete="name" placeholder="Sesuai KTP" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              label="Nomor HP / WhatsApp"
+              type="tel"
+              inputMode="tel"
+              value={values.phone}
+              onChange={(e) => set('phone', e.target.value)}
+              error={errors.phone}
+              hint="Tidak ada di KTP, isi manual. Contoh: 0812-3456-7890"
+              placeholder="08xx"
+            />
+            <Select
+              label="Jenis kelamin"
+              value={values.gender}
+              onChange={(e) => set('gender', e.target.value as TenantFormValues['gender'])}
+              placeholder="Pilih"
+              options={GENDERS.map((g) => ({ value: g, label: GENDER_LABEL[g] }))}
+            />
+            <Input label="Tempat lahir" value={values.birth_place} onChange={(e) => set('birth_place', e.target.value)} />
+            <Input label="Tanggal lahir" type="date" value={values.birth_date} onChange={(e) => set('birth_date', e.target.value)} error={errors.birth_date} max="2100-12-31" />
+          </div>
+          <Input
+            label="NIK"
+            inputMode="numeric"
+            maxLength={20}
+            value={values.nik}
+            onChange={(e) => set('nik', e.target.value)}
+            error={errors.nik}
+            hint={nikHint}
+            placeholder="16 digit"
+          />
+        </Section>
+
+        <Section title="Alamat">
+          <Textarea label="Alamat sesuai KTP" rows={2} value={values.address} onChange={(e) => set('address', e.target.value)} placeholder="Jalan, RT/RW, kelurahan, kecamatan, kota" />
+        </Section>
+
+        <Section title="Lainnya">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SuggestInput label="Agama" value={values.religion} onChange={(v) => set('religion', v)} options={RELIGION_OPTIONS} listId="tenant-religion-options" />
+            <SuggestInput label="Status perkawinan" value={values.marital_status} onChange={(v) => set('marital_status', v)} options={MARITAL_OPTIONS} listId="tenant-marital-options" />
+            <Input label="Pekerjaan" value={values.occupation} onChange={(e) => set('occupation', e.target.value)} />
+            <Select
+              label="Kos"
+              required
+              value={values.property_id}
+              onChange={(e) => set('property_id', e.target.value)}
+              placeholder={properties.length === 0 ? 'Belum ada kos' : 'Pilih kos'}
+              options={propertyOptions}
+              error={errors.property_id}
+              hint={selectedPropertyId === 'all' ? 'Kos tempat penyewa terdaftar.' : undefined}
+            />
+            <Input label="Nama kontak darurat" value={values.emergency_contact_name} onChange={(e) => set('emergency_contact_name', e.target.value)} />
+            <Input
+              label="Telepon kontak darurat"
+              type="tel"
+              inputMode="tel"
+              value={values.emergency_contact_phone}
+              onChange={(e) => set('emergency_contact_phone', e.target.value)}
+              error={errors.emergency_contact_phone}
+            />
+          </div>
+          <Textarea label="Catatan" rows={2} value={values.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Misal: bawa motor, alergi, dsb." />
+        </Section>
+      </form>
+    </Modal>
+  )
+}
