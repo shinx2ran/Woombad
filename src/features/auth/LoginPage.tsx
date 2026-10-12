@@ -3,6 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { Button, Input, useToast } from '../../components/ui'
 import { useAuth } from '../../hooks/useAuth'
 import { safeReturnPath } from '../../lib/redirect'
+import { formatCodeInput } from './codeInput'
+import { errorMessage } from './networkError'
+import { readPendingCode } from './pendingCode'
 
 export function LoginPage() {
   const { auth } = useAuth()
@@ -13,6 +16,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingCode] = useState(() => formatCodeInput(readPendingCode()))
   const isLocal = auth.mode === 'local'
   // Only same-origin in-app paths are accepted; a crafted '//evil.example/x' falls back to the dashboard.
   const from = safeReturnPath((location.state as { from?: unknown } | null)?.from)
@@ -25,7 +29,7 @@ export function LoginPage() {
       await auth.signInWithPassword(email.trim(), password)
       navigate(from, { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal masuk.')
+      setError(errorMessage(err, 'Gagal masuk.'))
     } finally {
       setLoading(false)
     }
@@ -50,7 +54,7 @@ export function LoginPage() {
       await auth.sendPasswordReset(email.trim())
       toast.success('Tautan reset kata sandi dikirim ke email Anda.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gagal mengirim reset.')
+      setError(errorMessage(err, 'Gagal mengirim reset.'))
     }
   }
 
@@ -89,6 +93,19 @@ export function LoginPage() {
               Buat akun
             </Link>
           </div>
+          {pendingCode ? (
+            <p className="rounded-lg bg-brand-50 p-3 text-sm text-brand-900">
+              Kode <strong className="font-mono">{pendingCode}</strong> akan dipakai setelah Anda masuk.
+            </p>
+          ) : (
+            <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">
+              Diundang pemilik kos? Buka tautan dari pesan WhatsApp, atau{' '}
+              <Link to="/daftar" className="font-medium text-brand-700 hover:underline">
+                buat akun
+              </Link>{' '}
+              lalu masukkan kodenya.
+            </p>
+          )}
         </form>
       )}
     </AuthLayout>
