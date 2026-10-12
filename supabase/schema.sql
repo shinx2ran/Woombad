@@ -20,7 +20,7 @@ begin;
 -- ---------- helpers ----------
 
 create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql set search_path = public, pg_temp as $$
 begin
   new.updated_at = now();
   return new;
@@ -606,7 +606,7 @@ end $$;
 -- make the database the source of truth online, so staff never need UPDATE on invoices to pay.
 
 create or replace function public.invoice_status_for(p_total bigint, p_paid bigint)
-returns text language sql immutable as $$
+returns text language sql immutable set search_path = public, pg_temp as $$
   select case when p_paid >= p_total then 'paid' when p_paid > 0 then 'partial' else 'unpaid' end;
 $$;
 
@@ -910,7 +910,7 @@ values
 on conflict (id) do nothing;
 
 create or replace function public.path_org_id(p_name text)
-returns uuid language plpgsql immutable as $$
+returns uuid language plpgsql immutable set search_path = public, pg_temp as $$
 begin
   return (storage.foldername(p_name))[1]::uuid;
 exception when others then
