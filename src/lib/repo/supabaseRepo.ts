@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Insert, Row, TableName, Update } from '../../types/db'
-import type { ListOptions, MemberAddResult, Repo, StorageBucket } from './types'
+import type { CreatedInvitation, ListOptions, Repo, StorageBucket } from './types'
+import { NotMemberError, formatCode, normalizeCode } from './types'
+import type { MemberRole } from '../../types/db'
 
 /** Turn Postgres/PostgREST errors into messages a kos owner can act on. */
 export function translateDbError(message: string): string {
@@ -12,6 +14,7 @@ export function translateDbError(message: string): string {
     return 'Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.'
   }
   if (/Failed to fetch|NetworkError|network/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
+  if (/Signups not allowed|signup.*disabled/i.test(message)) return 'Pendaftaran akun baru sedang ditutup. Minta pemilik kos membuatkan akun.'
   return message
 }
 
@@ -88,8 +91,28 @@ export class SupabaseRepo implements Repo {
 
   async ensureMembership(): Promise<string> {
     const { data, error } = await this.sb.rpc('ensure_membership')
+    // SQLSTATE WB001 = signed in but not a member of any organisation (see supabase/schema.sql)
+    if (error?.code === 'WB001') throw new NotMemberError(error.message)
     if (error) throw new Error(translateDbError(error.message))
     return data as string
+  }
+
+  async joinWithCode(code: string): Promise<string> {
+    const { data, error } = await this.sb.rpc('join_with_code', { p_code: normalizeCode(code) })
+    if (error) throw new Error(translateDbError(error.message))
+    return data as string
+  }
+
+  async createInvitation(orgId: string, role: 'admin' | 'staff', label: string | null): Promise<CreatedInvitation> {
+    const { data, error } = await this.sb.rpc('create_invitation', { p_org_id: orgId, p_role: role, p_label: label?.trim() || null })
+    if (error) throw new Error(translateDbError(error.message))
+    const row = (Array.isArray(data) ? data[0] : data) as { code: string; expires_at: string }
+    return { code: formatCode(normalizeCode(row.code)), expiresAt: row.expires_at }
+  }
+
+  async setMemberRole(orgId: string, userId: string, role: MemberRole): Promise<void> {
+    const { error } = await this.sb.rpc('set_member_role', { p_org_id: orgId, p_user_id: userId, p_role: role })
+    if (error) throw new Error(translateDbError(error.message))
   }
 
   async uploadFile(bucket: StorageBucket, path: string, file: Blob, contentType?: string): Promise<string | null> {
@@ -110,25 +133,8 @@ export class SupabaseRepo implements Repo {
     if (error) throw new Error(error.message)
   }
 
-  async addMemberByEmail(orgId: string, email: string, role: 'admin' | 'staff'): Promise<MemberAddResult> {
-    const { data, error } = await this.sb.rpc('add_member_by_email', {
-      p_org_id: orgId,
-      p_email: email.trim().toLowerCase(),
-      p_role: role,
-    })
-    if (error) throw new Error(error.message)
-    const status = (data as string) as MemberAddResult['status']
-    const message =
-      status === 'added'
-        ? 'Anggota berhasil ditambahkan.'
-        : status === 'invited'
-          ? 'Undangan dibuat. Minta mereka mendaftar dengan email tersebut.'
-          : 'Email ini sudah menjadi anggota.'
-    return { status, message }
-  }
-
   async removeMember(orgId: string, userId: string): Promise<void> {
     const { error } = await this.sb.rpc('remove_member', { p_org_id: orgId, p_user_id: userId })
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(translateDbError(error.message))
   }
 }

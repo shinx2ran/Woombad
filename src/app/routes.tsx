@@ -4,6 +4,7 @@ import { AppShell } from './AppShell'
 import { AuthGate, GuestOnly } from './AuthGate'
 import { authRoutes } from '../features/auth/routes'
 import { ResetPasswordPage } from '../features/auth/ResetPasswordPage'
+import { JoinLinkPage } from '../features/auth/JoinLinkPage'
 import { dashboardRoutes } from '../features/dashboard/routes'
 import { propertiesRoutes } from '../features/properties/routes'
 import { tenantsRoutes } from '../features/tenants/routes'
@@ -24,6 +25,8 @@ const routes: RouteObject[] = [
   },
   // Reachable both from a recovery link (signed in with a recovery session) and from settings.
   { path: '/reset-sandi', element: <ResetPasswordPage /> },
+  // Invitation links: /gabung?kode=ABCD-EFGH (works signed in or out).
+  { path: '/gabung', element: <JoinLinkPage /> },
   {
     element: <AuthGate />,
     children: [

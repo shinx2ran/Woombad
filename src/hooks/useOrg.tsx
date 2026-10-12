@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MemberRole, Organization, Property } from '../types/db'
-import { getRepo, bindOrg, LocalRepo, type OrgRepo } from '../lib/repo'
+import { getRepo, bindOrg, LocalRepo, NotMemberError, type OrgRepo } from '../lib/repo'
+import { JoinOrganization } from '../features/auth/JoinOrganization'
 import { buildDemoDb, DEMO_ORG_ID } from '../lib/repo/demoSeed'
 import { useAuth } from './useAuth'
 
@@ -59,6 +60,8 @@ export function OrgProvider({ children, fallback }: { children: ReactNode; fallb
   const membership = useQuery({
     queryKey: ['membership', userId],
     queryFn: () => loadMembership(userId, email),
+    // a non-member is a normal state (join screen), not a transient failure
+    retry: (count, err) => !(err instanceof NotMemberError) && count < 1,
     enabled: Boolean(userId),
     staleTime: Infinity,
   })
@@ -121,6 +124,9 @@ export function OrgProvider({ children, fallback }: { children: ReactNode; fallb
     }
   }, [membership.data, repo, properties, selectedPropertyId, setSelectedPropertyId, queryClient, orgId])
 
+  if (membership.isError && membership.error instanceof NotMemberError) {
+    return <JoinOrganization onJoined={() => void queryClient.invalidateQueries({ queryKey: ['membership', userId] })} />
+  }
   if (membership.isError) {
     return (
       <div className="p-6 text-center text-red-700">

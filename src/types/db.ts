@@ -93,11 +93,36 @@ export interface OrganizationMember extends BaseRow {
   role: MemberRole
 }
 
+/**
+ * An invitation is a one-time code (shown once to the admin who creates it, stored only as a hash) that
+ * the invitee enters after creating an account. No email delivery is involved.
+ */
 export interface Invitation extends BaseRow {
-  email: string
+  /** who it is for, free text shown in the list (e.g. "Istri", "Pak Udin"); optional */
+  label: string | null
+  /** legacy column from email invitations; always null for code invitations */
+  email: string | null
   role: MemberRole
-  invited_by: string
+  invited_by: string | null
+  expires_at: string
   accepted_at: string | null
+  accepted_by: string | null
+}
+
+export const AUDIT_ACTIONS = ['insert', 'update', 'delete'] as const
+export type AuditAction = (typeof AUDIT_ACTIONS)[number]
+
+/** Append-only change history written by database triggers (online mode only). Owner/admin can read it. */
+export interface AuditLogEntry {
+  id: string
+  org_id: string
+  table_name: string
+  row_id: string | null
+  action: AuditAction
+  changed_by: string | null
+  changed_at: string
+  old_data: Record<string, unknown> | null
+  new_data: Record<string, unknown> | null
 }
 
 export interface Property extends TimestampedRow {
@@ -253,6 +278,7 @@ export interface Tables {
   invoices: Invoice
   payments: Payment
   expenses: Expense
+  audit_log: AuditLogEntry
 }
 
 export type TableName = keyof Tables
@@ -286,6 +312,7 @@ export const TABLE_NAMES: TableName[] = [
   'invoices',
   'payments',
   'expenses',
+  'audit_log',
 ]
 
 // ---------- Indonesian labels (shared vocabulary) ----------

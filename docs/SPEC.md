@@ -219,3 +219,92 @@ Layar Utama), tombol keluar, versi aplikasi.
   dan menampilkan "Harga standar Rp X" sebagai petunjuk; bila berbeda tampilkan selisih ("Diskon Rp Y" / "Lebih Rp Y").
 - Detail sewa menampilkan "Harga disepakati Rp X · standar Rp Y". Modal perpanjangan selalu mengizinkan harga khusus untuk
   tagihan itu (override `pricePerPeriod`), dengan centang untuk menjadikannya harga tetap sewa (5.2).
+
+## 6. Peluncuran online (v0.3) — keamanan sebelum go-live
+
+Hasil penilaian keamanan: orang luar tidak dapat membaca/mengubah data (245 uji serangan pada PostgreSQL). Celah yang
+tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasan staf**, **riwayat perubahan**, dan
+**cadangan**. Bagian ini adalah kontrak untuk perbaikan sebelum peluncuran.
+
+### 6.1 Keanggotaan berbasis kode (tanpa email)
+- **Kode** = 8 karakter dari alfabet `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (tanpa 0/O/1/I/L), ditampilkan `ABCD-EFGH`.
+  Klien menormalkan (`normalizeCode`: huruf besar, buang non-alfanumerik) sebelum dikirim. Server hanya menyimpan
+  `encode(sha256(convert_to(kode_normal,'UTF8')),'hex')` (fungsi bawaan Postgres; **jangan** pakai pgcrypto — di Supabase
+  pgcrypto ada di skema `extensions`).
+- **Kode pemilik (setup code)**: tabel `public.app_settings (id int primary key default 1 check (id = 1),
+  setup_code_hash text, setup_code_used_at timestamptz)`. Diisi oleh operator lewat
+  `select public.set_setup_code('ABCD-EFGH')` — fungsi ini **tidak** di-grant ke `authenticated`/`anon` (hanya postgres /
+  service_role). Tidak ada RLS policy untuk tabel ini (tak terbaca klien).
+- **Pendaftaran tidak lagi membuat organisasi atau menerima undangan otomatis.** Trigger `on_auth_user_created` dan
+  fungsi `accept_invitations_for`, `handle_new_user`, `add_member_by_email` dihapus.
+- `ensure_membership() returns uuid`: hanya mengembalikan keanggotaan yang ada (owner dulu, lalu yang tertua). Bila tidak
+  ada: `raise exception using errcode = 'WB001', message = 'Akun ini belum menjadi anggota. Masukkan kode dari pemilik kos.'`
+  (klien memetakan `WB001` → `NotMemberError` → layar **Masukkan kode**).
+- `join_with_code(p_code text) returns uuid` (security definer, untuk `authenticated`):
+  1. Batasi percobaan: tabel `public.join_attempts (user_id uuid, attempted_at timestamptz default now())`; bila ≥ 10
+     kegagalan dalam 1 jam terakhir untuk `auth.uid()` → `'Terlalu banyak percobaan. Coba lagi dalam 1 jam.'`.
+  2. Cocokkan undangan: `invitations` dengan `code_hash` sama, `accepted_at is null`, `expires_at > now()` → insert
+     `organization_members (org_id, user_id, email dari auth.users, role)` (on conflict do nothing), set `accepted_at`,
+     `accepted_by`, kembalikan org_id.
+  3. Bila belum ada organisasi sama sekali dan hash cocok dengan `app_settings.setup_code_hash` yang belum dipakai →
+     buat organisasi 'Kos Saya' (`created_by` = user) + member `owner`, set `setup_code_used_at`, kembalikan org_id.
+  4. Selain itu catat kegagalan di `join_attempts` dan `raise 'Kode tidak valid atau sudah kedaluwarsa.'`.
+  Kegagalan harus tetap tercatat walau exception dilempar (gunakan blok yang tidak di-rollback, mis. insert lalu
+  `return` nilai khusus dan raise di luar, atau `perform` dalam sub-blok yang tidak dibatalkan — pastikan teruji).
+- `create_invitation(p_org_id uuid, p_role text, p_label text) returns table(code text, expires_at timestamptz)`:
+  admin saja; role `admin`/`staff`; kode acak dari `gen_random_uuid()` (bawaan PG13+), kedaluwarsa 7 hari; simpan
+  `invitations (org_id, label, role, invited_by, code_hash, expires_at)`. `invitations.email` menjadi nullable, kolom baru
+  `label text`, `expires_at timestamptz not null default now() + interval '7 days'`, `accepted_by uuid`, `code_hash text`.
+  Admin boleh `select`/`delete` undangan organisasinya (sudah ada).
+- `set_member_role(p_org_id uuid, p_user_id uuid, p_role text) returns void`: **owner saja**; role owner/admin/staff;
+  tolak menurunkan **owner terakhir** ('Tidak dapat mengubah peran pemilik terakhir.'). Policy `members_update` dihapus —
+  tidak ada update langsung ke `organization_members`.
+- `remove_member` tetap.
+
+### 6.2 Pembatasan staf (ditegakkan database)
+- `properties`: insert/update/delete **admin saja** (termasuk `payment_info` = rekening di pengingat WhatsApp).
+- `rooms`: staf boleh update kecuali kolom harga (`price_daily/weekly/monthly`) → trigger menolak
+  'Hanya pemilik/admin yang dapat mengubah harga kamar.'; insert/delete kamar admin saja.
+- `leases`: staf boleh update (perpanjang, checkout, pindah kamar) **kecuali** `price_per_period`, `deposit_amount`,
+  `period_type` → 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.'
+- `payments` & `expenses`: update **admin saja** (hapus kebijakan "pemilik baris"); trigger BEFORE INSERT memaksa
+  `created_by = auth.uid()` bila `auth.uid()` tidak null.
+- `invoices`: insert oleh non-admin dengan `status = 'void'` diperlakukan sebagai tagihan biasa (status diturunkan dari
+  pembayaran) — ubah `invoices_recalc_trigger`.
+- UI menyembunyikan aksi yang ditolak untuk staf dan tetap menampilkan pesan `translateDbError` bila server menolak.
+
+### 6.3 Riwayat perubahan (audit log)
+- Tabel `public.audit_log (id uuid pk default gen_random_uuid(), org_id uuid not null references organizations on delete
+  cascade, table_name text not null, row_id uuid, action text check in ('insert','update','delete'), changed_by uuid
+  default auth.uid(), changed_at timestamptz not null default now(), old_data jsonb, new_data jsonb)`, indeks
+  `(org_id, changed_at desc)`.
+- Trigger AFTER INSERT/UPDATE/DELETE (security definer) pada `payments, invoices, expenses, leases, lease_addons,
+  properties, rooms, tenants, organization_members, invitations` (untuk invitations jangan simpan `code_hash`).
+- RLS: `select` untuk `is_org_admin(org_id)`; **tidak ada** policy insert/update/delete; `grant select` saja ke
+  `authenticated`. Tak seorang pun (termasuk pemilik lewat aplikasi) dapat mengubah/menghapus riwayat.
+- Urutan list di klien memakai `orderBy: { column: 'changed_at' }` (tabel ini tidak punya `created_at`).
+- UI: Pengaturan → **Riwayat perubahan** (owner/admin): 100 perubahan terakhir — kapan, siapa (email anggota), apa
+  (tabel + aksi + ringkasan kolom yang berubah, mis. "Pembayaran Rp 1.500.000 → Rp 1.000.000"). Mode demo: kartu
+  menjelaskan riwayat hanya tersedia di mode online.
+
+### 6.4 Penyimpanan foto
+- Hapus trigger `tenants_delete_ktp` / `expenses_delete_receipt` beserta fungsinya: Supabase versi baru menolak
+  `delete from storage.objects` langsung, sehingga hapus penyewa akan gagal. Aplikasi menghapus file lewat Storage API
+  (`repo.removeFile`) sebelum menghapus baris (penyewa: `ktp_image_path`; pengeluaran sudah dilakukan).
+
+### 6.5 Cadangan & pindah dari Mode Demo
+- Pengaturan → Data (mode online, owner/admin): **Unduh cadangan lengkap (JSON)** — semua tabel organisasi (kecuali
+  `audit_log` opsional), format `{ version: 1, exportedAt, orgName, tables: { <tabel>: Row[] } }`; foto tidak termasuk
+  (dijelaskan). Teks lama tentang "Dashboard → Database → Backups" dihapus: paket gratis Supabase **tidak** punya cadangan.
+- Mode demo: **Pulihkan dari JSON** memvalidasi berkas dengan zod (semua tabel array, baris punya `id`), otomatis
+  mengunduh data saat ini sebelum menimpa, dan aplikasi punya error boundary dengan tombol "Reset data di perangkat ini"
+  bila data rusak. Mode demo meminta `navigator.storage.persist()` dan menampilkan pengingat bila cadangan terakhir > 7 hari.
+- **Impor dari Mode Demo** (mode online, owner/admin, organisasi baru): pilih berkas cadangan demo → pratinjau per kos →
+  pilih kos yang diimpor (+ opsi pengeluaran Bersama) → sisipkan dengan urutan dependensi (properties, rooms,
+  addon_catalog, tenants, leases, lease_addons, invoices, payments, expenses), `org_id` diganti, `id` UUID dipertahankan,
+  `created_by` dikosongkan; baris dengan id non-UUID atau dari organisasi lain dilewati. Hasil: ringkasan jumlah baris.
+
+### 6.6 Konfigurasi publik untuk build
+- URL Supabase & *publishable/anon key* bersifat publik (dilindungi RLS). Disimpan di `.env.production` (di-commit,
+  pengecualian di `.gitignore`). Workflow deploy hanya mengoper secrets bila tidak kosong (secret kosong tidak boleh
+  menimpa `.env.production`). Kunci `service_role` **tidak pernah** di-commit.
