@@ -243,7 +243,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - `join_with_code(p_code text) returns uuid` (security definer, untuk `authenticated`):
   1. Batasi percobaan: tabel `public.join_attempts (user_id uuid, attempted_at timestamptz default now())`; bila ≥ 10
      kegagalan dalam 1 jam terakhir untuk `auth.uid()` → `'Terlalu banyak percobaan. Coba lagi dalam 1 jam.'`.
-  2. Cocokkan undangan: `invitations` dengan `code_hash` sama, `accepted_at is null`, `expires_at > now()` → insert
+  2. Cocokkan undangan: `invitation_codes.code_hash` sama (undangan terkait `accepted_at is null`, `expires_at > now()` → insert
      `organization_members (org_id, user_id, email dari auth.users, role)` (on conflict do nothing), set `accepted_at`,
      `accepted_by`, kembalikan org_id.
   3. Bila belum ada organisasi sama sekali dan hash cocok dengan `app_settings.setup_code_hash` yang belum dipakai →
@@ -253,9 +253,12 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   'Kode tidak valid atau sudah kedaluwarsa.'. Kode kosong/terlalu pendek juga dihitung sebagai kegagalan.
 - `create_invitation(p_org_id uuid, p_role text, p_label text) returns table(code text, expires_at timestamptz)`:
   admin saja; role `admin`/`staff`; kode acak dari `gen_random_uuid()` (bawaan PG13+), kedaluwarsa 7 hari; simpan
-  `invitations (org_id, label, role, invited_by, code_hash, expires_at)`. `invitations.email` menjadi nullable, kolom baru
-  `label text`, `expires_at timestamptz not null default now() + interval '7 days'`, `accepted_by uuid`, `code_hash text`.
-  Admin boleh `select`/`delete` undangan organisasinya (sudah ada).
+  `invitations (org_id, label, role, invited_by, expires_at)` + hash di tabel terpisah
+  `public.invitation_codes (invitation_id uuid primary key references invitations on delete cascade, code_hash text unique
+  not null)` — RLS aktif tanpa policy dan **tanpa grant**, jadi hash tidak pernah terkirim ke klien (juga tidak ikut cadangan).
+  `invitations.email` menjadi nullable, kolom baru `label text`, `expires_at timestamptz not null default now() + interval
+  '7 days'`, `accepted_by uuid`. Admin boleh `select`/`delete` undangan organisasinya (sudah ada). Maksimal 20 undangan aktif
+  per organisasi.
 - `set_member_role(p_org_id uuid, p_user_id uuid, p_role text) returns void`: **owner saja**; role owner/admin/staff;
   tolak menurunkan **owner terakhir** ('Tidak dapat mengubah peran pemilik terakhir.'). Policy `members_update` dihapus —
   tidak ada update langsung ke `organization_members`.
@@ -263,6 +266,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 
 ### 6.2 Pembatasan staf (ditegakkan database)
 - `properties`: insert/update/delete **admin saja** (termasuk `payment_info` = rekening di pengingat WhatsApp).
+- `addon_catalog` (daftar harga tambahan): insert/update/delete **admin saja**.
 - `rooms`: staf boleh update kecuali kolom harga (`price_daily/weekly/monthly`) → trigger menolak
   'Hanya pemilik/admin yang dapat mengubah harga kamar.'; insert/delete kamar admin saja.
 - `leases`: staf boleh update (perpanjang, checkout, pindah kamar) **kecuali** `price_per_period`, `deposit_amount`,
@@ -279,7 +283,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   default auth.uid(), changed_at timestamptz not null default now(), old_data jsonb, new_data jsonb)`, indeks
   `(org_id, changed_at desc)`.
 - Trigger AFTER INSERT/UPDATE/DELETE (security definer) pada `payments, invoices, expenses, leases, lease_addons,
-  properties, rooms, tenants, organization_members, invitations` (untuk invitations jangan simpan `code_hash`).
+  properties, rooms, addon_catalog, tenants, organization_members, invitations, organizations`. Lewati bila organisasinya
+  sudah tidak ada (penghapusan berantai oleh operator).
 - RLS: `select` untuk `is_org_admin(org_id)`; **tidak ada** policy insert/update/delete; `grant select` saja ke
   `authenticated`. Tak seorang pun (termasuk pemilik lewat aplikasi) dapat mengubah/menghapus riwayat.
 - Urutan list di klien memakai `orderBy: { column: 'changed_at' }` (tabel ini tidak punya `created_at`).
@@ -294,8 +299,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 
 ### 6.4 Penyimpanan foto
 - Hapus trigger `tenants_delete_ktp` / `expenses_delete_receipt` beserta fungsinya: Supabase versi baru menolak
-  `delete from storage.objects` langsung, sehingga hapus penyewa akan gagal. Aplikasi menghapus file lewat Storage API
-  (`repo.removeFile`) sebelum menghapus baris (penyewa: `ktp_image_path`; pengeluaran sudah dilakukan).
+  `delete from storage.objects` langsung, sehingga hapus penyewa akan gagal. Aplikasi menghapus **baris dulu**, lalu file
+  lewat Storage API (`repo.removeFile`, best-effort + peringatan bila gagal). Urutan ini mencegah foto hilang ketika
+  penghapusan baris ditolak (mis. penyewa masih punya sewa). Berlaku untuk penyewa (`ktp_image_path`) dan pengeluaran
+  (struk); juga hapus foto lama saat foto KTP/struk diganti.
 
 ### 6.5 Cadangan & pindah dari Mode Demo
 - Pengaturan → Data (mode online, owner/admin): **Unduh cadangan lengkap (JSON)** — semua tabel organisasi (kecuali
