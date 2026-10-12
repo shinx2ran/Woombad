@@ -186,16 +186,20 @@ begin
     not has_table_privilege('authenticated', 'public.audit_log', 'INSERT,UPDATE,DELETE'));
   perform zz.chk(p_grp, 'audit_log: only a select policy', '^SELECT:[^,]*is_org_admin\(org_id\)[^,]*$',
     (select string_agg(cmd || ':' || qual, ',') from pg_policies where schemaname = 'public' and tablename = 'audit_log'));
-  -- functions: authenticated may execute exactly the RPCs and policy helpers; anon nothing
+  -- functions: authenticated may execute exactly the RPCs and policy helpers; anon only keepalive()
   perform zz.eq(p_grp, 'functions executable by authenticated', array_to_string(array(select x from unnest(rpc) x order by x), ','),
     (select string_agg(p.oid::regprocedure::text, ',' order by p.oid::regprocedure::text)
        from pg_proc p where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'
         and has_function_privilege('authenticated', p.oid, 'EXECUTE')
         and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')));
-  perform zz.ok(p_grp, 'anon cannot execute any public function', not exists (
-    select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace
-       and has_function_privilege('anon', p.oid, 'EXECUTE')
-       and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')));
+  perform zz.eq(p_grp, 'functions executable by anon: keepalive only', 'keepalive()',
+    (select string_agg(p.oid::regprocedure::text, ',' order by p.oid::regprocedure::text)
+       from pg_proc p where p.pronamespace = 'public'::regnamespace
+        and has_function_privilege('anon', p.oid, 'EXECUTE')
+        and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')));
+  perform zz.ok(p_grp, 'keepalive reads nothing (sql, not security definer)', (
+    select not p.prosecdef and l.lanname = 'sql' and p.provolatile = 's'
+      from pg_proc p join pg_language l on l.oid = p.prolang where p.oid = 'public.keepalive()'::regprocedure));
   perform zz.ok(p_grp, 'set_setup_code: not executable by PUBLIC/anon/authenticated', not (
     has_function_privilege('anon', 'public.set_setup_code(text)', 'EXECUTE')
     or has_function_privilege('authenticated', 'public.set_setup_code(text)', 'EXECUTE')

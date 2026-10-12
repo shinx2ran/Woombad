@@ -23,8 +23,9 @@ Woombad adalah aplikasi web progresif (PWA) untuk mengelola satu atau banyak kos
 | Hosting web (PWA) | GitHub Pages (atau Cloudflare Pages / Vercel / Netlify) | Rp 0 |
 | Scan KTP | tesseract.js di browser | Rp 0 (tanpa API) |
 
-Catatan jujur: paket gratis Supabase **tidak membuat cadangan otomatis**, dan proyek **dijeda jika 7 hari tidak ada
-aktivitas**. Lihat [Perawatan rutin](#perawatan-rutin).
+Catatan jujur: paket gratis Supabase **tidak membuat cadangan otomatis**, dan proyek **dijeda bila sepekan terlalu
+sedikit permintaan ke database**. Untuk itu GitHub Actions memanggil database 3× sehari secara otomatis
+(`.github/workflows/keepalive.yml`). Lihat [Perawatan rutin](#perawatan-rutin).
 
 ## Menjalankan secara lokal
 
@@ -188,7 +189,10 @@ Riwayat perubahan** (pemilik/admin) dan tidak bisa dihapus.
 | Kapan | Apa |
 |---|---|
 | Setiap minggu | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**, simpan di Google Drive atau laptop. Paket gratis Supabase tidak membuat cadangan otomatis. Foto tidak ikut dalam cadangan. |
-| Bila aplikasi tidak bisa memuat data | Proyek Supabase dijeda setelah 7 hari tanpa aktivitas (membuka aplikasi sudah dihitung aktivitas). Buka dashboard Supabase → proyek Woombad → **Restore project**, tunggu beberapa menit. |
+| Otomatis, 3× sehari | GitHub Actions **Keep database awake** memanggil `keepalive()` (hanya membaca jam server, tidak mengubah data) agar proyek gratis tidak dijeda. Tidak perlu apa-apa. |
+| Bila GitHub mengirim email *"Keep database awake" failed* | Proyek kemungkinan dijeda. Buka dashboard Supabase → proyek Woombad → **Resume project**, tunggu beberapa menit. |
+| Bila GitHub mengirim email bahwa jadwal dimatikan | GitHub mematikan jadwal di repo publik setelah 60 hari tanpa commit. Buka repo → **Actions → Keep database awake → Enable workflow**. |
+| Bila aplikasi tidak bisa memuat data | Aplikasi menampilkan penyebabnya. Bila proyek dijeda: dashboard Supabase → proyek Woombad → **Resume project**, tunggu beberapa menit. |
 | Lupa kata sandi | Lihat [di bawah](#lupa-kata-sandi). |
 
 ### Lupa kata sandi
