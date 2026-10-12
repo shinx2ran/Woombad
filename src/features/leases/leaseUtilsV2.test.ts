@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { Invoice, Lease, Room, Tenant } from '../../types/db'
+import type { Invoice, Lease, LeaseAddon, Room, Tenant } from '../../types/db'
 import { buildInvoiceDraft, WARN_PERIOD_TYPE_CHANGED, WARN_PRICE_NOT_SET, type LeaseBillingSummary } from '../../domain/billing'
 import {
+  addonAmountUpdates,
   agreedPriceText,
   appendLeaseNote,
+  applyAddonAmounts,
+  invoicesToPinType,
+  permanentSwitchAddonsAmount,
+  rescaleAddonAmount,
+  rescaledAddonDefaults,
   compareByNextDue,
   compareByRoom,
   compareByTenantName,
@@ -311,6 +317,68 @@ describe('extension with another period type (SPEC 5.2)', () => {
     })
     expect(draft.addons_amount).toBe(310_000)
     expect(draft.total_amount).toBe(2_110_000)
+  })
+})
+
+describe('making a type switch permanent (SPEC 5.2): add-ons and old invoices', () => {
+  const parkir: LeaseAddon = { id: 'a', org_id: 'o', created_at: '', lease_id: 'LH', name: 'Parkir motor', amount: 10_000, billing: 'per_period' }
+  const kasur: LeaseAddon = { id: 'b', org_id: 'o', created_at: '', lease_id: 'LH', name: 'Kasur tambahan', amount: 50_000, billing: 'one_time' }
+
+  it('rescales per-period add-on amounts by the length of one period', () => {
+    expect(rescaleAddonAmount(10_000, 'daily', 'monthly', '2026-10-16')).toBe(310_000)
+    expect(rescaleAddonAmount(10_000, 'daily', 'monthly', '2026-11-16')).toBe(300_000)
+    expect(rescaleAddonAmount(10_000, 'daily', 'weekly', '2026-10-16')).toBe(70_000)
+    expect(rescaleAddonAmount(70_000, 'weekly', 'daily', '2026-10-16')).toBe(10_000)
+    expect(rescaleAddonAmount(310_000, 'monthly', 'daily', '2026-10-01')).toBe(10_000)
+    expect(rescaleAddonAmount(10_000, 'daily', 'daily', '2026-10-16')).toBe(10_000)
+    expect(rescaledAddonDefaults([parkir, kasur], 'daily', 'monthly', '2026-10-16')).toEqual({ a: 310_000 })
+  })
+
+  it('bills the converted add-ons per new period, one_time add-ons only on the first invoice', () => {
+    expect(permanentSwitchAddonsAmount([parkir, kasur], { a: 300_000 }, 1, [dailyInvoice])).toBe(300_000)
+    expect(permanentSwitchAddonsAmount([parkir, kasur], { a: 300_000 }, 2, [dailyInvoice])).toBe(600_000)
+    expect(permanentSwitchAddonsAmount([parkir, kasur], { a: 300_000 }, 1, [])).toBe(350_000)
+    expect(permanentSwitchAddonsAmount([parkir, kasur], { a: 300_000 }, 1, [{ ...dailyInvoice, status: 'void' }])).toBe(350_000)
+    expect(applyAddonAmounts([parkir, kasur], { a: 300_000, b: 1 })).toEqual([{ ...parkir, amount: 300_000 }, kasur])
+    expect(addonAmountUpdates([parkir, kasur], { a: 300_000, b: 1 })).toEqual([{ id: 'a', amount: 300_000 }])
+    expect(addonAmountUpdates([parkir], { a: 10_000 })).toEqual([])
+  })
+
+  it('daily -> monthly made permanent: the next monthly invoice bills the same add-on amount', () => {
+    const amounts = rescaledAddonDefaults([parkir], 'daily', 'monthly', '2026-10-16')
+    const first = buildInvoiceDraft({
+      lease: dailyLease,
+      addons: [parkir],
+      quantity: 1,
+      periodType: 'monthly',
+      pricePerPeriod: 1_800_000,
+      addonsAmount: permanentSwitchAddonsAmount([parkir], amounts, 1, [dailyInvoice]),
+      existingInvoices: [dailyInvoice],
+    })
+    expect(first.addons_amount).toBe(310_000)
+    // after saving: lease switched, add-on row updated, the new invoice stored with period_type monthly
+    const lease: Lease = { ...dailyLease, ...extensionLeasePatch(dailyLease, first, true) }
+    const addons = applyAddonAmounts([parkir], amounts)
+    const saved: Invoice = { ...invoiceInsertFromDraft(dailyLease, first, null), id: 'IH2', ...ts }
+    const second = buildInvoiceDraft({ lease, addons, quantity: 1, existingInvoices: [dailyInvoice, saved] })
+    expect(second.period_type).toBe('monthly')
+    expect(second.period_start).toBe('2026-11-16')
+    expect(second.addons_amount).toBe(310_000)
+    expect(second.warnings).toEqual([])
+  })
+
+  it('pins old invoices with period_type null to the old type only when the type changes', () => {
+    const legacy: Invoice = { ...dailyInvoice, period_type: null }
+    const other: Invoice = { ...dailyInvoice, id: 'X', lease_id: 'OTHER', period_type: null }
+    expect(invoicesToPinType(dailyLease, [legacy, other, { ...dailyInvoice, id: 'IH9' }], 'monthly').map((i) => i.id)).toEqual(['IH1'])
+    expect(invoicesToPinType(dailyLease, [legacy], 'daily')).toEqual([])
+    expect(invoicesToPinType(dailyLease, [legacy], undefined)).toEqual([])
+  })
+
+  it('the following-period preview reads legacy null invoices as the old type', () => {
+    const legacy: Invoice = { ...dailyInvoice, period_type: null }
+    const draft = buildInvoiceDraft({ lease: dailyLease, addons: [], quantity: 1, periodType: 'monthly', pricePerPeriod: 1_800_000, existingInvoices: [legacy] })
+    expect(previewFollowingPeriod(dailyLease, [legacy], draft, true)).toEqual(previewFollowingPeriod(dailyLease, [dailyInvoice], draft, true))
   })
 })
 

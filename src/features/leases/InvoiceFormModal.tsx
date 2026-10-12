@@ -11,8 +11,11 @@ import {
   defaultMakePermanent,
   extensionChangesTerms,
   extensionPriceFor,
+  invoicesToPinType,
+  permanentSwitchAddonsAmount,
   previewFollowingPeriod,
   proRataSuggestion,
+  rescaledAddonDefaults,
   roomPriceFor,
   splitInvoiceNotes,
   sumExtraBreakdown,
@@ -103,6 +106,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const [periodType, setPeriodType] = useState<PeriodType>(lease.period_type)
   const [price, setPrice] = useState(lease.price_per_period)
   const [permanentOverride, setPermanentOverride] = useState<boolean | null>(null)
+  const [addonOverrides, setAddonOverrides] = useState<Record<string, number>>({})
   const [quantity, setQuantity] = useState(1)
   const [untilDate, setUntilDate] = useState('')
   const [custom, setCustom] = useState(false)
@@ -129,6 +133,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     setPeriodType(lease.period_type)
     setPrice(lease.price_per_period)
     setPermanentOverride(null)
+    setAddonOverrides({})
     setQuantity(1)
     setUntilDate('')
     setCustom(false)
@@ -153,6 +158,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     if (t === periodType) return
     setPeriodType(t)
     setPrice(extensionPriceFor(lease, room, t))
+    setAddonOverrides({})
     setUntilDate('')
     setQuantity(1)
     setBaseTouched(false)
@@ -167,7 +173,19 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const standard = roomPriceFor(room, periodType)
   const typeChanged = periodType !== lease.period_type
   const changesTerms = extensionChangesTerms(lease, periodType, price)
-  const permanent = permanentOverride ?? defaultMakePermanent(lease, periodType)
+  // Old invoices with period_type null get pinned on a permanent type switch; staff cannot update invoices (Supabase RLS).
+  const permanentBlocked = typeChanged && !actions.canWriteInvoiceStatus && invoicesToPinType(lease, leaseInvoices, periodType).length > 0
+  const permanent = !permanentBlocked && (permanentOverride ?? defaultMakePermanent(lease, periodType))
+  const makePermanent = changesTerms && permanent
+
+  // A permanent type switch converts the per-period add-ons to the new unit (editable), so later invoices stay consistent.
+  const perPeriodAddons = useMemo(() => addons.filter((a) => a.billing === 'per_period'), [addons])
+  const rescaleAddons = makePermanent && typeChanged && perPeriodAddons.length > 0
+  const addonAmounts = useMemo<Record<string, number>>(() => {
+    if (!rescaleAddons || !nextBounds) return {}
+    return { ...rescaledAddonDefaults(addons, lease.period_type, periodType, nextBounds.period_start), ...addonOverrides }
+  }, [rescaleAddons, nextBounds, addons, lease.period_type, periodType, addonOverrides])
+  const addonsAmount = rescaleAddons ? permanentSwitchAddonsAmount(addons, addonAmounts, custom ? 1 : quantity, leaseInvoices) : undefined
 
   // Pro-rata suggestion for the custom period against the full next period (SPEC 2b.10 'tambah 2 minggu saja').
   const proRata = useMemo(
@@ -208,6 +226,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         pricePerPeriod: price,
         periodEnd: custom && customEnd ? customEnd : undefined,
         baseAmount: custom ? baseAmount : undefined,
+        addonsAmount,
         extraAmount,
         discountAmount: discount,
         existingInvoices: leaseInvoices,
@@ -217,18 +236,17 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     } catch (err) {
       return { draft: null, error: err instanceof Error ? err.message : 'Tidak dapat menghitung tagihan.' }
     }
-  }, [lease, addons, quantity, periodType, price, custom, customEnd, baseAmount, extraAmount, discount, leaseInvoices, orgInvoices])
+  }, [lease, addons, quantity, periodType, price, custom, customEnd, baseAmount, addonsAmount, extraAmount, discount, leaseInvoices, orgInvoices])
 
   const following = useMemo(
-    () => (preview.draft ? previewFollowingPeriod(lease, leaseInvoices, preview.draft, changesTerms && permanent) : null),
-    [preview.draft, lease, leaseInvoices, changesTerms, permanent],
+    () => (preview.draft ? previewFollowingPeriod(lease, leaseInvoices, preview.draft, makePermanent) : null),
+    [preview.draft, lease, leaseInvoices, makePermanent],
   )
 
   const submit = async () => {
     setTouched(true)
     if (!preview.draft || priceError) return
     setSaving(true)
-    const makePermanent = changesTerms && permanent
     try {
       const invoice = await actions.issueInvoice({
         lease,
@@ -239,6 +257,8 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         makePermanent,
         periodEnd: custom && customEnd ? customEnd : undefined,
         baseAmount: custom ? baseAmount : undefined,
+        addonsAmount,
+        addonAmounts: rescaleAddons ? addonAmounts : undefined,
         extraAmount,
         discountAmount: discount,
         notes: composeInvoiceNotes(parts, text),
@@ -292,16 +312,42 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         />
         {changesTerms && (
           <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
-            <input type="checkbox" className="mt-0.5" checked={permanent} onChange={(e) => setPermanentOverride(e.target.checked)} aria-label="Jadikan jenis/harga tetap sewa ini" />
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={permanent}
+              disabled={permanentBlocked}
+              onChange={(e) => setPermanentOverride(e.target.checked)}
+              aria-label="Jadikan jenis/harga tetap sewa ini"
+            />
             <span>
               <span className="block font-medium text-slate-900">Jadikan jenis/harga tetap sewa ini</span>
               <span className="block text-xs text-slate-500">
-                {permanent
-                  ? `Sewa menjadi ${PERIOD_TYPE_LABEL[periodType]} ${formatRupiah(price)} / ${unit}; catatan otomatis ditambahkan.`
-                  : `Hanya tagihan ini; sewa tetap ${PERIOD_TYPE_LABEL[lease.period_type]} ${formatRupiah(lease.price_per_period)} / ${PERIOD_UNIT_LABEL[lease.period_type]}.`}
+                {permanentBlocked
+                  ? 'Hanya admin yang dapat mengganti jenis sewa secara tetap. Tagihan ini dibuat sekali saja.'
+                  : permanent
+                    ? `Sewa menjadi ${PERIOD_TYPE_LABEL[periodType]} ${formatRupiah(price)} / ${unit}; catatan otomatis ditambahkan.`
+                    : `Hanya tagihan ini; sewa tetap ${PERIOD_TYPE_LABEL[lease.period_type]} ${formatRupiah(lease.price_per_period)} / ${PERIOD_UNIT_LABEL[lease.period_type]}.`}
               </span>
             </span>
           </label>
+        )}
+        {rescaleAddons && (
+          <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3" data-testid="addon-rescale">
+            <div>
+              <p className="text-sm font-medium text-slate-900">Add-on per periode ikut menjadi per {unit}</p>
+              <p className="text-xs text-slate-500">Dihitung dari tarif per {PERIOD_UNIT_LABEL[lease.period_type]}; sesuaikan bila perlu. Berlaku untuk tagihan ini dan berikutnya.</p>
+            </div>
+            {perPeriodAddons.map((a) => (
+              <MoneyInput
+                key={a.id}
+                label={`${a.name} / ${unit}`}
+                value={addonAmounts[a.id] ?? a.amount}
+                onChange={(v) => setAddonOverrides((prev) => ({ ...prev, [a.id]: v }))}
+                hint={`Sebelumnya ${formatRupiah(a.amount)} / ${PERIOD_UNIT_LABEL[lease.period_type]}`}
+              />
+            ))}
+          </div>
         )}
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={custom} onChange={(e) => setCustom(e.target.checked)} />

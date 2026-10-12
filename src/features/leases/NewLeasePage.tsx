@@ -172,9 +172,11 @@ export function NewLeasePage() {
   const roomState = roomsOfKos.find((r) => r.room.id === roomId)?.availability
 
   // Prefill the agreed price from the room's standard rate for the chosen period type (SPEC 5.4: editable).
+  // No rate for that type -> 0, so the 'harus lebih dari 0' validation asks for a price instead of silently
+  // keeping the previous type's price (a monthly price billed per night).
   useEffect(() => {
-    const p = roomPriceFor(room, periodType)
-    if (p != null) setPrice(p)
+    if (!room) return
+    setPrice(roomPriceFor(room, periodType) ?? 0)
   }, [room, periodType])
 
   const tenantMatches = useMemo(
