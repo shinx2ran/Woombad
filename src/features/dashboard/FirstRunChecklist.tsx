@@ -12,8 +12,8 @@ interface Step {
   done: boolean
 }
 
-/** Friendly onboarding shown while the organisation has no rooms yet. */
-export function FirstRunChecklist({ totals }: { totals: { properties: number; rooms: number; leases: number } }) {
+/** Friendly onboarding shown while the organisation has no rooms yet. Kos and rooms are added by owners/admins (SPEC 6.2). */
+export function FirstRunChecklist({ totals, isAdmin }: { totals: { properties: number; rooms: number; leases: number }; isAdmin: boolean }) {
   const steps: Step[] = [
     {
       title: 'Tambah kos',
@@ -46,7 +46,11 @@ export function FirstRunChecklist({ totals }: { totals: { properties: number; ro
     <Card className="overflow-hidden">
       <div className="bg-gradient-to-br from-brand-700 to-brand-900 px-5 py-6 text-white">
         <h2 className="text-lg font-semibold">Selamat datang di Woombad 👋</h2>
-        <p className="mt-1 text-sm text-brand-100">Tiga langkah singkat dan dashboard ini akan mulai bekerja untuk Anda.</p>
+        <p className="mt-1 text-sm text-brand-100">
+          {isAdmin
+            ? 'Tiga langkah singkat dan dashboard ini akan mulai bekerja untuk Anda.'
+            : 'Kos dan kamar ditambahkan oleh pemilik atau admin. Setelah itu Anda bisa mencatat sewa di sini.'}
+        </p>
       </div>
       <CardBody className="p-0">
         <ol className="divide-y divide-slate-100">
@@ -65,7 +69,7 @@ export function FirstRunChecklist({ totals }: { totals: { properties: number; ro
                 <div className="min-w-0 flex-1">
                   <p className={clsx('text-sm font-semibold', step.done ? 'text-slate-500 line-through' : 'text-slate-900')}>{step.title}</p>
                   <p className="mt-0.5 text-xs text-slate-500">{step.description}</p>
-                  {!step.done && (
+                  {!step.done && (isAdmin || step.to !== '/kos') && (
                     <Link
                       to={step.to}
                       className={clsx(

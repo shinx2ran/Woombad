@@ -21,6 +21,7 @@ import {
   type ExpenseDraft,
   type ExpenseFormErrors,
 } from './expenseUtils'
+import { removeReceiptIfUnused } from './receiptFiles'
 
 export type ExpenseFormMode = 'create' | 'edit' | 'duplicate'
 
@@ -173,20 +174,28 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
       let receiptWarning: string | null = null
       let receiptPath = draft.receipt_path
       if (file) {
+        let uploaded: string | null = null
         try {
           const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-          const uploaded = await repo.uploadFile('receipts', `${newId()}.${ext}`, file, file.type || undefined)
+          uploaded = await repo.uploadFile('receipts', `${newId()}.${ext}`, file, file.type || undefined)
           if (uploaded) {
-            await Promise.all(savedIds.map((id) => repo.update('expenses', id, { receipt_path: uploaded })))
+            const path = uploaded
+            await Promise.all(savedIds.map((id) => repo.update('expenses', id, { receipt_path: path })))
             receiptPath = uploaded
           }
         } catch {
           receiptWarning = 'Pengeluaran tersimpan, tetapi foto struk gagal diunggah. Coba unggah lagi lewat "Ubah".'
+          // Not attached to any row: do not leave the new file behind (several rows may hold it after a partial split).
+          if (uploaded && savedIds.length === 1) await repo.removeFile('receipts', uploaded).catch(() => undefined)
         }
       }
-      // Old file no longer referenced by this row (removed or replaced): best-effort clean-up.
+      // 3) Only after the row no longer points at it (removed or replaced) is the old file deleted (SPEC 6.4).
       if (isEdit && initial.receipt_path && initial.receipt_path !== receiptPath) {
-        await repo.removeFile('receipts', initial.receipt_path).catch(() => undefined)
+        try {
+          await removeReceiptIfUnused(repo, initial.receipt_path)
+        } catch {
+          receiptWarning ??= 'Pengeluaran tersimpan, tetapi foto struk lama gagal dihapus dari penyimpanan.'
+        }
       }
 
       await invalidate('expenses')

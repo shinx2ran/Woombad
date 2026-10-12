@@ -101,9 +101,11 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
   const settlementError = balance.held > 0 ? validateSettlement(settlement, balance.held, rentCapacity) : null
   const dateError = !date ? 'Tanggal checkout wajib diisi.' : date < lease.start_date ? 'Tanggal checkout tidak boleh sebelum tanggal mulai sewa.' : null
   const missing = future.partial.some((i) => !decisions[i.id])
+  // Invoices after the checkout date must be voided or settled, which only owners/admins may do (SPEC 6.2).
+  const needsAdmin = !actions.canEditInvoices && (future.toVoid.length > 0 || future.partial.length > 0)
 
   const submit = async () => {
-    if (dateError || settlementError || missing) return
+    if (dateError || settlementError || missing || needsAdmin) return
     setSaving(true)
     try {
       await actions.checkout({
@@ -133,7 +135,7 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
           <Button variant="ghost" onClick={onClose}>
             Batal
           </Button>
-          <Button onClick={submit} loading={saving} disabled={Boolean(dateError || settlementError) || missing}>
+          <Button onClick={submit} loading={saving} disabled={Boolean(dateError || settlementError) || missing || needsAdmin}>
             Selesaikan checkout
           </Button>
         </>
@@ -147,6 +149,12 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
           {future.partial.length > 0 && <Row label="Tagihan DP setelah checkout → perlu keputusan" value={future.partial.length} />}
           <Row label="Sisa tagihan s/d checkout tetap piutang" value={formatRupiah(rentCapacity)} strong />
         </div>
+        {needsAdmin && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="checkout-needs-admin">
+            Ada tagihan untuk periode setelah tanggal checkout yang harus dibatalkan. Hanya pemilik/admin yang dapat membatalkan tagihan: minta
+            mereka melakukan checkout ini.
+          </p>
+        )}
         {future.toVoid.length > 0 && (
           <p className="text-xs text-slate-500">
             Dibatalkan: {future.toVoid.map((i) => `${i.invoice_number} (${formatDate(i.period_start)})`).join(', ')}.
@@ -157,7 +165,7 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
             Tagihan berikut sudah dibayar sebagian untuk periode <strong>setelah</strong> tanggal checkout. Pilih penyelesaiannya agar tidak ada piutang yang tersisa pada sewa yang sudah selesai.
           </p>
         )}
-        <PartialDecisionList invoices={future.partial} payments={payments} decisions={decisions} onChange={setDecisions} />
+        {!needsAdmin && <PartialDecisionList invoices={future.partial} payments={payments} decisions={decisions} onChange={setDecisions} />}
         {future.paid.length > 0 && (
           <p className="text-xs text-slate-500">
             Sudah lunas untuk periode setelah checkout: {future.paid.map((i) => `${i.invoice_number} (${formatDate(i.period_start)} – ${formatDate(i.period_end)})`).join(', ')}. Bila uangnya
@@ -299,6 +307,8 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
 
   const pickRoom = (id: string) => {
     setRoomId(id)
+    // Staff keep the agreed price; changing it is admin-only (SPEC 6.2).
+    if (!actions.canEditLeaseTerms) return
     const r = rooms.find((x) => x.id === id)
     const p = roomPriceFor(r, lease.period_type)
     if (p != null) setPrice(p)
@@ -356,7 +366,12 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
           }))}
           hint={candidates.length === 0 ? 'Tidak ada kamar lain di kos ini.' : 'Hanya kamar kosong tanpa jadwal bentrok yang bisa dipilih.'}
         />
-        {target && (
+        {target && !actions.canEditLeaseTerms && (
+          <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+            Harga sewa tetap {formatRupiah(lease.price_per_period)} / {PERIOD_UNIT_LABEL[lease.period_type]}. Hanya pemilik/admin yang dapat mengubah harga sewa.
+          </p>
+        )}
+        {target && actions.canEditLeaseTerms && (
           <PriceField
             label={`Harga baru per ${PERIOD_UNIT_LABEL[lease.period_type]} (${PERIOD_TYPE_LABEL[lease.period_type]})`}
             value={price}

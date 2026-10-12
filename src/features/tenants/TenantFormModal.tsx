@@ -5,6 +5,7 @@ import { useOrg } from '../../hooks/useOrg'
 import { useInsert, useInvalidate, useUpdate } from '../../hooks/useTable'
 import { GENDER_LABEL, GENDERS, ID_TYPE_LABEL, ID_TYPES, type Tenant } from '../../types/db'
 import { isValidNik } from '../../domain/ktp'
+import { newId } from '../../lib/ids'
 import { DocumentScanner } from '../scanner/DocumentScanner'
 import {
   applyScanPrefill,
@@ -146,14 +147,23 @@ export function TenantFormModal({
         saved = await insert.mutateAsync(payload)
       }
       if (ktpImage && !isLocalMode && saveKtpPhoto) {
+        const oldPath = tenant?.ktp_image_path ?? null
+        let path: string | null = null
         try {
-          const path = await repo.uploadFile('ktp', `${saved.id}.jpg`, ktpImage, 'image/jpeg')
+          // A fresh name per photo: the old file stays intact until the row points at the new one (SPEC 6.4),
+          // and a cached link to the old photo can never show up as the new one.
+          path = await repo.uploadFile('ktp', `${saved.id}-${newId().slice(0, 8)}.jpg`, ktpImage, 'image/jpeg')
           if (path) {
             saved = await repo.update('tenants', saved.id, { ktp_image_path: path })
             await invalidate('tenants')
           }
         } catch (err) {
+          if (path && saved.ktp_image_path !== path) await repo.removeFile('ktp', path).catch(() => undefined)
+          path = null
           toast.error(`Data penyewa tersimpan, tetapi foto dokumen gagal diunggah: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'}`)
+        }
+        if (path && oldPath && oldPath !== path) {
+          await repo.removeFile('ktp', oldPath).catch(() => toast.error('Foto dokumen lama gagal dihapus dari penyimpanan.'))
         }
       }
       toast.success(isEdit ? 'Data penyewa diperbarui.' : `Penyewa ${saved.full_name} ditambahkan.`)

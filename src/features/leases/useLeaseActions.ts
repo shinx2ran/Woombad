@@ -109,12 +109,17 @@ export function useLeaseActions() {
   const invalidate = useInvalidate()
 
   return useMemo(() => {
+    const isAdmin = role === 'owner' || role === 'admin'
     // In Supabase mode a trigger maintains invoices.status and staff cannot update invoices (RLS);
     // in demo mode the UI must persist the derived status itself (SPEC section 3).
-    const canWriteInvoiceStatus = repo.mode === 'local' || role !== 'staff'
-    // Staff may never edit/void invoices (SPEC section 3); the UI hides those actions and the actions refuse them.
-    const canEditInvoices = role !== 'staff'
-    const STAFF_INVOICE_ERROR = 'Hanya admin yang boleh mengubah tagihan.'
+    const canWriteInvoiceStatus = repo.mode === 'local' || isAdmin
+    // Staff may never edit/void invoices or delete payments (SPEC 3, 6.2); the UI hides those actions and the
+    // actions refuse them before any write, so a multi-step action never stops half-way.
+    const canEditInvoices = isAdmin
+    // Staff may extend, check out and move rooms, but never change a lease's price, deposit or type (SPEC 6.2).
+    const canEditLeaseTerms = isAdmin
+    const STAFF_INVOICE_ERROR = 'Hanya pemilik/admin yang dapat mengubah tagihan.'
+    const STAFF_TERMS_ERROR = 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.'
 
     async function syncInvoiceStatus(invoiceId: string): Promise<void> {
       const inv = await repo.get('invoices', invoiceId)
@@ -145,9 +150,14 @@ export function useLeaseActions() {
     }
 
     async function issueInvoice(input: IssueInvoiceInput): Promise<Invoice> {
+      if (input.makePermanent && !canEditLeaseTerms) {
+        const type = input.periodType ?? input.lease.period_type
+        const price = input.pricePerPeriod ?? input.lease.price_per_period
+        if (type !== input.lease.period_type || price !== input.lease.price_per_period) throw new Error(STAFF_TERMS_ERROR)
+      }
       const typeSwitch = (input.makePermanent ?? false) && input.periodType !== undefined && input.periodType !== input.lease.period_type
       if (typeSwitch && !canWriteInvoiceStatus && invoicesToPinType(input.lease, input.existingInvoices, input.periodType).length > 0) {
-        throw new Error('Hanya admin yang dapat mengganti jenis sewa secara tetap (tagihan lama perlu ditandai jenisnya).')
+        throw new Error('Hanya pemilik/admin yang dapat mengganti jenis sewa secara tetap (tagihan lama perlu ditandai jenisnya).')
       }
       const { invoice, draft } = await insertFromDraft(
         {
@@ -296,6 +306,7 @@ export function useLeaseActions() {
     }
 
     async function deleteInvoice(invoice: Invoice, lease: Lease, leaseInvoices: Invoice[], payments: Payment[]): Promise<void> {
+      if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       if (paidAmountFor(invoice.id, payments) > 0) throw new Error('Tagihan sudah memiliki pembayaran dan tidak dapat dihapus.')
       await repo.remove('invoices', invoice.id)
       await shrinkLeaseEnd(lease, leaseInvoices.filter((i) => i.id !== invoice.id))
@@ -303,6 +314,7 @@ export function useLeaseActions() {
     }
 
     async function deletePayment(payment: Payment): Promise<void> {
+      if (!isAdmin) throw new Error('Hanya pemilik/admin yang dapat menghapus pembayaran.')
       await repo.remove('payments', payment.id)
       if (payment.invoice_id) await syncInvoiceStatus(payment.invoice_id)
       await invalidate('payments', 'invoices')
@@ -411,6 +423,8 @@ export function useLeaseActions() {
     async function cancelLease(input: CancelInput): Promise<void> {
       const { lease, invoices, payments, partialDecisions, settlement, dateISO } = input
       if (!dateISO) throw new Error('Tanggal pembatalan wajib diisi.')
+      const touchesInvoices = invoices.some((inv) => inv.lease_id === lease.id && inv.status !== 'void' && paidAmountFor(inv.id, payments) < inv.total_amount)
+      if (touchesInvoices && !canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       for (const inv of invoices) {
         if (inv.lease_id !== lease.id || inv.status === 'void') continue
         const paid = paidAmountFor(inv.id, payments)
@@ -427,9 +441,12 @@ export function useLeaseActions() {
     }
 
     async function moveRoom(lease: Lease, fromRoom: Room | undefined, toRoom: Room, newPrice: number | null, dateISO: string): Promise<void> {
+      const priceChanged = newPrice !== null && newPrice !== lease.price_per_period
+      if (priceChanged && !canEditLeaseTerms) throw new Error(STAFF_TERMS_ERROR)
       await repo.update('leases', lease.id, {
         room_id: toRoom.id,
-        price_per_period: newPrice ?? lease.price_per_period,
+        // only sent when it changes: staff may move rooms but the database refuses any price change by them
+        ...(priceChanged ? { price_per_period: newPrice } : {}),
         notes: appendMoveNote(lease.notes, fromRoom?.name ?? '?', toRoom.name, dateISO),
       })
       await invalidate('leases')
@@ -452,8 +469,10 @@ export function useLeaseActions() {
     }
 
     return {
+      isAdmin,
       canWriteInvoiceStatus,
       canEditInvoices,
+      canEditLeaseTerms,
       syncInvoiceStatus,
       insertFromDraft,
       issueInvoice,

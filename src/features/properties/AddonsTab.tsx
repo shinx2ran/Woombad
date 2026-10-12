@@ -6,8 +6,11 @@ import { formatRupiah } from '../../lib/format'
 import { ADDON_BILLING_LABEL, type AddonCatalogItem, type Property } from '../../types/db'
 import { AddonFormModal } from './AddonFormModal'
 
-/** Add-on catalogue for this kos plus org-wide entries (property_id null, shown as "Semua kos"). */
-export function AddonsTab({ property }: { property: Property }) {
+/**
+ * Add-on catalogue for this kos plus org-wide entries (property_id null, shown as "Semua kos"). The catalogue is a
+ * price list, so only owners/admins change it (SPEC 6.2); staff see it read-only.
+ */
+export function AddonsTab({ property, isAdmin }: { property: Property; isAdmin: boolean }) {
   const toast = useToast()
   const catalog = useTable('addon_catalog')
   const remove = useRemove('addon_catalog')
@@ -52,13 +55,17 @@ export function AddonsTab({ property }: { property: Property }) {
         <p className="text-sm text-slate-600">
           {items.length} add-on tersedia
         </p>
-        <Button size="sm" className="shrink-0 whitespace-nowrap" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>
-          Tambah Add-on
-        </Button>
+        {isAdmin && (
+          <Button size="sm" className="shrink-0 whitespace-nowrap" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+            Tambah Add-on
+          </Button>
+        )}
       </div>
       <p className="flex items-start gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-        Katalog hanya menjadi pilihan saat membuat sewa. Mengubah atau menghapus add-on di sini tidak mengubah add-on pada sewa yang sudah berjalan.
+        {isAdmin
+          ? 'Katalog hanya menjadi pilihan saat membuat sewa. Mengubah atau menghapus add-on di sini tidak mengubah add-on pada sewa yang sudah berjalan.'
+          : 'Katalog hanya menjadi pilihan saat membuat sewa. Hanya pemilik/admin yang dapat mengubah katalog dan harganya.'}
       </p>
 
       {items.length === 0 ? (
@@ -67,9 +74,11 @@ export function AddonsTab({ property }: { property: Property }) {
           title="Belum ada add-on"
           description="Contoh add-on: kasur tambahan, parkir motor, laundry, kunci cadangan."
           action={
-            <Button icon={<Plus className="h-4 w-4" />} onClick={openCreate}>
-              Tambah Add-on
-            </Button>
+            isAdmin ? (
+              <Button icon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+                Tambah Add-on
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -85,37 +94,39 @@ export function AddonsTab({ property }: { property: Property }) {
                     {a.property_id === null ? <Badge tone="brand">Semua kos</Badge> : <Badge tone="neutral">{property.name}</Badge>}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    icon={<Pencil className="h-4 w-4" />}
-                    aria-label={`Ubah ${a.name}`}
-                    onClick={() => {
-                      setEditing(a)
-                      setFormOpen(true)
-                    }}
-                  >
-                    <span className="hidden sm:inline">Ubah</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-700 hover:bg-red-50"
-                    icon={<Trash2 className="h-4 w-4" />}
-                    aria-label={`Hapus ${a.name}`}
-                    onClick={() => setDeleting(a)}
-                  >
-                    <span className="hidden sm:inline">Hapus</span>
-                  </Button>
-                </div>
+                {isAdmin && (
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<Pencil className="h-4 w-4" />}
+                      aria-label={`Ubah ${a.name}`}
+                      onClick={() => {
+                        setEditing(a)
+                        setFormOpen(true)
+                      }}
+                    >
+                      <span className="hidden sm:inline">Ubah</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-700 hover:bg-red-50"
+                      icon={<Trash2 className="h-4 w-4" />}
+                      aria-label={`Hapus ${a.name}`}
+                      onClick={() => setDeleting(a)}
+                    >
+                      <span className="hidden sm:inline">Hapus</span>
+                    </Button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
         </Card>
       )}
 
-      <AddonFormModal open={formOpen} property={property} addon={editing} onClose={() => setFormOpen(false)} />
+      {isAdmin && <AddonFormModal open={formOpen} property={property} addon={editing} onClose={() => setFormOpen(false)} />}
 
       <ConfirmDialog
         open={deleting !== null}

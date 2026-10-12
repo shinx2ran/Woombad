@@ -4,6 +4,7 @@ import { useOrg } from '../../hooks/useOrg'
 import { OrganizationCard } from './OrganizationCard'
 import { MembersCard } from './MembersCard'
 import { DataCard } from './DataCard'
+import { AuditCard } from './AuditCard'
 import { InstallCard } from './InstallCard'
 import { AboutCard } from './AboutCard'
 
@@ -21,6 +22,7 @@ export function SettingsPage() {
         <DataCard isLocalMode={isLocalMode} isAdmin={isAdmin} />
         <InstallCard />
         <AboutCard onSignOut={() => auth.signOut()} email={session?.user.email ?? null} repoMode={repo.mode} />
+        {isAdmin && <AuditCard isLocalMode={isLocalMode} />}
       </div>
     </>
   )

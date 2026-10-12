@@ -12,7 +12,8 @@ type Tab = 'kamar' | 'addon'
 
 export function PropertyDetailPage() {
   const { propertyId = '' } = useParams()
-  const { properties } = useOrg()
+  const { properties, role } = useOrg()
+  const isAdmin = role === 'owner' || role === 'admin'
   const [searchParams, setSearchParams] = useSearchParams()
   const [editOpen, setEditOpen] = useState(false)
   const property = properties.find((p) => p.id === propertyId) ?? null
@@ -67,9 +68,11 @@ export function PropertyDetailPage() {
           </span>
         }
         actions={
-          <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
-            Ubah kos
-          </Button>
+          isAdmin ? (
+            <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
+              Ubah kos
+            </Button>
+          ) : undefined
         }
       />
 
@@ -96,9 +99,9 @@ export function PropertyDetailPage() {
         ))}
       </div>
 
-      {tab === 'kamar' ? <RoomsTab property={property} /> : <AddonsTab property={property} />}
+      {tab === 'kamar' ? <RoomsTab property={property} isAdmin={isAdmin} /> : <AddonsTab property={property} isAdmin={isAdmin} />}
 
-      <PropertyFormModal open={editOpen} property={property} onClose={() => setEditOpen(false)} />
+      {isAdmin && <PropertyFormModal open={editOpen} property={property} onClose={() => setEditOpen(false)} />}
     </>
   )
 }
