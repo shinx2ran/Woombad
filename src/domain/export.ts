@@ -20,6 +20,7 @@ import {
   LEASE_STATUS_LABEL,
   PAYMENT_KIND_LABEL,
   PAYMENT_METHOD_LABEL,
+  ID_TYPE_LABEL,
 } from '../types/db'
 import type { CashflowPoint, CategoryBreakdown, FinanceSummary, PropertyBreakdown } from './finance'
 import { isLeaseActiveOn, isLeaseReservedOn } from './occupancy'
@@ -391,6 +392,9 @@ export function buildTenantsSheet(ctx: ExportContext, propertyIds?: string[], to
       full_name: t.full_name,
       phone: text(t.phone),
       nik: text(t.nik),
+      id_type: ID_TYPE_LABEL[t.id_type ?? 'ktp'],
+      id_number: text(t.id_type === 'ktp' ? t.nik : t.id_number),
+      nationality: text(t.nationality),
       gender: t.gender === null ? MISSING : GENDER_LABEL[t.gender],
       property: property?.name ?? MISSING,
       room: room?.name ?? MISSING,
@@ -406,6 +410,9 @@ export function buildTenantsSheet(ctx: ExportContext, propertyIds?: string[], to
       { key: 'full_name', header: 'Nama', type: 'string' },
       { key: 'phone', header: 'Telepon', type: 'string' },
       { key: 'nik', header: 'NIK', type: 'string' },
+      { key: 'id_type', header: 'Jenis Identitas', type: 'string' },
+      { key: 'id_number', header: 'Nomor Identitas', type: 'string' },
+      { key: 'nationality', header: 'Kewarganegaraan', type: 'string' },
       { key: 'gender', header: 'Jenis Kelamin', type: 'string' },
       { key: 'property', header: 'Kos', type: 'string' },
       { key: 'room', header: 'Kamar', type: 'string' },
