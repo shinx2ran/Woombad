@@ -17,12 +17,14 @@ import {
 } from '../../domain/billing'
 import { formatRupiah } from '../../lib/format'
 import {
+  addonAmountUpdates,
   allocateAcrossInvoices,
   appendMoveNote,
   cancelledLeaseEndDate,
   extensionLeasePatch,
   futureInvoicesAtCheckout,
   invoiceInsertFromDraft,
+  invoicesToPinType,
   openInvoicesSorted,
   type DepositSettlement,
 } from './leaseUtils'
@@ -39,6 +41,13 @@ export interface IssueInvoiceInput {
   pricePerPeriod?: number
   /** 'Jadikan jenis/harga tetap sewa ini': copy type/price to the lease and append a note */
   makePermanent?: boolean
+  /** add-ons amount override for this invoice (permanentSwitchAddonsAmount when the new type is made permanent) */
+  addonsAmount?: number
+  /**
+   * new per_period add-on amounts by id, expressed per NEW unit; written to lease_addons only when the type
+   * switch is made permanent (see rescaledAddonDefaults)
+   */
+  addonAmounts?: Record<string, number>
   extraAmount?: number
   discountAmount?: number
   notes: string | null
@@ -136,6 +145,10 @@ export function useLeaseActions() {
     }
 
     async function issueInvoice(input: IssueInvoiceInput): Promise<Invoice> {
+      const typeSwitch = (input.makePermanent ?? false) && input.periodType !== undefined && input.periodType !== input.lease.period_type
+      if (typeSwitch && !canWriteInvoiceStatus && invoicesToPinType(input.lease, input.existingInvoices, input.periodType).length > 0) {
+        throw new Error('Hanya admin yang dapat mengganti jenis sewa secara tetap (tagihan lama perlu ditandai jenisnya).')
+      }
       const { invoice, draft } = await insertFromDraft(
         {
           lease: input.lease,
@@ -145,6 +158,7 @@ export function useLeaseActions() {
           baseAmount: input.baseAmount,
           periodType: input.periodType,
           pricePerPeriod: input.pricePerPeriod,
+          addonsAmount: input.addonsAmount,
           extraAmount: input.extraAmount,
           discountAmount: input.discountAmount,
           existingInvoices: input.existingInvoices,
@@ -157,14 +171,26 @@ export function useLeaseActions() {
       const patch = extensionLeasePatch(input.lease, draft, input.makePermanent ?? false)
       if (patch) {
         try {
+          if (patch.period_type !== undefined && patch.period_type !== input.lease.period_type) {
+            // Old invoices storing null mean "the lease's type at the time": pin them before the lease changes.
+            for (const inv of invoicesToPinType(input.lease, input.existingInvoices, patch.period_type)) {
+              await repo.update('invoices', inv.id, { period_type: input.lease.period_type })
+            }
+          }
           await repo.update('leases', input.lease.id, patch)
+          if (patch.period_type !== undefined && patch.period_type !== input.lease.period_type && input.addonAmounts) {
+            // Per-period add-ons follow the new unit, so the next invoices bill them per new period.
+            for (const u of addonAmountUpdates(input.addons, input.addonAmounts)) {
+              await repo.update('lease_addons', u.id, { amount: u.amount })
+            }
+          }
         } catch (err) {
-          await invalidate('invoices', 'leases')
+          await invalidate('invoices', 'leases', 'lease_addons')
           const detail = err instanceof Error ? err.message : 'kesalahan tak dikenal'
           throw new Error(`Tagihan ${invoice.invoice_number} sudah dibuat, tetapi data sewa gagal diperbarui: ${detail}`)
         }
       }
-      await invalidate('invoices', 'leases')
+      await invalidate('invoices', 'leases', 'lease_addons')
       return invoice
     }
 

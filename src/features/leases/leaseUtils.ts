@@ -2,12 +2,13 @@
  * UI-side helpers for the leases module. Money/date rules live in src/domain; these functions only
  * arrange domain results for display (sorting, search, timeline segments, form conventions).
  */
-import type { Invoice, Lease, OrgInsert, Payment, PeriodType, Room, Tenant, Update } from '../../types/db'
+import type { Invoice, Lease, LeaseAddon, OrgInsert, Payment, PeriodType, Room, Tenant, Update } from '../../types/db'
 import { PERIOD_TYPE_LABEL } from '../../types/db'
 import type { BillingState, ExtraBreakdown, InvoiceDraft, LeaseBillingSummary } from '../../domain/billing'
 import {
   activeInvoicesSorted,
   chainAnchor,
+  computeAddonsAmount,
   deriveInvoiceStatus,
   formatExtraBreakdown,
   isPaidUpAndEnding,
@@ -17,7 +18,7 @@ import {
   paidAmountFor,
   parseExtraBreakdown,
 } from '../../domain/billing'
-import { addDaysISO, daysBetween } from '../../domain/period'
+import { addDaysISO, daysBetween, periodEnd } from '../../domain/period'
 import { compareRoomNames, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
 import { formatDate, formatRupiah } from '../../lib/format'
 
@@ -556,7 +557,8 @@ export interface FollowingPeriodPreview {
 export function previewFollowingPeriod(lease: Lease, invoices: Invoice[], draft: InvoiceDraft, makePermanent: boolean): FollowingPeriodPreview | null {
   const after: Lease = { ...lease, ...(extensionLeasePatch(lease, draft, makePermanent) ?? {}) }
   const pseudo: Invoice = { ...invoiceInsertFromDraft(lease, draft, null), id: '__draft__', org_id: lease.org_id, created_at: '', updated_at: '' }
-  const all = [...invoices.filter((i) => i.lease_id === lease.id), pseudo]
+  // Old rows with period_type null get pinned to the current type on save (invoicesToPinType); mirror that here.
+  const all = [...invoices.filter((i) => i.lease_id === lease.id).map((i) => (i.period_type == null ? { ...i, period_type: lease.period_type } : i)), pseudo]
   try {
     const chain = chainAnchor(after, all)
     const next = nextPeriodBounds(after, all, 1)
@@ -564,4 +566,57 @@ export function previewFollowingPeriod(lease: Lease, invoices: Invoice[], draft:
   } catch {
     return null
   }
+}
+
+// ---------- add-ons and old invoices when a type switch is made permanent (SPEC 5.2) ----------
+
+/**
+ * Converts a per_period add-on amount from one lease unit to another when the lease switches its period type for
+ * good: amount x (days of one `newType` period starting at `fromISO`) / (days of one `oldType` period starting at
+ * `fromISO`), rounded to whole rupiah. Daily Rp 10.000 -> monthly from 16 Okt (31 nights) -> Rp 310.000; weekly
+ * Rp 70.000 -> daily Rp 10.000; monthly Rp 310.000 from 1 Okt -> daily Rp 10.000. Same type -> unchanged.
+ */
+export function rescaleAddonAmount(amount: number, oldType: PeriodType, newType: PeriodType, fromISO: string): number {
+  if (oldType === newType) return amount
+  const days = (t: PeriodType) => daysBetween(fromISO, periodEnd(fromISO, t, 1)) + 1
+  return Math.round((amount * days(newType)) / days(oldType))
+}
+
+/** Default new amount per per_period add-on (by id) for a permanent switch to `newType` (see rescaleAddonAmount). */
+export function rescaledAddonDefaults(addons: LeaseAddon[], oldType: PeriodType, newType: PeriodType, fromISO: string): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const a of addons) if (a.billing === 'per_period') out[a.id] = rescaleAddonAmount(a.amount, oldType, newType, fromISO)
+  return out
+}
+
+/** `addons` with the per_period amounts replaced by `amounts[id]` (missing ids keep their amount). */
+export function applyAddonAmounts(addons: LeaseAddon[], amounts: Record<string, number>): LeaseAddon[] {
+  return addons.map((a) => (a.billing === 'per_period' && amounts[a.id] !== undefined ? { ...a, amount: amounts[a.id] } : a))
+}
+
+/**
+ * Add-ons amount of an extension whose new type is made permanent: the per_period add-ons are already expressed
+ * per NEW unit (`amounts`), so they are multiplied by the invoice's quantity like a same-type invoice
+ * (computeAddonsAmount); one_time add-ons only when the lease has no non-void invoice yet (as buildInvoiceDraft).
+ */
+export function permanentSwitchAddonsAmount(addons: LeaseAddon[], amounts: Record<string, number>, quantity: number, leaseInvoices: Invoice[]): number {
+  const isFirst = !leaseInvoices.some((i) => i.status !== 'void')
+  return computeAddonsAmount(applyAddonAmounts(addons, amounts), quantity, isFirst)
+}
+
+/** lease_addons rows whose amount changes (per_period only). */
+export function addonAmountUpdates(addons: LeaseAddon[], amounts: Record<string, number>): { id: string; amount: number }[] {
+  return addons
+    .filter((a) => a.billing === 'per_period' && amounts[a.id] !== undefined && amounts[a.id] !== a.amount)
+    .map((a) => ({ id: a.id, amount: amounts[a.id] }))
+}
+
+/**
+ * Invoices of `lease` that store period_type null ('jenis sewa saat itu', SPEC 5.2) and must be pinned to the
+ * lease's CURRENT type before the lease switches type, so '8 malam' does not turn into '8 bulan' and chainAnchor
+ * keeps reading them correctly. Empty when the type does not change.
+ */
+export function invoicesToPinType(lease: Lease, invoices: Invoice[], newType: PeriodType | undefined): Invoice[] {
+  if (newType === undefined || newType === lease.period_type) return []
+  return invoices.filter((i) => i.lease_id === lease.id && i.period_type == null)
 }
