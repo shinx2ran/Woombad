@@ -64,3 +64,28 @@ end $$;
 -- app users cannot run the export
 select zz.ok('app roles', 'authenticated cannot run export_backup', zz.att(zz.id('stranger'), 'select public.export_backup()') like '%permission denied%');
 select zz.ok('app roles', 'owner cannot run export_backup either', zz.att(zz.id('owner'), 'select public.export_backup()') like '%permission denied%');
+
+-- keep-alive: anon's ping writes one heartbeat row, at most once a minute, and can read nothing
+do $$
+declare
+  first_pings bigint;
+  later_pings bigint;
+  read_heartbeat text := 'allowed';
+begin
+  execute 'set local role anon';
+  perform public.keepalive();
+  begin perform 1 from public.keepalive_heartbeat; exception when insufficient_privilege then read_heartbeat := 'denied'; end;
+  execute 'reset role';
+  select pings into first_pings from public.keepalive_heartbeat where id = 1;
+  update public.keepalive_heartbeat set pinged_at = now() - interval '2 minutes' where id = 1;
+  execute 'set local role anon';
+  perform public.keepalive();
+  perform public.keepalive();
+  perform public.keepalive();
+  execute 'reset role';
+  select pings into later_pings from public.keepalive_heartbeat where id = 1;
+  perform zz.ok('keepalive', 'a ping writes the heartbeat row', first_pings >= 1);
+  perform zz.eq('keepalive', 'repeated pings within a minute write once', (first_pings + 1)::text, later_pings::text);
+  perform zz.eq('keepalive', 'anon cannot read the heartbeat', 'denied', read_heartbeat);
+  perform zz.eq('keepalive', 'one heartbeat row only', '1', (select count(*) from public.keepalive_heartbeat)::text);
+end $$;

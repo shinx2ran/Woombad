@@ -159,7 +159,7 @@ create or replace function zz.check_structure(p_grp text) returns void language 
 declare
   t text;
   f text;
-  secret text[] := array['app_settings', 'join_attempts', 'invitation_codes'];
+  secret text[] := array['app_settings', 'join_attempts', 'invitation_codes', 'keepalive_heartbeat'];
   rpc text[] := array['ensure_membership()', 'join_with_code(text)', 'create_invitation(uuid,text,text)',
     'set_member_role(uuid,uuid,text)', 'remove_member(uuid,uuid)', 'recalc_invoice_status(uuid)',
     'is_org_member(uuid)', 'is_org_admin(uuid)', 'is_org_owner(uuid)', 'path_org_id(text)', 'invoice_status_for(bigint,bigint)'];
@@ -209,9 +209,11 @@ begin
     select r.rolcanlogin and not r.rolsuper and not r.rolcreaterole and not r.rolcreatedb and not r.rolbypassrls
            and not r.rolinherit and r.rolconnlimit = 2
       from pg_roles r where r.rolname = 'woombad_backup'));
-  perform zz.ok(p_grp, 'keepalive reads nothing (sql, not security definer)', (
-    select not p.prosecdef and l.lanname = 'sql' and p.provolatile = 's'
-      from pg_proc p join pg_language l on l.oid = p.prolang where p.oid = 'public.keepalive()'::regprocedure));
+  perform zz.ok(p_grp, 'keepalive: security definer with a pinned search_path', (
+    select p.prosecdef and 'search_path=public, pg_temp' = any (p.proconfig)
+      from pg_proc p where p.oid = 'public.keepalive()'::regprocedure));
+  perform zz.ok(p_grp, 'keepalive_heartbeat is not audited', not exists (
+    select 1 from pg_trigger where tgrelid = 'public.keepalive_heartbeat'::regclass and not tgisinternal));
   perform zz.ok(p_grp, 'set_setup_code: not executable by PUBLIC/anon/authenticated', not (
     has_function_privilege('anon', 'public.set_setup_code(text)', 'EXECUTE')
     or has_function_privilege('authenticated', 'public.set_setup_code(text)', 'EXECUTE')
