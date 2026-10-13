@@ -22,6 +22,14 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Safari on iPhone and iPad zooms into a form field whose text is smaller than 16px when it is tapped, and stays
+   zoomed afterwards; 16px text in form fields there prevents that (the @supports test matches only iOS Safari). */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    font-size: 16px;
+  }
+}
+
 /* Native-feeling number inputs on mobile */
 input[type="number"] {
   -moz-appearance: textfield;

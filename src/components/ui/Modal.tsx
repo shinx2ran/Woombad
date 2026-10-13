@@ -1,7 +1,8 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useDirtyWhile } from '../../app/dirtyState'
+import { fitToVisibleArea, revealFocusedField } from './keyboardSafe'
 
 export interface ModalProps {
   open: boolean
@@ -12,9 +13,18 @@ export interface ModalProps {
   size?: 'sm' | 'md' | 'lg'
 }
 
-/** Bottom-sheet on mobile, centered dialog on desktop. An open dialog holds back automatic app updates (dirtyState). */
+/**
+ * Bottom-sheet on mobile, centered dialog on desktop. An open dialog holds back automatic app updates (dirtyState).
+ * While the on-screen keyboard is open the dialog fits above it and keeps the field being typed in visible (keyboardSafe).
+ */
 export function Modal({ open, onClose, title, children, footer, size = 'md' }: ModalProps) {
   useDirtyWhile(open)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open || !overlayRef.current) return
+    return fitToVisibleArea(overlayRef.current, bodyRef.current)
+  }, [open])
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -30,11 +40,11 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
   if (!open) return null
   const widths = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl' }
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+    <div ref={overlayRef} className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
       <div
         className={clsx(
-          'relative flex max-h-[92vh] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl',
+          'relative flex max-h-[92%] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl',
           widths[size],
         )}
       >
@@ -44,7 +54,14 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
+        <div
+          ref={bodyRef}
+          className="flex-1 overflow-y-auto overscroll-contain px-4 py-4"
+          // a field tapped while the keyboard is already open (or half hidden at the bottom) is brought into view
+          onFocus={() => requestAnimationFrame(() => bodyRef.current && revealFocusedField(bodyRef.current))}
+        >
+          {children}
+        </div>
         {footer && <div className="flex justify-end gap-2 border-t border-slate-100 px-4 py-3">{footer}</div>}
       </div>
     </div>
