@@ -190,7 +190,7 @@ Riwayat perubahan** (pemilik/admin) dan tidak bisa dihapus.
 |---|---|
 | Otomatis, setiap Minggu malam | GitHub Actions **Weekly encrypted backup** menyimpan salinan terenkripsi seluruh data (90 hari). Lihat [Cadangan otomatis](#cadangan-otomatis). |
 | Sebulan sekali | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**, simpan sendiri di Google Drive atau laptop. Aplikasi mengingatkan setelah 30 hari. Foto tidak ikut dalam cadangan. |
-| Otomatis, 3× sehari | GitHub Actions **Keep database awake** memanggil `keepalive()` (hanya membaca jam server, tidak mengubah data) agar proyek gratis tidak dijeda. Tidak perlu apa-apa. |
+| Otomatis, 3× sehari | GitHub Actions **Keep database awake** memanggil `keepalive()`, yang memperbarui satu baris penanda (bukan data kos, tidak masuk Riwayat perubahan) agar proyek gratis tidak dijeda. Tidak perlu apa-apa. |
 | Bila GitHub mengirim email *"Keep database awake" failed* | Proyek kemungkinan dijeda. Buka dashboard Supabase → proyek Woombad → **Resume project**, tunggu beberapa menit. |
 | Bila GitHub mengirim email bahwa jadwal dimatikan | GitHub mematikan jadwal di repo publik setelah 60 hari tanpa commit. Buka repo → **Actions →** *Keep database awake* dan *Weekly encrypted backup* **→ Enable workflow**. |
 | Bila GitHub mengirim email *"Weekly encrypted backup" failed* | Biasanya proyek dijeda (lihat baris di atas) atau rahasia `BACKUP_DB_PASSWORD` belum diisi. |

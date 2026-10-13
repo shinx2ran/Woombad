@@ -931,12 +931,25 @@ create policy storage_org_delete on storage.objects for delete
   using (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)));
 
 -- ---------- keep-alive ----------
--- Free Supabase projects are paused after about a week with too few database requests. A scheduled GitHub
--- Action (.github/workflows/keepalive.yml) calls this a few times a day. It reads no table and changes nothing.
+-- Free Supabase projects are paused after about a week with too little database activity. A scheduled GitHub
+-- Action (.github/workflows/keepalive.yml) calls keepalive() a few times a day. Since 2026 read-only pings are
+-- reported not to count any more, so it updates one heartbeat row (at most once a minute, so calling it in a loop
+-- changes nothing). The row is not readable through the API and not part of the change history.
+create table if not exists public.keepalive_heartbeat (
+  id int primary key default 1 check (id = 1),
+  pinged_at timestamptz not null default now(),
+  pings bigint not null default 0
+);
+alter table public.keepalive_heartbeat enable row level security;
+
 create or replace function public.keepalive()
-returns timestamptz language sql stable set search_path = public, pg_temp as $$
-  select now();
-$$;
+returns timestamptz language plpgsql volatile security definer set search_path = public, pg_temp as $$
+begin
+  insert into public.keepalive_heartbeat as h (id, pinged_at, pings) values (1, now(), 1)
+  on conflict (id) do update set pinged_at = now(), pings = h.pings + 1
+  where h.pinged_at < now() - interval '1 minute';
+  return now();
+end $$;
 
 -- ---------- scheduled backups ----------
 -- A weekly GitHub Action (.github/workflows/backup.yml) signs in as woombad_backup, a login role that can do one

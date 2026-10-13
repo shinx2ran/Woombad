@@ -1,8 +1,8 @@
 name: Keep database awake
 
-# Free Supabase projects are paused after about a week with too few database requests. This calls
-# public.keepalive() (returns the server time; reads no table, changes nothing) three times a day with the
-# public key from .env.production. If the project is paused anyway, the job fails and GitHub emails the
+# Free Supabase projects are paused after about a week with too little database activity. This calls
+# public.keepalive() three times a day with the public key from .env.production; it updates one heartbeat row
+# (read-only pings are reported not to count since 2026) and returns the server time. If the project is paused anyway, the job fails and GitHub emails the
 # repository owner: open the Supabase dashboard and press "Resume project".
 # Note: GitHub turns off scheduled workflows in a public repository after 60 days without commits (it emails a
 # warning first); press "Enable workflow" under Actions -> Keep database awake to switch it back on.

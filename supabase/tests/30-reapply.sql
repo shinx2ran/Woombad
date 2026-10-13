@@ -24,7 +24,7 @@ declare
   r record;
   cnt bigint;
 begin
-  perform zz.ok('reapply', 'there was data to keep', (select count(*) = 0 from zz.snap_counts s where s.n = 0 and s.t <> 'join_attempts'));
+  perform zz.ok('reapply', 'there was data to keep', (select count(*) = 0 from zz.snap_counts s where s.n = 0 and s.t not in ('join_attempts', 'keepalive_heartbeat')));
   for r in select * from zz.snap_counts order by t loop
     execute format('select count(*) from public.%I', r.t) into cnt;
     perform zz.eq('reapply', 'rows kept in ' || r.t, r.n::text, cnt::text);
