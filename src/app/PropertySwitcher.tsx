@@ -7,13 +7,13 @@ export function PropertySwitcher({ className }: { className?: string }) {
   const { properties, selectedPropertyId, setSelectedPropertyId } = useOrg()
   if (properties.length <= 1) return null
   return (
-    <label className={clsx('relative inline-flex items-center', className)} data-dirty-ignore>
+    <label className={clsx('relative inline-flex min-w-0 items-center', className)} data-dirty-ignore>
       <Building2 className="pointer-events-none absolute left-2.5 h-4 w-4 text-slate-500" aria-hidden />
       <select
         aria-label="Pilih kos"
         value={selectedPropertyId}
         onChange={(e) => setSelectedPropertyId(e.target.value)}
-        className="h-9 appearance-none rounded-lg border border-slate-300 bg-white pl-8 pr-8 text-sm font-medium text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+        className="h-9 min-w-0 truncate appearance-none rounded-lg border border-slate-300 bg-white pl-8 pr-8 text-sm font-medium text-slate-800 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
       >
         <option value="all">Semua kos</option>
         {properties.map((p) => (

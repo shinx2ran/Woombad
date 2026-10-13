@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen } from '@testing-library/react'
-import { fitToVisibleArea, isTextEntry, revealDelta, revealFocusedField, visibleArea, REVEAL_MARGIN } from './keyboardSafe'
+import { COMPACT_HEIGHT, fitToVisibleArea, isTextEntry, revealDelta, revealFocusedField, visibleArea, REVEAL_MARGIN } from './keyboardSafe'
 import { Modal } from './Modal'
 
 /** A stand-in for window.visualViewport that tests can resize like an opening keyboard. */
@@ -48,8 +48,16 @@ describe('revealDelta', () => {
   it('scrolls up to a field above the view, keeping the margin over it', () => {
     expect(revealDelta(box, { top: 20, bottom: 60 })).toBe(20 - (100 + REVEAL_MARGIN))
   })
-  it('shows the top of a field taller than the view', () => {
-    expect(revealDelta(box, { top: 300, bottom: 700 })).toBe(300 - (100 + REVEAL_MARGIN))
+  it('shows the top of a field taller than the view, flush with the top', () => {
+    expect(revealDelta(box, { top: 300, bottom: 700 })).toBe(300 - 100)
+  })
+  it('shrinks the margin so a field that fits a short view is shown whole', () => {
+    // a 40px input in a 43px scroller (phone held sideways): 1.5px on either side
+    const short = { top: 0, bottom: 43 }
+    const delta = revealDelta(short, { top: 300, bottom: 340 })
+    expect(delta).toBe(298.5)
+    expect(300 - delta).toBeGreaterThanOrEqual(short.top)
+    expect(340 - delta).toBeLessThanOrEqual(short.bottom)
   })
 })
 
@@ -76,21 +84,31 @@ describe('revealFocusedField', () => {
   afterEach(() => {
     document.body.innerHTML = ''
   })
-  it('scrolls the container to the focused field only', () => {
-    document.body.innerHTML = '<div id="c"><textarea id="t"></textarea></div><input id="outside">'
+  it('scrolls the nearest scrolling container to the focused field only', () => {
+    document.body.innerHTML = '<div id="root"><div id="c" style="overflow-y:auto"><div><textarea id="t"></textarea></div></div></div><input id="outside">'
+    const root = document.getElementById('root')!
     const c = document.getElementById('c')!
     const t = document.getElementById('t')!
     c.getBoundingClientRect = () => rect(0, 300)
     t.getBoundingClientRect = () => rect(400, 480)
-    revealFocusedField(c)
+    revealFocusedField(root)
     expect(c.scrollTop).toBe(0) // nothing focused yet
     document.getElementById('outside')!.focus()
-    revealFocusedField(c)
-    expect(c.scrollTop).toBe(0) // focus is outside the container
+    revealFocusedField(root)
+    expect(c.scrollTop).toBe(0) // focus is outside the dialog
     t.focus()
-    revealFocusedField(c)
+    revealFocusedField(root)
     // jsdom keeps scrollTop as set; the field's bottom ends REVEAL_MARGIN above the container's bottom
     expect(c.scrollTop).toBe(480 - (300 - REVEAL_MARGIN))
+  })
+  it('does nothing when nothing inside the dialog scrolls', () => {
+    document.body.innerHTML = '<div id="root"><div id="c"><input id="i"></div></div>'
+    const c = document.getElementById('c')!
+    const input = document.getElementById('i')!
+    input.getBoundingClientRect = () => rect(900, 940)
+    input.focus()
+    revealFocusedField(document.getElementById('root')!)
+    expect(c.scrollTop).toBe(0)
   })
 })
 
@@ -98,7 +116,7 @@ describe('fitToVisibleArea', () => {
   it('pins the overlay to the visible part of the page and lets go when stopped', () => {
     const vv = new FakeViewport()
     const overlay = document.createElement('div')
-    const stop = fitToVisibleArea(overlay, null, vv as unknown as VisualViewport)
+    const stop = fitToVisibleArea(overlay, vv as unknown as VisualViewport)
     expect(overlay.style.top).toBe('0px')
     expect(overlay.style.height).toBe('800px')
     expect(overlay.style.bottom).toBe('auto')
@@ -112,28 +130,43 @@ describe('fitToVisibleArea', () => {
     expect(overlay.style.top).toBe('')
     expect(overlay.style.height).toBe('')
     vv.scale = 1
+    vv.resize(200) // sideways with the keyboard open: compact
+    expect(overlay.hasAttribute('data-compact')).toBe(true)
     stop()
     vv.resize(300)
     expect(overlay.style.top).toBe('')
     expect(overlay.style.height).toBe('')
     expect(overlay.style.bottom).toBe('')
+    expect(overlay.hasAttribute('data-compact')).toBe(false)
+  })
+
+  it('is compact only while the visible area is short', () => {
+    const vv = new FakeViewport()
+    const overlay = document.createElement('div')
+    const stop = fitToVisibleArea(overlay, vv as unknown as VisualViewport)
+    expect(overlay.hasAttribute('data-compact')).toBe(false)
+    vv.resize(COMPACT_HEIGHT - 1)
+    expect(overlay.hasAttribute('data-compact')).toBe(true)
+    vv.resize(COMPACT_HEIGHT)
+    expect(overlay.hasAttribute('data-compact')).toBe(false)
+    stop()
   })
 
   it('is a no-op without visualViewport', () => {
     const overlay = document.createElement('div')
-    fitToVisibleArea(overlay, null, null)()
+    fitToVisibleArea(overlay, null)()
     expect(overlay.getAttribute('style')).toBeNull()
   })
 
   it('reveals the focused field when the keyboard changes the visible height, not when the view only pans', () => {
     const vv = new FakeViewport()
-    document.body.innerHTML = '<div id="o"><div id="s"><input id="i"></div></div>'
+    document.body.innerHTML = '<div id="o"><div id="s" style="overflow-y:auto"><input id="i"></div></div>'
     const scroller = document.getElementById('s')!
     const input = document.getElementById('i') as HTMLInputElement
     let scrollerBottom = 700
     scroller.getBoundingClientRect = () => rect(50, scrollerBottom)
     input.getBoundingClientRect = () => rect(600 - scroller.scrollTop, 640 - scroller.scrollTop)
-    const stop = fitToVisibleArea(document.getElementById('o')!, scroller, vv as unknown as VisualViewport)
+    const stop = fitToVisibleArea(document.getElementById('o')!, vv as unknown as VisualViewport)
     input.focus()
     scrollerBottom = 350 // keyboard opens; the sheet shrinks with the overlay
     vv.resize(400)
@@ -172,8 +205,19 @@ describe('Modal with the on-screen keyboard', () => {
       </Modal>,
     )
     expect(screen.queryByRole('dialog')).toBeNull()
-    // listeners are gone: a later resize does not throw on the unmounted overlay
-    act(() => vv.resize(800))
+  })
+
+  it('stops listening once closed', () => {
+    const vv = new FakeViewport()
+    const remove = vi.spyOn(vv, 'removeEventListener')
+    vi.stubGlobal('visualViewport', vv)
+    const { unmount } = render(
+      <Modal open onClose={() => {}} title="Tambah Kamar">
+        <input aria-label="Nama kamar" />
+      </Modal>,
+    )
+    unmount()
+    expect(remove.mock.calls.map(([type]) => type).sort()).toEqual(['resize', 'scroll'])
   })
 
   it('renders as before where visualViewport is missing', () => {

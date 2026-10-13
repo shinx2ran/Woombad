@@ -23,6 +23,12 @@ export function visibleArea(vv: ViewportLike | null | undefined): VisibleArea | 
   return { top: Math.max(0, Math.round(vv.offsetTop)), height: Math.round(vv.height) }
 }
 
+/**
+ * Below this visible height (a phone held sideways with the keyboard open) a fixed title bar and button row would
+ * leave almost no room for the field, so the whole sheet scrolls as one instead (`data-compact` on the overlay).
+ */
+export const COMPACT_HEIGHT = 320
+
 interface Span {
   top: number
   bottom: number
@@ -32,14 +38,16 @@ interface Span {
 export const REVEAL_MARGIN = 24
 
 /**
- * How far to scroll `container` (by scrollTop) so that `field` sits inside it with `margin` to spare; 0 when it
- * already does. A field taller than the room left is aligned by its top edge, where typing starts.
+ * How far to scroll `container` (by scrollTop) so that `field` sits inside it; 0 when it already does. The margin
+ * shrinks when space is short so a field that fits is always shown whole; a field taller than the container is
+ * aligned by its top edge, where typing starts.
  */
 export function revealDelta(container: Span, field: Span, margin: number = REVEAL_MARGIN): number {
-  const room = container.bottom - container.top - 2 * margin
-  const top = field.top - (container.top + margin)
-  if (field.bottom - field.top > room) return top
-  const bottom = field.bottom - (container.bottom - margin)
+  const space = container.bottom - container.top - (field.bottom - field.top)
+  const m = Math.max(0, Math.min(margin, space / 2))
+  const top = field.top - (container.top + m)
+  if (space < 0) return top
+  const bottom = field.bottom - (container.bottom - m)
   if (bottom > 0) return bottom
   if (top < 0) return top
   return 0
@@ -53,20 +61,32 @@ export function isTextEntry(el: Element | null): el is HTMLElement {
   return el instanceof HTMLElement && el.isContentEditable === true
 }
 
-/** Scrolls `container` so the focused field inside it is in view. */
-export function revealFocusedField(container: HTMLElement): void {
+/** The nearest element between `el` and `root` (inclusive) that scrolls vertically. */
+function scrollParent(el: HTMLElement, root: HTMLElement): HTMLElement | null {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY
+    if (overflow === 'auto' || overflow === 'scroll') return node
+    if (node === root) break
+  }
+  return null
+}
+
+/** Scrolls the focused field inside `root` into the view of whatever scrolls it (the dialog body, or the whole sheet). */
+export function revealFocusedField(root: HTMLElement): void {
   const el = document.activeElement
-  if (!isTextEntry(el) || !container.contains(el)) return
-  const delta = revealDelta(container.getBoundingClientRect(), el.getBoundingClientRect())
-  if (delta !== 0) container.scrollTop += delta
+  if (!isTextEntry(el) || !root.contains(el)) return
+  const scroller = scrollParent(el, root)
+  if (!scroller) return
+  const delta = revealDelta(scroller.getBoundingClientRect(), el.getBoundingClientRect())
+  if (delta !== 0) scroller.scrollTop += delta
 }
 
 /**
- * While `active`, pins `overlay` (a position: fixed element) to the visible part of the page and keeps the focused
- * field inside `scroller` in view whenever that area changes size, i.e. when the keyboard opens or closes.
- * Returns the cleanup function.
+ * While running, pins `overlay` (a position: fixed element) to the visible part of the page, marks it
+ * `data-compact` when that part is short, and keeps the focused field in view whenever the area changes size,
+ * i.e. when the keyboard opens or closes. Returns the function that stops it.
  */
-export function fitToVisibleArea(overlay: HTMLElement, scroller: HTMLElement | null, vv: VisualViewport | null | undefined = window.visualViewport): () => void {
+export function fitToVisibleArea(overlay: HTMLElement, vv: VisualViewport | null | undefined = window.visualViewport): () => void {
   if (!vv) return () => {}
   let lastHeight = -1
   const fit = () => {
@@ -74,11 +94,12 @@ export function fitToVisibleArea(overlay: HTMLElement, scroller: HTMLElement | n
     overlay.style.top = area ? `${area.top}px` : ''
     overlay.style.height = area ? `${area.height}px` : ''
     overlay.style.bottom = area ? 'auto' : ''
+    overlay.toggleAttribute('data-compact', !!area && area.height < COMPACT_HEIGHT)
     // only on a size change: panning the page must not pull the sheet's scroll position around
     const height = area?.height ?? -1
     if (height !== lastHeight) {
       lastHeight = height
-      if (scroller) revealFocusedField(scroller)
+      revealFocusedField(overlay)
     }
   }
   fit()
@@ -90,5 +111,6 @@ export function fitToVisibleArea(overlay: HTMLElement, scroller: HTMLElement | n
     overlay.style.top = ''
     overlay.style.height = ''
     overlay.style.bottom = ''
+    overlay.removeAttribute('data-compact')
   }
 }

@@ -94,7 +94,8 @@ export function AppShell() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700 text-white text-sm font-bold">W</div>
               <span className="text-sm font-semibold text-slate-900">Woombad</span>
             </div>
-            <div className="flex flex-1 items-center justify-end gap-2">
+            {/* min-w-0: a long kos name is cut short instead of pushing the logout button off the screen */}
+            <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
               <PropertySwitcher />
               <button type="button" onClick={signOut} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 md:hidden" aria-label="Keluar">
                 <LogOut className="h-5 w-5" />
