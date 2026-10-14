@@ -384,10 +384,15 @@ create table if not exists public.properties (
   notes text,
   -- bank account / QRIS instructions inserted into WhatsApp reminders
   payment_info text,
+  -- storage path of the kos logo (bucket logos), shown on invoices
+  logo_path text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (org_id, id)
 );
+-- storage path of the kos logo (bucket logos), shown on invoices (added after v0.3; the create above is a
+-- no-op on an existing installation)
+alter table public.properties add column if not exists logo_path text;
 
 create table if not exists public.rooms (
   id uuid primary key default gen_random_uuid(),
@@ -900,13 +905,15 @@ begin
   end loop;
 end $$;
 
--- ---------- Storage (KTP photos & receipts) ----------
--- Object paths are "<org_id>/<file>"; access is granted to members of that org.
+-- ---------- Storage (KTP photos, receipts & kos logos) ----------
+-- Object paths are "<org_id>/<file>"; access is granted to members of that org. The logos bucket holds the
+-- kos logo shown on digital invoices (properties.logo_path); small images only (1 MB).
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('ktp', 'ktp', false, 5242880, array['image/jpeg', 'image/png', 'image/webp']),
-  ('receipts', 'receipts', false, 5242880, array['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+  ('receipts', 'receipts', false, 5242880, array['image/jpeg', 'image/png', 'image/webp', 'application/pdf']),
+  ('logos', 'logos', false, 1048576, array['image/png', 'image/jpeg', 'image/webp'])
 on conflict (id) do nothing;
 
 create or replace function public.path_org_id(p_name text)
@@ -919,16 +926,26 @@ end $$;
 
 drop policy if exists storage_org_select on storage.objects;
 create policy storage_org_select on storage.objects for select
-  using (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)));
+  using (bucket_id in ('ktp', 'receipts', 'logos') and public.is_org_member(public.path_org_id(name)));
+-- Writing a logo follows the kos itself (admin only, SPEC 6.2); every member may read it for the invoice image.
 drop policy if exists storage_org_insert on storage.objects;
 create policy storage_org_insert on storage.objects for insert
-  with check (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)));
+  with check (
+    (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)))
+    or (bucket_id = 'logos' and public.is_org_admin(public.path_org_id(name)))
+  );
 drop policy if exists storage_org_update on storage.objects;
 create policy storage_org_update on storage.objects for update
-  using (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)));
+  using (
+    (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)))
+    or (bucket_id = 'logos' and public.is_org_admin(public.path_org_id(name)))
+  );
 drop policy if exists storage_org_delete on storage.objects;
 create policy storage_org_delete on storage.objects for delete
-  using (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)));
+  using (
+    (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)))
+    or (bucket_id = 'logos' and public.is_org_admin(public.path_org_id(name)))
+  );
 
 -- ---------- keep-alive ----------
 -- Free Supabase projects are paused after about a week with too little database activity. A scheduled GitHub

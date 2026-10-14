@@ -26,8 +26,8 @@ const ts = { org_id: 'org', created_at: '2026-01-01T00:00:00Z', updated_at: '202
 const TODAY = '2026-10-11'
 
 const properties: Property[] = [
-  { id: 'pA', name: 'Kos Melati', address: null, notes: null, payment_info: null, ...ts },
-  { id: 'pB', name: 'Kos Anggrek', address: null, notes: null, payment_info: null, ...ts },
+  { id: 'pA', name: 'Kos Melati', address: null, notes: null, payment_info: null, logo_path: null, ...ts },
+  { id: 'pB', name: 'Kos Anggrek', address: null, notes: null, payment_info: null, logo_path: null, ...ts },
 ]
 const room = (id: string, property_id: string, name: string, status: Room['status'] = 'active'): Room => ({
   id,

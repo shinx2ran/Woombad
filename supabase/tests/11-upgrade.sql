@@ -19,6 +19,9 @@ begin
     (select string_agg(amount || ':' || created_by, ',' order by amount) from public.payments));
   perform zz.eq('upgrade-data', 'invoice status kept', 'paid', (select status from public.invoices));
   perform zz.eq('upgrade-data', 'storage objects kept', '2', (select count(*)::text from storage.objects));
+  perform zz.ok('upgrade-data', 'properties.logo_path added, empty for the old kos', (select logo_path is null from public.properties));
+  perform zz.eq('upgrade-data', 'owner can set a kos logo on the old kos', 'ok:1', zz.att(o, format('update public.properties set logo_path = %L', org || '/logo.png')));
+  perform zz.eq('upgrade-data', 'owner uploads into the new logos bucket', 'ok:1', zz.att(o, format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'logos', org || '/logo.png')));
   perform zz.eq('upgrade-data', 'no history for old rows', '0', (select count(*)::text from public.audit_log));
   -- v0.2 email invitations
   perform zz.eq('upgrade-invitations', 'accepted email invitations kept', '2', (select count(*)::text from public.invitations where accepted_at is not null and email is not null));

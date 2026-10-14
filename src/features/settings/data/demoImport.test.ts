@@ -35,7 +35,7 @@ function demoBackup(): ParsedBackup {
 }
 
 const ts = { org_id: ORG, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }
-const property = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ id, name, address: null, notes: null, payment_info: null, ...ts, ...extra })
+const property = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ id, name, address: null, notes: null, payment_info: null, logo_path: null, ...ts, ...extra })
 const room = (id: string, property_id: string, name = 'A1') => ({ id, property_id, name, floor: null, price_daily: null, price_weekly: null, price_monthly: 1_000_000, status: 'active', notes: null, ...ts })
 const tenant = (id: string, property_id: string | null, extra: Record<string, unknown> = {}) => ({ id, property_id, full_name: `Penyewa ${id.slice(-2)}`, id_type: 'ktp', ...ts, ...extra })
 const lease = (id: string, property_id: string, room_id: string, tenant_id: string, extra: Record<string, unknown> = {}) => ({

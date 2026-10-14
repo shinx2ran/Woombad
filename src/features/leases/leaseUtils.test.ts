@@ -1,18 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import type { Invoice, Lease, Payment, Room } from '../../types/db'
+import type { Invoice, Lease, Payment, Property, Room, Tenant } from '../../types/db'
 import {
   allocateAcrossInvoices,
   appendMoveNote,
   cancelledLeaseEndDate,
+  compareByShownDays,
   compareLeaseItems,
   composeInvoiceNotes,
   futureInvoicesAtCheckout,
   invoiceTimeline,
+  LEASE_SORT_KEYS,
+  LEASE_SORT_LABEL,
+  leaseReminderText,
   matchesLeaseSearch,
   openInvoicesSorted,
+  parseLeaseSort,
   proRataSuggestion,
+  remainingDays,
   roomAvailability,
   roomPriceFor,
+  sortLeaseItems,
   splitInvoiceNotes,
   sumExtraBreakdown,
   validateSettlement,
@@ -266,5 +273,165 @@ describe('list helpers', () => {
   it('appends the move note', () => {
     expect(appendMoveNote(null, 'A1', 'B2', '2026-03-05')).toBe('Pindah dari A1 ke B2 pada 2026-03-05')
     expect(appendMoveNote('Tamu proyek', 'A1', 'B2', '2026-03-05')).toBe('Tamu proyek\nPindah dari A1 ke B2 pada 2026-03-05')
+  })
+})
+
+describe('sort by remaining days (SPEC 7.1)', () => {
+  const summary = (nextDueDate: string | null): LeaseBillingSummary => ({ leaseId: 'x', coveredThrough: null, paidThrough: null, outstanding: 0, nextDueDate, daysUntilDue: null, state: 'ok' })
+  const item = (id: string, kos: string, roomName: string, due: string | null): LeaseListItem => ({
+    lease: { ...lease, id },
+    summary: summary(due),
+    room: { id: `r-${id}`, ...ts, property_id: 'P1', name: roomName, floor: null, price_daily: null, price_weekly: null, price_monthly: null, status: 'active', notes: null },
+    tenant: undefined,
+    propertyName: kos,
+  })
+  const items = [
+    item('a', 'Kos Melati', 'A10', '2026-10-20'),
+    item('b', 'Kos Melati', 'A2', '2026-10-09'),
+    item('c', 'Kos Anggrek', '102', '2026-10-16'),
+    item('d', 'Kos Anggrek', '101', '2026-10-20'),
+    item('e', 'Kos Melati', 'B1', null),
+  ]
+  const keys = (list: LeaseListItem[]) => list.map((i) => i.lease.id)
+
+  it('offers four ?urut= values with Indonesian labels', () => {
+    expect(LEASE_SORT_KEYS).toEqual(['jatuh-tempo', 'jatuh-tempo-terjauh', 'kamar', 'nama'])
+    expect(LEASE_SORT_LABEL).toEqual({
+      'jatuh-tempo': 'Sisa hari paling sedikit',
+      'jatuh-tempo-terjauh': 'Sisa hari paling banyak',
+      kamar: 'Nomor kamar',
+      nama: 'Nama penyewa',
+    })
+    expect(parseLeaseSort('jatuh-tempo-terjauh')).toBe('jatuh-tempo-terjauh')
+    expect(parseLeaseSort(undefined)).toBe('jatuh-tempo')
+  })
+
+  it('paling banyak: most days first, same count by room then kos, no due date still last', () => {
+    const today = '2026-10-12'
+    expect(keys([...items].sort(compareByShownDays(today, true)))).toEqual(['d', 'a', 'c', 'b', 'e'])
+    expect(keys(sortLeaseItems(items, 'jatuh-tempo-terjauh', false, today))).toEqual(['d', 'a', 'c', 'b', 'e'])
+    // the ascending order is the mirror image, except that undated leases stay at the end in both
+    expect(keys([...items].sort(compareByShownDays(today)))).toEqual(['b', 'c', 'd', 'a', 'e'])
+    expect(keys(sortLeaseItems(items, 'jatuh-tempo', false, today))).toEqual(['b', 'c', 'd', 'a', 'e'])
+    expect(compareByShownDays(today, true)(items[4], items[4])).toBe(0)
+  })
+
+  it('sorts by the day count the row shows: a paid-up lease that is ending counts to its end date', () => {
+    // 'ending' shows days to end_date (2), while its next due date (the 15th) alone would not put it first
+    const today = '2026-10-12'
+    const ending: LeaseListItem = {
+      ...item('end', 'Kos Melati', 'C1', '2026-10-15'),
+      lease: { ...lease, id: 'end', end_date: '2026-10-14' },
+      summary: { ...summary('2026-10-15'), coveredThrough: '2026-10-14', paidThrough: '2026-10-14', daysUntilDue: 3 },
+    }
+    const due = { ...item('due', 'Kos Melati', 'C2', '2026-10-15'), summary: { ...summary('2026-10-15'), daysUntilDue: 3 } }
+    expect(keys(sortLeaseItems([ending, due], 'jatuh-tempo', false, today))).toEqual(['end', 'due'])
+    expect(keys(sortLeaseItems([ending, due], 'jatuh-tempo-terjauh', false, today))).toEqual(['due', 'end'])
+  })
+
+  it('finished list: paling banyak puts the oldest finished lease first', () => {
+    const finished = [
+      { ...item('x', 'Kos Melati', 'A1', null), lease: { ...lease, id: 'x', status: 'ended' as const, checkout_date: '2026-05-01' } },
+      { ...item('y', 'Kos Melati', 'A2', null), lease: { ...lease, id: 'y', status: 'ended' as const, checkout_date: '2026-08-01' } },
+      { ...item('z', 'Kos Melati', 'A3', null), lease: { ...lease, id: 'z', status: 'cancelled' as const, end_date: '2026-06-15' } },
+    ]
+    expect(keys(sortLeaseItems(finished, 'jatuh-tempo', true))).toEqual(['y', 'z', 'x'])
+    expect(keys(sortLeaseItems(finished, 'jatuh-tempo-terjauh', true))).toEqual(['x', 'z', 'y'])
+    // only the date flips; leases finished on the same day stay in room order both ways
+    const sameDay = [
+      { ...item('b2', 'Kos Melati', 'B2', null), lease: { ...lease, id: 'b2', status: 'ended' as const, checkout_date: '2026-09-30' } },
+      { ...item('a1', 'Kos Melati', 'A1', null), lease: { ...lease, id: 'a1', status: 'ended' as const, checkout_date: '2026-09-30' } },
+    ]
+    expect(keys(sortLeaseItems(sameDay, 'jatuh-tempo', true))).toEqual(['a1', 'b2'])
+    expect(keys(sortLeaseItems(sameDay, 'jatuh-tempo-terjauh', true))).toEqual(['a1', 'b2'])
+  })
+})
+
+describe('remainingDays (SPEC 7.1)', () => {
+  const s = (nextDueDate: string | null, state: LeaseBillingSummary['state'], daysUntilDue: number | null = null, outstanding = 0): LeaseBillingSummary => ({
+    leaseId: 'x',
+    coveredThrough: null,
+    paidThrough: null,
+    outstanding,
+    nextDueDate,
+    daysUntilDue,
+    state,
+  })
+  const monthly: Lease = { ...lease, end_date: '2026-12-31' }
+
+  it('counts the days to the next due date with a short caption', () => {
+    expect(remainingDays(monthly, s('2026-10-30', 'ok', 18), '2026-10-12')).toEqual({ days: 18, kind: 'ok', value: '18 hari', caption: 'lagi · 30 Okt', tone: 'neutral' })
+    expect(remainingDays(monthly, s('2026-10-14', 'due_soon', 2), '2026-10-12')).toEqual({ days: 2, kind: 'soon', value: '2 hari', caption: 'lagi · 14 Okt', tone: 'warning' })
+    expect(remainingDays(monthly, s('2026-10-12', 'due_soon', 0), '2026-10-12')).toEqual({ days: 0, kind: 'today', value: 'Hari ini', caption: 'jatuh tempo', tone: 'warning' })
+    // daysUntilDue missing -> computed from the dates
+    expect(remainingDays(monthly, s('2026-10-30', 'ok'), '2026-10-12')?.days).toBe(18)
+  })
+
+  it('shows lateness as a positive count; danger only once the grace days are over', () => {
+    expect(remainingDays(monthly, s('2026-10-09', 'due_soon', -3, 100), '2026-10-12')).toEqual({ days: -3, kind: 'grace', value: '3 hari', caption: 'tenggang', tone: 'warning' })
+    expect(remainingDays(monthly, s('2026-09-22', 'overdue', -20, 100), '2026-10-12')).toEqual({ days: -20, kind: 'overdue', value: '20 hari', caption: 'terlambat', tone: 'danger' })
+  })
+
+  it('a paid-up lease ending within a week counts to its end date; inactive or undated leases get nothing', () => {
+    const ending: Lease = { ...lease, end_date: '2026-10-15' }
+    expect(remainingDays(ending, s('2026-10-16', 'ok', 4), '2026-10-12')).toEqual({ days: 3, kind: 'ending', value: '3 hari', caption: 'berakhir 15 Okt', tone: 'info' })
+    expect(remainingDays({ ...ending, end_date: '2026-10-12' }, s('2026-10-13', 'ok', 1), '2026-10-12')).toMatchObject({ kind: 'ending', days: 0, value: 'Hari ini' })
+    expect(remainingDays({ ...monthly, status: 'ended' }, s('2026-10-14', 'inactive', 2), '2026-10-12')).toBeNull()
+    expect(remainingDays(monthly, s(null, 'unbilled'), '2026-10-12')).toBeNull()
+  })
+})
+
+describe('leaseReminderText', () => {
+  const tenant: Tenant = {
+    id: 'T1',
+    ...ts,
+    property_id: 'P1',
+    full_name: 'Siti Rahayu',
+    nik: null,
+    id_type: 'ktp',
+    id_number: null,
+    nationality: null,
+    phone: '081234567802',
+    gender: null,
+    birth_place: null,
+    birth_date: null,
+    address: null,
+    religion: null,
+    marital_status: null,
+    occupation: null,
+    emergency_contact_name: null,
+    emergency_contact_phone: null,
+    ktp_image_path: null,
+    notes: null,
+  }
+  const room: Room = { id: 'R1', ...ts, property_id: 'P1', name: 'A2', floor: null, price_daily: null, price_weekly: null, price_monthly: 1_000_000, status: 'active', notes: null }
+  const property: Property = { id: 'P1', ...ts, name: 'Kos Melati', address: null, notes: null, payment_info: 'BCA 123456 a.n. Ibu Kos', logo_path: null }
+  const invoices = [inv('b', '2026-02-10', '2026-03-09'), inv('a', '2026-01-10', '2026-02-09')]
+  const input = (payments: Payment[]) => ({ lease, tenant, room, property, invoices, orgInvoices: invoices, payments, addons: [] })
+
+  it('reminds about the oldest open invoice with its remaining amount and the payment info', () => {
+    const text = leaseReminderText(input([pay('a', 400_000)]))
+    expect(text).toContain('Halo Kak Siti, ini pengingat dari Kos Melati.')
+    expect(text).toContain('Tagihan kamar A2 periode 10 Jan 2026 s/d 9 Feb 2026 sebesar *Rp 600.000* jatuh tempo 10 Jan 2026.')
+    expect(text).toContain('BCA 123456 a.n. Ibu Kos')
+  })
+
+  it('previews the next period when nothing is open on an active lease', () => {
+    const text = leaseReminderText(input([pay('a', 1_000_000), pay('b', 1_000_000)]))
+    expect(text).toContain('Tagihan kamar A2 periode 10 Mar 2026 s/d 9 Apr 2026 sebesar *Rp 1.000.000* jatuh tempo 10 Mar 2026.')
+    // the add-ons are part of the preview, as in buildInvoiceDraft
+    const withAddon = leaseReminderText({ ...input([pay('a', 1_000_000), pay('b', 1_000_000)]), addons: [{ id: 'ad', org_id: 'o', created_at: '', lease_id: 'L1', name: 'Parkir', amount: 50_000, billing: 'per_period' }] })
+    expect(withAddon).toContain('*Rp 1.050.000*')
+  })
+
+  it('gives nothing without a phone number, and nothing to preview on a settled finished lease', () => {
+    const settled = [pay('a', 1_000_000), pay('b', 1_000_000)]
+    expect(leaseReminderText({ ...input(settled), tenant: { ...tenant, phone: null } })).toBeNull()
+    expect(leaseReminderText({ ...input(settled), tenant: undefined })).toBeNull()
+    expect(leaseReminderText({ ...input(settled), lease: { ...lease, status: 'ended', checkout_date: '2026-03-09' } })).toBeNull()
+    // a finished lease with an open invoice is still reminded
+    expect(leaseReminderText({ ...input([pay('a', 1_000_000)]), lease: { ...lease, status: 'ended', checkout_date: '2026-03-09' } })).toContain('*Rp 1.000.000*')
+    // room / kos unknown -> placeholders, no crash
+    expect(leaseReminderText({ ...input([]), room: undefined, property: undefined })).toContain('Tagihan kamar - periode')
   })
 })

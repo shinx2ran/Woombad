@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowLeftRight, Ban, CalendarPlus, DoorOpen, FilePlus2, MessageCircle, PiggyBank, Plus, Trash2, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, Ban, CalendarPlus, DoorOpen, FilePlus2, MessageCircle, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
 import {
   Button,
   Card,
@@ -21,16 +21,16 @@ import {
 } from '../../components/ui'
 import type { Invoice, LeaseAddon, Payment } from '../../types/db'
 import { PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { buildInvoiceDraft, depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
-import { reminderText } from '../../domain/messages'
+import { depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
-import { agreedPriceText, invoiceTimeline, openInvoicesSorted, displayBillingState, priceDelta, priceDeltaText, roomPriceFor } from './leaseUtils'
+import { agreedPriceText, invoiceTimeline, leaseReminderText, openInvoicesSorted, displayBillingState, priceDelta, priceDeltaText, roomPriceFor } from './leaseUtils'
 import { ActionMenu, BillingStateBadge, InvoiceTimeline, Row, type MenuItem } from './components'
 import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
 import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAddon } from './LifecycleModals'
+import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
 
 type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon'
 type Confirm =
@@ -52,6 +52,8 @@ export function LeaseDetailPage() {
   const [modal, setModal] = useState<ModalKind | null>(null)
   const [payInvoiceId, setPayInvoiceId] = useState<string | undefined>(undefined)
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
+  /** invoice shown in the "Kirim tagihan" (image to WhatsApp) modal */
+  const [shareInvoice, setShareInvoice] = useState<Invoice | null>(null)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [busy, setBusy] = useState(false)
   const [paymentsFilter, setPaymentsFilter] = useState<string | null>(null)
@@ -105,40 +107,11 @@ export function LeaseDetailPage() {
   // SPEC 5.4: the room's current rate for the lease's type is the 'harga standar'.
   const standardPrice = roomPriceFor(room, lease.period_type)
   const openInvoices = openInvoicesSorted(lease.id, leaseInvoices, data.payments)
+  // A freshly issued invoice (NextInvoiceModal.onCreated) may not be in the query cache yet: fall back to the inserted row.
+  const sharedInvoice = shareInvoice ? (leaseInvoices.find((i) => i.id === shareInvoice.id) ?? shareInvoice) : null
 
-  // WhatsApp reminder: the oldest open invoice, or the next period when nothing is open.
-  let reminder: string | null = null
-  if (tenant?.phone) {
-    const oldest = openInvoices[0]
-    if (oldest) {
-      reminder = reminderText({
-        tenantName: tenant.full_name,
-        roomName: room?.name ?? '-',
-        propertyName: property?.name ?? 'Kos',
-        outstanding: outstandingFor(oldest, data.payments),
-        dueDate: oldest.due_date,
-        periodStart: oldest.period_start,
-        periodEnd: oldest.period_end,
-        paymentInfo: property?.payment_info,
-      })
-    } else if (isActive) {
-      try {
-        const draft = buildInvoiceDraft({ lease, addons, quantity: 1, existingInvoices: leaseInvoices, orgInvoices: data.invoices })
-        reminder = reminderText({
-          tenantName: tenant.full_name,
-          roomName: room?.name ?? '-',
-          propertyName: property?.name ?? 'Kos',
-          outstanding: draft.total_amount,
-          dueDate: draft.due_date,
-          periodStart: draft.period_start,
-          periodEnd: draft.period_end,
-          paymentInfo: property?.payment_info,
-        })
-      } catch {
-        reminder = null
-      }
-    }
-  }
+  // WhatsApp reminder: the oldest open invoice, or the next period when nothing is open (shared with the list rows).
+  const reminder = leaseReminderText({ lease, tenant, room, property, invoices: leaseInvoices, orgInvoices: data.invoices, payments: data.payments, addons })
   const waLink = reminder ? whatsappLink(tenant?.phone, reminder) : null
 
   const openPay = (invoiceId?: string) => {
@@ -192,10 +165,11 @@ export function LeaseDetailPage() {
   const invoiceMenu = (inv: Invoice): MenuItem[] => {
     const paid = paidAmountFor(inv.id, data.payments)
     const payable = inv.status !== 'void' && outstandingFor(inv, data.payments) > 0
-    const items: MenuItem[] = [
-      { label: 'Bayar', icon: <Wallet className="h-4 w-4" />, disabled: !payable, onClick: () => openPay(inv.id) },
-      { label: 'Lihat pembayaran', onClick: () => setPaymentsFilter(inv.id) },
-    ]
+    const items: MenuItem[] = [{ label: 'Bayar', icon: <Wallet className="h-4 w-4" />, disabled: !payable, onClick: () => openPay(inv.id) }]
+    if (inv.status !== 'void') {
+      items.push({ label: 'Kirim tagihan', hint: 'Gambar tagihan ke WhatsApp', icon: <Share2 className="h-4 w-4" />, onClick: () => setShareInvoice(inv) })
+    }
+    items.push({ label: 'Lihat pembayaran', onClick: () => setPaymentsFilter(inv.id) })
     if (isAdmin && inv.status !== 'void') {
       items.push({
         label: 'Ubah',
@@ -493,7 +467,31 @@ export function LeaseDetailPage() {
         defaultInvoiceId={payInvoiceId}
       />
       <DepositModal open={modal === 'deposit'} onClose={() => setModal(null)} lease={lease} payments={data.payments} expenses={data.expenses} actions={actions} />
-      <NextInvoiceModal open={modal === 'invoice'} onClose={() => setModal(null)} lease={lease} room={room} addons={addons} leaseInvoices={leaseInvoices} orgInvoices={data.invoices} actions={actions} />
+      {/* the fresh bill opens straight in the share modal so the owner can send it in one tap */}
+      <NextInvoiceModal
+        open={modal === 'invoice'}
+        onClose={() => setModal(null)}
+        lease={lease}
+        room={room}
+        addons={addons}
+        leaseInvoices={leaseInvoices}
+        orgInvoices={data.invoices}
+        actions={actions}
+        onCreated={setShareInvoice}
+      />
+      {sharedInvoice && (
+        <InvoiceShareModal
+          open
+          onClose={() => setShareInvoice(null)}
+          invoice={sharedInvoice}
+          lease={lease}
+          tenant={tenant}
+          room={room}
+          property={property}
+          payments={data.payments}
+          leaseAddons={addons}
+        />
+      )}
       <EditInvoiceModal open={modal === 'edit'} onClose={() => setModal(null)} invoice={editInvoice} payments={data.payments} actions={actions} />
       <CheckoutModal open={modal === 'checkout'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
       <CancelLeaseModal open={modal === 'cancel'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />

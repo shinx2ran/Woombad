@@ -29,8 +29,8 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
   const kosA = newId()
   const kosB = newId()
   db.properties.push(
-    { id: kosA, org_id: DEMO_ORG_ID, name: 'Kos Melati', address: 'Jl. Melati No. 12, Bandung', notes: null, payment_info: 'BCA 1234567890 a.n. Ibu Sari', ...ts },
-    { id: kosB, org_id: DEMO_ORG_ID, name: 'Kos Anggrek', address: 'Jl. Anggrek No. 5, Bandung', notes: 'Bangunan baru', payment_info: 'BCA 1234567890 a.n. Ibu Sari', ...ts },
+    { id: kosA, org_id: DEMO_ORG_ID, name: 'Kos Melati', address: 'Jl. Melati No. 12, Bandung', notes: null, payment_info: 'BCA 1234567890 a.n. Ibu Sari', logo_path: null, ...ts },
+    { id: kosB, org_id: DEMO_ORG_ID, name: 'Kos Anggrek', address: 'Jl. Anggrek No. 5, Bandung', notes: 'Bangunan baru', payment_info: 'BCA 1234567890 a.n. Ibu Sari', logo_path: null, ...ts },
   )
 
   const mkRoom = (property_id: string, name: string, floor: string, monthly: number, daily: number): Room => ({

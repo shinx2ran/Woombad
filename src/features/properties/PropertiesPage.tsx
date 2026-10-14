@@ -17,10 +17,11 @@ import { useRemove, useTable } from '../../hooks/useTable'
 import { roomOccupancyByProperty, type OccupancySnapshot } from '../../domain/occupancy'
 import { todayISO } from '../../lib/format'
 import type { Property } from '../../types/db'
+import { clearKosLogoCache } from '../invoices/useKosLogo'
 import { PropertyFormModal } from './PropertyFormModal'
 
 export function PropertiesPage() {
-  const { properties, role, propertyFilterIds, selectedPropertyId, refreshProperties } = useOrg()
+  const { properties, role, propertyFilterIds, selectedPropertyId, refreshProperties, repo } = useOrg()
   const toast = useToast()
   const isAdmin = role === 'owner' || role === 'admin'
   const rooms = useTable('rooms')
@@ -45,6 +46,11 @@ export function PropertiesPage() {
     if (!deleting) return
     try {
       await remove.mutateAsync(deleting.id)
+      // the row is gone; the logo file goes next (SPEC 6.4: never the file first), best-effort
+      if (deleting.logo_path) {
+        clearKosLogoCache(deleting.logo_path)
+        await repo.removeFile('logos', deleting.logo_path).catch(() => toast.error('Logo kos gagal dihapus dari penyimpanan.'))
+      }
       await refreshProperties()
       toast.success(`Kos "${deleting.name}" dihapus.`)
       setDeleting(null)

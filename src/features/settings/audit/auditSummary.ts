@@ -69,7 +69,7 @@ const IGNORED_COLUMNS = new Set(['id', 'org_id', 'created_at', 'updated_at', 'cr
 const TEXT_COLUMNS = new Set(['notes'])
 
 /** Storage paths: added / replaced / removed. */
-const FILE_COLUMNS = new Set(['ktp_image_path', 'receipt_path'])
+const FILE_COLUMNS = new Set(['ktp_image_path', 'receipt_path', 'logo_path'])
 
 const COLUMN_LABEL: Record<string, string> = {
   amount: 'Jumlah',
@@ -135,6 +135,7 @@ const COLUMN_LABEL: Record<string, string> = {
   emergency_contact_phone: 'HP kontak darurat',
   ktp_image_path: 'Foto KTP',
   receipt_path: 'Foto struk',
+  logo_path: 'Logo kos',
   notes: 'Catatan',
 }
 

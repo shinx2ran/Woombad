@@ -131,6 +131,8 @@ export interface Property extends TimestampedRow {
   notes: string | null
   /** bank account / QRIS instructions inserted into WhatsApp reminders */
   payment_info: string | null
+  /** storage path in bucket "logos" (Supabase mode) or null; shown on invoices */
+  logo_path: string | null
 }
 
 export interface Room extends TimestampedRow {

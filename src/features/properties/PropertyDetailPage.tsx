@@ -4,6 +4,7 @@ import { clsx } from 'clsx'
 import { ArrowLeft, Building2, MapPin, Pencil, Wallet } from 'lucide-react'
 import { Button, EmptyState, PageHeader } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
+import { useKosLogo } from '../invoices/useKosLogo'
 import { PropertyFormModal } from './PropertyFormModal'
 import { RoomsTab } from './RoomsTab'
 import { AddonsTab } from './AddonsTab'
@@ -17,6 +18,7 @@ export function PropertyDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [editOpen, setEditOpen] = useState(false)
   const property = properties.find((p) => p.id === propertyId) ?? null
+  const { logoUrl } = useKosLogo(property)
   const tab: Tab = searchParams.get('tab') === 'addon' ? 'addon' : 'kamar'
 
   const setTab = (next: Tab) => {
@@ -51,30 +53,36 @@ export function PropertyDetailPage() {
       <Link to="/kos" className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-800">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Semua kos
       </Link>
-      <PageHeader
-        title={property.name}
-        subtitle={
-          <span className="flex flex-col gap-0.5">
-            <span className="inline-flex items-start gap-1">
-              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              {property.address ?? 'Alamat belum diisi'}
-            </span>
-            {property.payment_info && (
-              <span className="inline-flex items-start gap-1">
-                <Wallet className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                {property.payment_info}
+      {/* the kos logo (SPEC 7.2) sits beside the title block */}
+      <div className="flex items-start gap-3">
+        {logoUrl && <img src={logoUrl} alt="Logo kos" className="mt-0.5 h-10 w-10 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-0.5" />}
+        <div className="min-w-0 flex-1">
+          <PageHeader
+            title={property.name}
+            subtitle={
+              <span className="flex flex-col gap-0.5">
+                <span className="inline-flex items-start gap-1">
+                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {property.address ?? 'Alamat belum diisi'}
+                </span>
+                {property.payment_info && (
+                  <span className="inline-flex items-start gap-1">
+                    <Wallet className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    {property.payment_info}
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-        }
-        actions={
-          isAdmin ? (
-            <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
-              Ubah kos
-            </Button>
-          ) : undefined
-        }
-      />
+            }
+            actions={
+              isAdmin ? (
+                <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
+                  Ubah kos
+                </Button>
+              ) : undefined
+            }
+          />
+        </div>
+      </div>
 
       <div className="mb-4 flex gap-1 border-b border-slate-200" role="tablist" aria-label="Bagian kos">
         {(

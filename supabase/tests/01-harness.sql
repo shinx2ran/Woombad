@@ -241,6 +241,14 @@ begin
     (select string_agg(attname || ':' || attnotnull, ',' order by array_position(array['label', 'expires_at', 'accepted_by'], attname::text))
        from pg_attribute where attrelid = 'public.invitations'::regclass and attname in ('label', 'expires_at', 'accepted_by') and not attisdropped));
   perform zz.ok(p_grp, 'app_settings has its single row', (select count(*) = 1 from public.app_settings where id = 1));
+  -- kos logo (shown on invoices): nullable column + private bucket covered by the four org-folder policies
+  perform zz.ok(p_grp, 'properties.logo_path exists and is nullable', (select not attnotnull from pg_attribute
+    where attrelid = 'public.properties'::regclass and attname = 'logo_path' and not attisdropped));
+  perform zz.eq(p_grp, 'storage buckets ktp, receipts, logos exist', 'ktp,logos,receipts',
+    (select string_agg(id, ',' order by id) from storage.buckets where id in ('ktp', 'receipts', 'logos')));
+  perform zz.eq(p_grp, 'every storage policy covers the logos bucket', 'storage_org_delete,storage_org_insert,storage_org_select,storage_org_update',
+    (select string_agg(policyname, ',' order by policyname) from pg_policies where schemaname = 'storage' and tablename = 'objects'
+      and policyname like 'storage_org_%' and (coalesce(qual, '') || coalesce(with_check, '')) like '%''logos''%'));
   -- deleting a property clears only property_id (clearing org_id as well would fail)
   perform zz.eq(p_grp, 'tenants/expenses -> properties: on delete set null (property_id)',
     'expenses:SET NULL (property_id),tenants:SET NULL (property_id)',

@@ -253,6 +253,17 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 | Istri / pegawai ikut mengelola | **Pengaturan → Anggota → Undang**, kirim kodenya lewat WhatsApp (lihat [langkah 6](#6-pemilik--istri-undang-istri)). |
 | Akhir minggu | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**. |
 
+### Kirim tagihan ke WhatsApp & logo kos
+
+- **Kirim tagihan** (menu ⋯ pada baris sewa, menu tagihan di detail sewa, atau langsung setelah **Buat tagihan berikutnya**)
+  membuat **gambar tagihan** berlogo kos: rincian sewa, add-on, listrik/denda, total, yang sudah dibayar, sisa, dan info rekening.
+  Tekan **Bagikan ke WhatsApp**, pilih WhatsApp lalu nama penyewa di lembar bagikan HP (Android: Chrome / aplikasi terpasang;
+  iPhone: Safari). Di komputer gunakan **Unduh gambar** lalu lampirkan sendiri, atau **Kirim teks saja via WhatsApp**.
+- Catatan tagihan **tidak** ikut di gambar kecuali Anda mencentang **Sertakan catatan tagihan di gambar** (catatan bisa berisi
+  keterangan internal seperti "Sisa dianggap hangus").
+- **Logo kos**: **Kos → Ubah kos → Logo kos → Pilih logo** (PNG transparan paling bagus; hanya tersimpan di mode online).
+  Logo tampil di gambar tagihan dan di halaman kos.
+
 ## Menguji skema database secara lokal (opsional)
 
 `supabase/tests/run.sh` memasang `schema.sql` ke PostgreSQL lokal dengan tiruan objek Supabase dan menjalankan

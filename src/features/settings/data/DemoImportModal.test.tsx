@@ -37,7 +37,7 @@ function ownerDemoDb(): { db: LocalDb; ownKosId: string } {
   const later = { created_at: '2026-10-13T08:00:00.000Z', updated_at: '2026-10-13T08:00:00.000Z' }
   const ownKosId = crypto.randomUUID()
   db.organizations[0].name = 'Kos Pak Budi'
-  db.properties.push({ id: ownKosId, org_id: DEMO_ORG_ID, name: 'Kos Mawar', address: null, notes: null, payment_info: null, ...later })
+  db.properties.push({ id: ownKosId, org_id: DEMO_ORG_ID, name: 'Kos Mawar', address: null, notes: null, payment_info: null, logo_path: null, ...later })
   db.rooms.push({
     id: crypto.randomUUID(), org_id: DEMO_ORG_ID, property_id: ownKosId, name: 'M1', floor: null, price_daily: null, price_weekly: null,
     price_monthly: 900_000, status: 'active', notes: null, ...later,
