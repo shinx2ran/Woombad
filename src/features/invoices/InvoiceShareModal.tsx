@@ -52,13 +52,20 @@ export function InvoiceShareModal({ open, onClose, invoice, lease, tenant, room,
   const [rendered, setRendered] = useState<Rendered | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
+  // Invoice notes may be internal ('Sisa dianggap hangus (…)' is written by the app itself), so the image leaves
+  // them out unless the owner asks for them, each time the modal opens.
+  const [withNotes, setWithNotes] = useState(false)
+  useEffect(() => {
+    if (open) setWithNotes(false)
+  }, [open])
+  const shownDoc = useMemo(() => (withNotes ? doc : { ...doc, notes: null }), [doc, withNotes])
 
   // Render once the logo is known (cached after the first open); re-render when the data changes while open.
   useEffect(() => {
     if (!open || logoLoading) return
     let cancelled = false
     let url: string | null = null
-    renderInvoiceImage(doc, logo)
+    renderInvoiceImage(shownDoc, logo)
       .then((blob) => {
         if (cancelled) return
         url = URL.createObjectURL(blob)
@@ -73,7 +80,7 @@ export function InvoiceShareModal({ open, onClose, invoice, lease, tenant, room,
       if (url) URL.revokeObjectURL(url)
       setRendered(null)
     }
-  }, [open, logoLoading, logo, doc])
+  }, [open, logoLoading, logo, shownDoc])
 
   const shareText = useMemo(() => invoiceShareText(doc), [doc])
   const waLink = whatsappLink(tenant?.phone, shareText)
@@ -113,6 +120,15 @@ export function InvoiceShareModal({ open, onClose, invoice, lease, tenant, room,
           <img src={rendered.url} alt="Pratinjau tagihan" className="w-full rounded-lg border border-slate-200" />
         ) : (
           <LoadingState label="Menyiapkan gambar…" />
+        )}
+        {doc.notes && (
+          <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+            <input type="checkbox" className="mt-0.5" checked={withNotes} onChange={(e) => setWithNotes(e.target.checked)} />
+            <span>
+              Sertakan catatan tagihan di gambar
+              <span className="block truncate text-xs text-slate-500">{doc.notes}</span>
+            </span>
+          </label>
         )}
         {rendered && shareSupported && (
           <p className="text-xs text-slate-500">

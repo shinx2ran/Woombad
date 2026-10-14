@@ -259,6 +259,8 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
   membuat **gambar tagihan** berlogo kos: rincian sewa, add-on, listrik/denda, total, yang sudah dibayar, sisa, dan info rekening.
   Tekan **Bagikan ke WhatsApp**, pilih WhatsApp lalu nama penyewa di lembar bagikan HP (Android: Chrome / aplikasi terpasang;
   iPhone: Safari). Di komputer gunakan **Unduh gambar** lalu lampirkan sendiri, atau **Kirim teks saja via WhatsApp**.
+- Catatan tagihan **tidak** ikut di gambar kecuali Anda mencentang **Sertakan catatan tagihan di gambar** (catatan bisa berisi
+  keterangan internal seperti "Sisa dianggap hangus").
 - **Logo kos**: **Kos → Ubah kos → Logo kos → Pilih logo** (PNG transparan paling bagus; hanya tersimpan di mode online).
   Logo tampil di gambar tagihan dan di halaman kos.
 

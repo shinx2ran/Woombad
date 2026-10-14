@@ -232,6 +232,8 @@ begin
   -- kos logos (bucket logos, shown on invoices) follow the same org-folder rule
   perform zz.chk('f-storage', 'org1 owner uploads a kos logo', '^ok:1$', zz.att(zz.id('owner'), format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'logos', org1 || '/logo.png'), true));
   perform zz.chk('f-storage', 'org1 staff reads the logo (the invoice image needs it)', '^val:1$', zz.val(zz.id('staff'), format('select count(*) from storage.objects where bucket_id = %L and name = %L', 'logos', org1 || '/logo.png')));
+  perform zz.chk('f-storage', 'org1 staff uploads a logo (admin only)', '^err:42501', zz.att(zz.id('staff'), format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'logos', org1 || '/staff.png')));
+  perform zz.chk('f-storage', 'org1 staff deletes the logo', '^ok:0$', zz.att(zz.id('staff'), format('delete from storage.objects where bucket_id = %L and name = %L', 'logos', org1 || '/logo.png')));
   perform zz.chk('f-storage', 'org2 reads org1 logo', '^val:0$', zz.val(zz.id('o2owner'), 'select count(*) from storage.objects where bucket_id = ''logos'''));
   perform zz.chk('f-storage', 'org2 deletes org1 logo', '^ok:0$', zz.att(zz.id('o2owner'), format('delete from storage.objects where bucket_id = %L and name = %L', 'logos', org1 || '/logo.png')));
   perform zz.chk('f-storage', 'org2 uploads a logo into org1 folder', '^err:42501', zz.att(zz.id('o2owner'), format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'logos', org1 || '/evil.png')));

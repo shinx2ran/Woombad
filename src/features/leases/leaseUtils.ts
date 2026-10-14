@@ -22,7 +22,7 @@ import {
 import { reminderText } from '../../domain/messages'
 import { addDaysISO, daysBetween, periodEnd } from '../../domain/period'
 import { compareRoomNames, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
-import { formatDate, formatRupiah } from '../../lib/format'
+import { formatDate, formatRupiah, todayISO } from '../../lib/format'
 
 // ---------- billing state presentation ----------
 
@@ -99,27 +99,26 @@ function compareDueKeys(a: LeaseListItem, b: LeaseListItem): number {
 }
 
 /**
- * 'Jatuh tempo terdekat': earliest nextDueSortKey first (overdue = past dates come first automatically,
- * leases without a due date last), ties by room name (compareRoomNames), then kos name.
+ * 'Sisa hari paling sedikit' / 'paling banyak': by the day count the row shows (remainingDays, so a paid-up lease
+ * that is ending counts to its end_date like its row does), rows without a count last in both directions; ties by
+ * next due date, room name (compareRoomNames), then kos name. The count is cached per item for the sort.
  */
-export function compareByNextDue(a: LeaseListItem, b: LeaseListItem): number {
-  return compareDueKeys(a, b) || compareRoomNames(roomNameOf(a), roomNameOf(b)) || compareKosNames(a, b)
-}
-
-/** Latest due date first; leases without a due date sort last here too (not first), unlike a plain reversal. */
-function compareDueKeysDesc(a: LeaseListItem, b: LeaseListItem): number {
-  const ad = a.summary.nextDueDate
-  const bd = b.summary.nextDueDate
-  if (!ad || !bd) return ad === bd ? 0 : ad ? -1 : 1
-  return ad === bd ? 0 : ad > bd ? -1 : 1
-}
-
-/**
- * 'Sisa hari paling banyak': latest nextDueDate first (the leases that can wait longest on top), leases
- * without a due date still last; ties like compareByNextDue (room name, then kos name).
- */
-export function compareByNextDueDesc(a: LeaseListItem, b: LeaseListItem): number {
-  return compareDueKeysDesc(a, b) || compareRoomNames(roomNameOf(a), roomNameOf(b)) || compareKosNames(a, b)
+export function compareByShownDays(todayISO: string, desc = false): (a: LeaseListItem, b: LeaseListItem) => number {
+  const cache = new WeakMap<LeaseListItem, number | null>()
+  const daysOf = (item: LeaseListItem): number | null => {
+    let d = cache.get(item)
+    if (d === undefined) {
+      d = remainingDays(item.lease, item.summary, todayISO)?.days ?? null
+      cache.set(item, d)
+    }
+    return d
+  }
+  return (a, b) => {
+    const ad = daysOf(a)
+    const bd = daysOf(b)
+    if (ad === null || bd === null) return ad === bd ? 0 : ad === null ? 1 : -1
+    return (desc ? bd - ad : ad - bd) || compareDueKeys(a, b) || compareRoomNames(roomNameOf(a), roomNameOf(b)) || compareKosNames(a, b)
+  }
 }
 
 /**
@@ -143,14 +142,15 @@ export function compareByTenantName(a: LeaseListItem, b: LeaseListItem): number 
 /**
  * Sorted copy of a lease list. On a finished (ended / cancelled) list nothing is due, so 'jatuh-tempo' keeps
  * "most recently finished first" and 'jatuh-tempo-terjauh' the reverse (oldest finished first); 'kamar' and
- * 'nama' apply to both lists.
+ * 'nama' apply to both lists. `today` is what the rows count their days from.
  */
-export function sortLeaseItems(items: LeaseListItem[], key: LeaseSortKey, finished = false): LeaseListItem[] {
+export function sortLeaseItems(items: LeaseListItem[], key: LeaseSortKey, finished = false, today: string = todayISO()): LeaseListItem[] {
   let cmp: (a: LeaseListItem, b: LeaseListItem) => number
+  const longestFirst = key === 'jatuh-tempo-terjauh'
   if (key === 'kamar') cmp = compareByRoom
   else if (key === 'nama') cmp = compareByTenantName
-  else if (key === 'jatuh-tempo-terjauh') cmp = finished ? (a, b) => compareFinishedLeases(b, a) : compareByNextDueDesc
-  else cmp = finished ? compareFinishedLeases : compareByNextDue
+  else if (finished) cmp = (a, b) => compareFinishedLeases(a, b, longestFirst)
+  else cmp = compareByShownDays(today, longestFirst)
   return [...items].sort(cmp)
 }
 
@@ -204,7 +204,7 @@ export interface RemainingDays {
   kind: RemainingKind
   /** big text, e.g. '20 hari', 'Hari ini', '3 hari' */
   value: string
-  /** small text under it, e.g. 'terlambat', 'lewat · tenggang', 'jatuh tempo', 'lagi · 15 Okt', 'berakhir 15 Okt' */
+  /** small text under it, e.g. 'terlambat', 'tenggang', 'jatuh tempo', 'lagi · 15 Okt', 'berakhir 15 Okt' */
   caption: string
   tone: DueTone
 }
@@ -218,7 +218,7 @@ function dayCount(days: number): string {
  * Same decision tree as dueLabel, split into a number and a caption so a dense list can line the day counts up:
  *  - paid-up lease ending within a week -> 'ending': '3 hari' / 'berakhir 15 Okt' (info);
  *  - past due beyond the grace days (state overdue) -> 'overdue': '20 hari' / 'terlambat' (danger);
- *  - past due within the grace days -> 'grace': '2 hari' / 'lewat · tenggang' (warning);
+ *  - past due within the grace days -> 'grace': '2 hari' / 'tenggang' (warning);
  *  - due today -> 'today': 'Hari ini' / 'jatuh tempo' (warning);
  *  - otherwise 'soon' (state due_soon, warning) or 'ok' (neutral): '12 hari' / 'lagi · 15 Okt'.
  * Null for inactive leases or when no due date is known.
@@ -234,18 +234,18 @@ export function remainingDays(lease: Lease, summary: LeaseBillingSummary, todayI
   if (days < 0) {
     return summary.state === 'overdue'
       ? { days, kind: 'overdue', value: dayCount(days), caption: 'terlambat', tone: 'danger' }
-      : { days, kind: 'grace', value: dayCount(days), caption: 'lewat · tenggang', tone: 'warning' }
+      : { days, kind: 'grace', value: dayCount(days), caption: 'tenggang', tone: 'warning' }
   }
   if (days === 0) return { days, kind: 'today', value: dayCount(days), caption: 'jatuh tempo', tone: 'warning' }
   const soon = summary.state === 'due_soon'
   return { days, kind: soon ? 'soon' : 'ok', value: dayCount(days), caption: `lagi · ${date}`, tone: soon ? 'warning' : 'neutral' }
 }
 
-/** Ended/cancelled leases: most recently finished first. */
-export function compareFinishedLeases(a: LeaseListItem, b: LeaseListItem): number {
+/** Ended/cancelled leases: most recently finished first (`oldestFirst` flips only the date); same day by room name. */
+export function compareFinishedLeases(a: LeaseListItem, b: LeaseListItem, oldestFirst = false): number {
   const ae = a.lease.checkout_date ?? a.lease.end_date
   const be = b.lease.checkout_date ?? b.lease.end_date
-  if (ae !== be) return ae < be ? 1 : -1
+  if (ae !== be) return (ae < be) === oldestFirst ? -1 : 1
   return (a.room?.name ?? '').localeCompare(b.room?.name ?? '', undefined, { numeric: true })
 }
 

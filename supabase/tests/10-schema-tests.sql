@@ -668,8 +668,9 @@ begin
   perform zz.eq('storage', 'buckets exist', '3', (select count(*)::text from storage.buckets where id in ('ktp', 'receipts', 'logos')));
   perform zz.eq('storage', 'logos bucket: private, 1 MB, png/jpeg/webp', 'false:1048576:image/png,image/jpeg,image/webp',
     (select public::text || ':' || file_size_limit || ':' || array_to_string(allowed_mime_types, ',') from storage.buckets where id = 'logos'));
-  -- kos logo (shown on digital invoices): a member uploads it into the org folder, saves the path on the kos,
-  -- every member can read it (signed URL), nobody outside the org can; the app removes it through the Storage API
+  -- kos logo (shown on digital invoices): an admin uploads it into the org folder and saves the path on the kos,
+  -- every member can read it (signed URL), staff cannot write it, nobody outside the org can; the app removes
+  -- it through the Storage API
   perform zz.eq('storage', 'owner uploads a kos logo', 'ok:1', zz.att(zz.id('owner'), format('insert into storage.objects (bucket_id, name) values (%L, %L)',
     'logos', org || '/logo.png'), true));
   perform zz.eq('storage', 'owner saves the logo path on the kos', 'ok:1', zz.att(zz.id('owner'), format('update public.properties set logo_path = %L where id = %L',
@@ -678,6 +679,12 @@ begin
     org || '/other.png', zz.id('prop1'))));
   perform zz.eq('storage', 'staff reads the logo (signed URL needs select)', 'val:1', zz.val(zz.id('staff'), format('select count(*) from storage.objects where bucket_id = %L and name = %L',
     'logos', org || '/logo.png')));
+  perform zz.chk('storage', 'staff cannot upload a logo (writing a logo follows the kos: admin only)', '^err:42501', zz.att(zz.id('staff'), format('insert into storage.objects (bucket_id, name) values (%L, %L)',
+    'logos', org || '/staff.png')));
+  perform zz.eq('storage', 'staff cannot delete the logo', 'ok:0', zz.att(zz.id('staff'), format('delete from storage.objects where bucket_id = %L and name = %L',
+    'logos', org || '/logo.png')));
+  perform zz.eq('storage', 'staff still uploads a receipt (members write ktp/receipts)', 'ok:1', zz.att(zz.id('staff'), format('insert into storage.objects (bucket_id, name) values (%L, %L)',
+    'receipts', org || '/nota-logo-check.jpg'), true));
   perform zz.eq('storage', 'stranger cannot read the logo', 'val:0', zz.val(zz.id('stranger'), 'select count(*) from storage.objects where bucket_id = ''logos'''));
   perform zz.chk('storage', 'stranger cannot upload a logo into the org folder', '^err:42501', zz.att(zz.id('stranger'), format('insert into storage.objects (bucket_id, name) values (%L, %L)',
     'logos', org || '/evil.png')));

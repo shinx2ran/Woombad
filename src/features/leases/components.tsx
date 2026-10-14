@@ -252,16 +252,16 @@ const REMAINING_TONE_CLASS: Record<DueTone, string> = {
   neutral: 'text-slate-700',
 }
 
-/** Column names above the rows on md and up; the widths mirror the cells of LeaseRow. */
+/** Column names above the rows on lg and up; the widths mirror the cells of LeaseRow (the spacer = its menu cell). */
 export function LeaseListHeader() {
   return (
-    <div className="hidden items-center gap-3 border-b border-slate-100 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-500 md:flex">
+    <div className="hidden items-center gap-3 border-b border-slate-100 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-500 lg:flex">
       <span className="w-12 shrink-0 text-center">Kamar</span>
       <span className="min-w-0 flex-1">Penyewa</span>
       <span className="w-28 shrink-0 text-right">Dibayar s/d</span>
       <span className="w-32 shrink-0 text-right">Sisa tagihan</span>
       <span className="w-32 shrink-0 text-right">Sisa hari</span>
-      <span className="w-8 shrink-0" aria-hidden />
+      <span className="w-9 shrink-0" aria-hidden />
     </div>
   )
 }
@@ -270,7 +270,7 @@ export function LeaseListHeader() {
  * One lease per row, about 56px tall on a phone so eight or more fit on one screen: room chip, tenant name with
  * a one-line billing summary, the remaining days (or the lease status on the finished tab) and an action menu.
  * The whole row except the menu button links to the lease. On md and up the paid-through date and the
- * outstanding amount get their own columns (see LeaseListHeader).
+ * outstanding amount get their own columns (see LeaseListHeader); at md the sidebar leaves too little room for them.
  */
 export function LeaseRow({
   item,
@@ -312,39 +312,36 @@ export function LeaseRow({
     <li data-testid="lease-row" data-room={room?.name} data-tenant={tenant?.full_name} data-days={remaining?.days} className="group flex items-stretch">
       <Link
         to={`/sewa/${lease.id}`}
-        className="flex min-h-14 min-w-0 flex-1 items-center gap-3 px-3 py-2 hover:bg-slate-50 group-first:rounded-tl-xl group-last:rounded-bl-xl md:group-first:rounded-tl-none"
+        className="flex min-h-14 min-w-0 flex-1 items-center gap-2 px-3 py-2 hover:bg-slate-50 lg:gap-3 group-first:rounded-tl-xl group-last:rounded-bl-xl lg:group-first:rounded-tl-none"
       >
         <span className="flex h-10 min-w-12 shrink-0 items-center justify-center rounded-lg bg-slate-100 px-1.5 text-sm font-semibold tabular-nums text-slate-800">{roomName}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-slate-900">{tenant?.full_name ?? 'Penyewa tidak ditemukan'}</span>
-          {/* the amount comes first: on a phone this line truncates at the end, and the kos name is the least important part */}
-          <span className="block truncate text-xs text-slate-500">
-            {owes ? (
-              <span className="font-medium text-red-700">sisa {formatRupiah(summary.outstanding)}</span>
-            ) : summary.paidThrough ? (
-              `lunas s/d ${formatDate(summary.paidThrough, 'd MMM')}`
-            ) : (
-              'belum ditagih'
-            )}
-            {' · '}
-            {PERIOD_TYPE_LABEL[lease.period_type]}
-            {showKos && ` · ${propertyName}`}
+          <span data-testid="lease-tenant" className="block truncate text-sm font-semibold text-slate-900">{tenant?.full_name ?? 'Penyewa tidak ditemukan'}</span>
+          {/* the amount never shrinks; on a phone only the tail (period type, kos name) is cut short */}
+          <span className="flex min-w-0 overflow-hidden text-xs text-slate-500">
+            <span data-testid="lease-amount" className={clsx('shrink-0 whitespace-nowrap', owes && 'font-medium text-red-700')}>
+              {owes ? `sisa ${formatRupiah(summary.outstanding)}` : summary.paidThrough ? `lunas s/d ${formatDate(summary.paidThrough, 'd MMM')}` : 'belum ditagih'}
+            </span>
+            <span className="min-w-0 truncate">
+              {`\u00a0· ${PERIOD_TYPE_LABEL[lease.period_type]}`}
+              {showKos && ` · ${propertyName}`}
+            </span>
           </span>
         </span>
-        <span className="hidden w-28 shrink-0 text-right text-sm tabular-nums text-slate-700 md:block">{summary.paidThrough ? formatDate(summary.paidThrough) : '-'}</span>
-        <span className={clsx('hidden w-32 shrink-0 text-right text-sm tabular-nums md:block', owes ? 'font-medium text-red-700' : 'text-slate-700')}>{formatRupiah(summary.outstanding)}</span>
-        <span className="shrink-0 text-right md:w-32">
+        <span className="hidden w-28 shrink-0 text-right text-sm tabular-nums text-slate-700 lg:block">{summary.paidThrough ? formatDate(summary.paidThrough) : '-'}</span>
+        <span className={clsx('hidden w-32 shrink-0 text-right text-sm tabular-nums lg:block', owes ? 'font-medium text-red-700' : 'text-slate-700')}>{formatRupiah(summary.outstanding)}</span>
+        <span className="shrink-0 text-right lg:w-32">
           {isActive ? (
             remaining && (
               <>
                 <span className={clsx('block text-sm font-bold tabular-nums', REMAINING_TONE_CLASS[remaining.tone])}>{remaining.value}</span>
-                <span className="block max-w-24 truncate text-[11px] text-slate-500 md:max-w-none">{remaining.caption}</span>
+                <span className="block max-w-24 truncate text-[11px] text-slate-500 lg:max-w-none">{remaining.caption}</span>
               </>
             )
           ) : (
             <>
               <LeaseStatusBadge status={lease.status} />
-              <span className="block max-w-32 truncate text-[11px] text-slate-500 md:max-w-none">
+              <span className="block max-w-32 truncate text-[11px] text-slate-500 lg:max-w-none">
                 {lease.status === 'ended' && lease.checkout_date ? `Checkout ${formatDate(lease.checkout_date)}` : `Berakhir ${formatDate(lease.end_date)}`}
               </span>
             </>
@@ -352,7 +349,16 @@ export function LeaseRow({
         </span>
       </Link>
       <span className="flex shrink-0 items-center pr-1">
-        <ActionMenu items={items} label={`Aksi sewa ${roomName}`} />
+        {/* a 44px target: a mis-tap must open the menu, not the row link next to it */}
+        <ActionMenu
+          items={items}
+          label={`Aksi sewa ${roomName}`}
+          trigger={
+            <span className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+              <MoreHorizontal className="h-5 w-5" />
+            </span>
+          }
+        />
       </span>
     </li>
   )

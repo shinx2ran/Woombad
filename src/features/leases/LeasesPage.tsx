@@ -62,8 +62,8 @@ export function LeasesPage() {
       }))
   }, [data.leases, data.invoices, data.payments, data.roomById, data.tenantById, data.propertyById, propertyFilterIds, today])
 
-  const active = useMemo(() => sortLeaseItems(items.filter((i) => i.lease.status === 'active'), sortKey), [items, sortKey])
-  const finished = useMemo(() => sortLeaseItems(items.filter((i) => i.lease.status !== 'active'), sortKey, true), [items, sortKey])
+  const active = useMemo(() => sortLeaseItems(items.filter((i) => i.lease.status === 'active'), sortKey, false, today), [items, sortKey, today])
+  const finished = useMemo(() => sortLeaseItems(items.filter((i) => i.lease.status !== 'active'), sortKey, true, today), [items, sortKey, today])
   const shown = (tab === 'active' ? active : finished).filter((i) => matchesLeaseSearch(i, search))
   const attention = active.filter((i) => ['overdue', 'due_soon'].includes(displayBillingState(i.lease, i.summary, today))).length
 
@@ -122,7 +122,7 @@ export function LeasesPage() {
         }
       />
 
-      <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-center sm:gap-3">
+      <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm" role="tablist">
           {(
             [

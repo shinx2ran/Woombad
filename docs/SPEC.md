@@ -345,7 +345,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   (hanya saat Semua kos)" (jumlah di depan agar tidak terpotong di HP), lalu blok **sisa hari** (`remainingDays`: angka
   besar + keterangan pendek, mis. "20 hari / terlambat", "Hari ini / jatuh tempo", "3 hari / berakhir 15 Okt") dan menu
   aksi (Bayar, Tagihan berikutnya, Kirim tagihan,
-  Pengingat WhatsApp, Profil penyewa). Di layar md+ ada kolom tambahan Dibayar s/d dan Sisa tagihan. Tab Selesai/Batal
+  Pengingat WhatsApp, Profil penyewa). Di layar lg+ (≥1024px; di md sidebar menyisakan terlalu sedikit ruang) ada kolom tambahan Dibayar s/d dan Sisa tagihan. Tab Selesai/Batal
   menampilkan lencana status + "Checkout/Berakhir <tanggal>" sebagai ganti sisa hari.
 - Urutan (`?urut=`): `jatuh-tempo` = **Sisa hari paling sedikit** (default; terlambat di atas), `jatuh-tempo-terjauh` =
   **Sisa hari paling banyak** (tanpa tanggal tetap di bawah; di tab Selesai = selesai paling lama dulu), `kamar` = **Nomor
@@ -358,10 +358,13 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   `layoutInvoice` (`src/features/invoices/invoiceLayout.ts`, murni & diuji: daftar op gambar pada halaman 1080 px, tinggi mengikuti
   isi) → `renderInvoiceImage` (canvas → PNG). Isi: logo + nama/alamat kos, TAGIHAN + nomor + pil status, penyewa/kamar/periode/jatuh
   tempo/tanggal terbit, rincian, total, sudah dibayar & sisa, daftar pembayaran, kotak **Pembayaran ke** (hanya selama masih ada sisa),
-  catatan, "Dibuat <tanggal> · Woombad".
+  catatan (hanya bila dicentang **Sertakan catatan tagihan di gambar**: catatan bisa memuat keterangan internal seperti "Sisa
+  dianggap hangus"), "Dibuat <tanggal> · Woombad".
 - Tautan wa.me hanya membawa teks, jadi gambar diserahkan ke **lembar bagikan** OS (`navigator.share` dengan berkas; Android Chrome /
   PWA terpasang dan iOS Safari) dan pemilik memilih WhatsApp + kontak; teks pengantar = `invoiceShareText`. Cadangan: **Unduh gambar**
   dan **Kirim teks saja via WhatsApp**; browser tanpa dukungan berbagi berkas diberi penjelasan.
 - **Logo kos** (`properties.logo_path`, bucket privat `logos`, 1 MB, PNG/JPEG/WebP; pemilik/admin lewat form kos): diperkecil di browser
   (sisi panjang ≤ 600 px, PNG/WebP tetap PNG agar transparan, `logoImage.ts`), baris disimpan dulu lalu berkas diunggah dan
-  `logo_path` di-update; berkas lama dihapus best-effort (6.4). `useKosLogo` mengunduh & men-cache logo per path (mode demo: tanpa logo).
+  `logo_path` di-update; berkas lama dihapus best-effort (6.4), begitu pula saat kos dihapus. Policy storage: bucket `logos` hanya
+  dapat ditulis/dihapus oleh **pemilik/admin** (`is_org_admin`, mengikuti aturan kos 6.2), dibaca semua anggota. `useKosLogo`
+  mengunduh & men-cache logo per path (batas 8 detik, gagal → tanpa logo, dicoba lagi setelah 30 detik; mode demo: tanpa logo).

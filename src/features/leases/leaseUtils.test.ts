@@ -4,8 +4,7 @@ import {
   allocateAcrossInvoices,
   appendMoveNote,
   cancelledLeaseEndDate,
-  compareByNextDue,
-  compareByNextDueDesc,
+  compareByShownDays,
   compareLeaseItems,
   composeInvoiceNotes,
   futureInvoicesAtCheckout,
@@ -307,12 +306,27 @@ describe('sort by remaining days (SPEC 7.1)', () => {
     expect(parseLeaseSort(undefined)).toBe('jatuh-tempo')
   })
 
-  it('paling banyak: latest due date first, same date by room then kos, no due date still last', () => {
-    expect(keys([...items].sort(compareByNextDueDesc))).toEqual(['d', 'a', 'c', 'b', 'e'])
-    expect(keys(sortLeaseItems(items, 'jatuh-tempo-terjauh'))).toEqual(['d', 'a', 'c', 'b', 'e'])
+  it('paling banyak: most days first, same count by room then kos, no due date still last', () => {
+    const today = '2026-10-12'
+    expect(keys([...items].sort(compareByShownDays(today, true)))).toEqual(['d', 'a', 'c', 'b', 'e'])
+    expect(keys(sortLeaseItems(items, 'jatuh-tempo-terjauh', false, today))).toEqual(['d', 'a', 'c', 'b', 'e'])
     // the ascending order is the mirror image, except that undated leases stay at the end in both
-    expect(keys([...items].sort(compareByNextDue))).toEqual(['b', 'c', 'd', 'a', 'e'])
-    expect(compareByNextDueDesc(items[4], items[4])).toBe(0)
+    expect(keys([...items].sort(compareByShownDays(today)))).toEqual(['b', 'c', 'd', 'a', 'e'])
+    expect(keys(sortLeaseItems(items, 'jatuh-tempo', false, today))).toEqual(['b', 'c', 'd', 'a', 'e'])
+    expect(compareByShownDays(today, true)(items[4], items[4])).toBe(0)
+  })
+
+  it('sorts by the day count the row shows: a paid-up lease that is ending counts to its end date', () => {
+    // 'ending' shows days to end_date (2), while its next due date (the 15th) alone would not put it first
+    const today = '2026-10-12'
+    const ending: LeaseListItem = {
+      ...item('end', 'Kos Melati', 'C1', '2026-10-15'),
+      lease: { ...lease, id: 'end', end_date: '2026-10-14' },
+      summary: { ...summary('2026-10-15'), coveredThrough: '2026-10-14', paidThrough: '2026-10-14', daysUntilDue: 3 },
+    }
+    const due = { ...item('due', 'Kos Melati', 'C2', '2026-10-15'), summary: { ...summary('2026-10-15'), daysUntilDue: 3 } }
+    expect(keys(sortLeaseItems([ending, due], 'jatuh-tempo', false, today))).toEqual(['end', 'due'])
+    expect(keys(sortLeaseItems([ending, due], 'jatuh-tempo-terjauh', false, today))).toEqual(['due', 'end'])
   })
 
   it('finished list: paling banyak puts the oldest finished lease first', () => {
@@ -323,6 +337,13 @@ describe('sort by remaining days (SPEC 7.1)', () => {
     ]
     expect(keys(sortLeaseItems(finished, 'jatuh-tempo', true))).toEqual(['y', 'z', 'x'])
     expect(keys(sortLeaseItems(finished, 'jatuh-tempo-terjauh', true))).toEqual(['x', 'z', 'y'])
+    // only the date flips; leases finished on the same day stay in room order both ways
+    const sameDay = [
+      { ...item('b2', 'Kos Melati', 'B2', null), lease: { ...lease, id: 'b2', status: 'ended' as const, checkout_date: '2026-09-30' } },
+      { ...item('a1', 'Kos Melati', 'A1', null), lease: { ...lease, id: 'a1', status: 'ended' as const, checkout_date: '2026-09-30' } },
+    ]
+    expect(keys(sortLeaseItems(sameDay, 'jatuh-tempo', true))).toEqual(['a1', 'b2'])
+    expect(keys(sortLeaseItems(sameDay, 'jatuh-tempo-terjauh', true))).toEqual(['a1', 'b2'])
   })
 })
 
@@ -347,7 +368,7 @@ describe('remainingDays (SPEC 7.1)', () => {
   })
 
   it('shows lateness as a positive count; danger only once the grace days are over', () => {
-    expect(remainingDays(monthly, s('2026-10-09', 'due_soon', -3, 100), '2026-10-12')).toEqual({ days: -3, kind: 'grace', value: '3 hari', caption: 'lewat · tenggang', tone: 'warning' })
+    expect(remainingDays(monthly, s('2026-10-09', 'due_soon', -3, 100), '2026-10-12')).toEqual({ days: -3, kind: 'grace', value: '3 hari', caption: 'tenggang', tone: 'warning' })
     expect(remainingDays(monthly, s('2026-09-22', 'overdue', -20, 100), '2026-10-12')).toEqual({ days: -20, kind: 'overdue', value: '20 hari', caption: 'terlambat', tone: 'danger' })
   })
 

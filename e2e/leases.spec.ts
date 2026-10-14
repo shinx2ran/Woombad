@@ -58,6 +58,35 @@ test.describe('Daftar sewa ringkas (SPEC 7.1)', () => {
     await expect.poll(() => days(page)).toEqual([...fewest].reverse())
   })
 
+  test('an iPad held upright (768px) still shows every tenant name and nothing overflows', async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 })
+    await openLeases(page)
+    const names = await rows(page).evaluateAll((els) => els.map((el) => (el.querySelector('[data-testid="lease-tenant"]') as HTMLElement).getBoundingClientRect().width))
+    expect(names.length).toBeGreaterThan(1)
+    for (const w of names) expect(w).toBeGreaterThan(60)
+    // the menu button sits beside the row, never on top of the day count
+    const first = rows(page).first()
+    const days = await first.locator('a > span').last().boundingBox()
+    const menu = await first.getByRole('button', { name: /^Aksi sewa/ }).boundingBox()
+    expect(menu!.x).toBeGreaterThanOrEqual(days!.x + days!.width)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
+
+  test('a narrow phone (360px) never cuts the amount owed', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 })
+    await openLeases(page)
+    // the amount span must end inside its line box (only the period/kos tail may truncate)
+    const clipped = await rows(page).evaluateAll((els) =>
+      els.map((el) => {
+        const amount = el.querySelector('[data-testid="lease-amount"]') as HTMLElement
+        const line = amount.parentElement as HTMLElement
+        return amount.getBoundingClientRect().right > line.getBoundingClientRect().right + 0.5
+      }),
+    )
+    expect(clipped).not.toContain(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
+
   test('tapping a row opens the lease', async ({ page }) => {
     await page.setViewportSize(PHONE)
     await openLeases(page)

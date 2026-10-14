@@ -10,7 +10,7 @@ import {
   permanentSwitchAddonsAmount,
   rescaleAddonAmount,
   rescaledAddonDefaults,
-  compareByNextDue,
+  compareByShownDays,
   compareByRoom,
   compareByTenantName,
   defaultMakePermanent,
@@ -140,8 +140,8 @@ describe('lease list sorting (SPEC 5.1)', () => {
   })
 
   it('jatuh tempo: earliest due first (overdue = past dates on top), ties by natural room name, no due date last', () => {
-    expect(keys([...items].sort(compareByNextDue))).toEqual(['b', 'c', 'd', 'a', 'e'])
-    expect(keys(sortLeaseItems(items, 'jatuh-tempo'))).toEqual(['b', 'c', 'd', 'a', 'e'])
+    expect(keys([...items].sort(compareByShownDays('2026-10-12')))).toEqual(['b', 'c', 'd', 'a', 'e'])
+    expect(keys(sortLeaseItems(items, 'jatuh-tempo', false, '2026-10-12'))).toEqual(['b', 'c', 'd', 'a', 'e'])
   })
 
   it('nomor kamar: kos name first, then A2 < A10 < B1 (natural order)', () => {

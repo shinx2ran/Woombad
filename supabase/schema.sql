@@ -927,15 +927,25 @@ end $$;
 drop policy if exists storage_org_select on storage.objects;
 create policy storage_org_select on storage.objects for select
   using (bucket_id in ('ktp', 'receipts', 'logos') and public.is_org_member(public.path_org_id(name)));
+-- Writing a logo follows the kos itself (admin only, SPEC 6.2); every member may read it for the invoice image.
 drop policy if exists storage_org_insert on storage.objects;
 create policy storage_org_insert on storage.objects for insert
-  with check (bucket_id in ('ktp', 'receipts', 'logos') and public.is_org_member(public.path_org_id(name)));
+  with check (
+    (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)))
+    or (bucket_id = 'logos' and public.is_org_admin(public.path_org_id(name)))
+  );
 drop policy if exists storage_org_update on storage.objects;
 create policy storage_org_update on storage.objects for update
-  using (bucket_id in ('ktp', 'receipts', 'logos') and public.is_org_member(public.path_org_id(name)));
+  using (
+    (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)))
+    or (bucket_id = 'logos' and public.is_org_admin(public.path_org_id(name)))
+  );
 drop policy if exists storage_org_delete on storage.objects;
 create policy storage_org_delete on storage.objects for delete
-  using (bucket_id in ('ktp', 'receipts', 'logos') and public.is_org_member(public.path_org_id(name)));
+  using (
+    (bucket_id in ('ktp', 'receipts') and public.is_org_member(public.path_org_id(name)))
+    or (bucket_id = 'logos' and public.is_org_admin(public.path_org_id(name)))
+  );
 
 -- ---------- keep-alive ----------
 -- Free Supabase projects are paused after about a week with too little database activity. A scheduled GitHub
