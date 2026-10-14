@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Link, useNavigate } from 'react-router'
 import { clsx } from 'clsx'
-import { AlertTriangle, CalendarClock, MoreHorizontal } from 'lucide-react'
-import { Badge, MoneyInput, Input } from '../../components/ui'
+import { AlertTriangle, CalendarClock, FilePlus2, MessageCircle, MoreHorizontal, User, Wallet } from 'lucide-react'
+import { Badge, LeaseStatusBadge, MoneyInput, Input } from '../../components/ui'
 import type { DepositBalance } from '../../domain/billing'
 import type { PeriodType } from '../../types/db'
 import { PERIOD_TYPES, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
@@ -10,9 +11,12 @@ import {
   BILLING_STATE_META,
   priceDelta,
   priceDeltaText,
+  remainingDays,
   type DepositSettlement,
   type DisplayBillingState,
   type DueLabel,
+  type DueTone,
+  type LeaseListItem,
   type TimelineSegment,
 } from './leaseUtils'
 
@@ -236,6 +240,121 @@ export function ActionMenu({ items, label = 'Aksi lainnya', trigger, align = 'ri
         </div>
       )}
     </div>
+  )
+}
+
+// ---------- dense lease list (SPEC 7.1) ----------
+
+const REMAINING_TONE_CLASS: Record<DueTone, string> = {
+  danger: 'text-red-700',
+  warning: 'text-amber-700',
+  info: 'text-sky-700',
+  neutral: 'text-slate-700',
+}
+
+/** Column names above the rows on md and up; the widths mirror the cells of LeaseRow. */
+export function LeaseListHeader() {
+  return (
+    <div className="hidden items-center gap-3 border-b border-slate-100 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-500 md:flex">
+      <span className="w-12 shrink-0 text-center">Kamar</span>
+      <span className="min-w-0 flex-1">Penyewa</span>
+      <span className="w-28 shrink-0 text-right">Dibayar s/d</span>
+      <span className="w-32 shrink-0 text-right">Sisa tagihan</span>
+      <span className="w-32 shrink-0 text-right">Sisa hari</span>
+      <span className="w-8 shrink-0" aria-hidden />
+    </div>
+  )
+}
+
+/**
+ * One lease per row, about 56px tall on a phone so eight or more fit on one screen: room chip, tenant name with
+ * a one-line billing summary, the remaining days (or the lease status on the finished tab) and an action menu.
+ * The whole row except the menu button links to the lease. On md and up the paid-through date and the
+ * outstanding amount get their own columns (see LeaseListHeader).
+ */
+export function LeaseRow({
+  item,
+  today,
+  showKos,
+  onPay,
+  onInvoice,
+  onReminder,
+  extraItems = [],
+}: {
+  item: LeaseListItem
+  today: string
+  /** second line ends with the kos name (global filter = Semua kos) */
+  showKos: boolean
+  onPay: () => void
+  onInvoice: () => void
+  /** opens the WhatsApp reminder; the item is offered only when the tenant has a phone number */
+  onReminder: () => void
+  /** extra menu items, placed after 'Tagihan berikutnya' */
+  extraItems?: MenuItem[]
+}) {
+  const navigate = useNavigate()
+  const { lease, summary, room, tenant, propertyName } = item
+  const isActive = lease.status === 'active'
+  const remaining = isActive ? remainingDays(lease, summary, today) : null
+  const roomName = room?.name ?? '?'
+  const owes = summary.outstanding > 0
+
+  const items: MenuItem[] = []
+  if (isActive) {
+    items.push({ label: 'Bayar', icon: <Wallet className="h-4 w-4" />, disabled: !owes, onClick: onPay })
+    items.push({ label: 'Tagihan berikutnya', icon: <FilePlus2 className="h-4 w-4" />, onClick: onInvoice })
+    items.push(...extraItems)
+    if (tenant?.phone) items.push({ label: 'Pengingat WhatsApp', icon: <MessageCircle className="h-4 w-4" />, onClick: onReminder })
+  }
+  if (tenant) items.push({ label: 'Profil penyewa', icon: <User className="h-4 w-4" />, onClick: () => navigate(`/penyewa/${tenant.id}`) })
+
+  return (
+    <li data-testid="lease-row" data-room={room?.name} data-tenant={tenant?.full_name} data-days={remaining?.days} className="group flex items-stretch">
+      <Link
+        to={`/sewa/${lease.id}`}
+        className="flex min-h-14 min-w-0 flex-1 items-center gap-3 px-3 py-2 hover:bg-slate-50 group-first:rounded-tl-xl group-last:rounded-bl-xl md:group-first:rounded-tl-none"
+      >
+        <span className="flex h-10 min-w-12 shrink-0 items-center justify-center rounded-lg bg-slate-100 px-1.5 text-sm font-semibold tabular-nums text-slate-800">{roomName}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-slate-900">{tenant?.full_name ?? 'Penyewa tidak ditemukan'}</span>
+          {/* the amount comes first: on a phone this line truncates at the end, and the kos name is the least important part */}
+          <span className="block truncate text-xs text-slate-500">
+            {owes ? (
+              <span className="font-medium text-red-700">sisa {formatRupiah(summary.outstanding)}</span>
+            ) : summary.paidThrough ? (
+              `lunas s/d ${formatDate(summary.paidThrough, 'd MMM')}`
+            ) : (
+              'belum ditagih'
+            )}
+            {' · '}
+            {PERIOD_TYPE_LABEL[lease.period_type]}
+            {showKos && ` · ${propertyName}`}
+          </span>
+        </span>
+        <span className="hidden w-28 shrink-0 text-right text-sm tabular-nums text-slate-700 md:block">{summary.paidThrough ? formatDate(summary.paidThrough) : '-'}</span>
+        <span className={clsx('hidden w-32 shrink-0 text-right text-sm tabular-nums md:block', owes ? 'font-medium text-red-700' : 'text-slate-700')}>{formatRupiah(summary.outstanding)}</span>
+        <span className="shrink-0 text-right md:w-32">
+          {isActive ? (
+            remaining && (
+              <>
+                <span className={clsx('block text-sm font-bold tabular-nums', REMAINING_TONE_CLASS[remaining.tone])}>{remaining.value}</span>
+                <span className="block max-w-24 truncate text-[11px] text-slate-500 md:max-w-none">{remaining.caption}</span>
+              </>
+            )
+          ) : (
+            <>
+              <LeaseStatusBadge status={lease.status} />
+              <span className="block max-w-32 truncate text-[11px] text-slate-500 md:max-w-none">
+                {lease.status === 'ended' && lease.checkout_date ? `Checkout ${formatDate(lease.checkout_date)}` : `Berakhir ${formatDate(lease.end_date)}`}
+              </span>
+            </>
+          )}
+        </span>
+      </Link>
+      <span className="flex shrink-0 items-center pr-1">
+        <ActionMenu items={items} label={`Aksi sewa ${roomName}`} />
+      </span>
+    </li>
   )
 }
 

@@ -229,6 +229,14 @@ begin
   perform zz.chk('f-storage', 'stranger reads any object', '^val:0$', zz.val(zz.id('stranger'), 'select count(*) from storage.objects'));
   perform zz.chk('f-storage', 'path org1/../org2 is treated as org1 (no traversal effect)', '^ok:1$', zz.att(zz.id('owner'), format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'ktp', org1 || '/../' || zz.id('org2') || '/x.jpg')));
   perform zz.chk('f-storage', 'org2 member cannot upload path org2/../org1 and read it as org1', '^val:0$', zz.val(zz.id('o2owner'), format('select count(*) from storage.objects where name like %L', org1 || '/%')));
+  -- kos logos (bucket logos, shown on invoices) follow the same org-folder rule
+  perform zz.chk('f-storage', 'org1 owner uploads a kos logo', '^ok:1$', zz.att(zz.id('owner'), format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'logos', org1 || '/logo.png'), true));
+  perform zz.chk('f-storage', 'org1 staff reads the logo (the invoice image needs it)', '^val:1$', zz.val(zz.id('staff'), format('select count(*) from storage.objects where bucket_id = %L and name = %L', 'logos', org1 || '/logo.png')));
+  perform zz.chk('f-storage', 'org2 reads org1 logo', '^val:0$', zz.val(zz.id('o2owner'), 'select count(*) from storage.objects where bucket_id = ''logos'''));
+  perform zz.chk('f-storage', 'org2 deletes org1 logo', '^ok:0$', zz.att(zz.id('o2owner'), format('delete from storage.objects where bucket_id = %L and name = %L', 'logos', org1 || '/logo.png')));
+  perform zz.chk('f-storage', 'org2 uploads a logo into org1 folder', '^err:42501', zz.att(zz.id('o2owner'), format('insert into storage.objects (bucket_id, name) values (%L, %L)', 'logos', org1 || '/evil.png')));
+  perform zz.chk('f-storage', 'stranger reads any logo', '^val:0$', zz.val(zz.id('stranger'), 'select count(*) from storage.objects where bucket_id = ''logos'''));
+  perform zz.chk('f-storage', 'org1 owner removes the logo', '^ok:1$', zz.att(zz.id('owner'), format('delete from storage.objects where bucket_id = %L and name = %L', 'logos', org1 || '/logo.png'), true));
 
   ---------------------------------------------------------------- (g) column-level: org_id / created_by
   perform zz.chk('g-columns', 'staff (single-org) moves tenant org_id -> org2', '^err:(42501|P0001)', zz.att(zz.id('staff'), format('update public.tenants set org_id = %L where id = %L', zz.id('org2'), zz.id('tenant_loose'))));

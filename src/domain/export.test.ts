@@ -34,6 +34,7 @@ function makeProperty(overrides: Partial<Property> = {}): Property {
     address: null,
     notes: null,
     payment_info: null,
+    logo_path: null,
     ...overrides,
   }
 }

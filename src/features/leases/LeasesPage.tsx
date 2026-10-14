@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
-import { ArrowUpDown, ChevronRight, FilePlus2, Plus, Search, Wallet } from 'lucide-react'
-import { Button, Card, EmptyState, ErrorState, LeaseStatusBadge, LoadingState, PageHeader } from '../../components/ui'
+import { ArrowUpDown, Plus, Search, Share2 } from 'lucide-react'
+import { Button, Card, EmptyState, ErrorState, LoadingState, PageHeader, useToast } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
-import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import type { Lease } from '../../types/db'
+import type { Invoice, Lease } from '../../types/db'
 import { summarizeLeaseBilling } from '../../domain/billing'
-import { formatDate, formatRupiah, todayISO } from '../../lib/format'
+import { todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
 import {
@@ -15,16 +14,18 @@ import {
   LEASE_SORT_KEYS,
   LEASE_SORT_LABEL,
   displayBillingState,
-  dueLabel,
+  leaseReminderText,
   matchesLeaseSearch,
+  openInvoicesSorted,
   parseLeaseSort,
   sortLeaseItems,
   type LeaseListItem,
   type LeaseSortKey,
 } from './leaseUtils'
-import { BillingStateBadge, DueLine } from './components'
+import { LeaseListHeader, LeaseRow } from './components'
 import { PaymentModal } from './PaymentModal'
 import { NextInvoiceModal } from './InvoiceFormModal'
+import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
 
 type Tab = 'active' | 'finished'
 
@@ -32,6 +33,7 @@ export function LeasesPage() {
   const { propertyFilterIds, selectedPropertyId, properties } = useOrg()
   const data = useLeaseData()
   const actions = useLeaseActions()
+  const toast = useToast()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const sortKey = parseLeaseSort(params.get('urut'))
@@ -44,6 +46,8 @@ export function LeasesPage() {
   const [tab, setTab] = useState<Tab>('active')
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState<{ kind: 'pay' | 'invoice'; lease: Lease } | null>(null)
+  /** "Kirim tagihan": the invoice image modal for one lease */
+  const [share, setShare] = useState<{ invoice: Invoice; lease: Lease } | null>(null)
   const today = todayISO()
 
   const items = useMemo<LeaseListItem[]>(() => {
@@ -63,11 +67,48 @@ export function LeasesPage() {
   const shown = (tab === 'active' ? active : finished).filter((i) => matchesLeaseSearch(i, search))
   const attention = active.filter((i) => ['overdue', 'due_soon'].includes(displayBillingState(i.lease, i.summary, today))).length
 
-  const kosName = selectedPropertyId === 'all' ? 'semua kos' : (properties.find((p) => p.id === selectedPropertyId)?.name ?? 'kos terpilih')
+  const showKos = selectedPropertyId === 'all'
+  const kosName = showKos ? 'semua kos' : (properties.find((p) => p.id === selectedPropertyId)?.name ?? 'kos terpilih')
 
   const modalLease = modal?.lease
   const modalInvoices = useMemo(() => (modalLease ? data.invoices.filter((i) => i.lease_id === modalLease.id) : []), [data.invoices, modalLease])
   const modalAddons = useMemo(() => (modalLease ? data.leaseAddons.filter((a) => a.lease_id === modalLease.id) : []), [data.leaseAddons, modalLease])
+
+  // Leases that have something to send: the menu item is disabled for the others ('Belum ada tagihan').
+  const leasesWithInvoice = useMemo(() => new Set(data.invoices.filter((i) => i.status !== 'void').map((i) => i.lease_id)), [data.invoices])
+  // The oldest open invoice, else the latest non-void one; picked only when the menu item is tapped.
+  const openShare = (lease: Lease) => {
+    const [oldestOpen] = openInvoicesSorted(lease.id, data.invoices, data.payments)
+    const latest = data.invoices
+      .filter((i) => i.lease_id === lease.id && i.status !== 'void')
+      .sort((a, b) => b.period_start.localeCompare(a.period_start) || b.created_at.localeCompare(a.created_at))[0]
+    const invoice = oldestOpen ?? latest
+    if (invoice) setShare({ invoice, lease })
+  }
+  // A freshly issued invoice (NextInvoiceModal.onCreated) may not be in the query cache yet: fall back to the inserted row.
+  const shareInvoice = share ? (data.invoices.find((i) => i.id === share.invoice.id) ?? share.invoice) : null
+  const shareAddons = useMemo(() => (share ? data.leaseAddons.filter((a) => a.lease_id === share.lease.id) : []), [data.leaseAddons, share])
+
+  // Built only when the menu item is tapped: a reminder per row on every render would be wasted work.
+  const openReminder = (item: LeaseListItem) => {
+    const { lease, tenant } = item
+    const text = leaseReminderText({
+      lease,
+      tenant,
+      room: item.room,
+      property: data.propertyById.get(lease.property_id),
+      invoices: data.invoices.filter((i) => i.lease_id === lease.id),
+      orgInvoices: data.invoices,
+      payments: data.payments,
+      addons: data.leaseAddons.filter((a) => a.lease_id === lease.id),
+    })
+    const link = text ? whatsappLink(tenant?.phone, text) : null
+    if (!link) {
+      toast.error('Pengingat tidak dapat dibuat untuk sewa ini.')
+      return
+    }
+    window.open(link, '_blank', 'noopener,noreferrer')
+  }
 
   return (
     <>
@@ -81,7 +122,7 @@ export function LeasesPage() {
         }
       />
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-center sm:gap-3">
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm" role="tablist">
           {(
             [
@@ -147,13 +188,31 @@ export function LeasesPage() {
           }
         />
       ) : (
-        <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {shown.map((item) => (
-            <li key={item.lease.id}>
-              <LeaseCard item={item} today={today} onPay={() => setModal({ kind: 'pay', lease: item.lease })} onInvoice={() => setModal({ kind: 'invoice', lease: item.lease })} />
-            </li>
-          ))}
-        </ul>
+        <Card>
+          <LeaseListHeader />
+          <ul className="divide-y divide-slate-100">
+            {shown.map((item) => (
+              <LeaseRow
+                key={item.lease.id}
+                item={item}
+                today={today}
+                showKos={showKos}
+                onPay={() => setModal({ kind: 'pay', lease: item.lease })}
+                onInvoice={() => setModal({ kind: 'invoice', lease: item.lease })}
+                onReminder={() => openReminder(item)}
+                extraItems={[
+                  {
+                    label: 'Kirim tagihan',
+                    hint: leasesWithInvoice.has(item.lease.id) ? 'Gambar tagihan ke WhatsApp' : 'Belum ada tagihan',
+                    icon: <Share2 className="h-4 w-4" />,
+                    disabled: !leasesWithInvoice.has(item.lease.id),
+                    onClick: () => openShare(item.lease),
+                  },
+                ]}
+              />
+            ))}
+          </ul>
+        </Card>
       )}
 
       {modalLease && (
@@ -179,76 +238,23 @@ export function LeasesPage() {
             leaseInvoices={modalInvoices}
             orgInvoices={data.invoices}
             actions={actions}
+            onCreated={(invoice) => setShare({ invoice, lease: modalLease })}
           />
         </>
       )}
+      {share && shareInvoice && (
+        <InvoiceShareModal
+          open
+          onClose={() => setShare(null)}
+          invoice={shareInvoice}
+          lease={share.lease}
+          tenant={data.tenantById.get(share.lease.tenant_id)}
+          room={data.roomById.get(share.lease.room_id)}
+          property={data.propertyById.get(share.lease.property_id)}
+          payments={data.payments}
+          leaseAddons={shareAddons}
+        />
+      )}
     </>
-  )
-}
-
-function LeaseCard({ item, today, onPay, onInvoice }: { item: LeaseListItem; today: string; onPay: () => void; onInvoice: () => void }) {
-  const { lease, summary, room, tenant, propertyName } = item
-  const isActive = lease.status === 'active'
-  const due = dueLabel(lease, summary, today)
-  return (
-    <Card className="flex h-full flex-col">
-      <Link to={`/sewa/${lease.id}`} className="block rounded-t-xl px-4 pt-3 pb-2 hover:bg-slate-50">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="truncate text-base font-semibold text-slate-900">
-              Kamar {room?.name ?? '?'} <span className="font-normal text-slate-500">· {propertyName}</span>
-            </p>
-            <p className="truncate text-sm text-slate-700">{tenant?.full_name ?? 'Penyewa tidak ditemukan'}</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {isActive ? <BillingStateBadge state={displayBillingState(lease, summary, today)} /> : <LeaseStatusBadge status={lease.status} />}
-            <ChevronRight className="h-4 w-4 text-slate-400" />
-          </div>
-        </div>
-        {due && (
-          <div className="mt-2">
-            <DueLine due={due} />
-          </div>
-        )}
-        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm sm:grid-cols-4">
-          <div>
-            <dt className="text-xs text-slate-500">Periode</dt>
-            <dd className="text-slate-800">
-              {PERIOD_TYPE_LABEL[lease.period_type]} · <span className="whitespace-nowrap">{formatRupiah(lease.price_per_period)}/{PERIOD_UNIT_LABEL[lease.period_type]}</span>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Dibayar s/d</dt>
-            <dd className="text-slate-800">{summary.paidThrough ? formatDate(summary.paidThrough) : '-'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Sisa tagihan</dt>
-            <dd className={clsx('tabular-nums font-medium', summary.outstanding > 0 ? 'text-red-700' : 'text-slate-800')}>{formatRupiah(summary.outstanding)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">{isActive ? 'Sewa s/d' : 'Berakhir'}</dt>
-            <dd className="text-slate-800">{formatDate(isActive ? lease.end_date : (lease.checkout_date ?? lease.end_date))}</dd>
-          </div>
-        </dl>
-      </Link>
-      {isActive && (
-        <div className="mt-auto flex items-center gap-2 border-t border-slate-100 px-4 py-2.5">
-          <Button size="sm" variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={onPay} disabled={summary.outstanding <= 0}>
-            Bayar
-          </Button>
-          <Button size="sm" variant="outline" icon={<FilePlus2 className="h-4 w-4" />} onClick={onInvoice}>
-            Tagihan berikutnya
-          </Button>
-          {tenant && (
-            <Link to={`/penyewa/${tenant.id}`} className="ml-auto hidden text-xs font-medium text-brand-700 hover:underline sm:inline">
-              Profil penyewa
-            </Link>
-          )}
-        </div>
-      )}
-      {lease.status === 'ended' && lease.checkout_date && (
-        <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Checkout {formatDate(lease.checkout_date)}</div>
-      )}
-    </Card>
   )
 }

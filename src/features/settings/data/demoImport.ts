@@ -144,7 +144,7 @@ const money = (def?: number): Col => ({ type: 'int', min: 0, def })
 
 /** Every insertable column per table (typed against src/types/db.ts, so a new column fails to compile here). */
 const COLUMNS: { [T in ImportTable]: { [K in DataColumns<T>]: Col } } = {
-  properties: { name: reqText, address: text, notes: text, payment_info: text },
+  properties: { name: reqText, address: text, notes: text, payment_info: text, logo_path: { type: 'text', clear: true } },
   rooms: {
     property_id: reqUuid,
     name: reqText,

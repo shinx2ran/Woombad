@@ -2,11 +2,12 @@
  * UI-side helpers for the leases module. Money/date rules live in src/domain; these functions only
  * arrange domain results for display (sorting, search, timeline segments, form conventions).
  */
-import type { Expense, Invoice, Lease, LeaseAddon, OrgInsert, Payment, PeriodType, Room, Tenant, Update } from '../../types/db'
+import type { Expense, Invoice, Lease, LeaseAddon, OrgInsert, Payment, PeriodType, Property, Room, Tenant, Update } from '../../types/db'
 import { PERIOD_TYPE_LABEL } from '../../types/db'
 import type { BillingState, ExtraBreakdown, InvoiceDraft, LeaseBillingSummary } from '../../domain/billing'
 import {
   activeInvoicesSorted,
+  buildInvoiceDraft,
   chainAnchor,
   computeAddonsAmount,
   deriveInvoiceStatus,
@@ -18,6 +19,7 @@ import {
   paidAmountFor,
   parseExtraBreakdown,
 } from '../../domain/billing'
+import { reminderText } from '../../domain/messages'
 import { addDaysISO, daysBetween, periodEnd } from '../../domain/period'
 import { compareRoomNames, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
 import { formatDate, formatRupiah } from '../../lib/format'
@@ -66,12 +68,13 @@ export function compareLeaseItems(a: LeaseListItem, b: LeaseListItem): number {
 // ---------- list sorting (SPEC 5.1) ----------
 
 /** Values of the `?urut=` search param on /sewa. */
-export const LEASE_SORT_KEYS = ['jatuh-tempo', 'kamar', 'nama'] as const
+export const LEASE_SORT_KEYS = ['jatuh-tempo', 'jatuh-tempo-terjauh', 'kamar', 'nama'] as const
 export type LeaseSortKey = (typeof LEASE_SORT_KEYS)[number]
 export const DEFAULT_LEASE_SORT: LeaseSortKey = 'jatuh-tempo'
 
 export const LEASE_SORT_LABEL: Record<LeaseSortKey, string> = {
-  'jatuh-tempo': 'Jatuh tempo terdekat',
+  'jatuh-tempo': 'Sisa hari paling sedikit',
+  'jatuh-tempo-terjauh': 'Sisa hari paling banyak',
   kamar: 'Nomor kamar',
   nama: 'Nama penyewa',
 }
@@ -103,6 +106,22 @@ export function compareByNextDue(a: LeaseListItem, b: LeaseListItem): number {
   return compareDueKeys(a, b) || compareRoomNames(roomNameOf(a), roomNameOf(b)) || compareKosNames(a, b)
 }
 
+/** Latest due date first; leases without a due date sort last here too (not first), unlike a plain reversal. */
+function compareDueKeysDesc(a: LeaseListItem, b: LeaseListItem): number {
+  const ad = a.summary.nextDueDate
+  const bd = b.summary.nextDueDate
+  if (!ad || !bd) return ad === bd ? 0 : ad ? -1 : 1
+  return ad === bd ? 0 : ad > bd ? -1 : 1
+}
+
+/**
+ * 'Sisa hari paling banyak': latest nextDueDate first (the leases that can wait longest on top), leases
+ * without a due date still last; ties like compareByNextDue (room name, then kos name).
+ */
+export function compareByNextDueDesc(a: LeaseListItem, b: LeaseListItem): number {
+  return compareDueKeysDesc(a, b) || compareRoomNames(roomNameOf(a), roomNameOf(b)) || compareKosNames(a, b)
+}
+
 /**
  * 'Nomor kamar': kos NAME first (not property id, so the order matches what the user reads across kos),
  * then the natural room order (A1 < A2 < A10); same room (old and new lease) by next due date.
@@ -122,11 +141,16 @@ export function compareByTenantName(a: LeaseListItem, b: LeaseListItem): number 
 }
 
 /**
- * Sorted copy of a lease list. 'jatuh-tempo' on a finished (ended / cancelled) list keeps "most recently
- * finished first" (nothing is due there); 'kamar' and 'nama' apply to both lists.
+ * Sorted copy of a lease list. On a finished (ended / cancelled) list nothing is due, so 'jatuh-tempo' keeps
+ * "most recently finished first" and 'jatuh-tempo-terjauh' the reverse (oldest finished first); 'kamar' and
+ * 'nama' apply to both lists.
  */
 export function sortLeaseItems(items: LeaseListItem[], key: LeaseSortKey, finished = false): LeaseListItem[] {
-  const cmp = key === 'kamar' ? compareByRoom : key === 'nama' ? compareByTenantName : finished ? compareFinishedLeases : compareByNextDue
+  let cmp: (a: LeaseListItem, b: LeaseListItem) => number
+  if (key === 'kamar') cmp = compareByRoom
+  else if (key === 'nama') cmp = compareByTenantName
+  else if (key === 'jatuh-tempo-terjauh') cmp = finished ? (a, b) => compareFinishedLeases(b, a) : compareByNextDueDesc
+  else cmp = finished ? compareFinishedLeases : compareByNextDue
   return [...items].sort(cmp)
 }
 
@@ -169,6 +193,52 @@ export function dueLabel(lease: Lease, summary: LeaseBillingSummary, todayISO: s
   }
   if (days === 0) return { text: `Jatuh tempo hari ini · ${date}`, tone: 'warning' }
   return { text: `Jatuh tempo ${date} · ${relativeDays(days)}`, tone: summary.state === 'due_soon' ? 'warning' : 'neutral' }
+}
+
+export type RemainingKind = 'overdue' | 'grace' | 'today' | 'soon' | 'ok' | 'ending'
+
+/** Right-hand block of a lease row (SPEC 7.1): a big day count with a short caption under it. */
+export interface RemainingDays {
+  /** raw day difference: negative = past due (or days until the lease ends for 'ending') */
+  days: number
+  kind: RemainingKind
+  /** big text, e.g. '20 hari', 'Hari ini', '3 hari' */
+  value: string
+  /** small text under it, e.g. 'terlambat', 'lewat · tenggang', 'jatuh tempo', 'lagi · 15 Okt', 'berakhir 15 Okt' */
+  caption: string
+  tone: DueTone
+}
+
+/** '20 hari' / 'Hari ini' for the big text of a RemainingDays block. */
+function dayCount(days: number): string {
+  return days === 0 ? 'Hari ini' : `${Math.abs(days)} hari`
+}
+
+/**
+ * Same decision tree as dueLabel, split into a number and a caption so a dense list can line the day counts up:
+ *  - paid-up lease ending within a week -> 'ending': '3 hari' / 'berakhir 15 Okt' (info);
+ *  - past due beyond the grace days (state overdue) -> 'overdue': '20 hari' / 'terlambat' (danger);
+ *  - past due within the grace days -> 'grace': '2 hari' / 'lewat · tenggang' (warning);
+ *  - due today -> 'today': 'Hari ini' / 'jatuh tempo' (warning);
+ *  - otherwise 'soon' (state due_soon, warning) or 'ok' (neutral): '12 hari' / 'lagi · 15 Okt'.
+ * Null for inactive leases or when no due date is known.
+ */
+export function remainingDays(lease: Lease, summary: LeaseBillingSummary, todayISO: string): RemainingDays | null {
+  if (lease.status !== 'active' || !summary.nextDueDate) return null
+  if (isPaidUpAndEnding(lease, summary, todayISO)) {
+    const days = daysBetween(todayISO, lease.end_date)
+    return { days, kind: 'ending', value: dayCount(days), caption: `berakhir ${formatDate(lease.end_date, 'd MMM')}`, tone: 'info' }
+  }
+  const days = summary.daysUntilDue ?? daysBetween(todayISO, summary.nextDueDate)
+  const date = formatDate(summary.nextDueDate, 'd MMM')
+  if (days < 0) {
+    return summary.state === 'overdue'
+      ? { days, kind: 'overdue', value: dayCount(days), caption: 'terlambat', tone: 'danger' }
+      : { days, kind: 'grace', value: dayCount(days), caption: 'lewat · tenggang', tone: 'warning' }
+  }
+  if (days === 0) return { days, kind: 'today', value: dayCount(days), caption: 'jatuh tempo', tone: 'warning' }
+  const soon = summary.state === 'due_soon'
+  return { days, kind: soon ? 'soon' : 'ok', value: dayCount(days), caption: `lagi · ${date}`, tone: soon ? 'warning' : 'neutral' }
 }
 
 /** Ended/cancelled leases: most recently finished first. */
@@ -452,6 +522,42 @@ export function openInvoicesSorted(leaseId: string, invoices: Invoice[], payment
   return invoices
     .filter((inv) => inv.lease_id === leaseId && inv.status !== 'void' && outstandingFor(inv, payments) > 0)
     .sort((a, b) => (a.due_date === b.due_date ? a.period_start.localeCompare(b.period_start) : a.due_date.localeCompare(b.due_date)))
+}
+
+// ---------- WhatsApp reminder ----------
+
+export interface LeaseReminderInput {
+  lease: Lease
+  tenant: Tenant | undefined
+  room: Room | undefined
+  property: Property | undefined
+  /** the lease's invoices (any order) */
+  invoices: Invoice[]
+  /** every invoice of the org: numbers the next draft (buildInvoiceDraft) */
+  orgInvoices: Invoice[]
+  payments: Payment[]
+  addons: LeaseAddon[]
+}
+
+/**
+ * Text of the WhatsApp reminder for a lease, shared by the list row and the detail page: the oldest open
+ * invoice, or, when nothing is open on an active lease, a preview of the next period (buildInvoiceDraft with
+ * quantity 1; a draft that cannot be built gives null). Null when the tenant has no phone number.
+ */
+export function leaseReminderText({ lease, tenant, room, property, invoices, orgInvoices, payments, addons }: LeaseReminderInput): string | null {
+  if (!tenant?.phone) return null
+  const base = { tenantName: tenant.full_name, roomName: room?.name ?? '-', propertyName: property?.name ?? 'Kos', paymentInfo: property?.payment_info }
+  const oldest = openInvoicesSorted(lease.id, invoices, payments)[0]
+  if (oldest) {
+    return reminderText({ ...base, outstanding: outstandingFor(oldest, payments), dueDate: oldest.due_date, periodStart: oldest.period_start, periodEnd: oldest.period_end })
+  }
+  if (lease.status !== 'active') return null
+  try {
+    const draft = buildInvoiceDraft({ lease, addons, quantity: 1, existingInvoices: invoices, orgInvoices })
+    return reminderText({ ...base, outstanding: draft.total_amount, dueDate: draft.due_date, periodStart: draft.period_start, periodEnd: draft.period_end })
+  } catch {
+    return null
+  }
 }
 
 export interface Allocation {

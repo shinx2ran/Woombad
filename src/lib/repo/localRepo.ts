@@ -45,7 +45,7 @@ const COLUMN_DEFAULTS: Partial<Record<TableName, Record<string, unknown>>> = {
   tenants: { id_type: 'ktp', id_number: null, nationality: null },
   payments: { created_by: null },
   expenses: { lease_id: null, created_by: null },
-  properties: { payment_info: null },
+  properties: { payment_info: null, logo_path: null },
 }
 
 function withColumnDefaults(table: TableName, row: Record<string, unknown>): Record<string, unknown> {

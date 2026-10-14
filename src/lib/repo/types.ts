@@ -16,7 +16,8 @@ export interface ListOptions<T> {
   limit?: number
 }
 
-export type StorageBucket = 'ktp' | 'receipts'
+/** ktp = tenant ID photos, receipts = expense receipts, logos = the kos logo shown on invoices (1 MB, image only) */
+export type StorageBucket = 'ktp' | 'receipts' | 'logos'
 
 /** Thrown by ensureMembership when the signed-in account belongs to no organisation yet. */
 export class NotMemberError extends Error {
