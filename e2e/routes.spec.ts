@@ -36,7 +36,7 @@ test.describe('Semua halaman (Mode Demo)', () => {
     await loginDemo(page)
     // The URL is /dashboard before the organisation has loaded; wait for the shell (and the app's own start-up
     // writes to the demo database) before editing that database, or the edit is overwritten on a slow runner.
-    await expect(page.getByRole('link', { name: 'Laporan' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Laporan' }).first()).toBeVisible()
     await page.evaluate(() => {
       const raw = localStorage.getItem('woombad.local.db.v1')
       if (!raw) return
