@@ -6,9 +6,10 @@ import { Badge, LeaseStatusBadge, MoneyInput, Input } from '../../components/ui'
 import type { DepositBalance } from '../../domain/billing'
 import type { PeriodType } from '../../types/db'
 import { PERIOD_TYPES, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { formatDate, formatRupiah } from '../../lib/format'
+import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay } from '../../lib/format'
 import {
   BILLING_STATE_META,
+  leaseEndDisplay,
   priceDelta,
   priceDeltaText,
   remainingDays,
@@ -298,6 +299,8 @@ export function LeaseRow({
   const remaining = isActive ? remainingDays(lease, summary, today) : null
   const roomName = room?.name ?? '?'
   const owes = summary.outstanding > 0
+  // finished tab: 'Checkout <checkout_date>' / 'Berakhir <check-out day of end_date>' (SPEC 7.3)
+  const end = leaseEndDisplay(lease)
 
   const items: MenuItem[] = []
   if (isActive) {
@@ -320,7 +323,7 @@ export function LeaseRow({
           {/* the amount never shrinks; on a phone only the tail (period type, kos name) is cut short */}
           <span className="flex min-w-0 overflow-hidden text-xs text-slate-500">
             <span data-testid="lease-amount" className={clsx('shrink-0 whitespace-nowrap', owes && 'font-medium text-red-700')}>
-              {owes ? `sisa ${formatRupiah(summary.outstanding)}` : summary.paidThrough ? `lunas s/d ${formatDate(summary.paidThrough, 'd MMM')}` : 'belum ditagih'}
+              {owes ? `sisa ${formatRupiah(summary.outstanding)}` : summary.paidThrough ? `lunas s/d ${formatCheckout(summary.paidThrough, 'd MMM')}` : 'belum ditagih'}
             </span>
             <span className="min-w-0 truncate">
               {`\u00a0· ${PERIOD_TYPE_LABEL[lease.period_type]}`}
@@ -328,7 +331,7 @@ export function LeaseRow({
             </span>
           </span>
         </span>
-        <span className="hidden w-28 shrink-0 text-right text-sm tabular-nums text-slate-700 lg:block">{summary.paidThrough ? formatDate(summary.paidThrough) : '-'}</span>
+        <span className="hidden w-28 shrink-0 text-right text-sm tabular-nums text-slate-700 lg:block">{summary.paidThrough ? formatCheckout(summary.paidThrough) : '-'}</span>
         <span className={clsx('hidden w-32 shrink-0 text-right text-sm tabular-nums lg:block', owes ? 'font-medium text-red-700' : 'text-slate-700')}>{formatRupiah(summary.outstanding)}</span>
         <span className="shrink-0 text-right lg:w-32">
           {isActive ? (
@@ -342,7 +345,7 @@ export function LeaseRow({
             <>
               <LeaseStatusBadge status={lease.status} />
               <span className="block max-w-32 truncate text-[11px] text-slate-500 lg:max-w-none">
-                {lease.status === 'ended' && lease.checkout_date ? `Checkout ${formatDate(lease.checkout_date)}` : `Berakhir ${formatDate(lease.end_date)}`}
+                {`${end.label} ${end.date}`}
               </span>
             </>
           )}
@@ -382,7 +385,10 @@ const SEGMENT_LABEL: Record<TimelineSegment['kind'], string> = {
   unbilled: 'Belum ditagih',
 }
 
-/** Compact proportional bar of invoice periods with gaps, plus a legend. */
+/**
+ * Compact proportional bar of invoice periods with gaps, plus a legend. Segment ends are last nights; ranges and the
+ * right-hand date are shown as check-out days (formatStay / formatCheckout, SPEC 7.3).
+ */
 export function InvoiceTimeline({ segments, today }: { segments: TimelineSegment[]; today: string }) {
   if (segments.length === 0) return <p className="text-sm text-slate-500">Belum ada tagihan.</p>
   const total = segments.reduce((s, seg) => s + seg.days, 0)
@@ -396,7 +402,7 @@ export function InvoiceTimeline({ segments, today }: { segments: TimelineSegment
         {segments.map((seg, i) => (
           <div
             key={`${seg.start}-${i}`}
-            title={`${SEGMENT_LABEL[seg.kind]}: ${formatDate(seg.start)} – ${formatDate(seg.end)} (${seg.days} hari)${seg.invoice ? ` · ${seg.invoice.invoice_number}` : ''}`}
+            title={`${SEGMENT_LABEL[seg.kind]}: ${formatStay(seg.start, seg.end)} (${seg.days} hari)${seg.invoice ? ` · ${seg.invoice.invoice_number}` : ''}`}
             className={clsx('h-full border-r border-white last:border-r-0', SEGMENT_CLASS[seg.kind], seg.overlap && 'ring-2 ring-inset ring-rose-600')}
             style={{ width: `${Math.max(2, (seg.days / total) * 100)}%` }}
           />
@@ -404,8 +410,8 @@ export function InvoiceTimeline({ segments, today }: { segments: TimelineSegment
       </div>
       <div className="mt-1 flex justify-between text-[11px] text-slate-500">
         <span>{formatDate(first)}</span>
-        {today >= first && today <= last && <span className="font-medium text-brand-700">hari ini {formatDate(today)}</span>}
-        <span>{formatDate(last)}</span>
+        {today >= first && today <= checkoutISO(last) && <span className="font-medium text-brand-700">hari ini {formatDate(today)}</span>}
+        <span>{formatCheckout(last)}</span>
       </div>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
         {(['paid', 'partial', 'unpaid', 'gap', 'unbilled'] as const).map((k) => (
@@ -418,7 +424,7 @@ export function InvoiceTimeline({ segments, today }: { segments: TimelineSegment
       {gaps.length > 0 && (
         <p className="mt-2 text-xs text-rose-700">
           Ada {gaps.length} celah periode yang belum ditagih:{' '}
-          {gaps.map((g) => `${formatDate(g.start)} – ${formatDate(g.end)}`).join(', ')}.
+          {gaps.map((g) => formatStay(g.start, g.end)).join(', ')}.
         </p>
       )}
       {overlaps.length > 0 && <p className="mt-1 text-xs text-rose-700">Ada tagihan dengan periode yang tumpang tindih.</p>}

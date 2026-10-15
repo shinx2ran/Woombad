@@ -23,7 +23,7 @@ import { useInvalidate, useRemove, useRow, useTable } from '../../hooks/useTable
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import { GENDER_LABEL, PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, type Lease, type Payment } from '../../types/db'
 import { TenantFormModal } from './TenantFormModal'
-import { currentStayFor, describeIdentity, describeRoom, initials, leasesOfTenant, paymentsOfLeases } from './tenantUtils'
+import { currentStayFor, describeIdentity, describeRoom, initials, leaseStayText, leasesOfTenant, paymentsOfLeases } from './tenantUtils'
 
 function InfoList({ items }: { items: { label: string; value: ReactNode }[] }) {
   return (
@@ -124,14 +124,12 @@ export function TenantDetailPage() {
       render: (l) => (
         <div>
           <p className="font-medium text-slate-900">{describeRoom(l, roomList, properties)}</p>
-          <p className="text-xs text-slate-500 md:hidden">
-            {formatDate(l.start_date)} – {formatDate(l.end_date)}
-          </p>
+          <p className="text-xs text-slate-500 md:hidden">{leaseStayText(l)}</p>
         </div>
       ),
     },
     { key: 'period', header: 'Periode', hideOnMobile: true, className: 'whitespace-nowrap', render: (l) => `${PERIOD_TYPE_LABEL[l.period_type]} · ${formatRupiah(l.price_per_period)}` },
-    { key: 'dates', header: 'Tanggal', hideOnMobile: true, className: 'whitespace-nowrap', render: (l) => `${formatDate(l.start_date)} – ${formatDate(l.checkout_date ?? l.end_date)}` },
+    { key: 'dates', header: 'Tanggal', hideOnMobile: true, className: 'whitespace-nowrap', render: (l) => leaseStayText(l) },
     { key: 'status', header: 'Status', render: (l) => <LeaseStatusBadge status={l.status} /> },
     {
       key: 'link',

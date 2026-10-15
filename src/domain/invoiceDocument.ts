@@ -10,7 +10,7 @@
  */
 import type { Invoice, InvoiceStatus, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../types/db'
 import { PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL } from '../types/db'
-import { formatDate, formatRupiah, parseDate, toDateISO } from '../lib/format'
+import { checkoutISO, formatDate, formatRupiah, formatStay, parseDate, toDateISO } from '../lib/format'
 import {
   computeAddonsAmount,
   formatExtraBreakdown,
@@ -23,7 +23,7 @@ import {
 export interface InvoiceDocumentLine {
   /** e.g. 'Sewa kamar A1', 'Kasur tambahan', 'Listrik / token', 'Denda', 'Lainnya', 'Add-on', 'Tambahan' */
   label: string
-  /** secondary text under the label, e.g. 'Bulanan · 1 bulan · 1 Okt – 31 Okt 2026' or '2 × Rp 1.500.000' */
+  /** secondary text under the label, e.g. 'Bulanan · 1 bulan · 1 Okt – 1 Nov 2026' (check-in – check-out) or '2 × Rp 1.500.000' */
   detail?: string
   amount: number
 }
@@ -40,7 +40,11 @@ export interface InvoiceDocument {
   property: { name: string; address: string | null; paymentInfo: string | null; logoPath: string | null }
   tenant: { name: string; phone: string | null }
   room: string
-  period: { start: string; end: string; quantity: number; unit: string; typeLabel: string }
+  /**
+   * The invoice period. `end` is period_end as stored (the LAST NIGHT, inclusive); `checkout` is the day shown to
+   * people as the end of the stay, end + 1 (SPEC 7.3): 2 nights from 15 Okt -> end 16 Okt, checkout 17 Okt.
+   */
+  period: { start: string; end: string; checkout: string; quantity: number; unit: string; typeLabel: string }
   lines: InvoiceDocumentLine[]
   discount: number
   total: number
@@ -83,7 +87,8 @@ function rentLine(invoice: Invoice, lease: Lease, room: string): InvoiceDocument
   const unit = invoiceUnitLabel(invoice, lease)
   return {
     label: `Sewa kamar ${room}`,
-    detail: `${typeLabel} · ${invoice.quantity} ${unit} · ${formatDate(invoice.period_start, 'd MMM')} – ${formatDate(invoice.period_end, 'd MMM yyyy')}`,
+    // check-in – check-out (SPEC 7.3): 'Bulanan · 1 bulan · 15 Okt – 15 Nov 2026'
+    detail: `${typeLabel} · ${invoice.quantity} ${unit} · ${formatStay(invoice.period_start, invoice.period_end)}`,
     amount: invoice.base_amount,
   }
 }
@@ -192,6 +197,7 @@ export function buildInvoiceDocument(input: InvoiceDocumentInput): InvoiceDocume
     period: {
       start: invoice.period_start,
       end: invoice.period_end,
+      checkout: checkoutISO(invoice.period_end) ?? invoice.period_end,
       quantity: invoice.quantity,
       unit: invoiceUnitLabel(invoice, lease),
       typeLabel: PERIOD_TYPE_LABEL[invoicePeriodType(invoice, lease)],
@@ -214,7 +220,7 @@ function firstName(name: string): string {
 
 /**
  * WhatsApp caption sent with the invoice image (Indonesian, short): greeting 'Halo Kak <first name>' (just
- * 'Halo Kak' for the unnamed fallback tenant), number, room + kos, period, total, then the status (LUNAS /
+ * 'Halo Kak' for the unnamed fallback tenant), number, room + kos, period (start s/d check-out day), total, then the status (LUNAS /
  * DIBATALKAN) or the remaining amount with the due date, the kos payment info when present and something is
  * still owed, and 'Terima kasih 🙏'.
  */
@@ -224,7 +230,7 @@ export function invoiceShareText(doc: InvoiceDocument): string {
   const lines = [
     `${greeting}, berikut tagihan sewa kamar ${doc.room} ${doc.property.name}.`,
     `No. tagihan: ${doc.number}`,
-    `Periode: ${doc.period.typeLabel} · ${doc.period.quantity} ${doc.period.unit} · ${formatDate(doc.period.start)} s/d ${formatDate(doc.period.end)}`,
+    `Periode: ${doc.period.typeLabel} · ${doc.period.quantity} ${doc.period.unit} · ${formatDate(doc.period.start)} s/d ${formatDate(doc.period.checkout)}`,
     `Total: *${formatRupiah(doc.total)}*`,
   ]
   const open = doc.status !== 'void' && doc.remaining > 0

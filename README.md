@@ -253,6 +253,14 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 | Istri / pegawai ikut mengelola | **Pengaturan → Anggota → Undang**, kirim kodenya lewat WhatsApp (lihat [langkah 6](#6-pemilik--istri-undang-istri)). |
 | Akhir minggu | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**. |
 
+### Tanggal di aplikasi = tanggal check-out
+
+Setiap tanggal akhir sewa atau periode (di daftar sewa, dashboard, kamar, tagihan, pesan WhatsApp, riwayat, dan ekspor)
+adalah **tanggal check-out**, yaitu hari penyewa keluar, bukan malam terakhir menginap: sewa 2 malam mulai 15 Okt tampil
+**15 Okt – 17 Okt**, 1 minggu **15 Okt – 22 Okt**, 1 bulan **15 Okt – 15 Nov**, dan periode berikutnya mulai di tanggal
+check-out itu. "Dibayar s/d 15 Nov" berarti lunas sampai hari check-out 15 Nov. Saat mengetik tanggal akhir sewa, isi juga
+tanggal check-out.
+
 ### Kirim tagihan ke WhatsApp & logo kos
 
 - **Kirim tagihan** (menu ⋯ pada baris sewa, menu tagihan di detail sewa, atau langsung setelah **Buat tagihan berikutnya**)

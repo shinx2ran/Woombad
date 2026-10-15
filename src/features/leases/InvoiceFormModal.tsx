@@ -4,14 +4,17 @@ import { Button, CountInput, Input, Modal, MoneyInput, Textarea, useToast } from
 import type { Invoice, Lease, LeaseAddon, Payment, PeriodType, Room } from '../../types/db'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { buildInvoiceDraft, nextPeriodBounds, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
-import { periodsToCover } from '../../domain/period'
-import { formatDate, formatRupiah } from '../../lib/format'
+import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO } from '../../lib/format'
 import {
+  checkoutInputError,
   composeInvoiceNotes,
+  coverUntilCheckout,
+  coverUntilCheckoutHint,
   defaultMakePermanent,
   extensionChangesTerms,
   extensionPriceFor,
   invoicesToPinType,
+  nextPeriodCheckout,
   permanentSwitchAddonsAmount,
   previewFollowingPeriod,
   proRataSuggestion,
@@ -52,7 +55,7 @@ function DraftSummary({ draft, hasAddons, custom }: { draft: InvoiceDraft; hasAd
   return (
     <div className="space-y-1 rounded-lg bg-slate-50 p-3" data-testid="invoice-draft">
       <Row label="Nomor" value={<span className="font-mono text-xs">{draft.invoice_number}</span>} />
-      <Row label="Periode" value={`${formatDate(draft.period_start)} – ${formatDate(draft.period_end)}`} />
+      <Row label="Periode" value={formatStay(draft.period_start, draft.period_end)} />
       <Row label="Jatuh tempo" value={formatDate(draft.due_date)} />
       <Row
         label={custom ? 'Sewa periode khusus' : `Sewa ${draft.quantity} ${unit}`}
@@ -69,7 +72,7 @@ function DraftSummary({ draft, hasAddons, custom }: { draft: InvoiceDraft; hasAd
       <div className="border-t border-slate-200 pt-1">
         <Row label="Total tagihan" value={formatRupiah(draft.total_amount)} strong />
       </div>
-      <Row label="Sewa berakhir menjadi" value={formatDate(draft.new_lease_end_date)} />
+      <Row label="Check-out menjadi" value={formatCheckout(draft.new_lease_end_date)} />
       {draft.warnings.map((w) => (
         <p key={w} className="flex items-start gap-1.5 pt-1 text-xs text-amber-700" data-testid="draft-warning">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {w}
@@ -99,7 +102,8 @@ export interface NextInvoiceModalProps {
  * 'Jenis periode' switch (SPEC 5.2: a daily guest extends monthly) and a negotiable price for this invoice
  * (SPEC 5.4). Switching the type prefills the room's standard rate for that type; 'Jadikan jenis/harga tetap
  * sewa ini' copies type and price to the lease (default on when the type changed). The custom pro-rata price
- * follows the chosen end date until the user edits it.
+ * follows the chosen end date until the user edits it. Every end date typed here is a CHECK-OUT day: the period
+ * ends the night before (lastNightISO), and computed ends are shown as check-out days (SPEC 7.3).
  */
 export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvoices, orgInvoices, actions, onCreated }: NextInvoiceModalProps) {
   const toast = useToast()
@@ -108,8 +112,10 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const [permanentOverride, setPermanentOverride] = useState<boolean | null>(null)
   const [addonOverrides, setAddonOverrides] = useState<Record<string, number>>({})
   const [quantity, setQuantity] = useState(1)
+  /** 'atau sampai tanggal check-out': the day the tenant leaves, as typed (SPEC 7.3) */
   const [untilDate, setUntilDate] = useState('')
   const [custom, setCustom] = useState(false)
+  /** 'Periode khusus' end as typed: a CHECK-OUT day; the period ends the night before (customLastNight) */
   const [customEnd, setCustomEnd] = useState('')
   const [baseAmount, setBaseAmount] = useState(0)
   const [baseTouched, setBaseTouched] = useState(false)
@@ -137,13 +143,8 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     setQuantity(1)
     setUntilDate('')
     setCustom(false)
-    let end = ''
-    try {
-      end = nextPeriodBounds(lease, leaseInvoices, 1).period_end
-    } catch {
-      end = ''
-    }
-    setCustomEnd(end)
+    // prefilled with the check-out day of one full next period
+    setCustomEnd(nextPeriodCheckout(lease, leaseInvoices))
     setBaseAmount(lease.price_per_period)
     setBaseTouched(false)
     setShowExtras(false)
@@ -162,11 +163,8 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     setUntilDate('')
     setQuantity(1)
     setBaseTouched(false)
-    try {
-      setCustomEnd(nextPeriodBounds(lease, leaseInvoices, 1, t).period_end)
-    } catch {
-      /* keep the previous end */
-    }
+    const out = nextPeriodCheckout(lease, leaseInvoices, t)
+    if (out) setCustomEnd(out) // else keep the previous end
   }
 
   const unit = PERIOD_UNIT_LABEL[periodType]
@@ -189,27 +187,26 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   }, [rescaleAddons, nextBounds, addons, lease.period_type, periodType, addonOverrides])
   const addonsAmount = rescaleAddons ? permanentSwitchAddonsAmount(addons, addonAmounts, custom ? 1 : quantity, leaseInvoices) : undefined
 
+  // The typed check-out day -> the last night the custom period bills (SPEC 7.3); null while the field is empty.
+  const customLastNight = customEnd ? lastNightISO(customEnd) : null
+  const customError = custom ? (customEnd ? checkoutInputError(customEnd, nextBounds?.period_start) : 'Isi tanggal check-out.') : null
   // Pro-rata suggestion for the custom period against the full next period (SPEC 2b.10 'tambah 2 minggu saja').
   const proRata = useMemo(
-    () => (custom && nextBounds ? proRataSuggestion(price, nextBounds.period_start, nextBounds.period_end, customEnd) : null),
-    [custom, nextBounds, price, customEnd],
+    () => (custom && nextBounds && customLastNight ? proRataSuggestion(price, nextBounds.period_start, nextBounds.period_end, customLastNight) : null),
+    [custom, nextBounds, price, customLastNight],
   )
   // Follow the suggestion while the user has not typed a price of their own.
   useEffect(() => {
     if (custom && !baseTouched && proRata) setBaseAmount(proRata.amount)
   }, [custom, baseTouched, proRata])
 
-  // SPEC 2b.10: when the user picks an end date, derive the quantity with periodsToCover and show the computed end.
-  const coverInfo = useMemo(() => {
-    if (custom || !untilDate || !nextBounds) return null
-    try {
-      const n = periodsToCover(nextBounds.period_start, untilDate, periodType)
-      const bounds = nextPeriodBounds(lease, leaseInvoices, n, periodType)
-      return { n, end: bounds.period_end, differs: bounds.period_end !== untilDate }
-    } catch {
-      return null
-    }
-  }, [custom, untilDate, nextBounds, lease, leaseInvoices, periodType])
+  // SPEC 2b.10 + 7.3: when the user picks a check-out day, derive the quantity on the billing grid (up to the night
+  // before, coverUntilCheckout) and show the computed check-out day.
+  const untilError = custom ? null : checkoutInputError(untilDate, nextBounds?.period_start)
+  const coverInfo = useMemo(
+    () => (custom ? null : coverUntilCheckout(lease, leaseInvoices, periodType, untilDate)),
+    [custom, untilDate, lease, leaseInvoices, periodType],
+  )
 
   useEffect(() => {
     if (coverInfo) setQuantity(coverInfo.n)
@@ -226,7 +223,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         periodType,
         // Always pass the agreed price: on a type change the domain would otherwise bill the old unit's price.
         pricePerPeriod: price,
-        periodEnd: custom && customEnd ? customEnd : undefined,
+        periodEnd: custom && customLastNight ? customLastNight : undefined,
         baseAmount: custom ? baseAmount : undefined,
         addonsAmount,
         extraAmount,
@@ -238,16 +235,17 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     } catch (err) {
       return { draft: null, error: err instanceof Error ? err.message : 'Tidak dapat menghitung tagihan.' }
     }
-  }, [lease, addons, quantity, periodType, price, custom, customEnd, baseAmount, addonsAmount, extraAmount, discount, leaseInvoices, orgInvoices])
+  }, [lease, addons, quantity, periodType, price, custom, customLastNight, baseAmount, addonsAmount, extraAmount, discount, leaseInvoices, orgInvoices])
 
   const following = useMemo(
     () => (preview.draft ? previewFollowingPeriod(lease, leaseInvoices, preview.draft, makePermanent) : null),
     [preview.draft, lease, leaseInvoices, makePermanent],
   )
 
+  const dateError = customError ?? untilError
   const submit = async () => {
     setTouched(true)
-    if (!preview.draft || priceError) return
+    if (!preview.draft || priceError || dateError) return
     setSaving(true)
     try {
       const invoice = await actions.issueInvoice({
@@ -257,7 +255,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         periodType,
         pricePerPeriod: price,
         makePermanent,
-        periodEnd: custom && customEnd ? customEnd : undefined,
+        periodEnd: custom && customLastNight ? customLastNight : undefined,
         baseAmount: custom ? baseAmount : undefined,
         addonsAmount,
         addonAmounts: rescaleAddons ? addonAmounts : undefined,
@@ -268,7 +266,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         orgInvoices,
       })
       const terms = makePermanent ? ` Sewa kini ${PERIOD_TYPE_LABEL[periodType]} ${formatRupiah(price)} / ${unit}.` : ''
-      toast.success(`Tagihan ${invoice.invoice_number} dibuat. Sewa diperpanjang s/d ${formatDate(invoice.period_end)}.${terms}`)
+      toast.success(`Tagihan ${invoice.invoice_number} dibuat. Sewa diperpanjang, check-out ${formatCheckout(invoice.period_end)}.${terms}`)
       onCreated?.(invoice)
       onClose()
     } catch (err) {
@@ -288,7 +286,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
           <Button variant="ghost" onClick={onClose}>
             Batal
           </Button>
-          <Button onClick={submit} loading={saving} disabled={!preview.draft}>
+          <Button onClick={submit} loading={saving} disabled={!preview.draft || Boolean(dateError)}>
             Buat tagihan
           </Button>
         </>
@@ -357,7 +355,16 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         </label>
         {custom ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Input label="Sampai tanggal" type="date" value={customEnd} min={nextBounds?.period_start} onChange={(e) => setCustomEnd(e.target.value)} required />
+            <Input
+              label="Sampai tanggal (check-out)"
+              type="date"
+              value={customEnd}
+              min={checkoutISO(nextBounds?.period_start) ?? undefined}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              required
+              error={customError ?? undefined}
+              hint="Hari penyewa keluar kamar."
+            />
             <MoneyInput
               label="Harga periode khusus"
               value={baseAmount}
@@ -367,7 +374,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
               }}
               hint={
                 proRata
-                  ? `Saran pro-rata: ${formatRupiah(proRata.amount)} untuk ${proRata.days} hari (${formatRupiah(price)} / ${proRata.fullDays} hari).${
+                  ? `Saran pro-rata: ${formatRupiah(proRata.amount)} untuk ${proRata.days} malam (${formatRupiah(price)} / ${proRata.fullDays} malam).${
                       baseTouched && baseAmount !== proRata.amount ? ' Harga diubah manual.' : ''
                     }`
                   : 'Sesuaikan dengan kesepakatan (pro-rata).'
@@ -386,23 +393,20 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
               required
             />
             <Input
-              label="atau sampai tanggal"
+              label="atau sampai tanggal check-out"
               type="date"
               value={untilDate}
-              min={nextBounds?.period_start}
+              min={checkoutISO(nextBounds?.period_start) ?? undefined}
               onChange={(e) => setUntilDate(e.target.value)}
-              hint={
-                coverInfo
-                  ? `${coverInfo.n} ${unit}, berakhir ${formatDate(coverInfo.end)}${coverInfo.differs ? ' (berbeda dari tanggal yang dipilih; periode dibulatkan ke atas)' : ''}`
-                  : 'Jumlah periode dihitung otomatis.'
-              }
+              error={untilError ?? undefined}
+              hint={coverInfo ? coverUntilCheckoutHint(coverInfo, unit, untilDate) : 'Hari penyewa keluar; jumlah periode dihitung otomatis.'}
             />
           </div>
         )}
         {preview.draft ? <DraftSummary draft={preview.draft} hasAddons={addons.length > 0} custom={custom} /> : <p className="text-sm text-red-600">{preview.error}</p>}
         {following && (
           <p className="text-xs text-slate-500" data-testid="following-period">
-            Tagihan berikutnya setelah ini: {formatDate(following.period_start)} – {formatDate(following.period_end)} ({PERIOD_TYPE_LABEL[following.period_type].toLowerCase()}
+            Tagihan berikutnya setelah ini: {formatStay(following.period_start, following.period_end)} ({PERIOD_TYPE_LABEL[following.period_type].toLowerCase()}
             {following.anchored && following.anchor ? `, mengikuti jadwal sejak ${formatDate(following.anchor)}` : ', dihitung dari akhir tagihan ini'}).
           </p>
         )}
@@ -496,7 +500,7 @@ export function EditInvoiceModal({ open, onClose, invoice, payments, actions }: 
     >
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          Periode {formatDate(invoice.period_start)} – {formatDate(invoice.period_end)} · sewa dasar {formatRupiah(invoice.base_amount)}
+          Periode {formatStay(invoice.period_start, invoice.period_end)} · sewa dasar {formatRupiah(invoice.base_amount)}
           {invoice.addons_amount > 0 ? ` + add-on ${formatRupiah(invoice.addons_amount)}` : ''}
         </p>
         <ExtraFields parts={parts} onChange={setParts} discount={discount} onDiscount={setDiscount} text={text} onText={setText} />

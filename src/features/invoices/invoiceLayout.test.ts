@@ -35,9 +35,9 @@ const doc: InvoiceDocument = {
   property: { name: 'EG Kost', address: 'Jl. Melati No. 12, Bandung', paymentInfo: 'BCA 1234567890 a.n. Ibu Sari', logoPath: null },
   tenant: { name: 'Budi Santoso', phone: '+6281234567801' },
   room: 'A1',
-  period: { start: '2026-10-01', end: '2026-10-31', quantity: 1, unit: 'bulan', typeLabel: 'Bulanan' },
+  period: { start: '2026-10-01', end: '2026-10-31', checkout: '2026-11-01', quantity: 1, unit: 'bulan', typeLabel: 'Bulanan' },
   lines: [
-    { label: 'Sewa kamar A1', detail: 'Bulanan · 1 bulan · 1 Okt – 31 Okt 2026', amount: 1_200_000 },
+    { label: 'Sewa kamar A1', detail: 'Bulanan · 1 bulan · 1 Okt – 1 Nov 2026', amount: 1_200_000 },
     { label: 'Parkir motor', detail: '1 × Rp 50.000', amount: 50_000 },
   ],
   discount: 0,
@@ -138,7 +138,9 @@ describe('layoutInvoice', () => {
     for (const label of ['Penyewa', 'Kamar', 'Periode', 'Jatuh tempo', 'Tanggal terbit']) expect(findText(layout.ops, label)?.color).toBe(COLORS.muted)
     expect(findText(layout.ops, 'Budi Santoso')).toBeDefined()
     expect(findText(layout.ops, 'A1')).toBeDefined()
-    expect(findText(layout.ops, '1 Okt 2026 – 31 Okt 2026')).toBeDefined()
+    // check-in – check-out day (SPEC 7.3), never the stored last night
+    expect(findText(layout.ops, '1 Okt 2026 – 1 Nov 2026')).toBeDefined()
+    expect(texts(layout.ops).some((o) => o.text.includes('31 Okt'))).toBe(false)
     expect(findText(layout.ops, '1 bulan · Bulanan')).toBeDefined()
     expect(findText(layout.ops, '1 Okt 2026')).toBeDefined()
     expect(findText(layout.ops, '13 Okt 2026')).toBeDefined()
@@ -148,11 +150,21 @@ describe('layoutInvoice', () => {
     expect(findText(layout.ops, 'Kamar')!.x).toBeGreaterThan(PAGE_WIDTH / 2)
   })
 
+  it('prints a 2-night stay up to its check-out day', () => {
+    const twoNights = layoutInvoice(
+      { ...doc, period: { start: '2026-10-15', end: '2026-10-16', checkout: '2026-10-17', quantity: 2, unit: 'malam', typeLabel: 'Harian' } },
+      measure,
+      { generatedOn: '2026-10-13' },
+    )
+    expect(findText(twoNights.ops, '15 Okt 2026 – 17 Okt 2026')).toBeDefined()
+    expect(findText(twoNights.ops, '2 malam · Harian')).toBeDefined()
+  })
+
   it('lists the lines with right-aligned amounts and details under the labels', () => {
     const sewa = findText(layout.ops, 'Sewa kamar A1')!
     const amount = texts(layout.ops).find((o) => o.text === 'Rp 1.200.000')!
     expect(amount).toMatchObject({ align: 'right', y: sewa.y })
-    const detail = findText(layout.ops, 'Bulanan · 1 bulan · 1 Okt – 31 Okt 2026')!
+    const detail = findText(layout.ops, 'Bulanan · 1 bulan · 1 Okt – 1 Nov 2026')!
     expect(detail.y).toBeGreaterThan(sewa.y)
     expect(detail.color).toBe(COLORS.muted)
     const parkir = findText(layout.ops, 'Parkir motor')!

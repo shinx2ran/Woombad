@@ -373,7 +373,7 @@ describe('buildInvoicesSheet', () => {
     ]
     const sheet = buildInvoicesSheet([inv], payments, ctx, MARCH)
     expect(sheet.name).toBe('Tagihan')
-    expect(headers(sheet)).toEqual(['No. Tagihan', 'Kos', 'Kamar', 'Penyewa', 'Periode Awal', 'Periode Akhir', 'Jatuh Tempo', 'Total', 'Dibayar', 'Sisa', 'Status'])
+    expect(headers(sheet)).toEqual(['No. Tagihan', 'Kos', 'Kamar', 'Penyewa', 'Periode Awal', 'Periode s/d (check-out)', 'Jatuh Tempo', 'Total', 'Dibayar', 'Sisa', 'Status'])
     expect(sheet.rows).toEqual([
       {
         invoice_number: 'INV-001',
@@ -381,7 +381,8 @@ describe('buildInvoicesSheet', () => {
         room: 'A1',
         tenant: 'Budi Santoso',
         period_start: '2026-03-01',
-        period_end: '2026-03-31',
+        // stored last night 31 Mar -> check-out day 1 Apr (SPEC 7.3)
+        period_checkout: '2026-04-01',
         due_date: '2026-03-01',
         total_amount: 1_000_000,
         paid: 500_000,
@@ -389,6 +390,20 @@ describe('buildInvoicesSheet', () => {
         status: 'DP / Sebagian',
       },
     ])
+  })
+
+  it('exports the end of a period as the check-out day (last night + 1), for every period type', () => {
+    const invoices = [
+      makeInvoice({ id: 'd', invoice_number: 'INV-1', period_type: 'daily', quantity: 2, period_start: '2026-03-15', period_end: '2026-03-16', due_date: '2026-03-15' }),
+      makeInvoice({ id: 'w', invoice_number: 'INV-2', period_type: 'weekly', period_start: '2026-03-15', period_end: '2026-03-21', due_date: '2026-03-16' }),
+      makeInvoice({ id: 'm', invoice_number: 'INV-3', period_type: 'monthly', period_start: '2026-03-31', period_end: '2026-04-30', due_date: '2026-03-31' }),
+    ]
+    const sheet = buildInvoicesSheet(invoices, [], ctx, MARCH)
+    expect(column(sheet, 'period_start')).toEqual(['2026-03-15', '2026-03-15', '2026-03-31'])
+    expect(column(sheet, 'period_checkout')).toEqual(['2026-03-17', '2026-03-22', '2026-05-01'])
+    expect(column(sheet, 'due_date')).toEqual(['2026-03-15', '2026-03-16', '2026-03-31'])
+    expect(sheet.columns.find((c) => c.key === 'period_checkout')).toEqual({ key: 'period_checkout', header: 'Periode s/d (check-out)', type: 'date' })
+    expect(toCsv(sheet).split('\n')[1]).toContain(';2026-03-15;2026-03-17;2026-03-15;')
   })
 
   it('outstanding is floored at 0 when over-paid', () => {

@@ -3,7 +3,7 @@
  * who, when, and what (table + action + the columns that changed). Pure: no React, no I/O.
  */
 import { differenceInCalendarDays } from 'date-fns'
-import { formatDate, formatDateTime, formatNumber, formatRupiah, parseDate } from '../../../lib/format'
+import { formatCheckout, formatDate, formatDateTime, formatNumber, formatRupiah, parseDate } from '../../../lib/format'
 import {
   ADDON_BILLING_LABEL,
   EXPENSE_CATEGORY_LABEL,
@@ -68,6 +68,12 @@ const IGNORED_COLUMNS = new Set(['id', 'org_id', 'created_at', 'updated_at', 'cr
 /** Long free text: say that it changed instead of quoting it. */
 const TEXT_COLUMNS = new Set(['notes'])
 
+/**
+ * Ends of a stay, stored as the LAST NIGHT: shown as the check-out day, last night + 1 (SPEC 7.3). checkout_date is
+ * already the real check-out day and is shown as is.
+ */
+const LAST_NIGHT_COLUMNS = new Set(['end_date', 'period_end'])
+
 /** Storage paths: added / replaced / removed. */
 const FILE_COLUMNS = new Set(['ktp_image_path', 'receipt_path', 'logo_path'])
 
@@ -95,10 +101,10 @@ const COLUMN_LABEL: Record<string, string> = {
   paid_at: 'Tanggal bayar',
   expense_date: 'Tanggal',
   start_date: 'Mulai',
-  end_date: 'Berakhir',
+  end_date: 'Check-out',
   checkout_date: 'Checkout',
   period_start: 'Awal periode',
-  period_end: 'Akhir periode',
+  period_end: 'Check-out periode',
   due_date: 'Jatuh tempo',
   quantity: 'Jumlah periode',
   invoice_number: 'Nomor',
@@ -228,7 +234,7 @@ export function formatAuditValue(table: string, column: string, value: unknown, 
     const enumLabel = ENUM_LABELS[column]?.[value]
     if (enumLabel) return enumLabel
     if (column.endsWith('_id') || column === 'invited_by' || column === 'accepted_by') return resolve?.(column, value) ?? null
-    if (DATE_RE.test(value)) return formatDate(value)
+    if (DATE_RE.test(value)) return LAST_NIGHT_COLUMNS.has(column) ? formatCheckout(value) : formatDate(value)
     if (TIMESTAMP_RE.test(value)) return formatDateTime(value)
     return truncate(value)
   }
@@ -335,13 +341,23 @@ export function auditSubject(table: string, data: Data | null, resolve?: RefReso
   }
 }
 
+/**
+ * Columns an update entry lists: a lease checkout sets checkout_date (the real check-out day) and cuts end_date in
+ * the same write, so the end_date line is left out: it would show a second check-out day (end_date + 1), one day
+ * off for rows written before end_date became checkout_date - 1, or clamped to start_date.
+ */
+function shownColumns(table: string, oldData: Data | null, newData: Data | null): string[] {
+  const cols = changedColumns(oldData, newData)
+  return table === 'leases' && cols.includes('checkout_date') ? cols.filter((c) => c !== 'end_date') : cols
+}
+
 /** Table, action, row and (for updates) the changed columns of one audit_log row. */
 export function summarizeAuditEntry(entry: Pick<AuditLogEntry, 'table_name' | 'action' | 'old_data' | 'new_data'>, resolve?: RefResolver): AuditSummary {
   const table = entry.table_name
   const data = entry.action === 'delete' ? entry.old_data : (entry.new_data ?? entry.old_data)
   const changes =
     entry.action === 'update'
-      ? changedColumns(entry.old_data, entry.new_data).map((c) => describeChange(table, c, entry.old_data?.[c], entry.new_data?.[c], resolve))
+      ? shownColumns(table, entry.old_data, entry.new_data).map((c) => describeChange(table, c, entry.old_data?.[c], entry.new_data?.[c], resolve))
       : []
   return {
     tableLabel: AUDIT_TABLE_LABEL[table] ?? table,

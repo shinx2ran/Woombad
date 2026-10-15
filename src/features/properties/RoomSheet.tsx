@@ -3,10 +3,11 @@ import { Link, useNavigate } from 'react-router'
 import { AlertTriangle, Copy, ExternalLink, KeyRound, Pencil, Trash2, Wrench } from 'lucide-react'
 import { Button, ConfirmDialog, Modal, useToast } from '../../components/ui'
 import { useInvalidate, useRemove, useUpdate } from '../../hooks/useTable'
-import { formatDate, formatRupiah } from '../../lib/format'
+import { formatCheckout, formatDate, formatRupiah } from '../../lib/format'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL, type Room } from '../../types/db'
 import type { RoomWithState } from './RoomsTab'
 import { RoomStateBadge } from './RoomCard'
+import { paidThroughText } from './roomUtils'
 
 function PriceRow({ label, value }: { label: string; value: number | null }) {
   return (
@@ -171,10 +172,10 @@ export function RoomSheet({
                   {PERIOD_UNIT_LABEL[state.lease.period_type]}
                 </p>
                 <p className="text-slate-600">
-                  Mulai {formatDate(state.lease.start_date)} · s/d {formatDate(state.lease.end_date)}
+                  Mulai {formatDate(state.lease.start_date)} · Check-out {formatCheckout(state.lease.end_date)}
                 </p>
                 <p className="text-slate-600">
-                  {state.paidThrough ? `Dibayar s/d ${formatDate(state.paidThrough)}` : 'Belum ada pembayaran tercatat'}
+                  {paidThroughText(state.paidThrough) ?? 'Belum ada pembayaran tercatat'}
                   {state.outstanding > 0 && <span className="ml-1 font-medium text-amber-700">· Sisa tagihan {formatRupiah(state.outstanding)}</span>}
                 </p>
                 <Link to={`/sewa/${state.lease.id}`} className="inline-flex items-center gap-1 pt-1 font-medium text-brand-700 hover:underline">

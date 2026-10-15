@@ -20,9 +20,9 @@ import {
   parseExtraBreakdown,
 } from '../../domain/billing'
 import { reminderText } from '../../domain/messages'
-import { addDaysISO, daysBetween, periodEnd } from '../../domain/period'
+import { addDaysISO, daysBetween, periodEnd, periodsToCover } from '../../domain/period'
 import { compareRoomNames, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
-import { formatDate, formatRupiah, todayISO } from '../../lib/format'
+import { checkoutISO, formatCheckout, formatDate, formatRupiah, lastNightISO, todayISO } from '../../lib/format'
 
 // ---------- billing state presentation ----------
 
@@ -100,8 +100,8 @@ function compareDueKeys(a: LeaseListItem, b: LeaseListItem): number {
 
 /**
  * 'Sisa hari paling sedikit' / 'paling banyak': by the day count the row shows (remainingDays, so a paid-up lease
- * that is ending counts to its end_date like its row does), rows without a count last in both directions; ties by
- * next due date, room name (compareRoomNames), then kos name. The count is cached per item for the sort.
+ * that is ending counts to its check-out day like its row does), rows without a count last in both directions; ties
+ * by next due date, room name (compareRoomNames), then kos name. The count is cached per item for the sort.
  */
 export function compareByShownDays(todayISO: string, desc = false): (a: LeaseListItem, b: LeaseListItem) => number {
   const cache = new WeakMap<LeaseListItem, number | null>()
@@ -157,7 +157,7 @@ export function sortLeaseItems(items: LeaseListItem[], key: LeaseSortKey, finish
 export type DueTone = 'danger' | 'warning' | 'info' | 'neutral'
 
 export interface DueLabel {
-  /** e.g. 'Jatuh tempo 14 Okt · 2 hari lagi', 'Terlambat 3 hari · sejak 9 Okt', 'Berakhir 15 Okt · 3 hari lagi' */
+  /** e.g. 'Jatuh tempo 14 Okt · 2 hari lagi', 'Terlambat 3 hari · sejak 9 Okt', 'Check-out 16 Okt · 4 hari lagi' */
   text: string
   tone: DueTone
 }
@@ -175,14 +175,15 @@ export function relativeDays(days: number): string {
  *  - past due, still within the grace days (state due_soon) -> 'Lewat N hari · tenggang · sejak 9 Okt' (warning);
  *  - past due beyond the grace days (state overdue) -> 'Terlambat N hari · sejak 9 Okt' (danger);
  *  - due today -> 'Jatuh tempo hari ini · 12 Okt' (warning);
- *  - a paid-up lease ending within a week (isPaidUpAndEnding) -> 'Berakhir 15 Okt · 3 hari lagi' (info);
+ *  - a paid-up lease ending within a week (isPaidUpAndEnding) -> 'Check-out 16 Okt · 4 hari lagi' (info), counted
+ *    to the check-out day = end_date + 1 (SPEC 7.3), so it says 'hari ini' on the day the tenant leaves;
  *  - otherwise 'Jatuh tempo 14 Okt · 2 hari lagi' (warning when due_soon, else neutral).
  * Null for inactive leases or when no due date is known.
  */
 export function dueLabel(lease: Lease, summary: LeaseBillingSummary, todayISO: string): DueLabel | null {
   if (lease.status !== 'active' || !summary.nextDueDate) return null
   if (isPaidUpAndEnding(lease, summary, todayISO)) {
-    return { text: `Berakhir ${formatDate(lease.end_date, 'd MMM')} · ${relativeDays(daysBetween(todayISO, lease.end_date))}`, tone: 'info' }
+    return { text: `Check-out ${formatCheckout(lease.end_date, 'd MMM')} · ${relativeDays(daysBetween(todayISO, checkoutISO(lease.end_date)))}`, tone: 'info' }
   }
   const days = summary.daysUntilDue ?? daysBetween(todayISO, summary.nextDueDate)
   const date = formatDate(summary.nextDueDate, 'd MMM')
@@ -199,12 +200,12 @@ export type RemainingKind = 'overdue' | 'grace' | 'today' | 'soon' | 'ok' | 'end
 
 /** Right-hand block of a lease row (SPEC 7.1): a big day count with a short caption under it. */
 export interface RemainingDays {
-  /** raw day difference: negative = past due (or days until the lease ends for 'ending') */
+  /** raw day difference: negative = past due (or days until the check-out day for 'ending') */
   days: number
   kind: RemainingKind
   /** big text, e.g. '20 hari', 'Hari ini', '3 hari' */
   value: string
-  /** small text under it, e.g. 'terlambat', 'tenggang', 'jatuh tempo', 'lagi · 15 Okt', 'berakhir 15 Okt' */
+  /** small text under it, e.g. 'terlambat', 'tenggang', 'jatuh tempo', 'lagi · 15 Okt', 'check-out 16 Okt' */
   caption: string
   tone: DueTone
 }
@@ -216,7 +217,8 @@ function dayCount(days: number): string {
 
 /**
  * Same decision tree as dueLabel, split into a number and a caption so a dense list can line the day counts up:
- *  - paid-up lease ending within a week -> 'ending': '3 hari' / 'berakhir 15 Okt' (info);
+ *  - paid-up lease ending within a week -> 'ending': '4 hari' / 'check-out 16 Okt' (info), counted to the check-out
+ *    day = end_date + 1 (SPEC 7.3): the same count as its next due date when the lease rolls on;
  *  - past due beyond the grace days (state overdue) -> 'overdue': '20 hari' / 'terlambat' (danger);
  *  - past due within the grace days -> 'grace': '2 hari' / 'tenggang' (warning);
  *  - due today -> 'today': 'Hari ini' / 'jatuh tempo' (warning);
@@ -226,8 +228,8 @@ function dayCount(days: number): string {
 export function remainingDays(lease: Lease, summary: LeaseBillingSummary, todayISO: string): RemainingDays | null {
   if (lease.status !== 'active' || !summary.nextDueDate) return null
   if (isPaidUpAndEnding(lease, summary, todayISO)) {
-    const days = daysBetween(todayISO, lease.end_date)
-    return { days, kind: 'ending', value: dayCount(days), caption: `berakhir ${formatDate(lease.end_date, 'd MMM')}`, tone: 'info' }
+    const days = daysBetween(todayISO, checkoutISO(lease.end_date))
+    return { days, kind: 'ending', value: dayCount(days), caption: `check-out ${formatCheckout(lease.end_date, 'd MMM')}`, tone: 'info' }
   }
   const days = summary.daysUntilDue ?? daysBetween(todayISO, summary.nextDueDate)
   const date = formatDate(summary.nextDueDate, 'd MMM')
@@ -241,10 +243,28 @@ export function remainingDays(lease: Lease, summary: LeaseBillingSummary, todayI
   return { days, kind: soon ? 'soon' : 'ok', value: dayCount(days), caption: `lagi · ${date}`, tone: soon ? 'warning' : 'neutral' }
 }
 
-/** Ended/cancelled leases: most recently finished first (`oldestFirst` flips only the date); same day by room name. */
+/**
+ * How the end of a lease is shown (SPEC 7.3): an ended lease shows its checkout_date as is ('Checkout', already the
+ * real check-out day); an active lease shows the check-out day of its last night, end_date + 1 ('Check-out'); a
+ * cancelled lease, or an old ended row without checkout_date, 'Berakhir' + that same check-out day.
+ */
+export function leaseEndDisplay(lease: Lease): { label: string; date: string } {
+  const label = lease.status === 'ended' && lease.checkout_date ? 'Checkout' : lease.status === 'active' ? 'Check-out' : 'Berakhir'
+  return { label, date: formatDate(leaseEndDayISO(lease)) }
+}
+
+/** ISO day leaseEndDisplay shows: an ended lease's checkout_date as is, otherwise end_date + 1 (SPEC 7.3). */
+function leaseEndDayISO(lease: Lease): string {
+  return lease.status === 'ended' && lease.checkout_date ? lease.checkout_date : checkoutISO(lease.end_date)
+}
+
+/**
+ * Ended/cancelled leases: most recently finished first (`oldestFirst` flips only the date), on the day the row shows
+ * (leaseEndDayISO), so a checkout on 16 Okt sorts below a cancelled lease shown as 'Berakhir 17 Okt'; same day by room name.
+ */
 export function compareFinishedLeases(a: LeaseListItem, b: LeaseListItem, oldestFirst = false): number {
-  const ae = a.lease.checkout_date ?? a.lease.end_date
-  const be = b.lease.checkout_date ?? b.lease.end_date
+  const ae = leaseEndDayISO(a.lease)
+  const be = leaseEndDayISO(b.lease)
   if (ae !== be) return (ae < be) === oldestFirst ? -1 : 1
   return (a.room?.name ?? '').localeCompare(b.room?.name ?? '', undefined, { numeric: true })
 }
@@ -272,16 +292,18 @@ export interface TimelineSegment {
 }
 
 /**
- * Contiguous segments from the lease start to max(end_date / checkout, latest period_end, today for an
- * active lease): one per non-void invoice (kind from the derived payment position), 'gap' for days between
- * invoices that were never billed, and a trailing 'unbilled' stretch when the lease runs past its last
- * invoice. Lets the owner spot holes at a glance.
+ * Contiguous segments from the lease start to max(last night, latest period_end, today for an active lease): one
+ * per non-void invoice (kind from the derived payment position), 'gap' for days between invoices that were never
+ * billed, and a trailing 'unbilled' stretch when the lease runs past its last invoice. Lets the owner spot holes at
+ * a glance. Segment ends are last nights (inclusive) like period_end; the last night of an ended lease is the day
+ * before its checkout_date (the tenant is gone that night, SPEC 7.3), so the bar ends where the stay ended. An active
+ * lease runs on to today only after its check-out day (end_date + 1): on that day tonight is not an unbilled night.
  */
 export function invoiceTimeline(lease: Lease, invoices: Invoice[], payments: Payment[], todayISO: string): TimelineSegment[] {
   const active = activeInvoicesSorted(invoices.filter((inv) => inv.lease_id === lease.id))
-  const leaseEnd = lease.status === 'ended' ? (lease.checkout_date ?? lease.end_date) : lease.end_date
+  const leaseEnd = lease.status === 'ended' && lease.checkout_date ? lastNightISO(lease.checkout_date) : lease.end_date
   let rangeEnd = leaseEnd
-  if (lease.status === 'active' && todayISO > rangeEnd) rangeEnd = todayISO
+  if (lease.status === 'active' && todayISO > checkoutISO(rangeEnd)) rangeEnd = todayISO
   for (const inv of active) if (inv.period_end > rangeEnd) rangeEnd = inv.period_end
 
   const segments: TimelineSegment[] = []
@@ -354,6 +376,7 @@ export interface ProRataSuggestion {
 /**
  * Pro-rata base price for a custom period [periodStart, customEnd] against the full period
  * [periodStart, fullPeriodEnd] that `pricePerPeriod` normally covers: price * days / fullDays, rounded.
+ * Both ends are last nights (inclusive, as stored); the form converts the typed check-out day with lastNightISO.
  * Returns null when a date is missing/invalid or the custom end lies before the start. Only a suggestion:
  * the user may still override it (the agreed price wins).
  */
@@ -369,14 +392,75 @@ export function proRataSuggestion(pricePerPeriod: number, periodStart: string, f
   }
 }
 
+// ---------- end dates typed as check-out days (SPEC 7.3) ----------
+
+/**
+ * Check-out day of the next period of `periodType` (one period after the billed chain): the default of the
+ * 'Periode khusus' "Sampai tanggal (check-out)" field. '' when the bounds cannot be computed.
+ */
+export function nextPeriodCheckout(lease: Lease, invoices: Invoice[], periodType?: PeriodType): string {
+  try {
+    return checkoutISO(nextPeriodBounds(lease, invoices, 1, periodType).period_end)
+  } catch {
+    return ''
+  }
+}
+
+/** A typed check-out day must be after the start of the period (at least one night); null when fine or empty. */
+export function checkoutInputError(checkoutDay: string, periodStart: string | null | undefined): string | null {
+  if (!checkoutDay || !periodStart) return null
+  return checkoutDay <= periodStart ? `Tanggal check-out harus setelah ${formatDate(periodStart)}.` : null
+}
+
+export interface CoverUntilCheckout {
+  /** periods needed to stay until the check-out day (on the billing grid, rounded up) */
+  n: number
+  /** last night of those periods (the stored period_end); shown as formatCheckout(end) */
+  end: string
+  /** true when the computed check-out day (end + 1) is not the day the user picked (rounded up) */
+  differs: boolean
+}
+
+/**
+ * 'atau sampai tanggal check-out' (SPEC 2b.10 + 7.3): the user picks the day the tenant leaves, so the last night to
+ * bill is the day before (lastNightISO). n = the fewest periods on the billing grid (nextPeriodBounds) whose last
+ * night reaches that night, end = nextPeriodBounds(…, n).period_end. periodsToCover counts plain months from the next
+ * period start, which can be one too many on a grid anchored on the 29th-31st (31 Okt anchor: 30 Nov – 30 Des is one
+ * month, plain months from 30 Nov end 29 Des), so it is only the first guess: grid ends are never earlier than plain
+ * ends, so the guess is never too low and stepping down finds the fewest. Null when the day is empty, not after the
+ * next period start, or the bounds cannot be computed.
+ */
+export function coverUntilCheckout(lease: Lease, invoices: Invoice[], periodType: PeriodType, checkoutDay: string): CoverUntilCheckout | null {
+  if (!checkoutDay) return null
+  try {
+    const start = nextPeriodBounds(lease, invoices, 1, periodType).period_start
+    if (checkoutDay <= start) return null
+    const lastNight = lastNightISO(checkoutDay)
+    let n = periodsToCover(start, lastNight, periodType)
+    while (n > 1 && nextPeriodBounds(lease, invoices, n - 1, periodType).period_end >= lastNight) n--
+    const end = nextPeriodBounds(lease, invoices, n, periodType).period_end
+    return { n, end, differs: end !== lastNight }
+  } catch {
+    return null
+  }
+}
+
+/** 'Dihitung 2 malam, check-out 17 Okt 2026', plus '(bukan 10 Nov 2026: periode dibulatkan ke atas)' when rounded up. */
+export function coverUntilCheckoutHint(info: CoverUntilCheckout, unit: string, checkoutDay: string): string {
+  const text = `Dihitung ${info.n} ${unit}, check-out ${formatCheckout(info.end)}`
+  return info.differs ? `${text} (bukan ${formatDate(checkoutDay)}: periode dibulatkan ke atas)` : text
+}
+
 // ---------- lifecycle helpers (checkout / cancel) ----------
 
 /**
- * end_date to store when a lease is cancelled on `dateISO`: min(end_date, dateISO) but never before start_date,
- * so cancelling a lease that has not started yet keeps `end_date >= start_date` (DB check constraint).
+ * end_date to store when a lease is cancelled or checked out on `dateISO`: the date is a check-out day (SPEC 7.3),
+ * so the last night is the day before: min(end_date, dateISO - 1), never before start_date, so a lease that ends
+ * before or on its first night keeps `end_date >= start_date` (DB check constraint).
  */
 export function cancelledLeaseEndDate(lease: Lease, dateISO: string): string {
-  const cut = lease.end_date <= dateISO ? lease.end_date : dateISO
+  const lastNight = lastNightISO(dateISO)
+  const cut = lease.end_date <= lastNight ? lease.end_date : lastNight
   return cut < lease.start_date ? lease.start_date : cut
 }
 
@@ -385,19 +469,20 @@ export interface FutureInvoicesAtCheckout {
   toVoid: Invoice[]
   /** partially paid -> the user must choose refund / forfeit (same decision as SPEC 2b.4) */
   partial: Invoice[]
-  /** fully paid for a period after checkout -> left as is, shown as a note */
+  /** fully paid for a period from the checkout date on -> left as is, shown as a note */
   paid: Invoice[]
 }
 
 /**
- * Non-void invoices of the lease whose period starts after the checkout date, split by payment position.
- * Everything before/overlapping the checkout date is untouched (stays receivable, SPEC 2b.5).
+ * Non-void invoices of the lease whose period starts ON or after the checkout date, split by payment position: the
+ * checkout date is the day the tenant leaves, so a period starting that day bills a night they are no longer there
+ * (SPEC 7.3). Everything starting before the checkout date is untouched (stays receivable, SPEC 2b.5).
  */
 export function futureInvoicesAtCheckout(leaseId: string, invoices: Invoice[], payments: Payment[], checkoutDate: string): FutureInvoicesAtCheckout {
   const out: FutureInvoicesAtCheckout = { toVoid: [], partial: [], paid: [] }
   if (!checkoutDate) return out
   for (const inv of invoices) {
-    if (inv.lease_id !== leaseId || inv.status === 'void' || inv.period_start <= checkoutDate) continue
+    if (inv.lease_id !== leaseId || inv.status === 'void' || inv.period_start < checkoutDate) continue
     const paid = paidAmountFor(inv.id, payments)
     if (paid <= 0) out.toVoid.push(inv)
     else if (paid < inv.total_amount) out.partial.push(inv)

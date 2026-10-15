@@ -166,6 +166,17 @@ describe('lease list sorting (SPEC 5.1)', () => {
     expect(keys(sortLeaseItems(finished, 'jatuh-tempo', true))).toEqual(['y', 'x'])
     expect(keys(sortLeaseItems(finished, 'kamar', true))).toEqual(['x', 'y'])
   })
+
+  it('sorts finished leases on the day the row shows: checkout_date as is, a cancelled end_date + 1 (SPEC 7.3)', () => {
+    const finished = [
+      // 'Checkout 16 Okt 2026'
+      { ...item('a1', 'Kos Melati', 'A1', 'X', null), lease: { ...dailyLease, id: 'a1', status: 'ended' as const, checkout_date: '2026-10-16', end_date: '2026-10-15' } },
+      // 'Berakhir 17 Okt 2026'
+      { ...item('b1', 'Kos Melati', 'B1', 'Y', null), lease: { ...dailyLease, id: 'b1', status: 'cancelled' as const, end_date: '2026-10-16' } },
+    ]
+    expect(keys(sortLeaseItems(finished, 'jatuh-tempo', true))).toEqual(['b1', 'a1'])
+    expect(keys(sortLeaseItems(finished, 'jatuh-tempo-terjauh', true))).toEqual(['a1', 'b1'])
+  })
 })
 
 describe('dueLabel', () => {
@@ -182,9 +193,15 @@ describe('dueLabel', () => {
     expect(dueLabel(lease, summary('2026-10-02', 'overdue', -10, 100), '2026-10-12')?.tone).toBe('danger')
   })
 
-  it('paid-up lease ending within a week says Berakhir; inactive leases get nothing', () => {
+  it('paid-up lease ending within a week says Check-out with the check-out day (end_date + 1); inactive leases get nothing', () => {
+    // 8 nights 8-15 Okt: check-out 16 Okt, 4 days away, the same count as the next due date
     const ending: Lease = { ...dailyLease, end_date: '2026-10-15' }
-    expect(dueLabel(ending, summary('2026-10-16', 'ok', 4), '2026-10-12')).toEqual({ text: 'Berakhir 15 Okt · 3 hari lagi', tone: 'info' })
+    expect(dueLabel(ending, summary('2026-10-16', 'ok', 4), '2026-10-12')).toEqual({ text: 'Check-out 16 Okt · 4 hari lagi', tone: 'info' })
+    expect(dueLabel(ending, summary('2026-10-16', 'due_soon', 1), '2026-10-15')?.text).toBe('Check-out 16 Okt · besok')
+    // on the check-out day: not 'Jatuh tempo hari ini'
+    expect(dueLabel(ending, summary('2026-10-16', 'due_soon', 0), '2026-10-16')).toEqual({ text: 'Check-out 16 Okt · hari ini', tone: 'info' })
+    // the day after, the tenant stayed on: the next night is due
+    expect(dueLabel(ending, summary('2026-10-16', 'due_soon', -1), '2026-10-17')?.text).toBe('Lewat 1 hari · tenggang · sejak 16 Okt')
     expect(dueLabel({ ...lease, status: 'ended' }, summary('2026-10-14'), '2026-10-12')).toBeNull()
     expect(relativeDays(1)).toBe('besok')
     expect(relativeDays(-1)).toBe('kemarin')

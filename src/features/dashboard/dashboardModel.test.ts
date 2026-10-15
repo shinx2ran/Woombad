@@ -8,6 +8,7 @@ import {
   buildRecentPayments,
   buildVacantGroups,
   ATTENTION_SORT_STORAGE_KEY,
+  checkoutDaysLabel,
   compareAttentionByDate,
   compareAttentionByRoom,
   deltaText,
@@ -170,8 +171,10 @@ describe('buildAttentionSections', () => {
     const summary = summarizeLeaseBilling(guest, [guestInvoice], [guestPayment], TODAY)
     expect(summary.state).toBe('due_soon')
     expect(isPaidUpAndEnding(guest, summary, TODAY)).toBe(true)
+    // counted to the check-out day 14 Okt (last night 13 Okt), the same 3 days as the next due date (SPEC 7.3)
     const expiring = buildExpiringItems([guest], new Set(), lookups, TODAY)
-    expect(expiring.map((i) => [i.lease.id, i.daysLeft])).toEqual([['l7', 2]])
+    expect(expiring.map((i) => [i.lease.id, i.checkoutDate, i.daysLeft])).toEqual([['l7', '2026-10-14', 3]])
+    expect(expiring[0].daysLeft).toBe(summary.daysUntilDue)
   })
 
   it('keeps a lease whose last invoice is still partly unpaid under attention even though the stay is ending', () => {
@@ -197,11 +200,26 @@ describe('buildAttentionSections', () => {
     expect(sections.map((s) => s.group)).toEqual(['unbilled'])
   })
 
-  it('a paid-up lease ending today is still "Akan berakhir", not "Jatuh tempo"', () => {
+  it('a paid-up lease whose last night is today is still "Akan berakhir" (check-out tomorrow), not "Jatuh tempo"', () => {
     const today = { ...guest, start_date: '2026-10-09', end_date: TODAY }
     const inv = { ...guestInvoice, period_start: '2026-10-09', period_end: TODAY }
     expect(buildAttentionSections([today], [inv], [guestPayment], [], lookups, TODAY)).toEqual([])
-    expect(buildExpiringItems([today], new Set(), lookups, TODAY)[0]?.daysLeft).toBe(0)
+    expect(buildExpiringItems([today], new Set(), lookups, TODAY)[0]).toMatchObject({ checkoutDate: '2026-10-12', daysLeft: 1 })
+  })
+
+  it('a paid-up lease checking out today is listed exactly once: "Akan berakhir" (Check-out hari ini) or "Perlu perhatian"', () => {
+    // last night 10 Okt, check-out day = TODAY. Whether billing counts it as ending through its check-out day
+    // (isPaidUpAndEnding) decides the list; the dashboard never shows it twice and never drops it.
+    const leaving = { ...guest, start_date: '2026-10-08', end_date: '2026-10-10' }
+    const inv = { ...guestInvoice, period_start: '2026-10-08', period_end: '2026-10-10' }
+    const sections = buildAttentionSections([leaving], [inv], [guestPayment], [], lookups, TODAY)
+    const attentionIds = new Set(sections.flatMap((s) => s.items.map((i) => i.lease.id)))
+    const expiring = buildExpiringItems([leaving], attentionIds, lookups, TODAY)
+    expect(attentionIds.size + expiring.length).toBe(1)
+    if (expiring.length > 0) expect(expiring[0]).toMatchObject({ checkoutDate: TODAY, daysLeft: 0 })
+    else expect(sections.map((s) => s.group)).toEqual(['due_soon'])
+    // without the attention list in the way it is "Check-out hari ini"
+    expect(buildExpiringItems([leaving], new Set(), lookups, TODAY)[0]).toMatchObject({ checkoutDate: TODAY, daysLeft: 0 })
   })
 
   it('sorts the most overdue first', () => {
@@ -355,17 +373,29 @@ describe('attention sort (SPEC 5.1: Urut Tanggal | Kamar)', () => {
 })
 
 describe('buildExpiringItems', () => {
-  it('lists leases ending within 7 days minus those already in attention', () => {
+  it('lists leases whose check-out day is within 7 days, minus those already in attention', () => {
+    // check-out day = end_date + 1 (SPEC 7.3); TODAY = 2026-10-11
     const leases = [
-      lease('l1', 'r1', 't1', '2026-09-01', '2026-10-13'),
-      lease('l2', 'r2', 't2', '2026-09-01', '2026-10-18'),
-      lease('l3', 'r3', 't3', '2026-09-01', '2026-10-19'),
-      lease('l4', 'r5', 't4', '2026-09-01', '2026-10-10'),
+      lease('l1', 'r1', 't1', '2026-09-01', '2026-10-13'), // check-out 14 Okt, but already under attention
+      lease('l2', 'r2', 't2', '2026-09-01', '2026-10-17'), // check-out 18 Okt = 7 days
+      lease('l3', 'r3', 't3', '2026-09-01', '2026-10-18'), // check-out 19 Okt = 8 days: outside the window
+      lease('l4', 'r5', 't4', '2026-09-01', '2026-10-10'), // check-out today
+      lease('l5', 'r1', 't1', '2026-09-01', '2026-10-09'), // check-out was yesterday
+      lease('l6', 'r2', 't2', '2026-09-01', '2026-10-12', 'ended'), // not active
     ]
     const items = buildExpiringItems(leases, new Set(['l1']), lookups, TODAY)
-    expect(items.map((i) => i.lease.id)).toEqual(['l2'])
-    expect(items[0].daysLeft).toBe(7)
-    expect(items[0].tenant?.full_name).toBe('Siti')
+    expect(items.map((i) => [i.lease.id, i.checkoutDate, i.daysLeft])).toEqual([
+      ['l4', '2026-10-11', 0],
+      ['l2', '2026-10-18', 7],
+    ])
+    expect(items[1].tenant?.full_name).toBe('Siti')
+    expect(items[1].room?.name).toBe('A2')
+  })
+
+  it('checkoutDaysLabel counts to the check-out day', () => {
+    expect(checkoutDaysLabel(0)).toBe('Check-out hari ini')
+    expect(checkoutDaysLabel(1)).toBe('Check-out besok')
+    expect(checkoutDaysLabel(7)).toBe('Check-out 7 hari lagi')
   })
 })
 
@@ -426,7 +456,9 @@ describe('formatting helpers', () => {
   it('extensionQuestionText asks about extending without mentioning a bill', () => {
     const text = extensionQuestionText({ tenantName: 'Tamu Harian Uji', roomName: 'A3', propertyName: 'Kos Melati', endDate: '2026-10-13' })
     expect(text).toContain('Halo Kak Tamu, ini pesan dari Kos Melati.')
-    expect(text).toContain('kamar A3 berakhir pada 13 Okt 2026')
+    // last night 13 Okt -> check-out day 14 Okt (SPEC 7.3)
+    expect(text).toContain('Masa sewa kamar A3 berakhir pada 14 Okt 2026 (hari check-out).')
+    expect(text).not.toContain('13 Okt')
     expect(text).toContain('memperpanjang')
     expect(text).not.toMatch(/Tagihan|jatuh tempo|Rp/)
     expect(extensionQuestionText({ tenantName: '  ', roomName: 'B1', propertyName: 'Kos', endDate: '2026-10-13' })).toContain('Halo Kak,')

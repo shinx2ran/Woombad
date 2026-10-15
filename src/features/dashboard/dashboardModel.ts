@@ -12,12 +12,12 @@ import {
   type BillingState,
   type LeaseBillingSummary,
 } from '../../domain/billing'
-import { compareRoomNames, expiringLeases, isLeaseActiveOn, isLeaseReservedOn, reservedRoomIds, vacantRooms } from '../../domain/occupancy'
+import { compareRoomNames, isLeaseActiveOn, isLeaseReservedOn, reservedRoomIds, vacantRooms } from '../../domain/occupancy'
 import { addDaysISO, daysBetween, parseISODate, rangeForPreset, toISODate, type DateRange } from '../../domain/period'
-import { formatDate } from '../../lib/format'
+import { checkoutISO, formatCheckout } from '../../lib/format'
 import { subMonths } from 'date-fns'
 
-/** Window of the "Akan berakhir" card (SPEC section 3: sewa yang akan berakhir ≤ 7 hari). */
+/** Window of the "Akan berakhir" card (SPEC section 3: sewa yang akan berakhir ≤ 7 hari), counted to the check-out day. */
 export const EXPIRING_WITHIN_DAYS = 7
 
 /**
@@ -226,10 +226,17 @@ export interface ExpiringItem {
   tenant: Tenant | null
   room: Room | null
   property: Property | null
+  /** 'YYYY-MM-DD' check-out day = lease.end_date (the last night) + 1 (SPEC 7.3) */
+  checkoutDate: string
+  /** days from today to checkoutDate: 0 = check-out today; equals the next due date's count of a paid-up lease */
   daysLeft: number
 }
 
-/** Leases ending within `withinDays`, excluding those already listed under "Perlu perhatian" (SPEC 2b.12). */
+/**
+ * Active leases whose CHECK-OUT day (end_date + 1, SPEC 7.3) falls within today .. today + `withinDays`, earliest
+ * first, excluding those already listed under "Perlu perhatian" (SPEC 2b.12). Counting to the check-out day means a
+ * stay whose last night was yesterday is still listed today ('Check-out hari ini') and one leaving in 8 days is not.
+ */
 export function buildExpiringItems(
   leases: Lease[],
   excludeLeaseIds: Set<string>,
@@ -237,36 +244,49 @@ export function buildExpiringItems(
   todayISO: string,
   withinDays = EXPIRING_WITHIN_DAYS,
 ): ExpiringItem[] {
-  return expiringLeases(leases, todayISO, withinDays)
-    .filter((l) => !excludeLeaseIds.has(l.id))
-    .map((lease) => ({
+  const limit = addDaysISO(todayISO, withinDays)
+  const byText = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0)
+  return leases
+    .filter((l) => l.status === 'active' && !excludeLeaseIds.has(l.id))
+    .map((lease) => ({ lease, checkoutDate: checkoutISO(lease.end_date) }))
+    .filter(({ checkoutDate }) => checkoutDate >= todayISO && checkoutDate <= limit)
+    .sort((a, b) => byText(a.checkoutDate, b.checkoutDate) || byText(a.lease.id, b.lease.id))
+    .map(({ lease, checkoutDate }) => ({
       lease,
       tenant: lookups.tenantsById.get(lease.tenant_id) ?? null,
       room: lookups.roomsById.get(lease.room_id) ?? null,
       property: lookups.propertiesById.get(lease.property_id) ?? null,
-      daysLeft: Math.max(0, daysBetween(todayISO, lease.end_date)),
+      checkoutDate,
+      daysLeft: Math.max(0, daysBetween(todayISO, checkoutDate)),
     }))
+}
+
+/** Badge of an "Akan berakhir" row: 0 -> 'Check-out hari ini', 1 -> 'Check-out besok', 3 -> 'Check-out 3 hari lagi'. */
+export function checkoutDaysLabel(daysLeft: number): string {
+  if (daysLeft <= 0) return 'Check-out hari ini'
+  if (daysLeft === 1) return 'Check-out besok'
+  return `Check-out ${daysLeft} hari lagi`
 }
 
 export interface ExtensionQuestionInput {
   tenantName: string
   roomName: string
   propertyName: string
-  /** 'YYYY-MM-DD' last night of the current stay */
+  /** 'YYYY-MM-DD' last night of the current stay (lease.end_date as stored) */
   endDate: string
 }
 
 /**
  * WhatsApp text for a lease under "Akan berakhir": asks whether the tenant will extend. It never mentions a
  * bill or a due date; nothing is owed yet (that is why the lease is in this list and not under "Perlu
- * perhatian", where reminderText from src/domain/messages is used).
+ * perhatian", where reminderText from src/domain/messages is used). The date is the check-out day (SPEC 7.3).
  */
 export function extensionQuestionText(input: ExtensionQuestionInput): string {
   const first = input.tenantName.trim().split(/\s+/)[0] ?? ''
   const kak = first ? `Kak ${first}` : 'Kak'
   return [
     `Halo ${kak}, ini pesan dari ${input.propertyName}.`,
-    `Masa sewa kamar ${input.roomName} berakhir pada ${formatDate(input.endDate)}.`,
+    `Masa sewa kamar ${input.roomName} berakhir pada ${formatCheckout(input.endDate)} (hari check-out).`,
     'Apakah berencana memperpanjang sewa? Mohon kabari ya supaya kami bisa menyiapkan tagihan berikutnya atau jadwal checkout. Terima kasih 🙏',
   ].join('\n')
 }

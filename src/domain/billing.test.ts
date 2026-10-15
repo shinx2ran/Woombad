@@ -1099,14 +1099,28 @@ describe('isPaidUpAndEnding', () => {
   it('is true for a paid-up lease ending within the window, false otherwise', async () => {
     const { isPaidUpAndEnding } = await import('./billing')
     const base = { leaseId: 'L', coveredThrough: '2026-03-10', paidThrough: '2026-03-10', outstanding: 0, nextDueDate: '2026-03-11', daysUntilDue: 1, state: 'due_soon' as const }
+    // last night 10 Mar -> check-out 11 Mar (SPEC 7.3)
     const lease = { ...makeLease({ status: 'active', start_date: '2026-03-01', end_date: '2026-03-10' }) }
     expect(isPaidUpAndEnding(lease, base, '2026-03-10')).toBe(true)
-    expect(isPaidUpAndEnding(lease, base, '2026-03-04')).toBe(true)
-    expect(isPaidUpAndEnding(lease, base, '2026-03-02')).toBe(false) // more than 7 days away
-    expect(isPaidUpAndEnding(lease, base, '2026-03-11')).toBe(false) // end_date already past
+    expect(isPaidUpAndEnding(lease, base, '2026-03-04')).toBe(true) // check-out exactly 7 days away
+    expect(isPaidUpAndEnding(lease, base, '2026-03-03')).toBe(false) // check-out 8 days away
+    expect(isPaidUpAndEnding(lease, base, '2026-03-12')).toBe(false) // check-out day already past
     expect(isPaidUpAndEnding(lease, { ...base, outstanding: 500 }, '2026-03-10')).toBe(false)
     expect(isPaidUpAndEnding(lease, { ...base, state: 'unbilled' }, '2026-03-10')).toBe(false)
     expect(isPaidUpAndEnding({ ...lease, status: 'ended' }, base, '2026-03-10')).toBe(false)
+  })
+
+  it('still counts on the check-out day itself (end_date + 1), so the lease is not shown as due today', async () => {
+    const { isPaidUpAndEnding } = await import('./billing')
+    // rolling lease: next due = check-out day = today
+    const onCheckoutDay = { leaseId: 'L', coveredThrough: '2026-03-10', paidThrough: '2026-03-10', outstanding: 0, nextDueDate: '2026-03-11', daysUntilDue: 0, state: 'due_soon' as const }
+    const lease = makeLease({ status: 'active', start_date: '2026-03-01', end_date: '2026-03-10' })
+    expect(isPaidUpAndEnding(lease, onCheckoutDay, '2026-03-11')).toBe(true)
+    expect(isPaidUpAndEnding(lease, onCheckoutDay, '2026-03-11', 0)).toBe(true)
+    expect(isPaidUpAndEnding(lease, onCheckoutDay, '2026-03-10', 0)).toBe(false)
+    // month end / year end: last night 31 Des -> check-out 1 Jan
+    expect(isPaidUpAndEnding({ ...lease, end_date: '2026-12-31' }, onCheckoutDay, '2027-01-01')).toBe(true)
+    expect(isPaidUpAndEnding({ ...lease, end_date: '2026-12-31' }, onCheckoutDay, '2027-01-02')).toBe(false)
   })
 })
 

@@ -8,7 +8,7 @@ import { isValidNik } from '../../domain/ktp'
 import type { ScanPrefill } from '../scanner/types'
 import { isLeaseActiveOn, isLeaseReservedOn } from '../../domain/occupancy'
 import { parseISODate } from '../../domain/period'
-import { normalizePhone } from '../../lib/format'
+import { formatStay, lastNightISO, normalizePhone } from '../../lib/format'
 
 /** Form state: every column as a string so inputs stay controlled; '' means "empty". */
 export interface TenantFormValues {
@@ -269,6 +269,16 @@ export function describeRoom(lease: Pick<Lease, 'room_id' | 'property_id'>, room
   const room = rooms.find((r) => r.id === lease.room_id)?.name ?? 'Kamar?'
   const kos = properties.find((p) => p.id === lease.property_id)?.name
   return kos ? `${room} · ${kos}` : room
+}
+
+/**
+ * A lease in the tenant's history as people read a stay, check-in – check-out (SPEC 7.3): '15 Okt – 17 Okt 2026'.
+ * An ended lease's checkout_date is already the real check-out day and is shown as is; otherwise the stored
+ * end_date (the last night) is shown as its check-out day, end_date + 1.
+ */
+export function leaseStayText(lease: Pick<Lease, 'start_date' | 'end_date' | 'checkout_date'>): string {
+  // formatStay takes the last night, so a real check-out day goes in as checkout_date - 1 and comes out unchanged
+  return formatStay(lease.start_date, lease.checkout_date ? lastNightISO(lease.checkout_date) : lease.end_date)
 }
 
 /** Leases of a tenant, newest first (by start_date, then created_at). */

@@ -82,8 +82,34 @@ describe('summarizeAuditEntry', () => {
     expect(s.changes).toEqual([
       'Harga sewa: Rp 150.000 → Rp 1.800.000',
       'Jenis sewa: Harian → Bulanan',
-      'Berakhir: 5 Okt 2026 → 4 Nov 2026',
+      // end_date is the last night; the history shows the check-out day (SPEC 7.3)
+      'Check-out: 6 Okt 2026 → 5 Nov 2026',
     ])
+  })
+
+  it('shows period_end and end_date as check-out days, checkout_date as is', () => {
+    const inv = summarizeAuditEntry(
+      entry({
+        table_name: 'invoices',
+        old_data: { invoice_number: 'INV-1', period_start: '2026-10-15', period_end: '2026-10-16', quantity: 2 },
+        new_data: { invoice_number: 'INV-1', period_start: '2026-10-15', period_end: '2026-10-21', quantity: 7 },
+      }),
+    )
+    // 2 nights from 15 Okt (check-out 17 Okt) -> one week (check-out 22 Okt)
+    expect(inv.changes).toEqual(['Check-out periode: 17 Okt 2026 → 22 Okt 2026', 'Jumlah periode: 2 → 7'])
+    // checkout 20 Okt writes end_date = 19 Okt (the last night) with checkout_date in the same entry: only the
+    // Checkout line is shown, one check-out day (an older row with end_date = checkout_date reads the same)
+    const old = { status: 'active', end_date: '2026-11-14', checkout_date: null }
+    for (const endDate of ['2026-10-19', '2026-10-20']) {
+      const checkout = summarizeAuditEntry(entry({ table_name: 'leases', old_data: old, new_data: { status: 'ended', end_date: endDate, checkout_date: '2026-10-20' } }))
+      expect(checkout.changes).toEqual(['Status: Aktif → Selesai', 'Checkout: – → 20 Okt 2026'])
+    }
+    // a cancel has no checkout_date: end_date stays, shown as the typed cancel day (end_date 14 Okt -> 15 Okt)
+    const cancel = summarizeAuditEntry(entry({ table_name: 'leases', old_data: old, new_data: { status: 'cancelled', end_date: '2026-10-14', checkout_date: null } }))
+    expect(cancel.changes).toEqual(['Status: Aktif → Dibatalkan','Check-out: 15 Nov 2026 → 15 Okt 2026'])
+    expect(formatAuditValue('leases', 'end_date', '2026-12-31')).toBe('1 Jan 2027')
+    expect(formatAuditValue('invoices', 'period_end', null)).toBe('–')
+    expect(formatAuditValue('invoices', 'period_start', '2026-10-15')).toBe('15 Okt 2026')
   })
 
   it('shows room prices and kos payment info', () => {

@@ -9,7 +9,7 @@ import type { AddonBilling, Lease, LeaseAddon, PaymentMethod, PeriodType, Tenant
 import { ADDON_BILLINGS, ADDON_BILLING_LABEL, ID_TYPES, ID_TYPE_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { computeAddonsAmount, deriveInvoiceStatus } from '../../domain/billing'
 import { periodBounds } from '../../domain/period'
-import { formatDate, formatRupiah, todayISO } from '../../lib/format'
+import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import { DocumentScanner } from '../scanner/DocumentScanner'
 import type { ScanPrefill } from '../scanner/types'
 import {
@@ -633,7 +633,8 @@ export function NewLeasePage() {
             </div>
             {periodPreview && (
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700" data-testid="stay-preview">
-                {qty} {unit}: <strong>{formatDate(periodPreview.start)}</strong> s/d <strong>{formatDate(periodPreview.end)}</strong>
+                {/* periodPreview.end is the last night; people read the end as the check-out day (SPEC 7.3) */}
+                {qty} {unit}: <strong>{formatDate(periodPreview.start)}</strong> s/d <strong>{formatCheckout(periodPreview.end)}</strong>
                 <span className="text-slate-500"> · {formatRupiah(base)}</span>
               </p>
             )}
@@ -747,7 +748,7 @@ export function NewLeasePage() {
             <div className="space-y-1">
               <Row label="Penyewa" value={tenantName || '-'} />
               <Row label="Kamar" value={room ? `${room.name} · ${property?.name ?? ''}` : '-'} />
-              <Row label="Periode" value={periodPreview ? `${formatDate(periodPreview.start)} – ${formatDate(periodPreview.end)}` : '-'} />
+              <Row label="Periode" value={periodPreview ? formatStay(periodPreview.start, periodPreview.end) : '-'} />
               <Row label={`${PERIOD_TYPE_LABEL[periodType]} ${qty} ${unit}`} value={formatRupiah(base)} />
               {addonsAmount > 0 && <Row label="Add-on" value={formatRupiah(addonsAmount)} />}
               <div className="border-t border-slate-200 pt-1">

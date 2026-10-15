@@ -95,7 +95,7 @@ export interface CheckoutInput {
   invoices: Invoice[]
   payments: Payment[]
   settlement: DepositSettlement
-  /** decision per partially-paid invoice whose period starts after the checkout date (see futureInvoicesAtCheckout) */
+  /** decision per partially-paid invoice whose period starts on or after the checkout date (see futureInvoicesAtCheckout) */
   partialDecisions: Record<string, PartialDecision>
 }
 
@@ -107,10 +107,6 @@ export interface CancelInput {
   partialDecisions: Record<string, PartialDecision>
   settlement: DepositSettlement
   dateISO: string
-}
-
-function minISO(a: string, b: string): string {
-  return a <= b ? a : b
 }
 
 export function useLeaseActions() {
@@ -425,10 +421,12 @@ export function useLeaseActions() {
     }
 
     /**
-     * SPEC 2b.5. Invoices whose period starts after the checkout date: unpaid -> void; partially paid -> the
-     * caller's decision (refund / forfeit) so no receivable survives on an ended lease; fully paid are left as
-     * they are. Invoices up to the checkout date stay receivable and may absorb the deposit (settlement.rent).
-     * Everything is checked before the first write.
+     * SPEC 2b.5 + 7.3. Invoices whose period starts on or after the checkout date (the day the tenant leaves, so
+     * that night is not theirs): unpaid -> void; partially paid -> the caller's decision (refund / forfeit) so no
+     * receivable survives on an ended lease; fully paid are left as they are. Invoices starting before the checkout
+     * date stay receivable and may absorb the deposit (settlement.rent). Everything is checked before the first write.
+     * end_date = the last night: min(end_date, checkout_date - 1), never before start_date (cancelledLeaseEndDate);
+     * screens show an ended lease's checkout_date itself.
      */
     async function checkout(input: CheckoutInput): Promise<void> {
       const { lease, checkoutDate, invoices, payments, settlement, partialDecisions } = input
@@ -450,7 +448,7 @@ export function useLeaseActions() {
         await repo.update('leases', lease.id, {
           status: 'ended',
           checkout_date: checkoutDate,
-          end_date: minISO(lease.end_date, checkoutDate),
+          end_date: cancelledLeaseEndDate(lease, checkoutDate),
         })
       } finally {
         // also after a failure, so the screen shows what was saved
@@ -479,7 +477,7 @@ export function useLeaseActions() {
         await closeInvoices(closingInvoiceWrites(unpaid, partial, fresh, payments, partialDecisions, 'sewa dibatalkan'))
         await recordRentRefunds(lease, refunded, invoices, payments, dateISO, 'sewa dibatalkan')
         await settleDeposit(lease, settlement, dateISO, allocations)
-        // end_date never drops below start_date (DB check constraint) when a lease that has not started is cancelled.
+        // the cancel date is a check-out day: end_date = the night before, never below start_date (DB check constraint)
         await repo.update('leases', lease.id, { status: 'cancelled', end_date: cancelledLeaseEndDate(lease, dateISO) })
       } finally {
         await invalidate('leases', 'invoices', 'payments', 'expenses')

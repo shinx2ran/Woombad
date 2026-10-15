@@ -15,7 +15,7 @@
  */
 import type { Expense, Invoice, InvoiceStatus, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType } from '../types/db'
 import { PERIOD_UNIT_LABEL } from '../types/db'
-import { formatRupiah } from '../lib/format'
+import { checkoutISO, formatRupiah } from '../lib/format'
 import { addDaysISO, daysBetween, periodBounds, periodEnd, periodsToCover } from './period'
 
 export interface InvoiceDraftInput {
@@ -717,18 +717,20 @@ export function formatExtraBreakdown(parts: ExtraBreakdown): string {
 
 
 /**
- * A lease that is fully paid and whose end_date falls within the next `withinDays` days: the owner's
- * decision is "perpanjang atau checkout", not "bayar / tagih". summarizeLeaseBilling ignores end_date
- * (a rolling tenant's end_date always equals coveredThrough), so UIs use this predicate to show such a
- * lease as "akan berakhir" instead of "jatuh tempo". A paid-up lease whose end_date is already in the
- * past is NOT covered (the tenant stayed on; the next invoice must be issued).
+ * A lease that is fully paid and whose check-out day (end_date + 1: end_date is the last night, SPEC 7.3) falls
+ * within [today, today + `withinDays`]: the owner's decision is "perpanjang atau checkout", not "bayar / tagih".
+ * summarizeLeaseBilling ignores end_date (a rolling tenant's end_date always equals coveredThrough), so UIs use
+ * this predicate to show such a lease as "akan berakhir" instead of "jatuh tempo". The check-out day itself still
+ * counts ("Hari ini / check-out", not "jatuh tempo hari ini"); a paid-up lease whose check-out day is already in
+ * the past is NOT covered (the tenant stayed on; the next invoice must be issued).
  */
 export function isPaidUpAndEnding(lease: Lease, summary: LeaseBillingSummary, todayISO: string, withinDays = 7): boolean {
+  const checkout = checkoutISO(lease.end_date)
   return (
     lease.status === 'active' &&
     summary.outstanding === 0 &&
     summary.state !== 'unbilled' &&
-    lease.end_date >= todayISO &&
-    lease.end_date <= addDaysISO(todayISO, withinDays)
+    checkout >= todayISO &&
+    checkout <= addDaysISO(todayISO, withinDays)
   )
 }

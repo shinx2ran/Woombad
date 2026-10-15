@@ -22,10 +22,10 @@ import {
 import type { Invoice, LeaseAddon, Payment } from '../../types/db'
 import { PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
-import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
+import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
-import { agreedPriceText, invoiceTimeline, leaseReminderText, openInvoicesSorted, displayBillingState, priceDelta, priceDeltaText, roomPriceFor } from './leaseUtils'
+import { agreedPriceText, invoiceTimeline, leaseEndDisplay, leaseReminderText, openInvoicesSorted, displayBillingState, priceDelta, priceDeltaText, roomPriceFor } from './leaseUtils'
 import { ActionMenu, BillingStateBadge, InvoiceTimeline, Row, type MenuItem } from './components'
 import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
@@ -104,6 +104,8 @@ export function LeaseDetailPage() {
   const tenant = data.tenantById.get(lease.tenant_id)
   const property = data.propertyById.get(lease.property_id)
   const isActive = lease.status === 'active'
+  // 'Check-out <end_date + 1>' (active) / 'Checkout <checkout_date>' (ended) / 'Berakhir …' (cancelled), SPEC 7.3
+  const leaseEnd = leaseEndDisplay(lease)
   // SPEC 5.4: the room's current rate for the lease's type is the 'harga standar'.
   const standardPrice = roomPriceFor(room, lease.period_type)
   const openInvoices = openInvoicesSorted(lease.id, leaseInvoices, data.payments)
@@ -199,7 +201,7 @@ export function LeaseDetailPage() {
       hideOnMobile: true,
       render: (inv) => (
         <span>
-          {formatDate(inv.period_start)} – {formatDate(inv.period_end)}
+          {formatStay(inv.period_start, inv.period_end)}
           <span className="block text-xs text-slate-500">{`${inv.quantity} ${invoiceUnitLabel(inv, lease)}`}</span>
         </span>
       ),
@@ -275,7 +277,12 @@ export function LeaseDetailPage() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Dibayar s/d" value={summary.paidThrough ? formatDate(summary.paidThrough) : '-'} sub={summary.coveredThrough ? `Ditagih s/d ${formatDate(summary.coveredThrough)}` : 'Belum ada tagihan'} />
+        {/* paid / billed through = last nights; shown as the check-out day (SPEC 7.3) */}
+        <StatCard
+          label="Dibayar s/d"
+          value={summary.paidThrough ? formatCheckout(summary.paidThrough) : '-'}
+          sub={summary.coveredThrough ? `Ditagih s/d ${formatCheckout(summary.coveredThrough)}` : 'Belum ada tagihan'}
+        />
         <StatCard
           label="Sisa tagihan"
           value={formatRupiah(summary.outstanding)}
@@ -288,7 +295,7 @@ export function LeaseDetailPage() {
           tone={deposit.shortfall > 0 ? 'warning' : 'default'}
           sub={`Diterima ${formatRupiah(deposit.received)} · dipotong ${formatRupiah(deposit.applied)} · dikembalikan ${formatRupiah(deposit.returned)}${deposit.shortfall > 0 ? ` · belum diterima ${formatRupiah(deposit.shortfall)}` : ''}`}
         />
-        <StatCard label={lease.status === 'ended' ? 'Checkout' : 'Berakhir'} value={formatDate(lease.checkout_date ?? lease.end_date)} sub={`Mulai ${formatDate(lease.start_date)}`} />
+        <StatCard label={leaseEnd.label} value={leaseEnd.date} sub={`Mulai ${formatDate(lease.start_date)}`} />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -303,8 +310,7 @@ export function LeaseDetailPage() {
               )}
             </p>
             <Row label="Mulai" value={formatDate(lease.start_date)} />
-            <Row label="Berakhir" value={formatDate(lease.end_date)} />
-            {lease.checkout_date && <Row label="Checkout" value={formatDate(lease.checkout_date)} />}
+            <Row label={leaseEnd.label} value={leaseEnd.date} />
             <Row label="Deposit disepakati" value={formatRupiah(lease.deposit_amount)} />
             <Row label="Penyewa" value={tenant?.phone ?? '-'} />
             {lease.notes && <p className="whitespace-pre-wrap border-t border-slate-100 pt-2 text-xs text-slate-600">{lease.notes}</p>}
@@ -345,7 +351,7 @@ export function LeaseDetailPage() {
                       <InvoiceStatusBadge status={inv.status} />
                     </p>
                     <p className="text-xs text-slate-500">
-                      {formatDate(inv.period_start)} – {formatDate(inv.period_end)} · {inv.quantity} {invoiceUnitLabel(inv, lease)} · jatuh tempo {formatDate(inv.due_date)}
+                      {formatStay(inv.period_start, inv.period_end)} · {inv.quantity} {invoiceUnitLabel(inv, lease)} · jatuh tempo {formatDate(inv.due_date)}
                     </p>
                     <p className="mt-0.5 text-sm tabular-nums">
                       <span className="text-slate-800">{formatRupiah(inv.total_amount)}</span>

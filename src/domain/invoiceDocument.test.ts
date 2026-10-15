@@ -178,12 +178,13 @@ describe('buildInvoiceDocument: full breakdown', () => {
     })
     expect(doc.tenant).toEqual({ name: 'Budi Santoso', phone: '081234567890' })
     expect(doc.room).toBe('A1')
-    expect(doc.period).toEqual({ start: '2026-10-01', end: '2026-10-31', quantity: 1, unit: 'bulan', typeLabel: 'Bulanan' })
+    // end stays the stored last night; checkout is the day shown as the end of the stay (SPEC 7.3)
+    expect(doc.period).toEqual({ start: '2026-10-01', end: '2026-10-31', checkout: '2026-11-01', quantity: 1, unit: 'bulan', typeLabel: 'Bulanan' })
   })
 
   it('lists rent, named add-ons and the extras from the notes convention', () => {
     expect(doc.lines).toEqual([
-      { label: 'Sewa kamar A1', detail: 'Bulanan · 1 bulan · 1 Okt – 31 Okt 2026', amount: 1_500_000 },
+      { label: 'Sewa kamar A1', detail: 'Bulanan · 1 bulan · 1 Okt – 1 Nov 2026', amount: 1_500_000 },
       { label: 'Parkir motor', detail: '1 × Rp 50.000', amount: 50_000 },
       { label: 'Kasur tambahan', detail: '1 × Rp 150.000', amount: 150_000 },
       { label: 'Listrik / token', amount: 125_000 },
@@ -371,10 +372,24 @@ describe('buildInvoiceDocument: missing lookups and fallbacks', () => {
 
   it('period type comes from the invoice, else from the lease (older rows)', () => {
     const daily = build({ invoice: makeInvoice({ period_type: 'daily', quantity: 3, period_end: '2026-10-03', base_amount: 300_000 }) })
-    expect(daily.period).toMatchObject({ quantity: 3, unit: 'malam', typeLabel: 'Harian' })
-    expect(daily.lines[0].detail).toBe('Harian · 3 malam · 1 Okt – 3 Okt 2026')
+    expect(daily.period).toMatchObject({ end: '2026-10-03', checkout: '2026-10-04', quantity: 3, unit: 'malam', typeLabel: 'Harian' })
+    expect(daily.lines[0].detail).toBe('Harian · 3 malam · 1 Okt – 4 Okt 2026')
     const legacy = build({ invoice: makeInvoice({ period_type: null }), lease: makeLease({ period_type: 'weekly' }) })
     expect(legacy.period).toMatchObject({ unit: 'minggu', typeLabel: 'Mingguan' })
+  })
+
+  it('the rent line and period read check-in – check-out for every period type (SPEC 7.3)', () => {
+    const twoNights = build({ invoice: makeInvoice({ period_type: 'daily', quantity: 2, period_start: '2026-10-15', period_end: '2026-10-16', base_amount: 200_000 }) })
+    expect(twoNights.lines[0].detail).toBe('Harian · 2 malam · 15 Okt – 17 Okt 2026')
+    expect(twoNights.period).toMatchObject({ start: '2026-10-15', end: '2026-10-16', checkout: '2026-10-17' })
+    const week = build({ invoice: makeInvoice({ period_type: 'weekly', period_start: '2026-10-15', period_end: '2026-10-21', base_amount: 600_000 }) })
+    expect(week.lines[0].detail).toBe('Mingguan · 1 minggu · 15 Okt – 22 Okt 2026')
+    const month = build({ invoice: makeInvoice({ period_start: '2026-10-15', period_end: '2026-11-14' }) })
+    expect(month.lines[0].detail).toBe('Bulanan · 1 bulan · 15 Okt – 15 Nov 2026')
+    // across the new year the start keeps its year
+    const newYear = build({ invoice: makeInvoice({ period_type: 'daily', quantity: 5, period_start: '2026-12-28', period_end: '2027-01-01', base_amount: 500_000 }) })
+    expect(newYear.lines[0].detail).toBe('Harian · 5 malam · 28 Des 2026 – 2 Jan 2027')
+    expect(newYear.period.checkout).toBe('2027-01-02')
   })
 
   it('invoiceFreeText drops only an exact breakdown first line', () => {
@@ -395,7 +410,8 @@ describe('invoiceShareText', () => {
     expect(text.startsWith('Halo Kak Budi,')).toBe(true)
     expect(text).toContain('kamar A1 Kos Melati')
     expect(text).toContain('INV-202610-0001')
-    expect(text).toContain('Bulanan · 1 bulan · 1 Okt 2026 s/d 31 Okt 2026')
+    expect(text).toContain('Periode: Bulanan · 1 bulan · 1 Okt 2026 s/d 1 Nov 2026')
+    expect(text).not.toContain('31 Okt')
     expect(text).toContain('Total: *Rp 1.850.000*')
     expect(text).toContain('Sisa *Rp 1.850.000* jatuh tempo 5 Okt 2026')
     expect(text).toContain('Pembayaran dapat dilakukan ke: BCA 1234567890 a.n. Ibu Sari')

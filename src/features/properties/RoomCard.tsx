@@ -3,7 +3,7 @@ import { Check, Layers } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 import type { RoomWithState } from './RoomsTab'
-import { roomPriceLabel, type RoomStateKind } from './roomUtils'
+import { paidThroughText, roomPriceLabel, type RoomStateKind } from './roomUtils'
 
 export const ROOM_STATE_LABEL: Record<RoomStateKind, string> = {
   occupied: 'Terisi',
@@ -84,7 +84,7 @@ export function RoomCard({
           <>
             <p className="truncate font-medium text-slate-800">{state.tenant?.full_name ?? 'Penyewa'}</p>
             <p className={clsx(state.outstanding > 0 && 'text-amber-700')}>
-              {state.paidThrough ? `Dibayar s/d ${formatDate(state.paidThrough)}` : 'Belum ada pembayaran'}
+              {paidThroughText(state.paidThrough) ?? 'Belum ada pembayaran'}
             </p>
           </>
         )}
