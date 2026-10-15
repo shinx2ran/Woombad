@@ -1,4 +1,4 @@
-import { format as dfFormat, parseISO, isValid } from 'date-fns'
+import { addDays, format as dfFormat, parseISO, isValid } from 'date-fns'
 import { id as localeId } from 'date-fns/locale'
 
 const rupiah = new Intl.NumberFormat('id-ID', {
@@ -60,6 +60,47 @@ export function formatDate(value: string | Date | null | undefined, pattern = 'd
   const d = typeof value === 'string' ? parseDate(value) : value
   if (!d || !isValid(d)) return '-'
   return dfFormat(d, pattern, { locale: localeId })
+}
+
+// ---------- stay dates: stored as the last night, shown as the check-out day ----------
+//
+// The database stores a period / lease end as the LAST NIGHT (inclusive): 2 nights from 15 Okt end on 16 Okt, a month
+// from 15 Okt ends on 14 Nov, and the next period starts the day after. People read an end date as the day the stay
+// is over (hotel and kos convention: "15 Okt – 17 Okt" is 2 nights, "15 Okt – 15 Nov" is one month). So every end of
+// a stay is SHOWN as the check-out day = last night + 1, and every end date the user types is read as a check-out day
+// and stored as check-out - 1. Only these helpers do that conversion (SPEC 7.3).
+
+/** Last night (stored, inclusive) -> check-out day shown to the user: '2026-10-16' -> '2026-10-17'. */
+export function checkoutISO(lastNightISO: string): string
+export function checkoutISO(lastNightISO: string | null | undefined): string | null
+export function checkoutISO(lastNightISO: string | null | undefined): string | null {
+  const d = parseDate(lastNightISO)
+  return d ? toDateISO(addDays(d, 1)) : null
+}
+
+/** Check-out day typed by the user -> last night to store: '2026-10-17' -> '2026-10-16'. */
+export function lastNightISO(checkoutDayISO: string): string
+export function lastNightISO(checkoutDayISO: string | null | undefined): string | null
+export function lastNightISO(checkoutDayISO: string | null | undefined): string | null {
+  const d = parseDate(checkoutDayISO)
+  return d ? toDateISO(addDays(d, -1)) : null
+}
+
+/** The check-out day of a stay that ends on `lastNight` (stored), formatted: '2026-10-16' -> '17 Okt 2026'. */
+export function formatCheckout(lastNight: string | null | undefined, pattern = 'd MMM yyyy'): string {
+  return formatDate(checkoutISO(lastNight), pattern)
+}
+
+/**
+ * A stay as people read it, check-in – check-out: ('2026-10-15', '2026-10-16') -> '15 Okt – 17 Okt 2026' (2 nights);
+ * the start keeps its year only when the year changes ('28 Des 2026 – 2 Jan 2027'). `full` writes both years.
+ */
+export function formatStay(start: string | null | undefined, lastNight: string | null | undefined, opts: { full?: boolean } = {}): string {
+  const out = checkoutISO(lastNight)
+  if (!start || !out) return '-'
+  const sameYear = start.slice(0, 4) === out.slice(0, 4)
+  const from = formatDate(start, opts.full || !sameYear ? 'd MMM yyyy' : 'd MMM')
+  return `${from} – ${formatDate(out)}`
 }
 
 /** '2026-03-05T10:20:00Z' -> '5 Mar 2026, 17.20' */
