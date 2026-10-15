@@ -386,3 +386,18 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   yang sama (penyewa yang sudah menginap di-checkout, bukan dibatalkan). Hitungan hari "sampai sewa berakhir" (`remainingDays`, `dueLabel`) dihitung ke hari check-out ("4 hari / check-out"; tanggalnya sudah tampil di "lunas s/d" baris yang sama).
 - Logika: `isPaidUpAndEnding` memakai hari check-out (`checkoutISO(end_date)` di [hari ini, hari ini + 7]), jadi pada hari check-out sewa lunas
   tampil "Hari ini / check-out", bukan "jatuh tempo hari ini"; checkout membatalkan juga tagihan yang mulai **pada** `checkout_date` (2b.5).
+
+### 7.4 Tombol cepat (papan kamar) — fitur percobaan
+- **Saklar** per perangkat: Pengaturan → Fitur percobaan → Tombol cepat (`localStorage` `woombad.quickButtons`, `src/features/quick/quickFlag.ts`).
+  Mati secara bawaan di Mode Online; selalu hidup di Mode Demo untuk dicoba dengan data contoh. Saat mati, kode papan tidak dimuat
+  (`lazy` di `DashboardPage`), jadi Dashboard berjalan persis seperti sebelumnya.
+- **Papan kamar** di Dashboard (`RoomBoard`, `boardModel.ts`): satu kotak per kamar kos yang dipilih, warna dari fungsi yang sama dengan
+  Kos & Kamar (`roomDisplayState`) dan daftar sewa (`summarizeLeaseBilling`, `displayBillingState`): Telat (overdue), Jatuh tempo
+  (due_soon / belum ada tagihan), Check-out ≤ 7 hari (`isPaidUpAndEnding`), Terisi, Kosong, Dipesan, Perbaikan.
+- **Aksi** kamar terisi = tautan ke halaman sewa yang membuka dialog yang sudah ada: `/sewa/:id?action=bayar|tagih|checkout`; semua aturan
+  (jaminan, tagihan setelah checkout, peran staf) tetap dari dialog itu.
+- **Check-in cepat** kamar kosong (`quickCheckIn.ts`): harian saja; nama (HP boleh kosong, "HP belum diisi" diingatkan di papan),
+  jumlah malam, total bayar (bawaan tarif harian × malam). Harga per malam = total ÷ malam dibulatkan; bila tidak pas, `baseAmount` =
+  total. Menulis baris yang sama dengan wizard Sewa baru (penyewa → sewa → `insertFromDraft` → pembayaran → status tagihan), tanpa
+  deposit/add-on (pakai Form lengkap). Nama yang sama dengan penyewa lama ditawarkan supaya data tidak dobel. Ketersediaan kamar dicek
+  dengan `roomAvailability`.
