@@ -3,6 +3,7 @@
  * who, when, and what (table + action + the columns that changed). Pure: no React, no I/O.
  */
 import { differenceInCalendarDays } from 'date-fns'
+import { isCancelledWithoutStay } from '../../../domain/occupancy'
 import { formatCheckout, formatDate, formatDateTime, formatNumber, formatRupiah, parseDate } from '../../../lib/format'
 import {
   ADDON_BILLING_LABEL,
@@ -341,14 +342,24 @@ export function auditSubject(table: string, data: Data | null, resolve?: RefReso
   }
 }
 
+/** True when the lease row is cancelled without a night stayed (isCancelledWithoutStay): end_date has no check-out day. */
+function cancelledWithoutStay(data: Data | null): boolean {
+  const status = data?.status
+  const start = data?.start_date
+  const end = data?.end_date
+  return status === 'cancelled' && typeof start === 'string' && typeof end === 'string' && isCancelledWithoutStay({ status, start_date: start, end_date: end })
+}
+
 /**
  * Columns an update entry lists: a lease checkout sets checkout_date (the real check-out day) and cuts end_date in
  * the same write, so the end_date line is left out: it would show a second check-out day (end_date + 1), one day
- * off for rows written before end_date became checkout_date - 1, or clamped to start_date.
+ * off for rows written before end_date became checkout_date - 1, or clamped to start_date. A cancel before any night
+ * was stayed only clamps end_date to start_date for the DB (SPEC 7.3), so its end_date line is left out too.
  */
 function shownColumns(table: string, oldData: Data | null, newData: Data | null): string[] {
   const cols = changedColumns(oldData, newData)
-  return table === 'leases' && cols.includes('checkout_date') ? cols.filter((c) => c !== 'end_date') : cols
+  if (table !== 'leases') return cols
+  return cols.includes('checkout_date') || cancelledWithoutStay(newData) ? cols.filter((c) => c !== 'end_date') : cols
 }
 
 /** Table, action, row and (for updates) the changed columns of one audit_log row. */

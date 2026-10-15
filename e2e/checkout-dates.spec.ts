@@ -70,4 +70,29 @@ test.describe('Tanggal check-out (SPEC 7.3)', () => {
     await expect(page.getByText('15 Okt – 17 Okt 2026 · 2 malam')).toBeVisible()
     await expect(page.getByText('Ditagih s/d 17 Okt 2026')).toBeVisible()
   })
+
+  test('a stay cancelled on its first day shows no check-out day, in the dialog and after saving', async ({ page }) => {
+    // the demo's daily guest in 102 checked in 4 days before today (7 Okt with today = 11 Okt), paid in full, no deposit
+    await page.clock.setFixedTime(new Date('2026-10-11T10:00:00+07:00'))
+    await loginDemo(page)
+    await page.goto('/sewa')
+    await page.locator('[data-testid="lease-row"][data-room="102"]').getByRole('link').click()
+    await page.waitForURL(/\/sewa\/[^/]+$/)
+
+    await page.getByRole('button', { name: 'Aksi sewa', exact: true }).click()
+    await page.getByRole('menuitem', { name: /Batalkan sewa/ }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel(/Tanggal pembatalan/).fill('2026-10-07')
+    await expect(dialog.getByText('Belum ada malam menginap')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Batalkan sewa' }).click()
+    await expect(page.getByText('Sewa dibatalkan.')).toBeVisible()
+
+    // end_date is clamped to the start day for the DB only: the lease ends on 7 Okt, not 'Berakhir 8 Okt'
+    await expect(page.getByText('Berakhir', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('7 Okt 2026', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('8 Okt 2026', { exact: true })).toHaveCount(0)
+    await page.goto('/sewa')
+    await page.getByRole('tab', { name: /Selesai\/Batal/ }).click()
+    await expect(page.locator('[data-testid="lease-row"][data-room="102"]')).toContainText('Berakhir 7 Okt 2026')
+  })
 })

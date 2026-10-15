@@ -3,8 +3,9 @@ import { Link, useNavigate } from 'react-router'
 import { AlertTriangle, Copy, ExternalLink, KeyRound, Pencil, Trash2, Wrench } from 'lucide-react'
 import { Button, ConfirmDialog, Modal, useToast } from '../../components/ui'
 import { useInvalidate, useRemove, useUpdate } from '../../hooks/useTable'
-import { formatCheckout, formatDate, formatRupiah } from '../../lib/format'
+import { formatDate, formatRupiah } from '../../lib/format'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL, type Room } from '../../types/db'
+import { leaseEndDisplay } from '../leases/leaseUtils'
 import type { RoomWithState } from './RoomsTab'
 import { RoomStateBadge } from './RoomCard'
 import { paidThroughText } from './roomUtils'
@@ -44,6 +45,7 @@ export function RoomSheet({
   const { room, state, hasLeases } = item
   const isMaintenance = room.status === 'maintenance'
   const occupantName = state.tenant?.full_name ?? 'Penyewa'
+  const leaseEnd = state.lease ? leaseEndDisplay(state.lease) : null
 
   const applyMaintenance = async () => {
     try {
@@ -171,8 +173,10 @@ export function RoomSheet({
                   Sewa {PERIOD_TYPE_LABEL[state.lease.period_type].toLowerCase()} · {formatRupiah(state.lease.price_per_period)} /{' '}
                   {PERIOD_UNIT_LABEL[state.lease.period_type]}
                 </p>
+                {/* same end as the lease list / detail (SPEC 7.3): an ended lease still in the room until its checkout_date
+                    shows 'Checkout <checkout_date>', an active one 'Check-out <end_date + 1>' */}
                 <p className="text-slate-600">
-                  Mulai {formatDate(state.lease.start_date)} · Check-out {formatCheckout(state.lease.end_date)}
+                  Mulai {formatDate(state.lease.start_date)} · {leaseEnd?.label} {leaseEnd?.date}
                 </p>
                 <p className="text-slate-600">
                   {paidThroughText(state.paidThrough) ?? 'Belum ada pembayaran tercatat'}

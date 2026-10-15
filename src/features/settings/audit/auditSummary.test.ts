@@ -107,6 +107,13 @@ describe('summarizeAuditEntry', () => {
     // a cancel has no checkout_date: end_date stays, shown as the typed cancel day (end_date 14 Okt -> 15 Okt)
     const cancel = summarizeAuditEntry(entry({ table_name: 'leases', old_data: old, new_data: { status: 'cancelled', end_date: '2026-10-14', checkout_date: null } }))
     expect(cancel.changes).toEqual(['Status: Aktif → Dibatalkan','Check-out: 15 Nov 2026 → 15 Okt 2026'])
+    // a booking cancelled before any night: end_date is only clamped to start_date (no check-out day), so no Check-out line
+    const booking = { status: 'active', start_date: '2026-10-20', end_date: '2026-11-19', checkout_date: null }
+    const noStay = summarizeAuditEntry(entry({ table_name: 'leases', old_data: booking, new_data: { ...booking, status: 'cancelled', end_date: '2026-10-20' } }))
+    expect(noStay.changes).toEqual(['Status: Aktif → Dibatalkan'])
+    // with a night left on the row the line stays (end_date 21 Okt -> check-out 22 Okt)
+    const oneNightLeft = summarizeAuditEntry(entry({ table_name: 'leases', old_data: booking, new_data: { ...booking, status: 'cancelled', end_date: '2026-10-21' } }))
+    expect(oneNightLeft.changes).toEqual(['Status: Aktif → Dibatalkan', 'Check-out: 20 Nov 2026 → 22 Okt 2026'])
     expect(formatAuditValue('leases', 'end_date', '2026-12-31')).toBe('1 Jan 2027')
     expect(formatAuditValue('invoices', 'period_end', null)).toBe('–')
     expect(formatAuditValue('invoices', 'period_start', '2026-10-15')).toBe('15 Okt 2026')

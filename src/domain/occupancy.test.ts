@@ -5,6 +5,7 @@ import {
   compareRoomNames,
   compareRooms,
   expiringLeases,
+  isCancelledWithoutStay,
   isLeaseActiveOn,
   isLeaseReservedOn,
   leaseOccupiedUntil,
@@ -138,6 +139,16 @@ describe('leaseOverlaps', () => {
   })
   it('compares on the date part of timestamps', () => {
     expect(leaseOverlaps(existing, 'r1', '2026-03-20T08:00:00Z', '2026-03-25T08:00:00Z')).toBe(true)
+  })
+})
+
+describe('isCancelledWithoutStay', () => {
+  it('only a cancelled lease whose end_date is not after its start_date', () => {
+    expect(isCancelledWithoutStay(makeLease({ status: 'cancelled', start_date: '2026-10-20', end_date: '2026-10-20' }))).toBe(true)
+    expect(isCancelledWithoutStay(makeLease({ status: 'cancelled', start_date: '2026-10-20', end_date: '2026-10-21' }))).toBe(false)
+    expect(isCancelledWithoutStay(makeLease({ status: 'active', start_date: '2026-10-20', end_date: '2026-10-20' }))).toBe(false)
+    expect(isCancelledWithoutStay(makeLease({ status: 'ended', start_date: '2026-10-20', end_date: '2026-10-20', checkout_date: '2026-10-20' }))).toBe(false)
+    expect(isCancelledWithoutStay(makeLease({ status: 'cancelled', start_date: '2026-10-20T00:00:00Z', end_date: '2026-10-20' }))).toBe(true)
   })
 })
 

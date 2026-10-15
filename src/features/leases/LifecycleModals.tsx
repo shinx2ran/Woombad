@@ -4,6 +4,7 @@ import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../compon
 import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddon, Payment, Room } from '../../types/db'
 import { ADDON_BILLINGS, ADDON_BILLING_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { depositBalance, outstandingFor, paidAmountFor } from '../../domain/billing'
+import { isCancelledWithoutStay } from '../../domain/occupancy'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import {
   cancelledLeaseEndDate,
@@ -239,6 +240,10 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
   const settlementError = balance.held > 0 ? validateSettlement(settlement, balance.held, 0) : null
   const dateError = !date ? 'Tanggal pembatalan wajib diisi.' : null
   const notStarted = Boolean(date) && date < lease.start_date
+  // the typed date is a check-out day: end_date = the night before, never before start_date (cancelledLeaseEndDate)
+  const cancelEnd = date ? cancelledLeaseEndDate(lease, date) : null
+  // the rule every screen uses after saving (isCancelledWithoutStay): end_date clamped to start_date = no night stayed
+  const noStay = cancelEnd !== null && isCancelledWithoutStay({ status: 'cancelled', start_date: lease.start_date, end_date: cancelEnd })
 
   const submit = async () => {
     if (missing || settlementError || dateError) return
@@ -286,15 +291,10 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
         <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
           <Row label="Tagihan belum bayar → dibatalkan" value={unpaid.length} />
           <Row label="Tagihan DP / sebagian → perlu keputusan" value={partial.length} />
-          {/* the typed date is a check-out day: end_date = the night before, shown back as its check-out day (= the typed
-              date) like the list and the detail page; on or before the start day no night was stayed (end_date is only
-              clamped to start_date for the DB), so no check-out day is claimed */}
-          {date && (
-            <Row
-              label="Sewa berakhir menjadi"
-              value={date <= lease.start_date ? 'Belum ada malam menginap' : formatCheckout(cancelledLeaseEndDate(lease, date))}
-            />
-          )}
+          {/* end_date shown back as its check-out day (= the typed date) like the list and the detail page; a cancel up to
+              the day after the start stores end_date = start_date, which every screen shows as no night stayed (the
+              list says 'Berakhir <start>'), so no check-out day is claimed here either */}
+          {cancelEnd && <Row label="Sewa berakhir menjadi" value={noStay ? 'Belum ada malam menginap' : formatCheckout(cancelEnd)} />}
         </div>
         <PartialDecisionList invoices={partial} payments={payments} decisions={decisions} onChange={setDecisions} />
         <UnrecordedRefundsNote refunds={unrecorded} />

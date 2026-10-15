@@ -227,6 +227,15 @@ describe('history helpers', () => {
     expect(leaseStayText(lease({ status: 'ended', start_date: '2026-12-01', end_date: '2027-01-31', checkout_date: '2027-01-05' }))).toBe('1 Des 2026 – 5 Jan 2027')
   })
 
+  it('leaseStayText: a booking cancelled before any night (end_date clamped to start_date) shows no stay range', () => {
+    // cancelled before / on the start day 20 Okt: end_date = start_date only for the DB check
+    expect(leaseStayText(lease({ status: 'cancelled', start_date: '2026-10-20', end_date: '2026-10-20' }))).toBe('20 Okt 2026 · belum menginap')
+    // a cancelled lease with nights left on it keeps check-in – check-out
+    expect(leaseStayText(lease({ status: 'cancelled', start_date: '2026-10-20', end_date: '2026-10-21' }))).toBe('20 Okt – 22 Okt 2026')
+    // an active / ended lease of one night is a real stay
+    expect(leaseStayText(lease({ status: 'active', start_date: '2026-10-20', end_date: '2026-10-20' }))).toBe('20 Okt – 21 Okt 2026')
+  })
+
   it('describeRoom falls back when room / kos are missing', () => {
     const l = lease({ room_id: 'r1', property_id: 'kosA' })
     expect(describeRoom(l, [{ id: 'r1', name: 'A1' }], [{ id: 'kosA', name: 'Kos Melati' }])).toBe('A1 · Kos Melati')

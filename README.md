@@ -259,7 +259,8 @@ Setiap tanggal akhir sewa atau periode (di daftar sewa, dashboard, kamar, tagiha
 adalah **tanggal check-out**, yaitu hari penyewa keluar, bukan malam terakhir menginap: sewa 2 malam mulai 15 Okt tampil
 **15 Okt – 17 Okt**, 1 minggu **15 Okt – 22 Okt**, 1 bulan **15 Okt – 15 Nov**, dan periode berikutnya mulai di tanggal
 check-out itu. "Dibayar s/d 15 Nov" berarti lunas sampai hari check-out 15 Nov. Saat mengetik tanggal akhir sewa, isi juga
-tanggal check-out.
+tanggal check-out. Pesanan yang dibatalkan sebelum penyewa menginap (tanggal pembatalan paling lambat sehari setelah mulai)
+hanya menampilkan tanggal mulainya, "belum menginap"; bila penyewa sudah menginap, gunakan **Checkout**.
 
 ### Kirim tagihan ke WhatsApp & logo kos
 

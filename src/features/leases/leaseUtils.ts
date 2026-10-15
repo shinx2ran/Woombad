@@ -21,7 +21,7 @@ import {
 } from '../../domain/billing'
 import { reminderText } from '../../domain/messages'
 import { addDaysISO, daysBetween, periodEnd, periodsToCover } from '../../domain/period'
-import { compareRoomNames, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
+import { compareRoomNames, isCancelledWithoutStay, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, lastNightISO, todayISO } from '../../lib/format'
 
 // ---------- billing state presentation ----------
@@ -246,16 +246,22 @@ export function remainingDays(lease: Lease, summary: LeaseBillingSummary, todayI
 /**
  * How the end of a lease is shown (SPEC 7.3): an ended lease shows its checkout_date as is ('Checkout', already the
  * real check-out day); an active lease shows the check-out day of its last night, end_date + 1 ('Check-out'); a
- * cancelled lease, or an old ended row without checkout_date, 'Berakhir' + that same check-out day.
+ * cancelled lease, or an old ended row without checkout_date, 'Berakhir' + that same check-out day, except a
+ * cancelled lease without a night stayed (isCancelledWithoutStay): 'Berakhir' + its start day.
  */
 export function leaseEndDisplay(lease: Lease): { label: string; date: string } {
   const label = lease.status === 'ended' && lease.checkout_date ? 'Checkout' : lease.status === 'active' ? 'Check-out' : 'Berakhir'
   return { label, date: formatDate(leaseEndDayISO(lease)) }
 }
 
-/** ISO day leaseEndDisplay shows: an ended lease's checkout_date as is, otherwise end_date + 1 (SPEC 7.3). */
+/**
+ * ISO day leaseEndDisplay shows: an ended lease's checkout_date as is; a cancelled lease without a night stayed its
+ * start_date (end_date there is only clamped for the DB, no check-out day happened); otherwise end_date + 1 (SPEC 7.3).
+ */
 function leaseEndDayISO(lease: Lease): string {
-  return lease.status === 'ended' && lease.checkout_date ? lease.checkout_date : checkoutISO(lease.end_date)
+  if (lease.status === 'ended' && lease.checkout_date) return lease.checkout_date
+  if (isCancelledWithoutStay(lease)) return lease.start_date
+  return checkoutISO(lease.end_date)
 }
 
 /**
@@ -296,12 +302,18 @@ export interface TimelineSegment {
  * per non-void invoice (kind from the derived payment position), 'gap' for days between invoices that were never
  * billed, and a trailing 'unbilled' stretch when the lease runs past its last invoice. Lets the owner spot holes at
  * a glance. Segment ends are last nights (inclusive) like period_end; the last night of an ended lease is the day
- * before its checkout_date (the tenant is gone that night, SPEC 7.3), so the bar ends where the stay ended. An active
+ * before its checkout_date (the tenant is gone that night, SPEC 7.3), so the bar ends where the stay ended; a
+ * cancelled lease without a night stayed (isCancelledWithoutStay) adds no unbilled night of its own. An active
  * lease runs on to today only after its check-out day (end_date + 1): on that day tonight is not an unbilled night.
  */
 export function invoiceTimeline(lease: Lease, invoices: Invoice[], payments: Payment[], todayISO: string): TimelineSegment[] {
   const active = activeInvoicesSorted(invoices.filter((inv) => inv.lease_id === lease.id))
-  const leaseEnd = lease.status === 'ended' && lease.checkout_date ? lastNightISO(lease.checkout_date) : lease.end_date
+  const leaseEnd =
+    lease.status === 'ended' && lease.checkout_date
+      ? lastNightISO(lease.checkout_date)
+      : isCancelledWithoutStay(lease)
+        ? lastNightISO(lease.start_date)
+        : lease.end_date
   let rangeEnd = leaseEnd
   if (lease.status === 'active' && todayISO > checkoutISO(rangeEnd)) rangeEnd = todayISO
   for (const inv of active) if (inv.period_end > rangeEnd) rangeEnd = inv.period_end

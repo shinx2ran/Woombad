@@ -374,10 +374,15 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   linimasa tetap **malam terakhir** (inklusif); periode berikutnya mulai keesokan harinya. Hanya tampilan & input yang berubah.
 - Semua jenis periode: **akhir sewa ditampilkan sebagai hari check-out** = malam terakhir + 1 (2 malam dari 15 Okt = "15 Okt – 17 Okt 2026",
   1 bulan = "15 Okt – 15 Nov") lewat helper `src/lib/format.ts`: `checkoutISO`/`lastNightISO`, `formatCheckout`, `formatStay`. Label "Check-out
-  menjadi" / "Check-out" (sewa aktif); "Dibayar s/d" tetap, nilainya hari check-out; `checkout_date` sewa `ended` ditampilkan apa adanya.
+  menjadi" / "Check-out" (sewa aktif); "Dibayar s/d" tetap, nilainya hari check-out; `checkout_date` sewa `ended` ditampilkan apa adanya
+  (`leaseEndDisplay`: daftar, detail sewa, dan lembar kamar, juga untuk sewa `ended` yang masih menghuni sampai `checkout_date`).
 - **Input**: tanggal akhir yang diketik pengguna ("atau sampai tanggal check-out", "Sampai tanggal (check-out)" pada periode khusus) dibaca
   sebagai hari check-out (minimal mulai + 1) dan dihitung/disimpan sebagai check-out − 1 (`lastNightISO`) untuk `periodsToCover`, `periodEnd`
   dan pro-rata. **Tanggal pembatalan** dan tanggal checkout juga hari check-out: `end_date` = min(end_date, tanggal − 1), tidak sebelum
-  `start_date` (`cancelledLeaseEndDate`). Hitungan hari "sampai sewa berakhir" (`remainingDays`, `dueLabel`) dihitung ke hari check-out ("4 hari / check-out 16 Okt").
+  `start_date` (`cancelledLeaseEndDate`). Sewa `cancelled` dengan `end_date <= start_date` (`isCancelledWithoutStay`: dibatalkan paling
+  lambat sehari setelah mulai; `end_date` hanya dijepit ke `start_date` demi constraint DB) **tidak punya malam menginap**: akhirnya
+  ditampilkan sebagai hari mulai ("Berakhir 20 Okt", juga urutan tab selesai), riwayat penyewa "20 Okt 2026 · belum menginap", riwayat
+  perubahan tanpa baris Check-out, linimasa tanpa malam belum ditagih, dan modal pembatalan menulis "Belum ada malam menginap" untuk tanggal
+  yang sama (penyewa yang sudah menginap di-checkout, bukan dibatalkan). Hitungan hari "sampai sewa berakhir" (`remainingDays`, `dueLabel`) dihitung ke hari check-out ("4 hari / check-out 16 Okt").
 - Logika: `isPaidUpAndEnding` memakai hari check-out (`checkoutISO(end_date)` di [hari ini, hari ini + 7]), jadi pada hari check-out sewa lunas
   tampil "Hari ini / check-out", bukan "jatuh tempo hari ini"; checkout membatalkan juga tagihan yang mulai **pada** `checkout_date` (2b.5).

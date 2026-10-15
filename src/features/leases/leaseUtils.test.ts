@@ -272,6 +272,39 @@ describe('cancelledLeaseEndDate', () => {
     expect(cancelledLeaseEndDate(lease, '2026-01-10')).toBe('2026-01-10')
     expect(cancelledLeaseEndDate(lease, '2026-01-11')).toBe('2026-01-10')
   })
+
+  describe('a booking cancelled before any night shows no check-out day (SPEC 7.3)', () => {
+    // booked 20 Okt – check-out 20 Nov (last night 19 Nov)
+    const booking: Lease = { ...lease, start_date: '2026-10-20', end_date: '2026-11-19' }
+    const cancelOn = (dateISO: string): Lease => ({ ...booking, status: 'cancelled', end_date: cancelledLeaseEndDate(booking, dateISO) })
+
+    it('cancelled before the start day or on it: Berakhir + the start day, not start + 1', () => {
+      for (const day of ['2026-10-10', '2026-10-20']) {
+        expect(cancelOn(day).end_date).toBe('2026-10-20') // clamped to start_date for the DB check only
+        expect(leaseEndDisplay(cancelOn(day))).toEqual({ label: 'Berakhir', date: '20 Okt 2026' })
+      }
+      // the day after the start stores the same row, so it reads the same (a tenant who stayed is checked out instead)
+      expect(leaseEndDisplay(cancelOn('2026-10-21'))).toEqual({ label: 'Berakhir', date: '20 Okt 2026' })
+      // from two days after the start a night is left on the row: shown as its check-out day, the typed date
+      expect(leaseEndDisplay(cancelOn('2026-10-22'))).toEqual({ label: 'Berakhir', date: '22 Okt 2026' })
+    })
+
+    it('the finished list sorts it on the start day it shows', () => {
+      const item = (l: Lease, name: string): LeaseListItem => ({ lease: l, summary: {} as LeaseBillingSummary, room: { name } as Room, tenant: undefined, propertyName: 'Kos' })
+      const noStay = item(cancelOn('2026-10-10'), 'A1')
+      const checkedOutSameDay = item({ ...booking, status: 'ended', checkout_date: '2026-10-20', end_date: '2026-10-20' }, 'B1')
+      const checkedOutDayAfter = item({ ...booking, status: 'ended', checkout_date: '2026-10-21', end_date: '2026-10-20' }, 'C1')
+      // newest first: 21 Okt, then 20 Okt (same day: room name)
+      expect(sortLeaseItems([noStay, checkedOutSameDay, checkedOutDayAfter], 'jatuh-tempo', true).map((i) => i.room?.name)).toEqual(['C1', 'A1', 'B1'])
+    })
+
+    it('the timeline adds no unbilled night for it; a cancelled lease with nights left keeps them', () => {
+      const voided = [inv('v', '2026-10-20', '2026-11-19', 1_000_000, 'void')]
+      expect(invoiceTimeline({ ...cancelOn('2026-10-20'), id: 'L1' }, voided, [], '2026-10-25')).toEqual([])
+      const kept = invoiceTimeline({ ...cancelOn('2026-10-23'), id: 'L1' }, voided, [], '2026-10-25')
+      expect(kept).toEqual([{ kind: 'unbilled', start: '2026-10-20', end: '2026-10-22', days: 3 }])
+    })
+  })
 })
 
 describe('futureInvoicesAtCheckout', () => {
