@@ -1,6 +1,7 @@
 export * from './Button'
 export * from './Input'
 export * from './MoneyInput'
+export * from './CountInput'
 export * from './Card'
 export * from './Badge'
 export * from './Modal'

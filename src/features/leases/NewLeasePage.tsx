@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
 import { ArrowLeft, Check, ChevronDown, ChevronUp, PenLine, Plus, ScanLine, Search, Trash2, Users } from 'lucide-react'
-import { Badge, Button, Card, CardBody, CardHeader, ErrorState, Input, LoadingState, MoneyInput, PageHeader, Select, Textarea, useToast } from '../../components/ui'
+import { Badge, Button, Card, CardBody, CardHeader, CountInput, ErrorState, Input, LoadingState, MoneyInput, PageHeader, Select, Textarea, useToast } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
 import type { AddonBilling, Lease, LeaseAddon, PaymentMethod, PeriodType, Tenant } from '../../types/db'
@@ -613,13 +613,10 @@ export function NewLeasePage() {
               prices={room ? { daily: room.price_daily, weekly: room.price_weekly, monthly: room.price_monthly } : undefined}
             />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Input
+              <CountInput
                 label={`Jumlah periode (${unit})`}
-                type="number"
-                inputMode="numeric"
-                min={1}
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                onChange={setQuantity}
                 required
                 error={touched ? errors.quantity : undefined}
               />
