@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
-import { CountInput, parseCount } from './CountInput'
+import { parseCount } from '../../lib/format'
+import { CountInput } from './CountInput'
 
 afterEach(cleanup)
 
@@ -18,8 +19,8 @@ describe('parseCount', () => {
 })
 
 /** The field inside a parent that owns the count, like the lease form. */
-function Harness({ onChange }: { onChange?: (n: number) => void }) {
-  const [n, setN] = useState(1)
+function Harness({ onChange, initial = 1 }: { onChange?: (n: number) => void; initial?: number }) {
+  const [n, setN] = useState(initial)
   return (
     <>
       <CountInput
@@ -67,6 +68,31 @@ describe('CountInput', () => {
     expect(box().value).toBe('1')
     fireEvent.change(box(), { target: { value: '2x' } })
     expect(box().value).toBe('2')
+  })
+
+  it('edits a digit in the middle: 30 -> delete the 3 -> type 2 gives 20, not 12', () => {
+    render(<Harness initial={30} />)
+    fireEvent.change(box(), { target: { value: '0' } })
+    // the draft stays '0' (no snap to 1, so the caret does not jump) and the count stays 30 meanwhile
+    expect(box().value).toBe('0')
+    expect(screen.getByTestId('count').textContent).toBe('30')
+    fireEvent.change(box(), { target: { value: '20' } })
+    expect(box().value).toBe('20')
+    expect(screen.getByTestId('count').textContent).toBe('20')
+  })
+
+  it('a 0 left in the box goes back to the last count on blur', () => {
+    render(<Harness initial={10} />)
+    fireEvent.change(box(), { target: { value: '0' } })
+    fireEvent.blur(box())
+    expect(box().value).toBe('10')
+  })
+
+  it('keeps leading zeros as typed while editing', () => {
+    render(<Harness initial={105} />)
+    fireEvent.change(box(), { target: { value: '05' } })
+    expect(box().value).toBe('05')
+    expect(screen.getByTestId('count').textContent).toBe('5')
   })
 
   it('selects the number on focus so typing replaces it', () => {

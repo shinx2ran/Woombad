@@ -30,5 +30,14 @@ test.describe('Jumlah periode', () => {
     await page.getByLabel('Tanggal check-in').click()
     await expect(qty).toHaveValue('7')
     await expect(page.getByTestId('stay-preview')).toContainText('7 malam')
+
+    // change 30 to 20 by deleting the 3 in the middle: must give 20, not 12
+    await qty.click()
+    await page.keyboard.type('30')
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('Backspace')
+    await page.keyboard.type('2')
+    await expect(qty).toHaveValue('20')
+    await expect(page.getByTestId('stay-preview')).toContainText('20 malam')
   })
 })

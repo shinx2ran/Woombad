@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { clsx } from 'clsx'
 import { Field, inputClass } from './Input'
+import { parseCount } from '../../lib/format'
 
 export interface CountInputProps {
   label?: string
@@ -19,15 +20,9 @@ export interface CountInputProps {
   id?: string
 }
 
-/** Digits only, at most four (9999 nights is far beyond any stay). */
-export function parseCount(text: string): number | null {
-  const digits = text.replace(/\D/g, '').slice(0, 4)
-  return digits === '' ? null : Number.parseInt(digits, 10)
-}
-
 /**
- * Whole-number input for counts such as "Jumlah periode". The box may be emptied while typing (the parent keeps the
- * last valid count, so totals never jump to 0) and is filled with that count again when it loses focus. Tapping it
+ * Whole-number input for counts such as "Jumlah periode". The box may be emptied (or read 0) while typing: the parent
+ * keeps the last valid count, so totals never jump, and the box shows that count again when it loses focus. Tapping it
  * selects the number, so typing replaces it instead of appending ("1" + "3" = "13").
  */
 export function CountInput({ label, hint, error, required, value, onChange, min = 1, max = 9999, disabled, className, id }: CountInputProps) {
@@ -55,9 +50,12 @@ export function CountInput({ label, hint, error, required, value, onChange, min 
         value={text}
         onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => {
-          const n = parseCount(e.target.value)
-          setText(n === null ? '' : String(n))
-          if (n !== null) onChange(Math.min(max, Math.max(min, n)))
+          // keep the digits exactly as typed: rewriting them ('0' -> '1', '05' -> '5') would move the caret mid-edit,
+          // so deleting the 3 of 30 to type 20 would end as 12. A draft below `min` is treated like an empty box.
+          const digits = e.target.value.replace(/\D/g, '').slice(0, 4)
+          setText(digits)
+          const n = parseCount(digits)
+          if (n !== null && n >= min) onChange(Math.min(max, n))
         }}
         onBlur={() => setText(String(value))}
       />

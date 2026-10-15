@@ -29,6 +29,12 @@ export function parseRupiah(input: string): number {
   return Number.parseInt(digits, 10)
 }
 
+/** A typed count ("12", "12 bulan"): digits only, at most four (9999 nights is far beyond any stay); null when none. */
+export function parseCount(text: string): number | null {
+  const digits = text.replace(/\D/g, '').slice(0, 4)
+  return digits === '' ? null : Number.parseInt(digits, 10)
+}
+
 /** Today's date as 'YYYY-MM-DD' in the user's local timezone. */
 export function todayISO(now: Date = new Date()): string {
   return toDateISO(now)
