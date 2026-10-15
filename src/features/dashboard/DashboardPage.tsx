@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { ErrorState } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { formatDate, todayISO } from '../../lib/format'
@@ -14,6 +14,10 @@ import { VacantRoomsCard } from './VacantRoomsCard'
 import { RecentPaymentsCard } from './RecentPaymentsCard'
 import { CashflowChart } from './CashflowChart'
 import { useIsDesktop } from './useIsDesktop'
+import { useQuickButtons } from '../quick/quickFlag'
+
+// Tombol cepat (SPEC 7.4) is loaded only when its switch is on, so with it off the dashboard runs exactly as before.
+const RoomBoard = lazy(() => import('../quick/RoomBoard').then((m) => ({ default: m.RoomBoard })))
 
 export function DashboardPage() {
   const { properties, selectedPropertyId, role, isLocalMode } = useOrg()
@@ -21,6 +25,7 @@ export function DashboardPage() {
   const showReportLink = isAdmin
   const { data, isPending, error } = useDashboardData()
   const isDesktop = useIsDesktop()
+  const quick = useQuickButtons(isLocalMode)
   // Captured once per mount: the greeting should not flip mid-session on a re-render.
   const [greeting] = useState(() => greetingFor(new Date().getHours()))
 
@@ -59,6 +64,11 @@ export function DashboardPage() {
           <div className="sm:hidden">
             <QuickActions />
           </div>
+          {quick.enabled && (
+            <Suspense fallback={null}>
+              <RoomBoard />
+            </Suspense>
+          )}
           <StatGrid data={data} singleProperty={selected !== null} />
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">
