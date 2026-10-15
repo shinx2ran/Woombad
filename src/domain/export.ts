@@ -4,6 +4,8 @@
  *
  * Conventions:
  *  - 'date' cells hold 'YYYY-MM-DD' strings, 'money' cells hold integer Rupiah, 'string' cells strings.
+ *  - The end of a stay is exported as the CHECK-OUT day (stored last night + 1, SPEC 7.3) under a header that says
+ *    so ('Periode s/d (check-out)'); start dates, due dates and payment dates are exported as stored.
  *  - A missing join (unknown room, tenant, property, ...) renders as '-' in string cells; numeric cells
  *    always stay numbers so spreadsheet formulas keep working.
  *  - Property filter: `propertyIds` undefined = everything in the org; when given, only rows whose
@@ -23,6 +25,7 @@ import {
   ID_TYPE_LABEL,
 } from '../types/db'
 import type { CashflowPoint, CategoryBreakdown, FinanceSummary, PropertyBreakdown } from './finance'
+import { checkoutISO } from '../lib/format'
 import { isLeaseActiveOn, isLeaseReservedOn } from './occupancy'
 import type { DateRange } from './period'
 import { inRange, toISODate } from './period'
@@ -238,8 +241,10 @@ export interface InvoicesSheetOptions {
 
 /**
  * Invoices with due_date in range, sorted by due_date then invoice number (numeric aware).
- * Columns: No. Tagihan, Kos, Kamar, Penyewa, Periode Awal, Periode Akhir, Jatuh Tempo, Total, Dibayar, Sisa, Status.
+ * Columns: No. Tagihan, Kos, Kamar, Penyewa, Periode Awal, Periode s/d (check-out), Jatuh Tempo, Total, Dibayar, Sisa, Status.
  *
+ * - 'Periode s/d (check-out)' (key `period_checkout`) = period_end + 1: period_end is stored as the last night, people
+ *   read the end of a period as the check-out day (SPEC 7.3), e.g. 2 nights from 15 Okt -> 17 Okt.
  * - Dibayar = sum of payments with kind 'rent' and this invoice_id, of ANY date (not only in range).
  * - Sisa = max(0, Total - Dibayar); 0 for a void invoice (it owes nothing).
  * - Status is DERIVED from Dibayar (deriveInvoiceStatus semantics), never read from the stored column:
@@ -281,7 +286,7 @@ export function buildInvoicesSheet(
       room: names.room,
       tenant: names.tenant,
       period_start: dateCell(inv.period_start),
-      period_end: dateCell(inv.period_end),
+      period_checkout: checkoutISO(dateCell(inv.period_end)) ?? dateCell(inv.period_end),
       due_date: dateCell(inv.due_date),
       total_amount: inv.total_amount,
       paid,
@@ -298,7 +303,7 @@ export function buildInvoicesSheet(
       { key: 'room', header: 'Kamar', type: 'string' },
       { key: 'tenant', header: 'Penyewa', type: 'string' },
       { key: 'period_start', header: 'Periode Awal', type: 'date' },
-      { key: 'period_end', header: 'Periode Akhir', type: 'date' },
+      { key: 'period_checkout', header: 'Periode s/d (check-out)', type: 'date' },
       { key: 'due_date', header: 'Jatuh Tempo', type: 'date' },
       { key: 'total_amount', header: 'Total', type: 'money' },
       { key: 'paid', header: 'Dibayar', type: 'money' },

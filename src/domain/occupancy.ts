@@ -44,6 +44,16 @@ export function isLeaseReservedOn(lease: Lease, dateISO: string): boolean {
   return lease.status === 'active' && day(dateISO) < day(lease.start_date)
 }
 
+/**
+ * A cancelled lease with no night to show (SPEC 7.3): a cancel dated on or before the start day keeps end_date =
+ * start_date only for the DB check (end_date >= start_date, cancelledLeaseEndDate), so on a cancelled row
+ * end_date <= start_date means no check-out day: its end is shown as the start day, never end_date + 1. A cancel
+ * dated the day after the start stores the same row and reads the same (a tenant who stayed is checked out instead).
+ */
+export function isCancelledWithoutStay(lease: Pick<Lease, 'status' | 'start_date' | 'end_date'>): boolean {
+  return lease.status === 'cancelled' && day(lease.end_date) <= day(lease.start_date)
+}
+
 /** Room ids with a lease occupying them on the date (`isLeaseActiveOn`). */
 export function occupiedRoomIds(leases: Lease[], dateISO: string): Set<string> {
   const ids = new Set<string>()

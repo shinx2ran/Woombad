@@ -238,7 +238,8 @@ export function layoutInvoice(doc: InvoiceDocument, measure: MeasureText, opts: 
     }
     return cursor
   }
-  const period = `${formatDate(doc.period.start)} – ${formatDate(doc.period.end)}`
+  // check-in – check-out day (SPEC 7.3): doc.period.end is the stored last night, doc.period.checkout the day after
+  const period = `${formatDate(doc.period.start)} – ${formatDate(doc.period.checkout)}`
   const periodSub = `${doc.period.quantity} ${doc.period.unit} · ${doc.period.typeLabel}`
   const grid: [string, string, string?][][] = [
     [

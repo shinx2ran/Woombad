@@ -15,4 +15,20 @@ test.describe('Mode Demo', () => {
     await expect(switcher).toBeVisible()
     await expect(switcher.locator('option')).toHaveCount(3)
   })
+
+  test('a phone reaches Pengaturan (Anggota, Undang) from the top bar', async ({ page }) => {
+    // narrowest common Android width: the gear, the kos switcher and Keluar all fit
+    await page.setViewportSize({ width: 360, height: 740 })
+    await page.goto('/login')
+    await page.getByRole('button', { name: 'Masuk ke Mode Demo' }).click()
+    await page.waitForURL(/\/dashboard$/)
+    const gear = page.getByRole('link', { name: 'Pengaturan' })
+    await expect(gear).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Keluar' })).toBeInViewport()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await gear.click()
+    await expect(page).toHaveURL(/\/pengaturan$/)
+    await expect(page.getByRole('heading', { name: 'Anggota' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Undang' })).toBeVisible()
+  })
 })

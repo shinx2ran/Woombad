@@ -6,13 +6,18 @@ import {
   cancelledLeaseEndDate,
   compareByShownDays,
   compareLeaseItems,
+  checkoutInputError,
   composeInvoiceNotes,
+  coverUntilCheckout,
+  coverUntilCheckoutHint,
   futureInvoicesAtCheckout,
   invoiceTimeline,
   LEASE_SORT_KEYS,
   LEASE_SORT_LABEL,
+  leaseEndDisplay,
   leaseReminderText,
   matchesLeaseSearch,
+  nextPeriodCheckout,
   openInvoicesSorted,
   parseLeaseSort,
   proRataSuggestion,
@@ -26,6 +31,8 @@ import {
   type LeaseListItem,
 } from './leaseUtils'
 import type { LeaseBillingSummary } from '../../domain/billing'
+import { reminderText } from '../../domain/messages'
+import { formatCheckout, lastNightISO } from '../../lib/format'
 
 const ts = { org_id: 'o', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
 
@@ -81,12 +88,34 @@ describe('invoiceTimeline', () => {
     expect(segs[3]).toMatchObject({ start: '2026-04-10', end: '2026-04-20', days: 11 })
   })
 
-  it('ignores void invoices and stops at checkout for ended leases', () => {
+  it('ignores void invoices and stops at the last night before checkout for ended leases', () => {
     const ended: Lease = { ...lease, status: 'ended', checkout_date: '2026-02-20' }
     const invoices = [inv('a', '2026-01-10', '2026-02-09', 1_000_000, 'paid'), inv('v', '2026-02-10', '2026-03-09', 1_000_000, 'void')]
     const segs = invoiceTimeline(ended, invoices, [pay('a', 1_000_000)], '2026-06-01')
     expect(segs.map((s) => s.kind)).toEqual(['paid', 'unbilled'])
-    expect(segs[1].end).toBe('2026-02-20')
+    // checkout 20 Feb = the tenant was gone that night: the last unbilled night is 19 Feb (shown as check-out 20 Feb)
+    expect(segs[1]).toMatchObject({ start: '2026-02-10', end: '2026-02-19', days: 10 })
+  })
+
+  it('a checkout on the day after the last billed night leaves no unbilled tail', () => {
+    const ended: Lease = { ...lease, status: 'ended', checkout_date: '2026-02-10', end_date: '2026-02-10' }
+    const segs = invoiceTimeline(ended, [inv('a', '2026-01-10', '2026-02-09', 1_000_000, 'paid')], [pay('a', 1_000_000)], '2026-06-01')
+    expect(segs.map((s) => s.kind)).toEqual(['paid'])
+    // an old ended row without checkout_date still ends on its end_date (a last night)
+    const legacy: Lease = { ...lease, status: 'ended', checkout_date: null, end_date: '2026-02-12' }
+    const legacySegs = invoiceTimeline(legacy, [inv('a', '2026-01-10', '2026-02-09', 1_000_000, 'paid')], [pay('a', 1_000_000)], '2026-06-01')
+    expect(legacySegs[legacySegs.length - 1]).toMatchObject({ kind: 'unbilled', end: '2026-02-12', days: 3 })
+  })
+
+  it('an active paid-up lease adds no unbilled night on its check-out day, only from the day after', () => {
+    const paidUp: Lease = { ...lease, end_date: '2026-02-09' }
+    const invoices = [inv('a', '2026-01-10', '2026-02-09', 1_000_000, 'paid')]
+    // check-out day 10 Feb: the tenant is leaving, tonight is not drawn as unbilled
+    expect(invoiceTimeline(paidUp, invoices, [pay('a', 1_000_000)], '2026-02-10').map((s) => s.kind)).toEqual(['paid'])
+    // 11 Feb, still not checked out: the nights of 10 and 11 Feb are unbilled
+    const late = invoiceTimeline(paidUp, invoices, [pay('a', 1_000_000)], '2026-02-11')
+    expect(late.map((s) => s.kind)).toEqual(['paid', 'unbilled'])
+    expect(late[1]).toMatchObject({ start: '2026-02-10', end: '2026-02-11', days: 2 })
   })
 
   it('flags overlapping invoices', () => {
@@ -147,15 +176,134 @@ describe('proRataSuggestion', () => {
     expect(proRataSuggestion(1_000_000, '2026-11-01', '2026-11-30', '2026-10-31')).toBeNull()
     expect(proRataSuggestion(1_000_000, '2026-11-01', '2026-11-30', 'bukan-tanggal')).toBeNull()
   })
+
+  it('takes the last night: a typed check-out day is converted first (SPEC 7.3)', () => {
+    // 'Sampai tanggal (check-out)' 22 Nov -> last night 21 Nov -> 14 nights, as above
+    expect(proRataSuggestion(1_500_000, '2026-11-08', '2026-12-07', lastNightISO('2026-11-22'))).toEqual({ amount: 700_000, days: 14, fullDays: 30 })
+    // check-out 8 Des = the full period's own check-out day -> the full price
+    expect(proRataSuggestion(1_500_000, '2026-11-08', '2026-12-07', lastNightISO('2026-12-08'))?.amount).toBe(1_500_000)
+  })
+})
+
+describe('end dates typed as check-out days (SPEC 7.3)', () => {
+  // daily guest: 2 nights 15-16 Okt (check-out 17 Okt), next night from 17 Okt
+  const daily: Lease = { ...lease, period_type: 'daily', price_per_period: 100_000, start_date: '2026-10-15', end_date: '2026-10-16' }
+  const dailyInvoices = [{ ...inv('d1', '2026-10-15', '2026-10-16', 200_000, 'paid'), quantity: 2 }]
+  // monthly lease billed 10 Jan .. 9 Apr; next period 10 Apr .. 9 Mei (check-out 10 Mei)
+  const monthlyInvoices = [inv('a', '2026-01-10', '2026-02-09'), inv('b', '2026-02-10', '2026-03-09'), inv('c', '2026-03-10', '2026-04-09')]
+
+  it('prefills the custom end with the check-out day of one next period', () => {
+    expect(nextPeriodCheckout(daily, dailyInvoices)).toBe('2026-10-18')
+    expect(nextPeriodCheckout(daily, dailyInvoices, 'weekly')).toBe('2026-10-24')
+    expect(nextPeriodCheckout(lease, monthlyInvoices)).toBe('2026-05-10')
+    expect(lastNightISO(nextPeriodCheckout(lease, monthlyInvoices))).toBe('2026-05-09')
+  })
+
+  it('a check-out day must come after the period start', () => {
+    expect(checkoutInputError('2026-10-17', '2026-10-17')).toBe('Tanggal check-out harus setelah 17 Okt 2026.')
+    expect(checkoutInputError('2026-10-16', '2026-10-17')).toBe('Tanggal check-out harus setelah 17 Okt 2026.')
+    expect(checkoutInputError('2026-10-18', '2026-10-17')).toBeNull()
+    expect(checkoutInputError('', '2026-10-17')).toBeNull()
+    expect(checkoutInputError('2026-10-18', undefined)).toBeNull()
+  })
+
+  it('counts the periods up to the night before the picked check-out day', () => {
+    // check-out 19 Okt -> nights of 17 and 18 Okt -> 2 nights, computed check-out = the picked one
+    const twoNights = coverUntilCheckout(daily, dailyInvoices, 'daily', '2026-10-19')
+    expect(twoNights).toEqual({ n: 2, end: '2026-10-18', differs: false })
+    expect(coverUntilCheckoutHint(twoNights!, 'malam', '2026-10-19')).toBe('Dihitung 2 malam, check-out 19 Okt 2026')
+    expect(coverUntilCheckout(daily, dailyInvoices, 'daily', '2026-10-18')).toEqual({ n: 1, end: '2026-10-17', differs: false })
+    // a week from 17 Okt ends on the night of 23 Okt: check-out 24 Okt is exactly 1 week
+    expect(coverUntilCheckout(daily, dailyInvoices, 'weekly', '2026-10-24')).toEqual({ n: 1, end: '2026-10-23', differs: false })
+    // monthly: check-out 10 Mei is exactly one month (the stored end would have asked for 2 months before)
+    const month = coverUntilCheckout(lease, monthlyInvoices, 'monthly', '2026-05-10')
+    expect(month).toEqual({ n: 1, end: '2026-05-09', differs: false })
+    expect(coverUntilCheckoutHint(month!, 'bulan', '2026-05-10')).toBe('Dihitung 1 bulan, check-out 10 Mei 2026')
+    expect(coverUntilCheckout(lease, monthlyInvoices, 'monthly', '2026-05-11')).toEqual({ n: 2, end: '2026-06-09', differs: true })
+  })
+
+  it('says so with check-out days when the periods round up', () => {
+    const rounded = coverUntilCheckout(lease, monthlyInvoices, 'monthly', '2026-05-05')
+    expect(rounded).toEqual({ n: 1, end: '2026-05-09', differs: true })
+    expect(coverUntilCheckoutHint(rounded!, 'bulan', '2026-05-05')).toBe('Dihitung 1 bulan, check-out 10 Mei 2026 (bukan 5 Mei 2026: periode dibulatkan ke atas)')
+  })
+
+  it('counts on the billing grid of a lease anchored on the 31st (no extra month)', () => {
+    // anchor 31 Okt, billed 31 Okt .. 29 Nov; next period 30 Nov .. 30 Des (check-out 31 Des)
+    const anchored: Lease = { ...lease, start_date: '2026-10-31', end_date: '2026-11-29' }
+    const invs = [inv('m1', '2026-10-31', '2026-11-29')]
+    expect(nextPeriodCheckout(anchored, invs)).toBe('2026-12-31')
+    expect(coverUntilCheckout(anchored, invs, 'monthly', nextPeriodCheckout(anchored, invs))).toEqual({ n: 1, end: '2026-12-30', differs: false })
+    expect(coverUntilCheckout(anchored, invs, 'monthly', '2027-01-31')).toEqual({ n: 2, end: '2027-01-30', differs: false })
+    expect(coverUntilCheckout(anchored, invs, 'monthly', '2027-01-01')).toEqual({ n: 2, end: '2027-01-30', differs: true })
+    // anchor 30 Jan: next period 28 Feb .. 29 Mar (check-out 30 Mar) is one month
+    const jan30: Lease = { ...lease, start_date: '2026-01-30', end_date: '2026-02-27' }
+    expect(coverUntilCheckout(jan30, [inv('j1', '2026-01-30', '2026-02-27')], 'monthly', '2026-03-30')).toEqual({ n: 1, end: '2026-03-29', differs: false })
+  })
+
+  it('gives nothing for an empty day or one not after the next period start', () => {
+    expect(coverUntilCheckout(daily, dailyInvoices, 'daily', '')).toBeNull()
+    expect(coverUntilCheckout(daily, dailyInvoices, 'daily', '2026-10-17')).toBeNull()
+    expect(coverUntilCheckout(daily, dailyInvoices, 'daily', '2026-10-10')).toBeNull()
+  })
+})
+
+describe('leaseEndDisplay (SPEC 7.3)', () => {
+  it('active: check-out day of the last night; ended: the checkout date as is; cancelled: Berakhir + check-out day', () => {
+    expect(leaseEndDisplay({ ...lease, end_date: '2026-10-16' })).toEqual({ label: 'Check-out', date: '17 Okt 2026' })
+    expect(leaseEndDisplay({ ...lease, end_date: '2026-12-31' })).toEqual({ label: 'Check-out', date: '1 Jan 2027' })
+    expect(leaseEndDisplay({ ...lease, status: 'ended', checkout_date: '2026-02-20', end_date: '2026-02-20' })).toEqual({ label: 'Checkout', date: '20 Feb 2026' })
+    expect(leaseEndDisplay({ ...lease, status: 'cancelled', end_date: '2026-02-15' })).toEqual({ label: 'Berakhir', date: '16 Feb 2026' })
+    expect(leaseEndDisplay({ ...lease, status: 'ended', checkout_date: null, end_date: '2026-02-15' })).toEqual({ label: 'Berakhir', date: '16 Feb 2026' })
+  })
 })
 
 describe('cancelledLeaseEndDate', () => {
-  it('cuts end_date to the cancellation date but never before start_date', () => {
-    expect(cancelledLeaseEndDate(lease, '2026-02-15')).toBe('2026-02-15')
+  it('reads the date as a check-out day: end_date = the night before, never past end_date nor before start_date', () => {
+    // cancelled / checked out on 15 Feb: the last night is 14 Feb, shown back as check-out 15 Feb (the typed day)
+    expect(cancelledLeaseEndDate(lease, '2026-02-15')).toBe('2026-02-14')
+    expect(formatCheckout(cancelledLeaseEndDate(lease, '2026-02-15'))).toBe('15 Feb 2026')
     expect(cancelledLeaseEndDate(lease, '2026-06-01')).toBe('2026-04-09')
+    // the day after the last night keeps end_date
+    expect(cancelledLeaseEndDate(lease, '2026-04-10')).toBe('2026-04-09')
     // lease that has not started yet, cancelled today
     expect(cancelledLeaseEndDate({ ...lease, start_date: '2026-11-01', end_date: '2026-11-30' }, '2026-10-11')).toBe('2026-11-01')
+    // on the start day no night was stayed: clamped to start_date (DB check end_date >= start_date)
     expect(cancelledLeaseEndDate(lease, '2026-01-10')).toBe('2026-01-10')
+    expect(cancelledLeaseEndDate(lease, '2026-01-11')).toBe('2026-01-10')
+  })
+
+  describe('a booking cancelled before any night shows no check-out day (SPEC 7.3)', () => {
+    // booked 20 Okt – check-out 20 Nov (last night 19 Nov)
+    const booking: Lease = { ...lease, start_date: '2026-10-20', end_date: '2026-11-19' }
+    const cancelOn = (dateISO: string): Lease => ({ ...booking, status: 'cancelled', end_date: cancelledLeaseEndDate(booking, dateISO) })
+
+    it('cancelled before the start day or on it: Berakhir + the start day, not start + 1', () => {
+      for (const day of ['2026-10-10', '2026-10-20']) {
+        expect(cancelOn(day).end_date).toBe('2026-10-20') // clamped to start_date for the DB check only
+        expect(leaseEndDisplay(cancelOn(day))).toEqual({ label: 'Berakhir', date: '20 Okt 2026' })
+      }
+      // the day after the start stores the same row, so it reads the same (a tenant who stayed is checked out instead)
+      expect(leaseEndDisplay(cancelOn('2026-10-21'))).toEqual({ label: 'Berakhir', date: '20 Okt 2026' })
+      // from two days after the start a night is left on the row: shown as its check-out day, the typed date
+      expect(leaseEndDisplay(cancelOn('2026-10-22'))).toEqual({ label: 'Berakhir', date: '22 Okt 2026' })
+    })
+
+    it('the finished list sorts it on the start day it shows', () => {
+      const item = (l: Lease, name: string): LeaseListItem => ({ lease: l, summary: {} as LeaseBillingSummary, room: { name } as Room, tenant: undefined, propertyName: 'Kos' })
+      const noStay = item(cancelOn('2026-10-10'), 'A1')
+      const checkedOutSameDay = item({ ...booking, status: 'ended', checkout_date: '2026-10-20', end_date: '2026-10-20' }, 'B1')
+      const checkedOutDayAfter = item({ ...booking, status: 'ended', checkout_date: '2026-10-21', end_date: '2026-10-20' }, 'C1')
+      // newest first: 21 Okt, then 20 Okt (same day: room name)
+      expect(sortLeaseItems([noStay, checkedOutSameDay, checkedOutDayAfter], 'jatuh-tempo', true).map((i) => i.room?.name)).toEqual(['C1', 'A1', 'B1'])
+    })
+
+    it('the timeline adds no unbilled night for it; a cancelled lease with nights left keeps them', () => {
+      const voided = [inv('v', '2026-10-20', '2026-11-19', 1_000_000, 'void')]
+      expect(invoiceTimeline({ ...cancelOn('2026-10-20'), id: 'L1' }, voided, [], '2026-10-25')).toEqual([])
+      const kept = invoiceTimeline({ ...cancelOn('2026-10-23'), id: 'L1' }, voided, [], '2026-10-25')
+      expect(kept).toEqual([{ kind: 'unbilled', start: '2026-10-20', end: '2026-10-22', days: 3 }])
+    })
   })
 })
 
@@ -177,9 +325,16 @@ describe('futureInvoicesAtCheckout', () => {
     expect(r.paid.map((i) => i.id)).toEqual(['f'])
   })
 
-  it('treats an invoice starting on the checkout date as current and handles an empty date', () => {
-    expect(futureInvoicesAtCheckout('L1', invoices, payments, '2026-02-10').toVoid.map((i) => i.id)).toEqual([])
-    expect(futureInvoicesAtCheckout('L1', invoices, payments, '2026-02-10').partial.map((i) => i.id)).toEqual(['p'])
+  it('treats an invoice starting on the checkout date as future (that night the tenant is gone) and handles an empty date', () => {
+    // checkout 10 Feb: 'u' (from 10 Feb) bills nights after the tenant left -> voided; 'cur' (to 9 Feb) stays
+    const onStart = futureInvoicesAtCheckout('L1', invoices, payments, '2026-02-10')
+    expect(onStart.toVoid.map((i) => i.id)).toEqual(['u'])
+    expect(onStart.partial.map((i) => i.id)).toEqual(['p'])
+    expect(onStart.paid.map((i) => i.id)).toEqual(['f'])
+    // checkout one day later: the tenant slept there on 10 Feb, so 'u' is current and stays receivable
+    expect(futureInvoicesAtCheckout('L1', invoices, payments, '2026-02-11').toVoid.map((i) => i.id)).toEqual([])
+    // checkout on the last night of 'cur' (9 Feb): 'cur' started earlier and stays
+    expect(futureInvoicesAtCheckout('L1', invoices, payments, '2026-02-09').toVoid.map((i) => i.id)).toEqual(['u'])
     expect(futureInvoicesAtCheckout('L1', invoices, payments, '')).toEqual({ toVoid: [], partial: [], paid: [] })
   })
 })
@@ -316,17 +471,27 @@ describe('sort by remaining days (SPEC 7.1)', () => {
     expect(compareByShownDays(today, true)(items[4], items[4])).toBe(0)
   })
 
-  it('sorts by the day count the row shows: a paid-up lease that is ending counts to its end date', () => {
-    // 'ending' shows days to end_date (2), while its next due date (the 15th) alone would not put it first
+  it('sorts by the day count the row shows: a paid-up lease that is ending counts to its check-out day', () => {
     const today = '2026-10-12'
-    const ending: LeaseListItem = {
-      ...item('end', 'Kos Melati', 'C1', '2026-10-15'),
-      lease: { ...lease, id: 'end', end_date: '2026-10-14' },
+    // rolling lease paid through the night of 14 Okt: check-out 15 Okt = its next due date, both 3 days
+    const rolling: LeaseListItem = {
+      ...item('roll', 'Kos Melati', 'C1', '2026-10-15'),
+      lease: { ...lease, id: 'roll', end_date: '2026-10-14' },
       summary: { ...summary('2026-10-15'), coveredThrough: '2026-10-14', paidThrough: '2026-10-14', daysUntilDue: 3 },
     }
+    expect(remainingDays(rolling.lease, rolling.summary, today)).toMatchObject({ kind: 'ending', days: 3 })
+    // billed through 13 Okt but staying to the night of 15 Okt: the row counts to check-out 16 Okt (4 days), so the
+    // next due date (14 Okt, 2 days) alone would put it before a lease due in 3 days
+    const longer: LeaseListItem = {
+      ...item('long', 'Kos Melati', 'C1', '2026-10-14'),
+      lease: { ...lease, id: 'long', end_date: '2026-10-15' },
+      summary: { ...summary('2026-10-14'), coveredThrough: '2026-10-13', paidThrough: '2026-10-13', daysUntilDue: 2 },
+    }
     const due = { ...item('due', 'Kos Melati', 'C2', '2026-10-15'), summary: { ...summary('2026-10-15'), daysUntilDue: 3 } }
-    expect(keys(sortLeaseItems([ending, due], 'jatuh-tempo', false, today))).toEqual(['end', 'due'])
-    expect(keys(sortLeaseItems([ending, due], 'jatuh-tempo-terjauh', false, today))).toEqual(['due', 'end'])
+    expect(keys(sortLeaseItems([longer, due], 'jatuh-tempo', false, today))).toEqual(['due', 'long'])
+    expect(keys(sortLeaseItems([longer, due], 'jatuh-tempo-terjauh', false, today))).toEqual(['long', 'due'])
+    // same count as a lease due that day: ties fall back to the next due date, then the room
+    expect(keys(sortLeaseItems([due, rolling], 'jatuh-tempo', false, today))).toEqual(['roll', 'due'])
   })
 
   it('finished list: paling banyak puts the oldest finished lease first', () => {
@@ -372,10 +537,20 @@ describe('remainingDays (SPEC 7.1)', () => {
     expect(remainingDays(monthly, s('2026-09-22', 'overdue', -20, 100), '2026-10-12')).toEqual({ days: -20, kind: 'overdue', value: '20 hari', caption: 'terlambat', tone: 'danger' })
   })
 
-  it('a paid-up lease ending within a week counts to its end date; inactive or undated leases get nothing', () => {
+  it('a paid-up lease ending within a week counts to its check-out day (end_date + 1); inactive or undated leases get nothing', () => {
+    // last night 15 Okt -> check-out 16 Okt: 4 days, the same number as its next due date
     const ending: Lease = { ...lease, end_date: '2026-10-15' }
-    expect(remainingDays(ending, s('2026-10-16', 'ok', 4), '2026-10-12')).toEqual({ days: 3, kind: 'ending', value: '3 hari', caption: 'berakhir 15 Okt', tone: 'info' })
-    expect(remainingDays({ ...ending, end_date: '2026-10-12' }, s('2026-10-13', 'ok', 1), '2026-10-12')).toMatchObject({ kind: 'ending', days: 0, value: 'Hari ini' })
+    expect(remainingDays(ending, s('2026-10-16', 'ok', 4), '2026-10-12')).toEqual({ days: 4, kind: 'ending', value: '4 hari', caption: 'check-out', tone: 'info' })
+    // the night of 12 Okt is still theirs: check-out tomorrow
+    expect(remainingDays({ ...ending, end_date: '2026-10-12' }, s('2026-10-13', 'ok', 1), '2026-10-12')).toMatchObject({ kind: 'ending', days: 1, value: '1 hari', caption: 'check-out' })
+    // on the check-out day itself: 'Hari ini / check-out', not 'jatuh tempo'
+    expect(remainingDays({ ...ending, end_date: '2026-10-11' }, s('2026-10-12', 'due_soon', 0), '2026-10-12')).toEqual({ days: 0, kind: 'ending', value: 'Hari ini', caption: 'check-out', tone: 'info' })
+    // the day after check-out (tenant stayed on): due again
+    expect(remainingDays({ ...ending, end_date: '2026-10-10' }, s('2026-10-11', 'due_soon', -1), '2026-10-12')).toMatchObject({ kind: 'grace', days: -1 })
+    // month end: last night 31 Okt -> check-out 1 Nov
+    expect(remainingDays({ ...ending, end_date: '2026-10-31' }, s('2026-11-01', 'ok', 4), '2026-10-28')).toMatchObject({ kind: 'ending', days: 4, caption: 'check-out' })
+    // check-out 8 days away is outside the week: the plain due count
+    expect(remainingDays({ ...ending, end_date: '2026-10-19' }, s('2026-10-20', 'ok', 8), '2026-10-12')).toMatchObject({ kind: 'ok', days: 8, caption: 'lagi · 20 Okt' })
     expect(remainingDays({ ...monthly, status: 'ended' }, s('2026-10-14', 'inactive', 2), '2026-10-12')).toBeNull()
     expect(remainingDays(monthly, s(null, 'unbilled'), '2026-10-12')).toBeNull()
   })
@@ -409,16 +584,21 @@ describe('leaseReminderText', () => {
   const invoices = [inv('b', '2026-02-10', '2026-03-09'), inv('a', '2026-01-10', '2026-02-09')]
   const input = (payments: Payment[]) => ({ lease, tenant, room, property, invoices, orgInvoices: invoices, payments, addons: [] })
 
+  // the wording of the message (and how it writes the period end) belongs to reminderText; these tests check which
+  // invoice / period and which amount leaseReminderText hands it
+  const base = { tenantName: 'Siti Rahayu', roomName: 'A2', propertyName: 'Kos Melati', paymentInfo: 'BCA 123456 a.n. Ibu Kos' }
+
   it('reminds about the oldest open invoice with its remaining amount and the payment info', () => {
     const text = leaseReminderText(input([pay('a', 400_000)]))
+    expect(text).toBe(reminderText({ ...base, outstanding: 600_000, dueDate: '2026-01-10', periodStart: '2026-01-10', periodEnd: '2026-02-09' }))
     expect(text).toContain('Halo Kak Siti, ini pengingat dari Kos Melati.')
-    expect(text).toContain('Tagihan kamar A2 periode 10 Jan 2026 s/d 9 Feb 2026 sebesar *Rp 600.000* jatuh tempo 10 Jan 2026.')
+    expect(text).toContain('*Rp 600.000*')
     expect(text).toContain('BCA 123456 a.n. Ibu Kos')
   })
 
   it('previews the next period when nothing is open on an active lease', () => {
     const text = leaseReminderText(input([pay('a', 1_000_000), pay('b', 1_000_000)]))
-    expect(text).toContain('Tagihan kamar A2 periode 10 Mar 2026 s/d 9 Apr 2026 sebesar *Rp 1.000.000* jatuh tempo 10 Mar 2026.')
+    expect(text).toBe(reminderText({ ...base, outstanding: 1_000_000, dueDate: '2026-03-10', periodStart: '2026-03-10', periodEnd: '2026-04-09' }))
     // the add-ons are part of the preview, as in buildInvoiceDraft
     const withAddon = leaseReminderText({ ...input([pay('a', 1_000_000), pay('b', 1_000_000)]), addons: [{ id: 'ad', org_id: 'o', created_at: '', lease_id: 'L1', name: 'Parkir', amount: 50_000, billing: 'per_period' }] })
     expect(withAddon).toContain('*Rp 1.050.000*')

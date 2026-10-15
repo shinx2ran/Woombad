@@ -3,6 +3,7 @@ import type { Invoice, Lease, Payment, Room, Tenant } from '../../types/db'
 import {
   buildBulkRoomNames,
   findDuplicateRoomNames,
+  paidThroughText,
   roomDisplayState,
   roomPriceLabel,
   sortRoomsNatural,
@@ -149,6 +150,17 @@ describe('findDuplicateRoomNames', () => {
   })
   it('returns [] when nothing clashes', () => {
     expect(findDuplicateRoomNames(['C1'], ['A1'])).toEqual([])
+  })
+})
+
+describe('paidThroughText', () => {
+  it('shows the check-out day of the last paid night (SPEC 7.3)', () => {
+    // a month paid from 15 Okt: last night 14 Nov, paid up to the check-out day 15 Nov
+    expect(paidThroughText('2026-11-14')).toBe('Dibayar s/d 15 Nov 2026')
+    // 2 nights from 15 Okt: last night 16 Okt
+    expect(paidThroughText('2026-10-16')).toBe('Dibayar s/d 17 Okt 2026')
+    expect(paidThroughText('2026-12-31')).toBe('Dibayar s/d 1 Jan 2027')
+    expect(paidThroughText(null)).toBeNull()
   })
 })
 

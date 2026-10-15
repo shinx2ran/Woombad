@@ -2,13 +2,13 @@ import { Link } from 'react-router'
 import { CalendarClock, MessageCircle } from 'lucide-react'
 import { Badge } from '../../components/ui'
 import { formatDate, whatsappLink } from '../../lib/format'
-import { EXPIRING_WITHIN_DAYS, extensionQuestionText, type ExpiringItem } from './dashboardModel'
+import { EXPIRING_WITHIN_DAYS, checkoutDaysLabel, extensionQuestionText, type ExpiringItem } from './dashboardModel'
 import { SectionCard, SectionEmpty } from './SectionCard'
 
 /**
- * "Akan berakhir": active leases ending within EXPIRING_WITHIN_DAYS that owe nothing (leases with an open
- * bill are under "Perlu perhatian", SPEC 2b.12). The decision here is perpanjang (buat tagihan berikutnya)
- * or checkout, so the actions and the WhatsApp text are about the stay ending, not about a bill.
+ * "Akan berakhir": active leases whose check-out day (end_date + 1, SPEC 7.3) is within EXPIRING_WITHIN_DAYS and that
+ * owe nothing (leases with an open bill are under "Perlu perhatian", SPEC 2b.12). The decision here is perpanjang
+ * (buat tagihan berikutnya) or checkout, so the actions and the WhatsApp text are about the stay ending, not a bill.
  */
 export function ExpiringList({ items }: { items: ExpiringItem[] }) {
   return (
@@ -27,12 +27,11 @@ export function ExpiringList({ items }: { items: ExpiringItem[] }) {
 }
 
 function ExpiringRow({ item }: { item: ExpiringItem }) {
-  const { lease, tenant, room, property, daysLeft } = item
+  const { lease, tenant, room, property, checkoutDate, daysLeft } = item
   const tenantName = tenant?.full_name ?? 'Penyewa'
   const roomName = room?.name ?? '-'
   const propertyName = property?.name ?? '-'
   const wa = whatsappLink(tenant?.phone, extensionQuestionText({ tenantName, roomName, propertyName, endDate: lease.end_date }))
-  const daysLabel = daysLeft === 0 ? 'Berakhir hari ini' : daysLeft === 1 ? 'Berakhir besok' : `Berakhir ${daysLeft} hari lagi`
 
   return (
     <li className="px-4 py-3">
@@ -48,8 +47,8 @@ function ExpiringRow({ item }: { item: ExpiringItem }) {
             Kamar {roomName} · {propertyName}
           </p>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-            <Badge tone={daysLeft <= 1 ? 'danger' : 'warning'}>{daysLabel}</Badge>
-            <span>{formatDate(lease.end_date, 'EEE, d MMM yyyy')}</span>
+            <Badge tone={daysLeft <= 1 ? 'danger' : 'warning'}>{checkoutDaysLabel(daysLeft)}</Badge>
+            <span>{formatDate(checkoutDate, 'EEE, d MMM yyyy')}</span>
           </p>
         </div>
         {wa ? (

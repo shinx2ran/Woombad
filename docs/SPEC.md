@@ -79,7 +79,7 @@ Postgres tidak bisa menjaga aturan berikut; UI wajib:
 2. **Void** tagihan hanya jika `paidAmountFor == 0`. Jika sudah ada pembayaran: hapus/pindahkan pembayaran dulu (admin), atau kecilkan `total_amount` lewat `discount_amount` (DP hangus tetap pendapatan).
 3. **Hapus tagihan** hanya jika tidak ada pembayaran (DB akan menolak: `payments.invoice_id` RESTRICT). Lebih disukai void, bukan hapus (nomor tagihan tidak boleh dipakai ulang).
 4. **Batalkan sewa** (`cancelled`): semua tagihan unpaid di-void; jika ada tagihan partial, pengguna harus memilih: **kembalikan** (tagihan *ditutup*, tidak di-void, karena DB menolak void tagihan yang sudah ada pembayarannya (2b.2): sisa yang belum dibayar menjadi `discount_amount`, `total_amount` = yang sudah dibayar, status paid, catatan "DP dikembalikan (<alasan>)"; lalu satu expense `rent_refund` + `lease_id` sebesar yang sudah dibayar, keterangan memuat nomor tagihan, tidak pernah dua kali untuk tagihan yang sama) atau "anggap hangus" (diskon = sisa, status jadi paid). Data dibaca ulang dari server lalu semua perubahan tagihan ditulis lebih dulu, sebelum pengeluaran/pembayaran apa pun, agar penolakan database tidak meninggalkan data setengah jadi. Pembayaran deposit diselesaikan: kembalikan (expense `deposit_refund`) atau potong (payment `other`, method `deposit`).
-5. **Checkout** (`ended`): `checkout_date` wajib; tagihan unpaid yang `period_start > checkout_date` di-void; sisa tagihan sebelum checkout tetap piutang (boleh dipotong jaminan: payment rent, method `deposit`). Deposit yang dipegang **wajib** diselesaikan: dikembalikan (expense `deposit_refund`, `lease_id`), dipotong untuk kerusakan (payment `kind='other'`, `method='deposit'`, catatan "Potongan jaminan: …"), atau dipotong untuk sewa (payment rent method deposit). `end_date` = min(end_date, checkout_date).
+5. **Checkout** (`ended`): `checkout_date` wajib = hari penyewa keluar (malam itu sudah tidak dihuni, 7.3); tagihan yang `period_start >= checkout_date` (termasuk yang mulai **pada** hari checkout) dianggap sesudah checkout: unpaid di-void, partial diputuskan seperti 2b.4 (kembalikan / anggap hangus), lunas dibiarkan (dicatat sebagai catatan); sisa tagihan yang mulai sebelum checkout tetap piutang (boleh dipotong jaminan: payment rent, method `deposit`). Deposit yang dipegang **wajib** diselesaikan: dikembalikan (expense `deposit_refund`, `lease_id`), dipotong untuk kerusakan (payment `kind='other'`, `method='deposit'`, catatan "Potongan jaminan: …"), atau dipotong untuk sewa (payment rent method deposit). `end_date` = min(end_date, checkout_date − 1) (malam terakhir, 7.3), tidak sebelum `start_date`.
 6. **Pembayaran** rent selalu `invoice_id` terisi; deposit/other selalu `invoice_id = null` (DB: `(kind = 'rent') = (invoice_id is not null)`). `property_id` pembayaran = `property_id` tagihan/sewa.
 7. **Kelebihan bayar**: `validateRentPayment` menolak jumlah > sisa. Form menawarkan: "Catat kelebihan Rp X sebagai Pemasukan Lain" (payment `other`, `lease_id`) atau "Jadikan diskon tagihan berikutnya" (isi `discount_amount` pada draft tagihan berikutnya lewat catatan sewa). **Kekurangan yang disepakati** ("kurang 50 ribu, anggap lunas"): tambahkan `discount_amount` sebesar selisih lalu status menjadi paid.
 8. **Double-booking**: saat membuat/mengubah sewa, tolak kamar yang punya sewa non-cancelled yang tumpang tindih dengan `[start_date, end_date]` (`leaseOverlaps`). Kamar dengan sewa aktif berawal di masa depan ditampilkan **Dipesan**.
@@ -343,7 +343,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - Halaman **Sewa** menampilkan satu baris padat per sewa (`LeaseRow`, tinggi ±56px, 8+ baris per layar HP) di dalam satu
   kartu: chip nomor kamar, nama penyewa, baris kecil "sisa Rp X / lunas s/d tanggal / belum ditagih · jenis periode · kos
   (hanya saat Semua kos)" (jumlah di depan agar tidak terpotong di HP), lalu blok **sisa hari** (`remainingDays`: angka
-  besar + keterangan pendek, mis. "20 hari / terlambat", "Hari ini / jatuh tempo", "3 hari / berakhir 15 Okt") dan menu
+  besar + keterangan pendek, mis. "20 hari / terlambat", "Hari ini / jatuh tempo", "3 hari / check-out") dan menu
   aksi (Bayar, Tagihan berikutnya, Kirim tagihan,
   Pengingat WhatsApp, Profil penyewa). Di layar lg+ (≥1024px; di md sidebar menyisakan terlalu sedikit ruang) ada kolom tambahan Dibayar s/d dan Sisa tagihan. Tab Selesai/Batal
   menampilkan lencana status + "Checkout/Berakhir <tanggal>" sebagai ganti sisa hari.
@@ -368,3 +368,21 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   `logo_path` di-update; berkas lama dihapus best-effort (6.4), begitu pula saat kos dihapus. Policy storage: bucket `logos` hanya
   dapat ditulis/dihapus oleh **pemilik/admin** (`is_org_admin`, mengikuti aturan kos 6.2), dibaca semua anggota. `useKosLogo`
   mengunduh & men-cache logo per path (batas 8 detik, gagal → tanpa logo, dicoba lagi setelah 30 detik; mode demo: tanpa logo).
+
+### 7.3 Tanggal check-out
+- Data tidak berubah: `invoices.period_end`, `leases.end_date`, `coveredThrough`/`paidThrough`, `new_lease_end_date` dan akhir segmen
+  linimasa tetap **malam terakhir** (inklusif); periode berikutnya mulai keesokan harinya. Hanya tampilan & input yang berubah.
+- Semua jenis periode: **akhir sewa ditampilkan sebagai hari check-out** = malam terakhir + 1 (2 malam dari 15 Okt = "15 Okt – 17 Okt 2026",
+  1 bulan = "15 Okt – 15 Nov") lewat helper `src/lib/format.ts`: `checkoutISO`/`lastNightISO`, `formatCheckout`, `formatStay`. Label "Check-out
+  menjadi" / "Check-out" (sewa aktif); "Dibayar s/d" tetap, nilainya hari check-out; `checkout_date` sewa `ended` ditampilkan apa adanya
+  (`leaseEndDisplay`: daftar, detail sewa, dan lembar kamar, juga untuk sewa `ended` yang masih menghuni sampai `checkout_date`).
+- **Input**: tanggal akhir yang diketik pengguna ("atau sampai tanggal check-out", "Sampai tanggal (check-out)" pada periode khusus) dibaca
+  sebagai hari check-out (minimal mulai + 1) dan dihitung/disimpan sebagai check-out − 1 (`lastNightISO`) untuk `periodsToCover`, `periodEnd`
+  dan pro-rata. **Tanggal pembatalan** dan tanggal checkout juga hari check-out: `end_date` = min(end_date, tanggal − 1), tidak sebelum
+  `start_date` (`cancelledLeaseEndDate`). Sewa `cancelled` dengan `end_date <= start_date` (`isCancelledWithoutStay`: dibatalkan paling
+  lambat sehari setelah mulai; `end_date` hanya dijepit ke `start_date` demi constraint DB) **tidak punya malam menginap**: akhirnya
+  ditampilkan sebagai hari mulai ("Berakhir 20 Okt", juga urutan tab selesai), riwayat penyewa "20 Okt 2026 · belum menginap", riwayat
+  perubahan tanpa baris Check-out, linimasa tanpa malam belum ditagih, dan modal pembatalan menulis "Belum ada malam menginap" untuk tanggal
+  yang sama (penyewa yang sudah menginap di-checkout, bukan dibatalkan). Hitungan hari "sampai sewa berakhir" (`remainingDays`, `dueLabel`) dihitung ke hari check-out ("4 hari / check-out"; tanggalnya sudah tampil di "lunas s/d" baris yang sama).
+- Logika: `isPaidUpAndEnding` memakai hari check-out (`checkoutISO(end_date)` di [hari ini, hari ini + 7]), jadi pada hari check-out sewa lunas
+  tampil "Hari ini / check-out", bukan "jatuh tempo hari ini"; checkout membatalkan juga tagihan yang mulai **pada** `checkout_date` (2b.5).

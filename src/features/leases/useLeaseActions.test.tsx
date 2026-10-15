@@ -133,7 +133,8 @@ describe('checkout with a part-paid invoice after the checkout date', () => {
     expect(refunds[0]).toMatchObject({ amount: 500_000, lease_id: lease.id, property_id: 'P1', expense_date: '2026-09-20' })
     expect(refunds[0].description).toContain('INV-202610-0001')
     expect(after.expenses.filter((e) => e.category === 'deposit_refund').map((e) => e.amount)).toEqual([1_000_000])
-    expect(after.lease).toMatchObject({ status: 'ended', checkout_date: '2026-09-20', end_date: '2026-09-20' })
+    // end_date = the last night, the day before checkout (SPEC 7.3)
+    expect(after.lease).toMatchObject({ status: 'ended', checkout_date: '2026-09-20', end_date: '2026-09-19' })
 
     const range = { start: '2026-09-01', end: '2026-12-31' }
     const sum = summarizeFinance(after.payments, after.expenses, after.invoices, range)
@@ -215,6 +216,27 @@ describe('checkout with a part-paid invoice after the checkout date', () => {
     const after = await data()
     expect(after.lease).toMatchObject({ status: 'ended', checkout_date: '2026-11-20' })
     expect(after.payments.filter((p) => p.method === 'deposit').map((p) => [p.invoice_id, p.amount])).toEqual([[SEP, 1_000_000]])
+  })
+
+  it('a checkout on the first day of an unpaid period voids that period (the tenant is gone that night)', async () => {
+    await seed()
+    const before = await data()
+    // checkout 1 Nov: the October bill (to the night of 31 Okt) stays receivable, November is voided
+    await actions().checkout({ lease, checkoutDate: '2026-11-01', invoices: before.invoices, payments: before.payments, settlement: noSettlement(), partialDecisions: {} })
+    const after = await data()
+    expect(byId(after.invoices, NOV).status).toBe('void')
+    expect(byId(after.invoices, OCT).status).toBe('partial')
+    expect(byId(after.invoices, SEP).status).toBe('unpaid')
+    expect(after.lease).toMatchObject({ status: 'ended', checkout_date: '2026-11-01', end_date: '2026-10-31' })
+  })
+
+  it('a checkout on the start day keeps end_date = start_date (no night stayed, DB check end_date >= start_date)', async () => {
+    await seed()
+    const before = await data()
+    await actions().checkout({ lease, checkoutDate: '2026-09-01', invoices: before.invoices, payments: before.payments, settlement: noSettlement(), partialDecisions: { [OCT]: 'forfeit' } })
+    const after = await data()
+    expect(after.lease).toMatchObject({ status: 'ended', checkout_date: '2026-09-01', end_date: '2026-09-01' })
+    expect(byId(after.invoices, SEP).status).toBe('void')
   })
 
   it('staff is refused before any write', async () => {

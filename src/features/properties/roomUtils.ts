@@ -5,7 +5,7 @@
 import type { AddonBilling, Invoice, Lease, Payment, Room, Tenant } from '../../types/db'
 import { isLeaseActiveOn, isLeaseReservedOn } from '../../domain/occupancy'
 import { summarizeLeaseBilling } from '../../domain/billing'
-import { formatRupiah } from '../../lib/format'
+import { formatCheckout, formatRupiah } from '../../lib/format'
 
 /** Collator used everywhere rooms are sorted: 'A1' < 'A2' < 'A10', case-insensitive. */
 export function compareRoomNames(a: string, b: string): number {
@@ -30,7 +30,10 @@ export interface RoomDisplayState {
   /** the lease behind an occupied / reserved state (also kept when the room is under maintenance) */
   lease: Lease | null
   tenant: Tenant | null
-  /** occupied: latest settled period_end (summarizeLeaseBilling.paidThrough) */
+  /**
+   * occupied: latest settled period_end (summarizeLeaseBilling.paidThrough), the LAST paid night as stored; shown as
+   * its check-out day with paidThroughText (SPEC 7.3)
+   */
   paidThrough: string | null
   /** occupied: open amount on the lease's invoices */
   outstanding: number
@@ -96,6 +99,14 @@ function leaseDisplayState(
     }
   }
   return empty
+}
+
+/**
+ * 'Dibayar s/d 15 Nov 2026' for a room card / sheet: the check-out day of the last paid night (paidThrough + 1,
+ * SPEC 7.3), so a month paid from 15 Okt reads 's/d 15 Nov'. Null when nothing has been paid yet.
+ */
+export function paidThroughText(paidThrough: string | null): string | null {
+  return paidThrough ? `Dibayar s/d ${formatCheckout(paidThrough)}` : null
 }
 
 /** 'Rp 1.200.000 / bulan', falling back to weekly then daily; 'Harga belum diisi' when none. */

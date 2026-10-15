@@ -5,8 +5,10 @@ import { Button, ConfirmDialog, Modal, useToast } from '../../components/ui'
 import { useInvalidate, useRemove, useUpdate } from '../../hooks/useTable'
 import { formatDate, formatRupiah } from '../../lib/format'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL, type Room } from '../../types/db'
+import { leaseEndDisplay } from '../leases/leaseUtils'
 import type { RoomWithState } from './RoomsTab'
 import { RoomStateBadge } from './RoomCard'
+import { paidThroughText } from './roomUtils'
 
 function PriceRow({ label, value }: { label: string; value: number | null }) {
   return (
@@ -43,6 +45,7 @@ export function RoomSheet({
   const { room, state, hasLeases } = item
   const isMaintenance = room.status === 'maintenance'
   const occupantName = state.tenant?.full_name ?? 'Penyewa'
+  const leaseEnd = state.lease ? leaseEndDisplay(state.lease) : null
 
   const applyMaintenance = async () => {
     try {
@@ -170,11 +173,13 @@ export function RoomSheet({
                   Sewa {PERIOD_TYPE_LABEL[state.lease.period_type].toLowerCase()} · {formatRupiah(state.lease.price_per_period)} /{' '}
                   {PERIOD_UNIT_LABEL[state.lease.period_type]}
                 </p>
+                {/* same end as the lease list / detail (SPEC 7.3): an ended lease still in the room until its checkout_date
+                    shows 'Checkout <checkout_date>', an active one 'Check-out <end_date + 1>' */}
                 <p className="text-slate-600">
-                  Mulai {formatDate(state.lease.start_date)} · s/d {formatDate(state.lease.end_date)}
+                  Mulai {formatDate(state.lease.start_date)} · {leaseEnd?.label} {leaseEnd?.date}
                 </p>
                 <p className="text-slate-600">
-                  {state.paidThrough ? `Dibayar s/d ${formatDate(state.paidThrough)}` : 'Belum ada pembayaran tercatat'}
+                  {paidThroughText(state.paidThrough) ?? 'Belum ada pembayaran tercatat'}
                   {state.outstanding > 0 && <span className="ml-1 font-medium text-amber-700">· Sisa tagihan {formatRupiah(state.outstanding)}</span>}
                 </p>
                 <Link to={`/sewa/${state.lease.id}`} className="inline-flex items-center gap-1 pt-1 font-medium text-brand-700 hover:underline">

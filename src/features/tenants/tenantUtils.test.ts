@@ -12,6 +12,7 @@ import {
   identityColumns,
   initialTenantForm,
   initials,
+  leaseStayText,
   leasesOfTenant,
   matchesTenantSearch,
   paymentsOfLeases,
@@ -212,6 +213,27 @@ describe('history helpers', () => {
     })
     const payments = [pay('p1', 'a', '2025-01-02'), pay('p2', 'c', '2026-02-02'), pay('p3', 'b', '2026-01-02'), pay('p4', null, '2026-03-02')]
     expect(paymentsOfLeases(['a', 'b'], payments).map((p) => p.id)).toEqual(['p3', 'p1'])
+  })
+
+  it('leaseStayText shows check-in – check-out: end_date + 1, or the real checkout_date as is (SPEC 7.3)', () => {
+    // 2 nights from 15 Okt: last night 16 Okt, check-out 17 Okt
+    expect(leaseStayText(lease({ start_date: '2026-10-15', end_date: '2026-10-16' }))).toBe('15 Okt – 17 Okt 2026')
+    // one month from 15 Okt: last night 14 Nov, check-out 15 Nov
+    expect(leaseStayText(lease({ start_date: '2026-10-15', end_date: '2026-11-14' }))).toBe('15 Okt – 15 Nov 2026')
+    // across the new year the start keeps its year
+    expect(leaseStayText(lease({ start_date: '2026-12-28', end_date: '2027-01-01' }))).toBe('28 Des 2026 – 2 Jan 2027')
+    // an ended lease: checkout_date is already the check-out day
+    expect(leaseStayText(lease({ status: 'ended', start_date: '2026-01-01', end_date: '2026-06-30', checkout_date: '2026-05-20' }))).toBe('1 Jan – 20 Mei 2026')
+    expect(leaseStayText(lease({ status: 'ended', start_date: '2026-12-01', end_date: '2027-01-31', checkout_date: '2027-01-05' }))).toBe('1 Des 2026 – 5 Jan 2027')
+  })
+
+  it('leaseStayText: a booking cancelled before any night (end_date clamped to start_date) shows no stay range', () => {
+    // cancelled before / on the start day 20 Okt: end_date = start_date only for the DB check
+    expect(leaseStayText(lease({ status: 'cancelled', start_date: '2026-10-20', end_date: '2026-10-20' }))).toBe('20 Okt 2026 · belum menginap')
+    // a cancelled lease with nights left on it keeps check-in – check-out
+    expect(leaseStayText(lease({ status: 'cancelled', start_date: '2026-10-20', end_date: '2026-10-21' }))).toBe('20 Okt – 22 Okt 2026')
+    // an active / ended lease of one night is a real stay
+    expect(leaseStayText(lease({ status: 'active', start_date: '2026-10-20', end_date: '2026-10-20' }))).toBe('20 Okt – 21 Okt 2026')
   })
 
   it('describeRoom falls back when room / kos are missing', () => {

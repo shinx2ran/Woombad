@@ -5,7 +5,7 @@ import type { Expense, Invoice, Lease, PaymentMethod, Payment, Property, Room, T
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL } from '../../types/db'
 import { depositBalance, outstandingFor, validateRentPayment } from '../../domain/billing'
 import { receiptText } from '../../domain/messages'
-import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
+import { formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
 import { openInvoicesSorted } from './leaseUtils'
 import { Row } from './components'
 import type { LeaseActions } from './useLeaseActions'
@@ -183,7 +183,7 @@ export function PaymentModal(props: PaymentModalProps) {
             onChange={(e) => onPickInvoice(e.target.value)}
             options={selectable.map((i) => ({
               value: i.id,
-              label: `${i.invoice_number} · ${formatDate(i.period_start)} – ${formatDate(i.period_end)} · sisa ${formatRupiah(outstandingFor(i, payments))}`,
+              label: `${i.invoice_number} · ${formatStay(i.period_start, i.period_end)} · sisa ${formatRupiah(outstandingFor(i, payments))}`,
             }))}
           />
           {invoice && (

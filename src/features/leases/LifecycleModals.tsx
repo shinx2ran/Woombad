@@ -4,7 +4,8 @@ import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../compon
 import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddon, Payment, Room } from '../../types/db'
 import { ADDON_BILLINGS, ADDON_BILLING_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { depositBalance, outstandingFor, paidAmountFor } from '../../domain/billing'
-import { formatDate, formatRupiah, todayISO } from '../../lib/format'
+import { isCancelledWithoutStay } from '../../domain/occupancy'
+import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import {
   cancelledLeaseEndDate,
   futureInvoicesAtCheckout,
@@ -44,7 +45,7 @@ function PartialDecisionList({
         return (
           <div key={inv.id} className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
             <p className="font-medium text-amber-900">
-              {inv.invoice_number} · {formatDate(inv.period_start)} – {formatDate(inv.period_end)} · dibayar {formatRupiah(paid)} dari {formatRupiah(inv.total_amount)}
+              {inv.invoice_number} · {formatStay(inv.period_start, inv.period_end)} · dibayar {formatRupiah(paid)} dari {formatRupiah(inv.total_amount)}
             </p>
             <label className="flex items-start gap-2">
               <input type="radio" name={`dec-${inv.id}`} className="mt-0.5" checked={decisions[inv.id] === 'refund'} onChange={() => onChange({ ...decisions, [inv.id]: 'refund' })} />
@@ -90,7 +91,8 @@ export interface CheckoutModalProps {
 
 /**
  * SPEC 2b.5: checkout date, void future unpaid invoices, decide per future partially-paid invoice (refund /
- * forfeit, so no receivable survives on an ended lease), settle the held deposit, status ended.
+ * forfeit, so no receivable survives on an ended lease), settle the held deposit, status ended. The checkout date is
+ * the day the tenant leaves: invoices starting ON that day count as future (SPEC 7.3, futureInvoicesAtCheckout).
  */
 export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions }: CheckoutModalProps) {
   const toast = useToast()
@@ -160,17 +162,25 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
       }
     >
       <div className="space-y-4">
-        <Input label="Tanggal checkout" type="date" value={date} onChange={(e) => setDate(e.target.value)} required error={dateError ?? undefined} />
+        <Input
+          label="Tanggal checkout"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          required
+          error={dateError ?? undefined}
+          hint="Hari penyewa keluar kamar; malam itu tidak ditagih lagi."
+        />
         <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
-          <Row label="Sewa berakhir menjadi" value={formatDate(date && date < lease.end_date ? date : lease.end_date)} />
-          <Row label="Tagihan dibatalkan (mulai setelah checkout)" value={future.toVoid.length} />
-          {future.partial.length > 0 && <Row label="Tagihan DP setelah checkout → perlu keputusan" value={future.partial.length} />}
-          <Row label="Sisa tagihan s/d checkout tetap piutang" value={formatRupiah(rentCapacity)} strong />
+          <Row label="Check-out menjadi" value={formatDate(date)} />
+          <Row label="Tagihan dibatalkan (mulai hari checkout atau sesudahnya)" value={future.toVoid.length} />
+          {future.partial.length > 0 && <Row label="Tagihan DP sejak hari checkout → perlu keputusan" value={future.partial.length} />}
+          <Row label="Sisa tagihan sebelum checkout tetap piutang" value={formatRupiah(rentCapacity)} strong />
         </div>
         {needsAdmin && (
           <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="checkout-needs-admin">
-            Ada tagihan untuk periode setelah tanggal checkout yang harus dibatalkan. Hanya pemilik/admin yang dapat membatalkan tagihan: minta
-            mereka melakukan checkout ini.
+            Ada tagihan untuk periode mulai hari checkout atau sesudahnya yang harus dibatalkan. Hanya pemilik/admin yang dapat membatalkan tagihan:
+            minta mereka melakukan checkout ini.
           </p>
         )}
         {future.toVoid.length > 0 && (
@@ -180,13 +190,13 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
         )}
         {future.partial.length > 0 && (
           <p className="text-xs text-amber-800">
-            Tagihan berikut sudah dibayar sebagian untuk periode <strong>setelah</strong> tanggal checkout. Pilih penyelesaiannya agar tidak ada piutang yang tersisa pada sewa yang sudah selesai.
+            Tagihan berikut sudah dibayar sebagian untuk periode yang mulai <strong>pada atau setelah</strong> tanggal checkout. Pilih penyelesaiannya agar tidak ada piutang yang tersisa pada sewa yang sudah selesai.
           </p>
         )}
         {!needsAdmin && <PartialDecisionList invoices={future.partial} payments={payments} decisions={decisions} onChange={setDecisions} />}
         {paidAhead.length > 0 && (
           <p className="text-xs text-slate-500">
-            Sudah lunas untuk periode setelah checkout: {paidAhead.map((i) => `${i.invoice_number} (${formatDate(i.period_start)} – ${formatDate(i.period_end)})`).join(', ')}. Bila uangnya
+            Sudah lunas untuk periode sejak hari checkout: {paidAhead.map((i) => `${i.invoice_number} (${formatStay(i.period_start, i.period_end)})`).join(', ')}. Bila uangnya
             dikembalikan, catat sebagai pengeluaran 'Pengembalian Sewa' pada sewa ini.
           </p>
         )}
@@ -230,6 +240,10 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
   const settlementError = balance.held > 0 ? validateSettlement(settlement, balance.held, 0) : null
   const dateError = !date ? 'Tanggal pembatalan wajib diisi.' : null
   const notStarted = Boolean(date) && date < lease.start_date
+  // the typed date is a check-out day: end_date = the night before, never before start_date (cancelledLeaseEndDate)
+  const cancelEnd = date ? cancelledLeaseEndDate(lease, date) : null
+  // the rule every screen uses after saving (isCancelledWithoutStay): end_date clamped to start_date = no night stayed
+  const noStay = cancelEnd !== null && isCancelledWithoutStay({ status: 'cancelled', start_date: lease.start_date, end_date: cancelEnd })
 
   const submit = async () => {
     if (missing || settlementError || dateError) return
@@ -277,7 +291,10 @@ export function CancelLeaseModal({ open, onClose, lease, invoices, payments, exp
         <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
           <Row label="Tagihan belum bayar → dibatalkan" value={unpaid.length} />
           <Row label="Tagihan DP / sebagian → perlu keputusan" value={partial.length} />
-          {date && <Row label="Sewa berakhir menjadi" value={formatDate(cancelledLeaseEndDate(lease, date))} />}
+          {/* end_date shown back as its check-out day (= the typed date) like the list and the detail page; a cancel up to
+              the day after the start stores end_date = start_date, which every screen shows as no night stayed (the
+              list says 'Berakhir <start>'), so no check-out day is claimed here either */}
+          {cancelEnd && <Row label="Sewa berakhir menjadi" value={noStay ? 'Belum ada malam menginap' : formatCheckout(cancelEnd)} />}
         </div>
         <PartialDecisionList invoices={partial} payments={payments} decisions={decisions} onChange={setDecisions} />
         <UnrecordedRefundsNote refunds={unrecorded} />
