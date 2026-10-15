@@ -97,6 +97,14 @@ export function AppShell() {
             {/* min-w-0: a long kos name is cut short instead of pushing the logout button off the screen */}
             <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
               <PropertySwitcher />
+              {/* the bottom tabs hold five entries only: Pengaturan (anggota, undangan, data) lives up here on phones */}
+              <NavLink
+                to="/pengaturan"
+                aria-label="Pengaturan"
+                className={({ isActive }) => clsx('rounded-lg p-2 hover:bg-slate-100 md:hidden', isActive ? 'bg-brand-50 text-brand-700' : 'text-slate-600')}
+              >
+                <Settings className="h-5 w-5" />
+              </NavLink>
               <button type="button" onClick={signOut} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 md:hidden" aria-label="Keluar">
                 <LogOut className="h-5 w-5" />
               </button>
