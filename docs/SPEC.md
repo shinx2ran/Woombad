@@ -392,8 +392,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   Mati secara bawaan di Mode Online; selalu hidup di Mode Demo untuk dicoba dengan data contoh. Saat mati, kode papan tidak dimuat
   (`lazy` di `DashboardPage`), jadi Dashboard berjalan persis seperti sebelumnya.
 - **Papan kamar** di Dashboard (`RoomBoard`, `boardModel.ts`): satu kotak per kamar kos yang dipilih, warna dari fungsi yang sama dengan
-  Kos & Kamar (`roomDisplayState`) dan daftar sewa (`summarizeLeaseBilling`, `displayBillingState`): Telat (overdue), Jatuh tempo
-  (due_soon / belum ada tagihan), Check-out ≤ 7 hari (`isPaidUpAndEnding`), Terisi, Kosong, Dipesan, Perbaikan.
+  Kos & Kamar (`roomDisplayState`) dan daftar sewa (`summarizeLeaseBilling`). Hitungan = hari sampai jatuh tempo berikutnya
+  (`daysUntilDue`; sewa lunas: hari check-out = awal periode berikutnya, 7.3): **< 0 → merah penuh "Telat"** sejak hari pertama
+  lewat jatuh tempo (permintaan pemilik; daftar sewa tetap memakai masa tenggang "tenggang"), **0–7 → oranye "N hari" / "Hari ini"**,
+  > 7 → biru "Terisi"; lalu Kosong, Dipesan, Perbaikan.
 - **Aksi** kamar terisi = tautan ke halaman sewa yang membuka dialog yang sudah ada: `/sewa/:id?action=bayar|tagih|checkout`; semua aturan
   (jaminan, tagihan setelah checkout, peran staf) tetap dari dialog itu.
 - **Check-in cepat** kamar kosong (`quickCheckIn.ts`): harian saja; nama (HP boleh kosong, "HP belum diisi" diingatkan di papan),

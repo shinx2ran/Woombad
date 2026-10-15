@@ -59,7 +59,9 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     // back on the board the room is taken; its sheet reminds about the phone and offers Check-out
     await page.goto('/dashboard')
     const taken = page.locator(`[data-testid="board-tile"][data-room="${roomName}"]`)
-    await expect(taken).not.toHaveAttribute('data-tone', 'vacant')
+    // paid to the night of 12 Okt: next due (check-out) 13 Okt, 2 days away -> orange with the days left
+    await expect(taken).toHaveAttribute('data-tone', 'soon')
+    await expect(taken).toContainText('2 hari')
     await taken.click()
     const sheet2 = page.getByRole('dialog')
     await expect(sheet2).toContainText('Taufik Kusnadi')
@@ -70,10 +72,14 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
   })
 
   test('a room with rent owed opens the existing payment dialog', async ({ page }) => {
-    const owing = tiles(page).and(page.locator('[data-tone="overdue"], [data-tone="due"]')).first()
+    // past due: a solid red tile captioned Telat
+    const owing = tiles(page).and(page.locator('[data-tone="overdue"]')).first()
+    await expect(owing).toContainText(/Telat/i)
+    await expect(owing).toHaveCSS('background-color', /rgb\(2\d\d, \d+, \d+\)|oklch/)
     await owing.click()
     const sheet = page.getByRole('dialog')
     await expect(sheet).toContainText(/Sisa Rp/)
+    await expect(sheet).toContainText(/Telat \d+ hari · jatuh tempo/)
     await sheet.getByRole('link', { name: 'Bayar' }).click()
     await page.waitForURL(/\/sewa\/[^/?]+$/)
     await expect(page.getByRole('dialog').getByRole('heading', { name: 'Catat pembayaran' })).toBeVisible()

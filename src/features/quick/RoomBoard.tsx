@@ -6,28 +6,26 @@ import { Badge, Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
 import type { Room } from '../../types/db'
-import { dueLabel } from '../leases/leaseUtils'
 import { useLeaseData } from '../leases/useLeaseData'
 import { paidThroughText } from '../properties/roomUtils'
-import { BOARD_TONES, BOARD_TONE_META, buildBoard, countTones, leaseActionLink, type BoardTile, type BoardTone } from './boardModel'
+import { BOARD_TONES, BOARD_TONE_META, boardStatusText, buildBoard, countTones, leaseActionLink, type BoardTile, type BoardTone } from './boardModel'
 import { QuickCheckInModal } from './QuickCheckInModal'
 
 const TILE_CLASS: Record<BoardTone, string> = {
-  vacant: 'border-emerald-300 bg-emerald-50 text-emerald-900',
+  // past due: a solid red sign, so it cannot be missed among the pale tiles
+  overdue: 'border-red-700 bg-red-600 text-white shadow-sm',
+  soon: 'border-orange-400 bg-orange-100 text-orange-900',
   occupied: 'border-sky-300 bg-sky-50 text-sky-900',
-  due: 'border-amber-300 bg-amber-50 text-amber-900',
-  overdue: 'border-red-300 bg-red-50 text-red-800',
-  ending: 'border-orange-400 bg-orange-100 text-orange-900',
+  vacant: 'border-emerald-300 bg-emerald-50 text-emerald-900',
   reserved: 'border-violet-300 bg-violet-50 text-violet-900',
   maintenance: 'border-slate-300 bg-slate-100 text-slate-500',
 }
 
 const DOT_CLASS: Record<BoardTone, string> = {
-  vacant: 'bg-emerald-500',
+  overdue: 'bg-red-600',
+  soon: 'bg-orange-500',
   occupied: 'bg-sky-500',
-  due: 'bg-amber-400',
-  overdue: 'bg-red-500',
-  ending: 'bg-orange-500',
+  vacant: 'bg-emerald-500',
   reserved: 'bg-violet-400',
   maintenance: 'bg-slate-400',
 }
@@ -84,12 +82,12 @@ export function RoomBoard() {
                   data-testid="board-tile"
                   data-room={t.room.name}
                   data-tone={t.tone}
-                  aria-label={`Kamar ${t.room.name}: ${BOARD_TONE_META[t.tone].legend}`}
+                  aria-label={`Kamar ${t.room.name}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption.toLowerCase()}` : BOARD_TONE_META[t.tone].legend}`}
                   onClick={() => setOpenRoomId(t.room.id)}
                   className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-center', TILE_CLASS[t.tone])}
                 >
                   <span className="max-w-full truncate text-sm font-semibold tabular-nums">{t.room.name}</span>
-                  <span className="max-w-full truncate text-[10px] leading-tight">{BOARD_TONE_META[t.tone].caption}</span>
+                  <span className={clsx('max-w-full truncate text-[10px] leading-tight', t.tone === 'overdue' && 'font-bold uppercase tracking-wide')}>{t.caption}</span>
                 </button>
               ))}
             </div>
@@ -128,7 +126,7 @@ function ActionLink({ to, primary, icon, children }: { to: string; primary?: boo
 function RoomActionSheet({ tile, today, onClose, onCheckIn }: { tile: BoardTile; today: string; onClose: () => void; onCheckIn: () => void }) {
   const { room, lease, tenant, summary, tone } = tile
   const living = Boolean(lease && summary)
-  const due = lease && summary ? dueLabel(lease, summary, today) : null
+  const status = boardStatusText(summary, today)
 
   return (
     <Modal open onClose={onClose} title={`Kamar ${room.name}`} size="sm">
@@ -151,7 +149,7 @@ function RoomActionSheet({ tile, today, onClose, onCheckIn }: { tile: BoardTile;
               ) : (
                 paidThroughText(summary.paidThrough) && <p>{paidThroughText(summary.paidThrough)}</p>
               )}
-              {due && <p className="text-slate-500">{due.text}</p>}
+              {status && <p className={tone === 'overdue' ? 'font-medium text-red-700' : 'text-slate-500'}>{status}</p>}
             </>
           )}
           {tone === 'reserved' && lease && <p>Mulai {formatDate(lease.start_date)}</p>}
