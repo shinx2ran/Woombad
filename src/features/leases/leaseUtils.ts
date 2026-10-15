@@ -205,7 +205,7 @@ export interface RemainingDays {
   kind: RemainingKind
   /** big text, e.g. '20 hari', 'Hari ini', '3 hari' */
   value: string
-  /** small text under it, e.g. 'terlambat', 'tenggang', 'jatuh tempo', 'lagi · 15 Okt', 'check-out 16 Okt' */
+  /** small text under it, e.g. 'terlambat', 'tenggang', 'jatuh tempo', 'lagi · 15 Okt', 'check-out' */
   caption: string
   tone: DueTone
 }
@@ -217,8 +217,9 @@ function dayCount(days: number): string {
 
 /**
  * Same decision tree as dueLabel, split into a number and a caption so a dense list can line the day counts up:
- *  - paid-up lease ending within a week -> 'ending': '4 hari' / 'check-out 16 Okt' (info), counted to the check-out
- *    day = end_date + 1 (SPEC 7.3): the same count as its next due date when the lease rolls on;
+ *  - paid-up lease ending within a week -> 'ending': '4 hari' / 'check-out' (info), counted to the check-out day =
+ *    end_date + 1 (SPEC 7.3): the same count as its next due date when the lease rolls on. The caption has no date:
+ *    the row's 'lunas s/d <check-out>' already shows it, and a dated caption cut the amount on 360px phones;
  *  - past due beyond the grace days (state overdue) -> 'overdue': '20 hari' / 'terlambat' (danger);
  *  - past due within the grace days -> 'grace': '2 hari' / 'tenggang' (warning);
  *  - due today -> 'today': 'Hari ini' / 'jatuh tempo' (warning);
@@ -229,7 +230,7 @@ export function remainingDays(lease: Lease, summary: LeaseBillingSummary, todayI
   if (lease.status !== 'active' || !summary.nextDueDate) return null
   if (isPaidUpAndEnding(lease, summary, todayISO)) {
     const days = daysBetween(todayISO, checkoutISO(lease.end_date))
-    return { days, kind: 'ending', value: dayCount(days), caption: `check-out ${formatCheckout(lease.end_date, 'd MMM')}`, tone: 'info' }
+    return { days, kind: 'ending', value: dayCount(days), caption: 'check-out', tone: 'info' }
   }
   const days = summary.daysUntilDue ?? daysBetween(todayISO, summary.nextDueDate)
   const date = formatDate(summary.nextDueDate, 'd MMM')

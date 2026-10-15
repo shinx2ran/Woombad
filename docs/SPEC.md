@@ -343,7 +343,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - Halaman **Sewa** menampilkan satu baris padat per sewa (`LeaseRow`, tinggi ±56px, 8+ baris per layar HP) di dalam satu
   kartu: chip nomor kamar, nama penyewa, baris kecil "sisa Rp X / lunas s/d tanggal / belum ditagih · jenis periode · kos
   (hanya saat Semua kos)" (jumlah di depan agar tidak terpotong di HP), lalu blok **sisa hari** (`remainingDays`: angka
-  besar + keterangan pendek, mis. "20 hari / terlambat", "Hari ini / jatuh tempo", "3 hari / check-out 15 Okt") dan menu
+  besar + keterangan pendek, mis. "20 hari / terlambat", "Hari ini / jatuh tempo", "3 hari / check-out") dan menu
   aksi (Bayar, Tagihan berikutnya, Kirim tagihan,
   Pengingat WhatsApp, Profil penyewa). Di layar lg+ (≥1024px; di md sidebar menyisakan terlalu sedikit ruang) ada kolom tambahan Dibayar s/d dan Sisa tagihan. Tab Selesai/Batal
   menampilkan lencana status + "Checkout/Berakhir <tanggal>" sebagai ganti sisa hari.
@@ -383,6 +383,6 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   lambat sehari setelah mulai; `end_date` hanya dijepit ke `start_date` demi constraint DB) **tidak punya malam menginap**: akhirnya
   ditampilkan sebagai hari mulai ("Berakhir 20 Okt", juga urutan tab selesai), riwayat penyewa "20 Okt 2026 · belum menginap", riwayat
   perubahan tanpa baris Check-out, linimasa tanpa malam belum ditagih, dan modal pembatalan menulis "Belum ada malam menginap" untuk tanggal
-  yang sama (penyewa yang sudah menginap di-checkout, bukan dibatalkan). Hitungan hari "sampai sewa berakhir" (`remainingDays`, `dueLabel`) dihitung ke hari check-out ("4 hari / check-out 16 Okt").
+  yang sama (penyewa yang sudah menginap di-checkout, bukan dibatalkan). Hitungan hari "sampai sewa berakhir" (`remainingDays`, `dueLabel`) dihitung ke hari check-out ("4 hari / check-out"; tanggalnya sudah tampil di "lunas s/d" baris yang sama).
 - Logika: `isPaidUpAndEnding` memakai hari check-out (`checkoutISO(end_date)` di [hari ini, hari ini + 7]), jadi pada hari check-out sewa lunas
   tampil "Hari ini / check-out", bukan "jatuh tempo hari ini"; checkout membatalkan juga tagihan yang mulai **pada** `checkout_date` (2b.5).

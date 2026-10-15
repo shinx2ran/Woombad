@@ -22,7 +22,8 @@ test.describe('Tanggal check-out (SPEC 7.3)', () => {
     await page.goto('/sewa')
 
     const row = page.locator('[data-testid="lease-row"][data-room="102"]')
-    await expect(row).toContainText('check-out 15 Okt')
+    await expect(row).toContainText('lunas s/d 15 Okt')
+    await expect(row).toContainText('check-out')
     await row.getByRole('link').click()
     await page.waitForURL(/\/sewa\/[^/]+$/)
     await expect(page.getByRole('heading', { name: 'Kamar 102' })).toBeVisible()

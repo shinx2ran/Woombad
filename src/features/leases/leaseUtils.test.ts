@@ -540,15 +540,15 @@ describe('remainingDays (SPEC 7.1)', () => {
   it('a paid-up lease ending within a week counts to its check-out day (end_date + 1); inactive or undated leases get nothing', () => {
     // last night 15 Okt -> check-out 16 Okt: 4 days, the same number as its next due date
     const ending: Lease = { ...lease, end_date: '2026-10-15' }
-    expect(remainingDays(ending, s('2026-10-16', 'ok', 4), '2026-10-12')).toEqual({ days: 4, kind: 'ending', value: '4 hari', caption: 'check-out 16 Okt', tone: 'info' })
+    expect(remainingDays(ending, s('2026-10-16', 'ok', 4), '2026-10-12')).toEqual({ days: 4, kind: 'ending', value: '4 hari', caption: 'check-out', tone: 'info' })
     // the night of 12 Okt is still theirs: check-out tomorrow
-    expect(remainingDays({ ...ending, end_date: '2026-10-12' }, s('2026-10-13', 'ok', 1), '2026-10-12')).toMatchObject({ kind: 'ending', days: 1, value: '1 hari', caption: 'check-out 13 Okt' })
+    expect(remainingDays({ ...ending, end_date: '2026-10-12' }, s('2026-10-13', 'ok', 1), '2026-10-12')).toMatchObject({ kind: 'ending', days: 1, value: '1 hari', caption: 'check-out' })
     // on the check-out day itself: 'Hari ini / check-out', not 'jatuh tempo'
-    expect(remainingDays({ ...ending, end_date: '2026-10-11' }, s('2026-10-12', 'due_soon', 0), '2026-10-12')).toEqual({ days: 0, kind: 'ending', value: 'Hari ini', caption: 'check-out 12 Okt', tone: 'info' })
+    expect(remainingDays({ ...ending, end_date: '2026-10-11' }, s('2026-10-12', 'due_soon', 0), '2026-10-12')).toEqual({ days: 0, kind: 'ending', value: 'Hari ini', caption: 'check-out', tone: 'info' })
     // the day after check-out (tenant stayed on): due again
     expect(remainingDays({ ...ending, end_date: '2026-10-10' }, s('2026-10-11', 'due_soon', -1), '2026-10-12')).toMatchObject({ kind: 'grace', days: -1 })
     // month end: last night 31 Okt -> check-out 1 Nov
-    expect(remainingDays({ ...ending, end_date: '2026-10-31' }, s('2026-11-01', 'ok', 4), '2026-10-28')).toMatchObject({ kind: 'ending', days: 4, caption: 'check-out 1 Nov' })
+    expect(remainingDays({ ...ending, end_date: '2026-10-31' }, s('2026-11-01', 'ok', 4), '2026-10-28')).toMatchObject({ kind: 'ending', days: 4, caption: 'check-out' })
     // check-out 8 days away is outside the week: the plain due count
     expect(remainingDays({ ...ending, end_date: '2026-10-19' }, s('2026-10-20', 'ok', 8), '2026-10-12')).toMatchObject({ kind: 'ok', days: 8, caption: 'lagi · 20 Okt' })
     expect(remainingDays({ ...monthly, status: 'ended' }, s('2026-10-14', 'inactive', 2), '2026-10-12')).toBeNull()
