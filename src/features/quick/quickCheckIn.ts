@@ -83,6 +83,17 @@ export function tenantsNamed(tenants: Tenant[], name: string): Tenant[] {
   return tenants.filter((t) => t.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === key)
 }
 
+/**
+ * Which existing tenant the stay goes to: the one picked among the same-name tenants, or the only one when nothing was
+ * picked; null for a new tenant. A pick made for an earlier spelling of the name no longer counts once the name changed.
+ */
+export function resolveTenantChoice(sameName: Tenant[], choice: string, newChoice: string): string | null {
+  if (choice === newChoice) return null
+  const picked = sameName.find((t) => t.id === choice)
+  if (picked) return picked.id
+  return sameName.length === 1 ? sameName[0].id : null
+}
+
 export interface QuickCheckInDeps {
   repo: OrgRepo
   insertFromDraft: (input: InvoiceDraftInput, notes: string | null) => Promise<{ invoice: Invoice; draft: InvoiceDraft }>

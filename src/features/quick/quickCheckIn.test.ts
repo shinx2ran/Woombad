@@ -8,6 +8,7 @@ import {
   perNightText,
   planQuickCheckIn,
   QuickCheckInError,
+  resolveTenantChoice,
   saveQuickCheckIn,
   tenantsNamed,
   validateQuickCheckIn,
@@ -90,6 +91,24 @@ describe('tenantsNamed', () => {
     expect(tenantsNamed([t], '  taufik   KUSNADI ')).toEqual([t])
     expect(tenantsNamed([t], 'Taufik')).toEqual([])
     expect(tenantsNamed([t], 'T')).toEqual([])
+  })
+})
+
+describe('resolveTenantChoice', () => {
+  const a = { id: 'T1', full_name: 'Budi' } as Tenant
+  const b = { id: 'T2', full_name: 'Budi' } as Tenant
+  it('uses the only same-name tenant unless "orang lain" is picked', () => {
+    expect(resolveTenantChoice([a], '', 'baru')).toBe('T1')
+    expect(resolveTenantChoice([a], 'baru', 'baru')).toBeNull()
+    expect(resolveTenantChoice([], '', 'baru')).toBeNull()
+  })
+  it('with several same-name tenants only an explicit pick counts', () => {
+    expect(resolveTenantChoice([a, b], '', 'baru')).toBeNull()
+    expect(resolveTenantChoice([a, b], 'T2', 'baru')).toBe('T2')
+  })
+  it('a pick for an earlier spelling of the name no longer counts after the name changed', () => {
+    // picked T2 for "Budi", then the name became "Budi Santoso": no same-name tenant, so a new tenant
+    expect(resolveTenantChoice([], 'T2', 'baru')).toBeNull()
   })
 })
 

@@ -12,6 +12,7 @@ import {
   perNightText,
   planQuickCheckIn,
   QuickCheckInError,
+  resolveTenantChoice,
   saveQuickCheckIn,
   tenantsNamed,
   validateQuickCheckIn,
@@ -49,7 +50,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
 
   const total = typedTotal ?? (room.price_daily ?? 0) * nights
   const sameName = useMemo(() => tenantsNamed(data.tenants, name), [data.tenants, name])
-  const tenantId = tenantChoice === NEW_TENANT ? null : tenantChoice || (sameName.length === 1 ? sameName[0].id : null)
+  const tenantId = resolveTenantChoice(sameName, tenantChoice, NEW_TENANT)
   const existing = tenantId ? data.tenantById.get(tenantId) ?? null : null
 
   const input: QuickCheckInInput = { room, startDate, nights, total, paid, method, tenantId: existing?.id ?? null, name, phone }
