@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
-import { Button, Input, Modal, MoneyInput, Textarea, useToast } from '../../components/ui'
+import { Button, CountInput, Input, Modal, MoneyInput, Textarea, useToast } from '../../components/ui'
 import type { Invoice, Lease, LeaseAddon, Payment, PeriodType, Room } from '../../types/db'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { buildInvoiceDraft, nextPeriodBounds, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
@@ -376,15 +376,12 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Input
+            <CountInput
               label={`Jumlah periode (${unit})`}
-              type="number"
-              inputMode="numeric"
-              min={1}
               value={quantity}
-              onChange={(e) => {
+              onChange={(n) => {
                 setUntilDate('')
-                setQuantity(Math.max(1, Math.floor(Number(e.target.value) || 1)))
+                setQuantity(n)
               }}
               required
             />
