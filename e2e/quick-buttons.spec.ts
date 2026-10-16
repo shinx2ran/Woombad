@@ -80,9 +80,26 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     const sheet = page.getByRole('dialog')
     await expect(sheet).toContainText(/Sisa Rp/)
     await expect(sheet).toContainText(/Telat \d+ hari · jatuh tempo/)
+    // the same pre-filled WhatsApp reminder as on the lease list, one tap away
+    const wa = sheet.getByRole('link', { name: 'Kirim pengingat WhatsApp' })
+    await expect(wa).toHaveAttribute('href', /^https:\/\/wa\.me\/62\d+\?text=/)
+    expect(decodeURIComponent((await wa.getAttribute('href'))!)).toMatch(/Tagihan kamar \S+ periode .* jatuh tempo/)
     await sheet.getByRole('link', { name: 'Bayar' }).click()
     await page.waitForURL(/\/sewa\/[^/?]+$/)
     await expect(page.getByRole('dialog').getByRole('heading', { name: 'Catat pembayaran' })).toBeVisible()
+  })
+
+  test('a room due within the week offers the WhatsApp reminder; a safe room does not', async ({ page }) => {
+    const soon = tiles(page).and(page.locator('[data-tone="soon"]')).first()
+    await expect(soon).toContainText(/\d+ hari|Hari ini/)
+    await soon.click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet.getByRole('link', { name: 'Kirim pengingat WhatsApp' })).toHaveAttribute('href', /^https:\/\/wa\.me\//)
+    await page.keyboard.press('Escape')
+    await expect(sheet).toBeHidden()
+    await tiles(page).and(page.locator('[data-tone="occupied"]')).first().click()
+    await expect(page.getByRole('dialog').getByRole('link', { name: 'Perpanjang' })).toBeVisible()
+    await expect(page.getByRole('dialog').getByRole('link', { name: 'Kirim pengingat WhatsApp' })).toHaveCount(0)
   })
 
   test('Pengaturan shows the switch, always on in Mode Demo', async ({ page }) => {

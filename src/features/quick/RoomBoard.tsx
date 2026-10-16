@@ -1,11 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { clsx } from 'clsx'
-import { AlertTriangle, CalendarPlus, DoorOpen, ExternalLink, FilePlus2, KeyRound, Wallet, Zap } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Wallet, Zap } from 'lucide-react'
 import { Badge, Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
-import { formatDate, formatRupiah, todayISO } from '../../lib/format'
+import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import type { Room } from '../../types/db'
+import { leaseReminderText } from '../leases/leaseUtils'
 import { useLeaseData } from '../leases/useLeaseData'
 import { paidThroughText } from '../properties/roomUtils'
 import { BOARD_TONES, BOARD_TONE_META, boardStatusText, buildBoard, countTones, leaseActionLink, type BoardTile, type BoardTone } from './boardModel'
@@ -48,6 +49,24 @@ export function RoomBoard() {
   )
   const counts = useMemo(() => countTones(groups), [groups])
   const openTile = openRoomId ? groups.flatMap((g) => g.tiles).find((t) => t.room.id === openRoomId) ?? null : null
+  // The same pre-filled WhatsApp reminder as "Pengingat WhatsApp" on the lease list (leaseReminderText), built only for
+  // the room that is open: the oldest open invoice, or the next period when everything is paid.
+  const reminderLink = useMemo(() => {
+    const lease = openTile?.lease
+    const tenant = openTile?.tenant
+    if (!openTile || !lease || !tenant?.phone || !openTile.summary) return null
+    const text = leaseReminderText({
+      lease,
+      tenant,
+      room: openTile.room,
+      property: data.propertyById.get(lease.property_id),
+      invoices: data.invoices.filter((i) => i.lease_id === lease.id),
+      orgInvoices: data.invoices,
+      payments: data.payments,
+      addons: data.leaseAddons.filter((a) => a.lease_id === lease.id),
+    })
+    return text ? whatsappLink(tenant.phone, text) : null
+  }, [openTile, data.propertyById, data.invoices, data.payments, data.leaseAddons])
 
   if (data.isPending || data.error || groups.length === 0) return null
 
@@ -97,6 +116,7 @@ export function RoomBoard() {
       {openTile && (
         <RoomActionSheet
           tile={openTile}
+          reminderLink={reminderLink}
           today={today}
           onClose={() => setOpenRoomId(null)}
           onCheckIn={() => {
@@ -123,7 +143,20 @@ function ActionLink({ to, primary, icon, children }: { to: string; primary?: boo
   )
 }
 
-function RoomActionSheet({ tile, today, onClose, onCheckIn }: { tile: BoardTile; today: string; onClose: () => void; onCheckIn: () => void }) {
+function RoomActionSheet({
+  tile,
+  reminderLink,
+  today,
+  onClose,
+  onCheckIn,
+}: {
+  tile: BoardTile
+  /** wa.me link with the reminder text, or null (no phone / nothing to remind) */
+  reminderLink: string | null
+  today: string
+  onClose: () => void
+  onCheckIn: () => void
+}) {
   const { room, lease, tenant, summary, tone } = tile
   const living = Boolean(lease && summary)
   const status = boardStatusText(summary, today)
@@ -157,6 +190,21 @@ function RoomActionSheet({ tile, today, onClose, onCheckIn }: { tile: BoardTile;
           {tone === 'maintenance' && !lease && <p>Kamar sedang perbaikan.</p>}
         </div>
 
+        {living && (tone === 'overdue' || tone === 'soon') && (
+          reminderLink ? (
+            <a
+              href={reminderLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${ACTION_BASE} w-full bg-green-600 text-white hover:bg-green-700`}
+            >
+              <MessageCircle className="h-5 w-5" aria-hidden /> Kirim pengingat WhatsApp
+            </a>
+          ) : (
+            tenant &&
+            !tenant.phone && <p className="text-xs text-slate-500">Isi nomor HP penyewa dulu untuk mengirim pengingat WhatsApp.</p>
+          )
+        )}
         {living && lease && (
           <div className="grid grid-cols-2 gap-2">
             {summary && summary.outstanding > 0 && (

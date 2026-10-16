@@ -397,7 +397,9 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   lewat jatuh tempo (permintaan pemilik; daftar sewa tetap memakai masa tenggang "tenggang"), **0–7 → oranye "N hari" / "Hari ini"**,
   > 7 → biru "Terisi"; lalu Kosong, Dipesan, Perbaikan.
 - **Aksi** kamar terisi = tautan ke halaman sewa yang membuka dialog yang sudah ada: `/sewa/:id?action=bayar|tagih|checkout`; semua aturan
-  (jaminan, tagihan setelah checkout, peran staf) tetap dari dialog itu.
+  (jaminan, tagihan setelah checkout, peran staf) tetap dari dialog itu. Kamar Telat / jatuh tempo ≤ 7 hari juga mendapat tombol hijau
+  **Kirim pengingat WhatsApp** (`wa.me` dengan teks `leaseReminderText`, sama dengan "Pengingat WhatsApp" di daftar sewa); tanpa HP
+  penyewa, papan meminta HP diisi dulu.
 - **Check-in cepat** kamar kosong (`quickCheckIn.ts`): harian saja; nama (HP boleh kosong, "HP belum diisi" diingatkan di papan),
   jumlah malam, total bayar (bawaan tarif harian × malam). Harga per malam = total ÷ malam dibulatkan; bila tidak pas, `baseAmount` =
   total. Menulis baris yang sama dengan wizard Sewa baru (penyewa → sewa → `insertFromDraft` → pembayaran → status tagihan), tanpa
