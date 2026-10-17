@@ -10,7 +10,7 @@ import { formatDate } from '../../lib/format'
 import type { Invoice, Lease, Payment, Property, Room, Tenant } from '../../types/db'
 import { roomDisplayState, sortRoomsNatural } from '../properties/roomUtils'
 
-export type BoardTone = 'overdue' | 'soon' | 'occupied' | 'vacant' | 'reserved' | 'maintenance'
+export type BoardTone = 'overdue' | 'today' | 'soon' | 'occupied' | 'vacant' | 'reserved' | 'maintenance'
 
 /** a due date this many days away or closer turns the tile orange */
 export const BOARD_SOON_DAYS = 7
@@ -18,7 +18,8 @@ export const BOARD_SOON_DAYS = 7
 /** Legend text, and the word under the room name for tones without a day count. */
 export const BOARD_TONE_META: Record<BoardTone, { caption: string; legend: string }> = {
   overdue: { caption: 'Telat', legend: 'Telat bayar' },
-  soon: { caption: '', legend: `Jatuh tempo ≤ ${BOARD_SOON_DAYS} hari` },
+  today: { caption: 'Hari ini', legend: 'Jatuh tempo hari ini' },
+  soon: { caption: '', legend: `Jatuh tempo 1–${BOARD_SOON_DAYS} hari` },
   occupied: { caption: 'Terisi', legend: `Terisi, aman (> ${BOARD_SOON_DAYS} hari)` },
   vacant: { caption: 'Kosong', legend: 'Kosong' },
   reserved: { caption: 'Dipesan', legend: 'Dipesan' },
@@ -26,7 +27,7 @@ export const BOARD_TONE_META: Record<BoardTone, { caption: string; legend: strin
 }
 
 /** Legend order: what needs action first. */
-export const BOARD_TONES: BoardTone[] = ['overdue', 'soon', 'occupied', 'vacant', 'reserved', 'maintenance']
+export const BOARD_TONES: BoardTone[] = ['overdue', 'today', 'soon', 'occupied', 'vacant', 'reserved', 'maintenance']
 
 export interface BoardTile {
   room: Room
@@ -60,12 +61,13 @@ export function boardTone(kind: 'occupied' | 'reserved' | 'vacant' | 'maintenanc
   if (kind === 'reserved') return 'reserved'
   if (days === null) return 'occupied'
   if (days < 0) return 'overdue'
+  if (days === 0) return 'today'
   return days <= BOARD_SOON_DAYS ? 'soon' : 'occupied'
 }
 
 export function boardCaption(tone: BoardTone, days: number | null): string {
   if (tone !== 'soon' || days === null) return BOARD_TONE_META[tone].caption
-  return days === 0 ? 'Hari ini' : `${days} hari`
+  return `${days} hari`
 }
 
 /** One line for the room sheet: 'Telat 3 hari · jatuh tempo 12 Okt', 'Jatuh tempo hari ini · 15 Okt', 'Jatuh tempo 17 Okt · 2 hari lagi'. */
