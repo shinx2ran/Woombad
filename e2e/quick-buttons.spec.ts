@@ -102,6 +102,21 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     await expect(page.getByRole('dialog').getByRole('link', { name: 'Kirim pengingat WhatsApp' })).toHaveCount(0)
   })
 
+  test('due today has its own orange-red tile, softer than the solid red of TELAT', async ({ page }) => {
+    // the demo's daily guest in 102 was seeded paid to the night of 14 Okt (today = 11 Okt): due 15 Okt
+    await page.clock.setFixedTime(new Date('2026-10-15T10:00:00+07:00'))
+    await page.goto('/dashboard')
+    const today = page.locator('[data-testid="board-tile"][data-room="102"]')
+    await expect(today).toHaveAttribute('data-tone', 'today')
+    await expect(today).toContainText('Hari ini')
+    const late = tiles(page).and(page.locator('[data-tone="overdue"]')).first()
+    const bg = (l: typeof late) => l.evaluate((el) => getComputedStyle(el).backgroundColor)
+    expect(await bg(today)).not.toBe(await bg(late))
+    await expect(page.getByRole('list', { name: 'Keterangan warna' })).toContainText('Jatuh tempo hari ini (1)')
+    await today.click()
+    await expect(page.getByRole('dialog').getByRole('link', { name: 'Kirim pengingat WhatsApp' })).toBeVisible()
+  })
+
   test('Pengaturan shows the switch, always on in Mode Demo', async ({ page }) => {
     await page.goto('/pengaturan')
     const box = page.getByRole('checkbox', { name: 'Tombol cepat' })

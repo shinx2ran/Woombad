@@ -142,7 +142,7 @@ describe('Papan kamar (SPEC 7.4)', () => {
       D1: 'overdue:Telat',
       // no invoice yet since 10 Okt: due from the start
       D3: 'overdue:Telat',
-      D4: 'soon:Hari ini',
+      D4: 'today:Hari ini',
       // 1 day past due: the lease list still says "tenggang", the board is already red
       D5: 'overdue:Telat',
       // paid to 22 Okt: next due 23 Okt, 8 days away
@@ -170,8 +170,8 @@ describe('Papan kamar (SPEC 7.4)', () => {
   })
 
   it('counts tiles per colour for the legend', () => {
-    expect(countTones(board)).toEqual({ overdue: 3, soon: 2, occupied: 2, vacant: 1, reserved: 1, maintenance: 1 })
-    expect(countTones([])).toEqual({ overdue: 0, soon: 0, occupied: 0, vacant: 0, reserved: 0, maintenance: 0 })
+    expect(countTones(board)).toEqual({ overdue: 3, today: 1, soon: 1, occupied: 2, vacant: 1, reserved: 1, maintenance: 1 })
+    expect(countTones([])).toEqual({ overdue: 0, today: 0, soon: 0, occupied: 0, vacant: 0, reserved: 0, maintenance: 0 })
   })
 
   it('tells the room sheet when rent is due', () => {

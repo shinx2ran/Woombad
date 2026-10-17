@@ -394,7 +394,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Papan kamar** di Dashboard (`RoomBoard`, `boardModel.ts`): satu kotak per kamar kos yang dipilih, warna dari fungsi yang sama dengan
   Kos & Kamar (`roomDisplayState`) dan daftar sewa (`summarizeLeaseBilling`). Hitungan = hari sampai jatuh tempo berikutnya
   (`daysUntilDue`; sewa lunas: hari check-out = awal periode berikutnya, 7.3): **< 0 → merah penuh "Telat"** sejak hari pertama
-  lewat jatuh tempo (permintaan pemilik; daftar sewa tetap memakai masa tenggang "tenggang"), **0–7 → oranye "N hari" / "Hari ini"**,
+  lewat jatuh tempo (permintaan pemilik; daftar sewa tetap memakai masa tenggang "tenggang"), **0 → jingga-merah "Hari ini"** (lebih lembut dari merah penuh), **1–7 → oranye "N hari"**,
   > 7 → biru "Terisi"; lalu Kosong, Dipesan, Perbaikan.
 - **Aksi** kamar terisi = tautan ke halaman sewa yang membuka dialog yang sudah ada: `/sewa/:id?action=bayar|tagih|checkout`; semua aturan
   (jaminan, tagihan setelah checkout, peran staf) tetap dari dialog itu. Kamar Telat / jatuh tempo ≤ 7 hari juga mendapat tombol hijau

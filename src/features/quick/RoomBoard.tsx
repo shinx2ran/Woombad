@@ -15,6 +15,8 @@ import { QuickCheckInModal } from './QuickCheckInModal'
 const TILE_CLASS: Record<BoardTone, string> = {
   // past due: a solid red sign, so it cannot be missed among the pale tiles
   overdue: 'border-red-700 bg-red-600 text-white shadow-sm',
+  // due today: orange-red, clearly warmer than "N hari" but softer than the solid red of TELAT
+  today: 'border-red-500 bg-orange-200 text-red-800',
   soon: 'border-orange-400 bg-orange-100 text-orange-900',
   occupied: 'border-sky-300 bg-sky-50 text-sky-900',
   vacant: 'border-emerald-300 bg-emerald-50 text-emerald-900',
@@ -24,6 +26,7 @@ const TILE_CLASS: Record<BoardTone, string> = {
 
 const DOT_CLASS: Record<BoardTone, string> = {
   overdue: 'bg-red-600',
+  today: 'bg-orange-600',
   soon: 'bg-orange-500',
   occupied: 'bg-sky-500',
   vacant: 'bg-emerald-500',
@@ -101,12 +104,12 @@ export function RoomBoard() {
                   data-testid="board-tile"
                   data-room={t.room.name}
                   data-tone={t.tone}
-                  aria-label={`Kamar ${t.room.name}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption.toLowerCase()}` : BOARD_TONE_META[t.tone].legend}`}
+                  aria-label={`Kamar ${t.room.name}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}`}
                   onClick={() => setOpenRoomId(t.room.id)}
                   className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-center', TILE_CLASS[t.tone])}
                 >
                   <span className="max-w-full truncate text-sm font-semibold tabular-nums">{t.room.name}</span>
-                  <span className={clsx('max-w-full truncate text-[10px] leading-tight', t.tone === 'overdue' && 'font-bold uppercase tracking-wide')}>{t.caption}</span>
+                  <span className={clsx('max-w-full truncate text-[10px] leading-tight', t.tone === 'overdue' && 'font-bold uppercase tracking-wide', t.tone === 'today' && 'font-bold')}>{t.caption}</span>
                 </button>
               ))}
             </div>
@@ -190,7 +193,7 @@ function RoomActionSheet({
           {tone === 'maintenance' && !lease && <p>Kamar sedang perbaikan.</p>}
         </div>
 
-        {living && (tone === 'overdue' || tone === 'soon') && (
+        {living && (tone === 'overdue' || tone === 'today' || tone === 'soon') && (
           reminderLink ? (
             <a
               href={reminderLink}
