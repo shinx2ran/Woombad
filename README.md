@@ -243,7 +243,7 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 | Kejadian | Yang dilakukan di aplikasi |
 |---|---|
 | Penyewa baru datang | **Sewa → Sewa Baru**: pilih/buat penyewa (bisa **Scan KTP / Paspor**), kos & kamar kosong, periode & harga, deposit, add-on, lalu catat pembayaran pertama (boleh DP). |
-| Penyewa membayar | **Dashboard → Bayar** (atau buka sewa → **Catat pembayaran**). Status otomatis **DP / Sebagian** atau **Lunas**. Bisa kirim kwitansi ke WhatsApp. |
+| Penyewa membayar | **Dashboard → Bayar** (atau buka sewa → **Catat pembayaran**). Status otomatis **DP / Sebagian** atau **Lunas**. Bisa kirim kwitansi ke WhatsApp. Salah ketik? **✏️ Ubah pembayaran** ([lihat di bawah](#salah-catat-pembayaran-atau-tagihan)). |
 | Mendekati jatuh tempo | Dashboard menampilkan **Perlu perhatian** (terlambat / jatuh tempo ≤3 hari). Tombol **Tagih** membuat tagihan periode berikutnya dan memperpanjang sewa; ikon WhatsApp mengirim pengingat berisi nomor rekening. |
 | Perpanjang 2 minggu saja | Buka sewa → **Buat tagihan berikutnya** → **Periode khusus** (pro-rata). |
 | Bayar listrik / denda | Saat membuat tagihan isi kolom **Listrik / Denda / Lainnya**. |
@@ -271,6 +271,15 @@ terisi untuk **Bayar**, **Perpanjang**, atau **Check-out** (membuka dialog
 yang sama seperti di halaman sewa). Ketuk kamar kosong untuk **Check-in cepat** tamu harian: isi nama, jumlah malam, dan total
 bayar; nomor HP boleh diisi nanti. Saklar ini hanya berlaku di HP/tablet tempat ia dinyalakan dan bisa dimatikan kapan saja. Di
 Mode Demo papan selalu tampil, untuk dicoba dengan data contoh.
+
+### Salah catat pembayaran atau tagihan?
+
+Buka sewa → daftar **Pembayaran** → tombol **✏️ Ubah pembayaran** untuk membetulkan **jumlah, tanggal, metode, atau catatan**;
+status tagihan (DP / Sebagian / Lunas) ikut menyesuaikan. Jumlahnya tidak bisa melebihi sisa tagihan. Salah tagihan? Hapus
+pembayarannya lalu catat ulang lewat **Bayar** pada tagihan yang benar. Harga sewa yang salah ketik di satu tagihan dibetulkan
+lewat menu tagihan → **Ubah** → **Harga sewa (tagihan ini)** (tagihan berikutnya tetap memakai harga sewa di kontrak). Di bawah
+kedua dialog ada **Riwayat perubahan**: siapa yang membuat/mengubah, kapan, dan apa yang berubah. Hanya pemilik/admin yang bisa
+mengubah dan melihat riwayat; riwayat hanya tercatat di Mode Online.
 
 ### Kirim tagihan ke WhatsApp & logo kos
 

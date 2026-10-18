@@ -405,3 +405,18 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   total. Menulis baris yang sama dengan wizard Sewa baru (penyewa → sewa → `insertFromDraft` → pembayaran → status tagihan), tanpa
   deposit/add-on (pakai Form lengkap). Nama yang sama dengan penyewa lama ditawarkan supaya data tidak dobel. Ketersediaan kamar dicek
   dengan `roomAvailability`.
+
+### 7.5 Ubah pembayaran & tagihan, dengan riwayat
+- **Ubah pembayaran** (owner/admin; RLS `payments` update hanya admin): tombol ✏️ di samping 🗑️ pada daftar Pembayaran di detail
+  sewa (`EditPaymentModal`, aturan di `paymentEdit.ts`). Yang bisa diubah: **jumlah, tanggal bayar, metode, catatan**. Tagihan yang
+  dibayar dan jenisnya (sewa / jaminan / lainnya) tetap; salah tagihan = hapus lalu catat ulang lewat Bayar.
+  - Jumlah > 0 dan, untuk pembayaran sewa, paling banyak sisa tagihan **tanpa** pembayaran ini (tidak boleh lebih bayar).
+  - Jaminan yang diterima tidak boleh turun di bawah yang sudah dipakai/dikembalikan (`depositBalance`).
+  - Pembayaran "Potong jaminan" (metode `deposit`) terkunci jumlah & metodenya; metode lain tidak bisa diubah menjadi `deposit`.
+  - Setelah simpan, status tagihan dihitung ulang (trigger `payments_recalc` online; `syncInvoiceStatus` di Mode Demo).
+- **Ubah tagihan** sekarang juga mengubah **Harga sewa (tagihan ini)** (`base_amount`) bila salah ketik; total = harga sewa + add-on +
+  listrik/denda/lainnya − diskon, tidak boleh di bawah yang sudah dibayar. Harga sewa di kontrak (`price_per_period`) tidak berubah,
+  jadi tagihan berikutnya tetap memakai harga lama; ubah kontrak lewat Ubah sewa bila harganya memang berubah.
+- **Riwayat perubahan** di bawah kedua dialog (`RecordHistory`): 20 baris `audit_log` terakhir untuk baris itu (6.3) — Dibuat / Diubah /
+  Dihapus, kapan, oleh siapa, dan kolom yang berubah (mis. "Jumlah: Rp 360.000 → Rp 300.000", "Sewa dasar: …"). Hanya Mode Online dan hanya terlihat
+  owner/admin (RLS `audit_log`); Mode Demo menampilkan keterangan bahwa riwayat tidak dicatat.
