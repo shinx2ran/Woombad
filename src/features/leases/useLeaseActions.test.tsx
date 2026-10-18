@@ -373,3 +373,61 @@ describe('Mode Demo behaves like the database', () => {
     expect(invalidate).toHaveBeenCalledWith('payments')
   })
 })
+
+describe('Ubah pembayaran & harga sewa tagihan (SPEC 7.5)', () => {
+  it('correcting a DP to the full amount pays the invoice; the invoice status follows', async () => {
+    await seed()
+    const before = await data()
+    const dp = before.payments.find((p) => p.invoice_id === OCT) as Payment
+    const ctx = { invoice: byId(before.invoices, OCT), payments: before.payments, lease: before.lease, expenses: before.expenses }
+    await actions().updatePayment(dp, { amount: 1_500_000, paid_at: '2026-09-12', method: 'cash', notes: 'lunas' }, ctx)
+    const after = await data()
+    expect(after.payments.find((p) => p.id === dp.id)).toMatchObject({ amount: 1_500_000, paid_at: '2026-09-12', method: 'cash', notes: 'lunas', invoice_id: OCT, kind: 'rent' })
+    expect(byId(after.invoices, OCT).status).toBe('paid')
+    expect(invalidate).toHaveBeenCalledWith('payments', 'invoices')
+  })
+
+  it('more than the invoice can take, or a staff member, is refused before any write', async () => {
+    await seed()
+    const before = await data()
+    const dp = before.payments.find((p) => p.invoice_id === OCT) as Payment
+    const ctx = { invoice: byId(before.invoices, OCT), payments: before.payments, lease: before.lease, expenses: before.expenses }
+    await expect(actions().updatePayment(dp, { amount: 1_600_000, paid_at: dp.paid_at, method: dp.method, notes: dp.notes }, ctx)).rejects.toThrow(
+      'Jumlah melebihi sisa tagihan INV-202610-0001 (Rp 1.500.000).',
+    )
+    state.role = 'staff'
+    await expect(actions().updatePayment(dp, { amount: 400_000, paid_at: dp.paid_at, method: dp.method, notes: dp.notes }, ctx)).rejects.toThrow('Hanya pemilik/admin')
+    expect((await repo.get('payments', dp.id))?.amount).toBe(500_000)
+  })
+
+  it('a wrong rent amount on an invoice is corrected; total and status follow, the lease price stays', async () => {
+    await seed()
+    const before = await data()
+    const oct = byId(before.invoices, OCT)
+    // 500.000 paid of 1.500.000; the rent should have been 500.000 -> paid
+    await actions().updateInvoice(oct, before.payments, { base_amount: 500_000, extra_amount: 0, discount_amount: 0, notes: null })
+    const after = byId((await data()).invoices, OCT)
+    expect(after).toMatchObject({ base_amount: 500_000, total_amount: 500_000, status: 'paid' })
+    expect((await data()).lease.price_per_period).toBe(1_500_000)
+    // never below what is already paid
+    await expect(actions().updateInvoice(after, before.payments, { base_amount: 400_000, extra_amount: 0, discount_amount: 0, notes: null })).rejects.toThrow(
+      'Total tagihan tidak boleh lebih kecil dari yang sudah dibayar (Rp 500.000).',
+    )
+  })
+
+  it('an invoice changed on another device since this screen loaded is refused with the usual message, not a DB error', async () => {
+    await seed()
+    const before = await data()
+    const stale = byId(before.invoices, OCT)
+    // the other phone corrected the rent to 1.200.000
+    await repo.update('invoices', OCT, { base_amount: 1_200_000, total_amount: 1_200_000 })
+    await expect(actions().updateInvoice(stale, before.payments, { extra_amount: 50_000, discount_amount: 0, notes: null })).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    await expect(
+      actions().recordRentPayment({ invoice: stale, lease: before.lease, payments: before.payments, amount: 100_000, paidAt: '2026-10-05', method: 'cash', notes: null, settleWithDiscount: true }),
+    ).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    // nothing written; the screen is told to reload
+    expect(byId((await data()).invoices, OCT)).toMatchObject({ base_amount: 1_200_000, extra_amount: 0, discount_amount: 0, total_amount: 1_200_000 })
+    expect((await data()).payments.filter((p) => p.invoice_id === OCT)).toHaveLength(1)
+    expect(invalidate).toHaveBeenCalledWith('invoices', 'payments')
+  })
+})

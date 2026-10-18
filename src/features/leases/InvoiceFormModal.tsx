@@ -25,6 +25,7 @@ import {
 } from './leaseUtils'
 import { PeriodTypePicker, PriceField, Row } from './components'
 import type { LeaseActions } from './useLeaseActions'
+import { RecordHistory } from '../settings/audit/RecordHistory'
 
 interface ExtraFieldsProps {
   parts: ExtraBreakdown
@@ -442,9 +443,13 @@ export interface EditInvoiceModalProps {
   actions: LeaseActions
 }
 
-/** Edit extra / discount / notes of an existing invoice; total and status are recomputed (SPEC 2b.1). */
+/**
+ * Edit the rent amount (harga sewa of this invoice, SPEC 7.5), extra / discount / notes of an existing invoice; total
+ * and status are recomputed (SPEC 2b.1). The invoice's change history is shown underneath.
+ */
 export function EditInvoiceModal({ open, onClose, invoice, payments, actions }: EditInvoiceModalProps) {
   const toast = useToast()
+  const [base, setBase] = useState(0)
   const [parts, setParts] = useState<ExtraBreakdown>({})
   const [discount, setDiscount] = useState(0)
   const [text, setText] = useState('')
@@ -452,6 +457,7 @@ export function EditInvoiceModal({ open, onClose, invoice, payments, actions }: 
 
   useEffect(() => {
     if (!open || !invoice) return
+    setBase(invoice.base_amount)
     const split = splitInvoiceNotes(invoice.notes)
     const known = sumExtraBreakdown(split.breakdown)
     const rest = invoice.extra_amount - known
@@ -463,7 +469,7 @@ export function EditInvoiceModal({ open, onClose, invoice, payments, actions }: 
 
   if (!invoice) return null
   const extra = sumExtraBreakdown(parts)
-  const total = invoice.base_amount + invoice.addons_amount + extra - discount
+  const total = base + invoice.addons_amount + extra - discount
   const paid = paidAmountFor(invoice.id, payments)
   const error =
     total < 0 ? 'Diskon melebihi jumlah tagihan.' : total < paid ? `Total tidak boleh lebih kecil dari yang sudah dibayar (${formatRupiah(paid)}).` : null
@@ -472,7 +478,7 @@ export function EditInvoiceModal({ open, onClose, invoice, payments, actions }: 
     if (error) return
     setSaving(true)
     try {
-      await actions.updateInvoice(invoice, payments, { extra_amount: extra, discount_amount: discount, notes: composeInvoiceNotes(parts, text) })
+      await actions.updateInvoice(invoice, payments, { base_amount: base, extra_amount: extra, discount_amount: discount, notes: composeInvoiceNotes(parts, text) })
       toast.success('Tagihan diperbarui.')
       onClose()
     } catch (err) {
@@ -500,9 +506,15 @@ export function EditInvoiceModal({ open, onClose, invoice, payments, actions }: 
     >
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          Periode {formatStay(invoice.period_start, invoice.period_end)} · sewa dasar {formatRupiah(invoice.base_amount)}
-          {invoice.addons_amount > 0 ? ` + add-on ${formatRupiah(invoice.addons_amount)}` : ''}
+          Periode {formatStay(invoice.period_start, invoice.period_end)}
+          {invoice.addons_amount > 0 ? ` · add-on ${formatRupiah(invoice.addons_amount)}` : ''}
         </p>
+        <MoneyInput
+          label="Harga sewa (tagihan ini)"
+          value={base}
+          onChange={setBase}
+          hint={base !== invoice.base_amount ? `Sebelumnya ${formatRupiah(invoice.base_amount)}. Harga sewa untuk tagihan berikutnya tidak berubah.` : 'Ubah bila salah ketik; tagihan berikutnya tetap memakai harga sewa.'}
+        />
         <ExtraFields parts={parts} onChange={setParts} discount={discount} onDiscount={setDiscount} text={text} onText={setText} />
         <div className="space-y-1 rounded-lg bg-slate-50 p-3">
           <Row label="Total baru" value={formatRupiah(Math.max(0, total))} strong />
@@ -510,6 +522,7 @@ export function EditInvoiceModal({ open, onClose, invoice, payments, actions }: 
           <Row label="Sisa" value={formatRupiah(Math.max(0, total - paid))} />
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
+        <RecordHistory table="invoices" rowId={invoice.id} />
       </div>
     </Modal>
   )

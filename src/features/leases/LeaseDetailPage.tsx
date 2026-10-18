@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowLeftRight, Ban, CalendarPlus, DoorOpen, FilePlus2, MessageCircle, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, Ban, CalendarPlus, DoorOpen, FilePlus2, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
 import {
   Button,
   Card,
@@ -29,6 +29,7 @@ import { agreedPriceText, invoiceTimeline, leaseEndDisplay, leaseReminderText, o
 import { ActionMenu, BillingStateBadge, InvoiceTimeline, Row, type MenuItem } from './components'
 import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
+import { EditPaymentModal } from './EditPaymentModal'
 import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAddon } from './LifecycleModals'
 import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
 
@@ -52,6 +53,8 @@ export function LeaseDetailPage() {
   const [modal, setModal] = useState<ModalKind | null>(null)
   const [payInvoiceId, setPayInvoiceId] = useState<string | undefined>(undefined)
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
+  /** Ubah pembayaran (SPEC 7.5) */
+  const [editPayment, setEditPayment] = useState<Payment | null>(null)
   /** invoice shown in the "Kirim tagihan" (image to WhatsApp) modal */
   const [shareInvoice, setShareInvoice] = useState<Invoice | null>(null)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
@@ -175,7 +178,7 @@ export function LeaseDetailPage() {
     if (isAdmin && inv.status !== 'void') {
       items.push({
         label: 'Ubah',
-        hint: 'Listrik, denda, diskon, catatan',
+        hint: 'Harga sewa, listrik, denda, diskon, catatan · riwayat',
         onClick: () => {
           setEditInvoice(inv)
           setModal('edit')
@@ -411,6 +414,11 @@ export function LeaseDetailPage() {
                     </div>
                     <span className={clsx('shrink-0 tabular-nums font-semibold', p.kind === 'deposit' ? 'text-slate-700' : 'text-emerald-700')}>{formatRupiah(p.amount)}</span>
                     {isAdmin && (
+                      <button type="button" aria-label="Ubah pembayaran" onClick={() => setEditPayment(p)} className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-700">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+                    {isAdmin && (
                       <button type="button" aria-label="Hapus pembayaran" onClick={() => setConfirm({ kind: 'delete-payment', payment: p })} className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600">
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -499,6 +507,15 @@ export function LeaseDetailPage() {
         />
       )}
       <EditInvoiceModal open={modal === 'edit'} onClose={() => setModal(null)} invoice={editInvoice} payments={data.payments} actions={actions} />
+      <EditPaymentModal
+        payment={editPayment}
+        onClose={() => setEditPayment(null)}
+        lease={lease}
+        invoices={leaseInvoices}
+        payments={data.payments}
+        expenses={data.expenses}
+        actions={actions}
+      />
       <CheckoutModal open={modal === 'checkout'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
       <CancelLeaseModal open={modal === 'cancel'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
       <MoveRoomModal open={modal === 'move'} onClose={() => setModal(null)} lease={lease} rooms={data.rooms} leases={data.leases} currentRoom={room} actions={actions} />
