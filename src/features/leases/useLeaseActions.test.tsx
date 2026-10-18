@@ -414,4 +414,20 @@ describe('Ubah pembayaran & harga sewa tagihan (SPEC 7.5)', () => {
       'Total tagihan tidak boleh lebih kecil dari yang sudah dibayar (Rp 500.000).',
     )
   })
+
+  it('an invoice changed on another device since this screen loaded is refused with the usual message, not a DB error', async () => {
+    await seed()
+    const before = await data()
+    const stale = byId(before.invoices, OCT)
+    // the other phone corrected the rent to 1.200.000
+    await repo.update('invoices', OCT, { base_amount: 1_200_000, total_amount: 1_200_000 })
+    await expect(actions().updateInvoice(stale, before.payments, { extra_amount: 50_000, discount_amount: 0, notes: null })).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    await expect(
+      actions().recordRentPayment({ invoice: stale, lease: before.lease, payments: before.payments, amount: 100_000, paidAt: '2026-10-05', method: 'cash', notes: null, settleWithDiscount: true }),
+    ).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    // nothing written; the screen is told to reload
+    expect(byId((await data()).invoices, OCT)).toMatchObject({ base_amount: 1_200_000, extra_amount: 0, discount_amount: 0, total_amount: 1_200_000 })
+    expect((await data()).payments.filter((p) => p.invoice_id === OCT)).toHaveLength(1)
+    expect(invalidate).toHaveBeenCalledWith('invoices', 'payments')
+  })
 })

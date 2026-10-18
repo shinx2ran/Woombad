@@ -56,7 +56,9 @@ describe('validatePaymentEdit (SPEC 7.5)', () => {
 
   it('knows when nothing changed', () => {
     expect(isSamePayment(dp, patch(dp))).toBe(true)
-    expect(isSamePayment(dp, patch(dp, { notes: '' === '' ? null : 'x' }))).toBe(true)
+    expect(isSamePayment(dp, patch(dp, { notes: '  ' }))).toBe(true)
+    expect(isSamePayment(pay({ notes: 'DP' }), patch(pay({ notes: 'DP' }), { notes: ' DP ' }))).toBe(true)
+    expect(isSamePayment(dp, patch(dp, { notes: 'koreksi' }))).toBe(false)
     expect(isSamePayment(dp, patch(dp, { amount: 1 }))).toBe(false)
   })
 })

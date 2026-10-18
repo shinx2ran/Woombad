@@ -6,6 +6,10 @@ async function loginDemo(page: Page) {
   await page.waitForURL(/\/dashboard$/)
 }
 
+/** The lease page's invoice row on a phone (the timeline legend above it also says "Lunas" / "DP / Sebagian"). */
+const invoiceRow = (page: Page) => page.locator('li', { has: page.getByRole('button', { name: /^Aksi tagihan/ }) })
+const paymentRow = (page: Page) => page.locator('li', { has: page.getByRole('button', { name: 'Ubah pembayaran' }) })
+
 test.use({ timezoneId: 'Asia/Jakarta' })
 
 test.describe('Ubah pembayaran & tagihan (SPEC 7.5)', () => {
@@ -27,6 +31,7 @@ test.describe('Ubah pembayaran & tagihan (SPEC 7.5)', () => {
   })
 
   test('a payment typed wrong is corrected from the ✏️ button; the invoice follows', async ({ page }) => {
+    await expect(invoiceRow(page)).toContainText('Lunas')
     await page.getByRole('button', { name: 'Ubah pembayaran' }).first().click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('heading', { name: 'Ubah pembayaran' })).toBeVisible()
@@ -47,8 +52,11 @@ test.describe('Ubah pembayaran & tagihan (SPEC 7.5)', () => {
     await dialog.getByRole('button', { name: 'Simpan' }).click()
     await expect(page.getByText('Pembayaran diperbarui.')).toBeVisible()
     await expect(dialog).toBeHidden()
-    await expect(page.getByText('Rp 300.000').filter({ visible: true }).first()).toBeVisible()
-    await expect(page.getByText('Sebagian').filter({ visible: true }).first()).toBeVisible()
+    await expect(paymentRow(page)).toContainText('Rp 300.000')
+    await expect(paymentRow(page)).toContainText('Transfer')
+    // 360.000 billed, 300.000 paid: partly paid, 60.000 left
+    await expect(invoiceRow(page)).toContainText('DP / Sebagian')
+    await expect(invoiceRow(page)).toContainText('sisa Rp 60.000')
   })
 
   test('the rent of one invoice is corrected from Ubah; the invoice becomes paid', async ({ page }) => {
@@ -57,6 +65,7 @@ test.describe('Ubah pembayaran & tagihan (SPEC 7.5)', () => {
     await page.getByRole('dialog').getByLabel('Jumlah').fill('300000')
     await page.getByRole('dialog').getByRole('button', { name: 'Simpan' }).click()
     await expect(page.getByRole('dialog')).toBeHidden()
+    await expect(invoiceRow(page)).toContainText('sisa Rp 60.000')
 
     await page.getByRole('button', { name: /^Aksi tagihan/ }).first().click()
     await page.getByRole('menuitem', { name: /^Ubah/ }).click()
@@ -73,6 +82,8 @@ test.describe('Ubah pembayaran & tagihan (SPEC 7.5)', () => {
     await dialog.getByRole('button', { name: 'Simpan' }).click()
     await expect(page.getByText('Tagihan diperbarui.')).toBeVisible()
     await expect(dialog).toBeHidden()
-    await expect(page.getByText('Lunas', { exact: true }).filter({ visible: true }).first()).toBeVisible()
+    await expect(invoiceRow(page)).toContainText('Lunas')
+    await expect(invoiceRow(page)).toContainText('Rp 300.000')
+    await expect(invoiceRow(page)).not.toContainText('sisa')
   })
 })

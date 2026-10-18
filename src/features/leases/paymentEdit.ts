@@ -57,7 +57,8 @@ export function validatePaymentEdit(payment: Payment, patch: PaymentEditPatch, c
   return null
 }
 
-/** True when nothing would change (Simpan stays off). */
+/** True when nothing would change (Simpan stays off); a blank note equals no note. */
 export function isSamePayment(payment: Payment, patch: PaymentEditPatch): boolean {
-  return patch.amount === payment.amount && patch.paid_at === payment.paid_at && patch.method === payment.method && (patch.notes ?? null) === (payment.notes ?? null)
+  const note = (n: string | null) => n?.trim() || null
+  return patch.amount === payment.amount && patch.paid_at === payment.paid_at && patch.method === payment.method && note(patch.notes) === note(payment.notes)
 }

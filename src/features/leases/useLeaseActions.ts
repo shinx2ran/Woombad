@@ -135,6 +135,26 @@ export function useLeaseActions() {
       if (status !== inv.status && canWriteInvoiceStatus) await repo.update('invoices', invoiceId, { status })
     }
 
+    /**
+     * The amounts of an invoice this screen computed from must still be the stored ones: the database requires
+     * total = base + add-on + extra − discount, and since the rent of an invoice can be corrected (SPEC 7.5) another
+     * device may have changed it after this screen loaded. Refuse with the usual message instead of a raw DB error.
+     */
+    async function assertInvoiceUnchanged(invoice: Invoice): Promise<void> {
+      const fresh = await repo.get('invoices', invoice.id)
+      const same =
+        fresh &&
+        fresh.base_amount === invoice.base_amount &&
+        fresh.addons_amount === invoice.addons_amount &&
+        fresh.extra_amount === invoice.extra_amount &&
+        fresh.discount_amount === invoice.discount_amount &&
+        fresh.total_amount === invoice.total_amount
+      if (!same) {
+        await invalidate('invoices', 'payments')
+        throw new Error(LEASE_DATA_CHANGED_MESSAGE)
+      }
+    }
+
     /** Insert an invoice from a draft; on a duplicate number (two devices) rebuild with fresh numbering (SPEC 2b.11). */
     async function insertFromDraft(input: InvoiceDraftInput, notes: string | null): Promise<{ invoice: Invoice; draft: InvoiceDraft }> {
       let orgInvoices = input.orgInvoices ?? input.existingInvoices
@@ -223,6 +243,7 @@ export function useLeaseActions() {
       let excess = 0
       if (input.amount < outstanding && input.settleWithDiscount) {
         if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
+        await assertInvoiceUnchanged(invoice)
         const diff = outstanding - input.amount
         total = total - diff
         await repo.update('invoices', invoice.id, {
@@ -292,6 +313,7 @@ export function useLeaseActions() {
       if (total < 0) throw new Error('Diskon melebihi jumlah tagihan.')
       const paid = paidAmountFor(invoice.id, payments)
       if (total < paid) throw new Error(`Total tagihan tidak boleh lebih kecil dari yang sudah dibayar (${formatRupiah(paid)}).`)
+      await assertInvoiceUnchanged(invoice)
       await repo.update('invoices', invoice.id, {
         ...(base !== invoice.base_amount ? { base_amount: base } : {}),
         extra_amount: patch.extra_amount,
