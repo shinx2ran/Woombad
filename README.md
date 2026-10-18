@@ -244,7 +244,7 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 |---|---|
 | Penyewa baru datang | **Sewa → Sewa Baru**: pilih/buat penyewa (bisa **Scan KTP / Paspor**), kos & kamar kosong, periode & harga, deposit, add-on, lalu catat pembayaran pertama (boleh DP). |
 | Penyewa membayar | **Dashboard → Bayar** (atau buka sewa → **Catat pembayaran**). Status otomatis **DP / Sebagian** atau **Lunas**. Bisa kirim kwitansi ke WhatsApp. Salah ketik? **✏️ Ubah pembayaran** ([lihat di bawah](#salah-catat-pembayaran-atau-tagihan)). |
-| Mendekati jatuh tempo | Dashboard menampilkan **Perlu perhatian** (terlambat / jatuh tempo ≤3 hari). Tombol **Tagih** membuat tagihan periode berikutnya dan memperpanjang sewa; ikon WhatsApp mengirim pengingat berisi nomor rekening. |
+| Mendekati jatuh tempo | Dashboard menampilkan **Perlu perhatian** (terlambat / jatuh tempo ≤3 hari). Tombol **Tagih** membuat tagihan periode berikutnya dan memperpanjang sewa; ikon WhatsApp mengirim pengingat berisi nomor rekening. Ikon oranye bertanda **+** berarti nomor HP penyewa belum diisi: ketuk untuk langsung mengisinya. |
 | Perpanjang 2 minggu saja | Buka sewa → **Buat tagihan berikutnya** → **Periode khusus** (pro-rata). |
 | Bayar listrik / denda | Saat membuat tagihan isi kolom **Listrik / Denda / Lainnya**. |
 | Penyewa pindah / keluar | Buka sewa → **Lainnya → Pindah kamar** atau **Checkout** (uang jaminan dikembalikan atau dipotong). |

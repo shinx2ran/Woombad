@@ -174,7 +174,7 @@ function RoomActionSheet({
           </p>
           {tenant && <p className="text-base font-semibold text-slate-900">{tenant.full_name}</p>}
           {tenant && !tenant.phone && (
-            <Link to={`/penyewa/${tenant.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline">
+            <Link to={`/penyewa/${tenant.id}?isi=hp`} className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline">
               <AlertTriangle className="h-3.5 w-3.5" aria-hidden /> HP belum diisi: lengkapi
             </Link>
           )}

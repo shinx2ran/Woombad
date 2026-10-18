@@ -4,6 +4,7 @@ import { Badge, Card, CardBody, CardHeader, DataTable, type Column } from '../..
 import { formatDate, formatRupiah, whatsappLink } from '../../lib/format'
 import { reminderText } from '../../domain/messages'
 import type { ReceivableRow } from './useReportData'
+import { MissingPhoneLink } from '../tenants/MissingPhoneLink'
 
 function waHref(row: ReceivableRow): string | null {
   if (!row.tenant?.phone) return null
@@ -69,9 +70,7 @@ export function ReceivablesTable({ rows, rangeEnd }: { rows: ReceivableRow[]; ra
                 <MessageCircle className="h-4 w-4" />
               </a>
             ) : (
-              <span className="rounded-lg p-1.5 text-slate-300" title="Nomor HP belum diisi">
-                <MessageCircle className="h-4 w-4" />
-              </span>
+              <MissingPhoneLink tenant={r.tenant} className="rounded-lg p-1.5" iconClassName="h-4 w-4" />
             )}
             <Link to={`/sewa/${r.invoice.lease_id}`} aria-label="Buka sewa" title="Buka sewa" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
               <ExternalLink className="h-4 w-4" />

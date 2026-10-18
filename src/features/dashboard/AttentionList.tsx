@@ -18,6 +18,7 @@ import {
 } from './dashboardModel'
 import { SectionCard, SectionEmpty } from './SectionCard'
 import { useAttentionSort } from './useAttentionSort'
+import { MissingPhoneLink } from '../tenants/MissingPhoneLink'
 
 const GROUP_STYLE: Record<AttentionGroup, { tone: 'danger' | 'warning' | 'info'; bar: string }> = {
   overdue: { tone: 'danger', bar: 'bg-red-500' },
@@ -168,13 +169,7 @@ function AttentionRow({ item }: { item: AttentionItem }) {
             <MessageCircle className="h-5 w-5" aria-hidden />
           </a>
         ) : (
-          <span
-            aria-label="Nomor HP belum diisi"
-            title="Nomor HP belum diisi"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-300"
-          >
-            <MessageCircle className="h-5 w-5" aria-hidden />
-          </span>
+          <MissingPhoneLink tenant={tenant} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full" />
         )}
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
