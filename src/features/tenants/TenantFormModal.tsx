@@ -67,6 +67,7 @@ export function TenantFormModal({
   tenant,
   onSaved,
   autoScan = false,
+  focusPhone = false,
 }: {
   open: boolean
   onClose: () => void
@@ -75,6 +76,8 @@ export function TenantFormModal({
   onSaved?: (saved: Tenant) => void
   /** open the scanner panel (and the camera) as soon as the form opens: check-in shortcut */
   autoScan?: boolean
+  /** opened from a missing-phone WhatsApp button (`?isi=hp`): start in Nomor HP */
+  focusPhone?: boolean
 }) {
   const { properties, selectedPropertyId, repo, isLocalMode } = useOrg()
   const toast = useToast()
@@ -245,8 +248,13 @@ export function TenantFormModal({
               value={values.phone}
               onChange={(e) => set('phone', e.target.value)}
               error={errors.phone}
-              hint="Tidak ada di KTP/paspor, isi manual. Contoh: 0812-3456-7890"
+              hint={
+                focusPhone && !values.phone.trim()
+                  ? 'Isi nomor HP supaya pengingat WhatsApp bisa dikirim. Contoh: 0812-3456-7890'
+                  : 'Tidak ada di KTP/paspor, isi manual. Contoh: 0812-3456-7890'
+              }
               placeholder="08xx"
+              autoFocus={focusPhone}
             />
             <Select
               label="Jenis kelamin"

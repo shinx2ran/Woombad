@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ExternalLink, MessageCircle, Pencil, Plus, Trash2, UserX } from 'lucide-react'
 import {
@@ -53,8 +53,19 @@ export function TenantDetailPage() {
   const payments = useTable('payments')
   const remove = useRemove('tenants')
   const invalidate = useInvalidate()
-  const [editOpen, setEditOpen] = useState(false)
+  // ?isi=hp (a missing-phone WhatsApp button): open the form at Nomor HP right away
+  const [searchParams, setSearchParams] = useSearchParams()
+  const askPhone = searchParams.get('isi') === 'hp'
+  const [editOpen, setEditOpen] = useState(askPhone)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const closeEdit = () => {
+    setEditOpen(false)
+    if (askPhone) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('isi')
+      setSearchParams(next, { replace: true })
+    }
+  }
 
   const today = todayISO()
   const canDelete = role === 'owner' || role === 'admin'
@@ -336,7 +347,7 @@ export function TenantDetailPage() {
         </div>
       </div>
 
-      <TenantFormModal open={editOpen} onClose={() => setEditOpen(false)} tenant={t} />
+      <TenantFormModal open={editOpen} onClose={closeEdit} tenant={t} focusPhone={askPhone} />
 
       {myLeases.length === 0 ? (
         <ConfirmDialog

@@ -4,6 +4,7 @@ import { Badge } from '../../components/ui'
 import { formatDate, whatsappLink } from '../../lib/format'
 import { EXPIRING_WITHIN_DAYS, checkoutDaysLabel, extensionQuestionText, type ExpiringItem } from './dashboardModel'
 import { SectionCard, SectionEmpty } from './SectionCard'
+import { MissingPhoneLink } from '../tenants/MissingPhoneLink'
 
 /**
  * "Akan berakhir": active leases whose check-out day (end_date + 1, SPEC 7.3) is within EXPIRING_WITHIN_DAYS and that
@@ -63,13 +64,7 @@ function ExpiringRow({ item }: { item: ExpiringItem }) {
             <MessageCircle className="h-5 w-5" aria-hidden />
           </a>
         ) : (
-          <span
-            aria-label="Nomor HP belum diisi"
-            title="Nomor HP belum diisi"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-300"
-          >
-            <MessageCircle className="h-5 w-5" aria-hidden />
-          </span>
+          <MissingPhoneLink tenant={tenant} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full" />
         )}
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
