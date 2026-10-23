@@ -79,7 +79,8 @@ Lewati langkah ini bila isinya hanya data contoh.
 1. **Proyek**: buat proyek Supabase baru (paket Free) di region **Southeast Asia (Singapore)**. Simpan kata sandi
    database di pengelola sandi; aplikasi tidak memakainya.
 2. **Skema**: **SQL Editor** → tempel seluruh isi `supabase/schema.sql` → **Run**. Berkas ini sudah lengkap (tidak
-   perlu `supabase/migrations/`) dan aman dijalankan ulang.
+   perlu `supabase/migrations/`) dan aman dijalankan ulang. Bila `schema.sql` berubah (mis. fitur **Ubah tanggal mulai**),
+   jalankan ulang di SQL Editor **sebelum** perubahan aplikasi di-push ke `master`.
 3. **Kode pemilik**: jalankan `node scripts/new-setup-code.mjs`, lalu jalankan baris
    `select public.set_setup_code('ABCD-EFGH');` yang dicetaknya di SQL Editor. Berikan kodenya kepada pemilik secara
    pribadi. Kode ini sekali pakai; bila hilang sebelum dipakai, buat kode baru dengan cara yang sama.
@@ -156,7 +157,7 @@ langkah (aplikasi authenticator) di keduanya:
 |---|---|---|
 | **Pemilik** | Bapak (akun pertama) | Semua, termasuk mengubah peran anggota dan menghapus admin. |
 | **Admin** | Istri | Semua data: kos & rekening, kamar & harga, sewa, pembayaran, pengeluaran, Laporan, undang anggota, cadangan, Riwayat perubahan. Tidak bisa mengubah peran anggota atau menghapus admin lain. |
-| **Staf** | Pegawai / penjaga kos | Tambah/ubah penyewa, sewa baru, perpanjangan, tagihan, catat pembayaran & pengeluaran. **Tidak bisa** mengubah harga kamar/sewa, data kos & rekening, daftar add-on, atau pembayaran/pengeluaran yang sudah dicatat. Menu **Laporan** tidak ditampilkan. |
+| **Staf** | Pegawai / penjaga kos | Tambah/ubah penyewa, sewa baru, perpanjangan, tagihan, catat pembayaran & pengeluaran. **Tidak bisa** mengubah harga kamar/sewa, tanggal mulai sewa, data kos & rekening, daftar add-on, atau pembayaran/pengeluaran yang sudah dicatat. Menu **Laporan** tidak ditampilkan. |
 
 Batasan ubah/hapus dijaga oleh database, bukan hanya oleh tampilan aplikasi. Staf tetap bisa **melihat** angka
 pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disembunyikan.
@@ -248,6 +249,7 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 | Perpanjang 2 minggu saja | Buka sewa → **Buat tagihan berikutnya** → **Periode khusus** (pro-rata). |
 | Bayar listrik / denda | Saat membuat tagihan isi kolom **Listrik / Denda / Lainnya**. |
 | Penyewa pindah / keluar | Buka sewa → **Lainnya → Pindah kamar** atau **Checkout** (uang jaminan dikembalikan atau dipotong). |
+| Salah input tanggal mulai sewa | Buka sewa → **Lainnya → Ubah tanggal mulai** (pemilik/admin): semua periode tagihan ikut digeser ([lihat di bawah](#salah-input-tanggal-mulai-sewa)). |
 | Pengeluaran | **Pengeluaran → Catat**: gaji, listrik/air, perbaikan, dll., per kos atau **Bersama**; ada tombol **Duplikat ke bulan ini** untuk biaya rutin. |
 | Lihat kinerja | **Laporan**: harian / mingguan / bulanan / tahunan, laba-rugi, piutang, hunian, grafik, lalu **Unduh XLSX / CSV** atau **Cetak / PDF**. |
 | Istri / pegawai ikut mengelola | **Pengaturan → Anggota → Undang**, kirim kodenya lewat WhatsApp (lihat [langkah 6](#6-pemilik--istri-undang-istri)). |
@@ -280,6 +282,20 @@ pembayarannya lalu catat ulang lewat **Bayar** pada tagihan yang benar. Harga se
 lewat menu tagihan → **Ubah** → **Harga sewa (tagihan ini)** (tagihan berikutnya tetap memakai harga sewa di kontrak). Di bawah
 kedua dialog ada **Riwayat perubahan**: siapa yang membuat/mengubah, kapan, dan apa yang berubah. Hanya pemilik/admin yang bisa
 mengubah dan melihat riwayat; riwayat hanya tercatat di Mode Online.
+
+### Salah input tanggal mulai sewa?
+
+Ketahuan berbulan-bulan kemudian bahwa tanggal mulai sewa salah ketik (mis. 1 Sep, padahal penyewa masuk 18 Agt)? Buka sewa →
+**Lainnya → Ubah tanggal mulai**, isi tanggal yang benar, lalu periksa **pratinjaunya** sebelum menyimpan: setiap tagihan
+(periode lama → baru, jatuh tempo, jumlah malam), tanggal check-out sewa, **Dibayar s/d**, tagihan berikutnya, dan keadaan penyewa
+hari ini setelah diubah (mis. "Setelah diubah: telat 14 hari"). Jumlah tagihan, nomor tagihan, status bayar, pembayaran, add-on,
+dan uang jaminan **tidak berubah**; tagihan berikutnya (**Tagih**) langsung mengikuti tanggal yang baru. Bila ada tagihan dengan
+periode khusus (pro-rata, ganti jenis sewa), semua tanggal digeser dengan jumlah hari yang sama dan aplikasi memberi tahu. Tanggal
+yang bentrok dengan penyewa lain di kamar yang sama ditolak (nama dan tanggalnya disebutkan); penyewa yang sudah pernah
+**Pindah kamar** tetap bisa dikoreksi (penghuni lama kamar barunya tidak dihitung bentrok). Satu baris catatan otomatis
+ditambahkan ke catatan sewa ("Tanggal mulai dikoreksi dari … ke … (tanggal hari ini)", plus **Alasan** bila diisi), dan di Mode
+Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik/admin, dan hanya untuk sewa yang masih aktif
+(termasuk pesanan yang belum mulai); sewa yang sudah selesai atau dibatalkan tidak bisa diubah tanggal mulainya.
 
 ### Kirim tagihan ke WhatsApp & logo kos
 

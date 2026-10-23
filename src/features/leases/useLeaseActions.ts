@@ -6,7 +6,7 @@
 import { useMemo } from 'react'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
-import type { AddonBilling, Invoice, Lease, LeaseAddon, OrgTableName, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
+import type { AddonBilling, Invoice, Lease, LeaseAddon, OrgTableName, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
 import {
   buildInvoiceDraft,
   deriveInvoiceStatus,
@@ -15,7 +15,7 @@ import {
   type InvoiceDraft,
   type InvoiceDraftInput,
 } from '../../domain/billing'
-import { formatRupiah } from '../../lib/format'
+import { formatRupiah, todayISO } from '../../lib/format'
 import {
   LEASE_DATA_CHANGED_MESSAGE,
   addonAmountUpdates,
@@ -38,8 +38,24 @@ import {
   type PartialDecision,
 } from './leaseUtils'
 import { validatePaymentEdit, type PaymentEditContext, type PaymentEditPatch } from './paymentEdit'
+import { REDATE_INACTIVE_MESSAGE, REDATE_STAFF_MESSAGE, planLeaseRedate, redateDataChanged, redateNoteLine, type LeaseRedatePlan } from './redate'
+import { StaleWriteError } from '../../lib/repo/types'
 
 export type { PartialDecision } from './leaseUtils'
+
+/** SPEC 7.6 Ubah tanggal mulai sewa */
+export interface RedateLeaseActionInput {
+  lease: Lease
+  /** the lease's invoices this screen planned (and previewed) from */
+  invoices: Invoice[]
+  newStart: string
+  /** 'Alasan' (optional), appended to the note line */
+  reason?: string | null
+  /** to name the tenant of a colliding lease */
+  tenants?: Pick<Tenant, 'id' | 'full_name'>[]
+  /** the day written in the note; default today */
+  today?: string
+}
 
 export interface IssueInvoiceInput {
   lease: Lease
@@ -155,6 +171,17 @@ export function useLeaseActions() {
       }
     }
 
+    /**
+     * SPEC 7.6: a start-date correction (redateLease) on another device moves every period of the lease. A bill, check-out
+     * or cancel computed from the old schedule would leave nights unbilled or void the wrong invoice, so the stored start
+     * must still be the one this screen planned from. Only that correction (or an admin editing start_date directly)
+     * moves it, so every other flow behaves as before.
+     */
+    async function leaseStartMoved(lease: Lease): Promise<boolean> {
+      const fresh = await repo.get('leases', lease.id)
+      return !!fresh && fresh.start_date !== lease.start_date
+    }
+
     /** Insert an invoice from a draft; on a duplicate number (two devices) rebuild with fresh numbering (SPEC 2b.11). */
     async function insertFromDraft(input: InvoiceDraftInput, notes: string | null): Promise<{ invoice: Invoice; draft: InvoiceDraft }> {
       let orgInvoices = input.orgInvoices ?? input.existingInvoices
@@ -184,6 +211,10 @@ export function useLeaseActions() {
       const typeSwitch = (input.makePermanent ?? false) && input.periodType !== undefined && input.periodType !== input.lease.period_type
       if (typeSwitch && !canWriteInvoiceStatus && invoicesToPinType(input.lease, input.existingInvoices, input.periodType).length > 0) {
         throw new Error('Hanya pemilik/admin yang dapat mengganti jenis sewa secara tetap (tagihan lama perlu ditandai jenisnya).')
+      }
+      if (await leaseStartMoved(input.lease)) {
+        await invalidate('invoices', 'leases', 'lease_addons')
+        throw new Error(LEASE_DATA_CHANGED_MESSAGE)
       }
       const { invoice, draft } = await insertFromDraft(
         {
@@ -418,10 +449,11 @@ export function useLeaseActions() {
 
     /**
      * Re-read the lease's invoices and the payments of the touched ones right before a checkout/cancel writes. When
-     * another device changed them since the screen loaded, nothing is written (leaseDataChanged); otherwise the
-     * fresh invoice rows are returned for the patches.
+     * another device changed them since the screen loaded, nothing is written (leaseDataChanged, or the start date was
+     * corrected meanwhile: leaseStartMoved); otherwise the fresh invoice rows are returned for the patches.
      */
     async function freshLeaseInvoices(lease: Lease, invoices: Invoice[], payments: Payment[], touched: Invoice[]): Promise<Invoice[]> {
+      if (await leaseStartMoved(lease)) throw new Error(LEASE_DATA_CHANGED_MESSAGE)
       const fresh = await repo.list('invoices', { where: { lease_id: lease.id } })
       const ids = [...new Set(touched.map((i) => i.id))]
       const freshPayments = ids.length > 0 ? await repo.list('payments', { where: { invoice_id: ids } }) : []
@@ -552,6 +584,42 @@ export function useLeaseActions() {
       await invalidate('leases')
     }
 
+    /**
+     * SPEC 7.6: move an active lease (reservations included) and every one of its invoices to the right start date.
+     * Staff and ended/cancelled leases are refused before any read or write. The lease, its invoices and the room's
+     * leases are read fresh; when they no longer match what the dialog previewed (redateDataChanged) nothing is written.
+     * The plan is rebuilt from the fresh rows (planLeaseRedate) and written in ONE operation (repo.redateLease: the
+     * redate_lease RPC online, one LocalRepo write in Mode Demo), which refuses again when the start or the invoice list
+     * changed in between. Payments, amounts, numbers and statuses are never touched.
+     */
+    async function redateLease(input: RedateLeaseActionInput): Promise<LeaseRedatePlan> {
+      if (!canEditLeaseTerms) throw new Error(REDATE_STAFF_MESSAGE)
+      if (input.lease.status !== 'active') throw new Error(REDATE_INACTIVE_MESSAGE)
+      try {
+        const fresh = await repo.get('leases', input.lease.id)
+        const freshInvoices = await repo.list('invoices', { where: { lease_id: input.lease.id } })
+        if (!fresh || redateDataChanged(input.lease, input.invoices, fresh, freshInvoices)) throw new Error(LEASE_DATA_CHANGED_MESSAGE)
+        const roomLeases = await repo.list('leases', { where: { room_id: fresh.room_id } })
+        const plan = planLeaseRedate(fresh, freshInvoices, input.newStart, { leases: roomLeases, tenants: input.tenants })
+        if (plan.error) throw new Error(plan.error)
+        await repo.redateLease({
+          leaseId: fresh.id,
+          expectedStart: fresh.start_date,
+          newStart: plan.lease.start_date,
+          newEnd: plan.lease.end_date,
+          invoices: plan.patches,
+          note: redateNoteLine(fresh.start_date, plan.lease.start_date, input.today ?? todayISO(), input.reason),
+        })
+        return plan
+      } catch (err) {
+        if (err instanceof StaleWriteError) throw new Error(LEASE_DATA_CHANGED_MESSAGE)
+        throw err
+      } finally {
+        // also after a refusal, so the screen shows what is stored now
+        await invalidate('leases', 'invoices')
+      }
+    }
+
     return {
       isAdmin,
       canWriteInvoiceStatus,
@@ -573,6 +641,7 @@ export function useLeaseActions() {
       addAddon,
       removeAddon,
       updateLeaseNotes,
+      redateLease,
     }
   }, [repo, role, invalidate])
 }

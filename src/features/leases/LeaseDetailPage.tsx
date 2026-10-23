@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowLeftRight, Ban, CalendarPlus, DoorOpen, FilePlus2, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, DoorOpen, FilePlus2, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
 import {
   Button,
   Card,
@@ -32,8 +32,9 @@ import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
 import { EditPaymentModal } from './EditPaymentModal'
 import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAddon } from './LifecycleModals'
 import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
+import { RedateLeaseModal } from './RedateLeaseModal'
 
-type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon'
+type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon' | 'redate'
 type Confirm =
   | { kind: 'void-invoice'; invoice: Invoice }
   | { kind: 'delete-invoice'; invoice: Invoice }
@@ -158,6 +159,15 @@ export function LeaseDetailPage() {
   if (isActive) {
     menuItems.push({ label: 'Perpanjang', hint: 'Buat tagihan periode berikutnya', icon: <CalendarPlus className="h-4 w-4" />, onClick: () => setModal('invoice') })
     menuItems.push({ label: 'Pindah kamar', hint: 'Dalam kos yang sama', icon: <ArrowLeftRight className="h-4 w-4" />, onClick: () => setModal('move') })
+    // SPEC 7.6: moves the whole billing schedule; owner/admin only (the hook and the database refuse staff too)
+    if (isAdmin) {
+      menuItems.push({
+        label: 'Ubah tanggal mulai',
+        hint: 'Salah input tanggal mulai? Semua periode tagihan ikut digeser',
+        icon: <CalendarClock className="h-4 w-4" />,
+        onClick: () => setModal('redate'),
+      })
+    }
     if (deposit.shortfall > 0 || deposit.agreed > 0) {
       menuItems.push({ label: 'Catat deposit diterima', icon: <PiggyBank className="h-4 w-4" />, onClick: () => setModal('deposit') })
     }
@@ -520,6 +530,17 @@ export function LeaseDetailPage() {
       <CancelLeaseModal open={modal === 'cancel'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
       <MoveRoomModal open={modal === 'move'} onClose={() => setModal(null)} lease={lease} rooms={data.rooms} leases={data.leases} currentRoom={room} actions={actions} />
       <AddonModal open={modal === 'addon'} onClose={() => setModal(null)} lease={lease} catalog={data.addonCatalog} actions={actions} />
+      {modal === 'redate' && isActive && isAdmin && (
+        <RedateLeaseModal
+          onClose={() => setModal(null)}
+          lease={lease}
+          invoices={leaseInvoices}
+          payments={data.payments}
+          leases={data.leases}
+          tenants={data.tenants}
+          actions={actions}
+        />
+      )}
 
       <ConfirmDialog
         open={confirm?.kind === 'void-invoice'}

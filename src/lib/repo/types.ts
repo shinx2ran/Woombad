@@ -36,6 +36,52 @@ export const IN_USE_MESSAGE = 'Data ini masih dipakai oleh data lain (mis. sewa/
 /** Same text as the invoices_void_guard trigger in supabase/schema.sql. */
 export const VOID_PAID_INVOICE_MESSAGE = 'Tagihan yang sudah ada pembayarannya tidak dapat dibatalkan.'
 
+/**
+ * A guarded write found its rows changed since the screen read them (SQLSTATE WB002 from redate_lease; the same check
+ * in LocalRepo). Nothing was written; callers show their "data changed on another device" message and reload.
+ */
+export class StaleWriteError extends Error {
+  readonly code = 'STALE'
+  constructor(message = 'Data ini baru saja diubah dari perangkat lain. Muat ulang lalu coba lagi.') {
+    super(message)
+    this.name = 'StaleWriteError'
+  }
+}
+
+// Ubah tanggal mulai sewa (SPEC 7.6): the same texts as public.redate_lease in supabase/schema.sql.
+export const REDATE_STAFF_MESSAGE = 'Hanya pemilik/admin yang dapat mengubah tanggal mulai sewa.'
+export const REDATE_INACTIVE_MESSAGE = 'Sewa yang sudah selesai atau dibatalkan tidak bisa diubah tanggal mulainya.'
+export const REDATE_SAME_DATE_MESSAGE = 'Tanggal mulai sama dengan sebelumnya.'
+export const REDATE_NOT_FOUND_MESSAGE = 'Sewa tidak ditemukan.'
+export const REDATE_INCOMPLETE_MESSAGE = 'Data perubahan tanggal tidak lengkap.'
+export const REDATE_END_BEFORE_START_MESSAGE = 'Tanggal akhir sewa tidak boleh sebelum tanggal mulai.'
+export const REDATE_BAD_PERIOD_MESSAGE = 'Periode tagihan tidak valid: tanggal akhir sebelum tanggal mulai.'
+export const REDATE_OVERLAP_MESSAGE = 'Jadwal bentrok dengan sewa lain di kamar yang sama.'
+/** PGRST202: the app was published before supabase/schema.sql (with redate_lease) was re-run on the project. */
+export const REDATE_NOT_DEPLOYED_MESSAGE = 'Fitur ini belum aktif di server. Minta operator memperbarui database.'
+
+/** New dates of one invoice in a lease start correction. */
+export interface RedateInvoiceDates {
+  id: string
+  period_start: string
+  period_end: string
+  due_date: string
+}
+
+/** One atomic lease start correction (SPEC 7.6): the lease and every one of its invoices, or nothing. */
+export interface RedateLeaseInput {
+  leaseId: string
+  /** the start date the plan was computed from; refused with StaleWriteError when it is no longer the stored one */
+  expectedStart: string
+  newStart: string
+  /** new end_date (last night, SPEC 7.3) */
+  newEnd: string
+  /** new dates of EVERY invoice of the lease, void ones too; a missing or extra id is refused with StaleWriteError */
+  invoices: RedateInvoiceDates[]
+  /** one line appended to leases.notes in the same write; null leaves the notes alone */
+  note: string | null
+}
+
 export interface CreatedInvitation {
   /** plain code, formatted 'ABCD-EFGH'; shown once, the database keeps only a hash */
   code: string
@@ -92,6 +138,14 @@ export interface Repo {
   /** Owner only. Refuses to demote the last owner. */
   setMemberRole(orgId: string, userId: string, role: MemberRole): Promise<void>
   removeMember(orgId: string, userId: string): Promise<void>
+
+  /**
+   * Ubah tanggal mulai sewa (SPEC 7.6), all or nothing: refuses a lease that is not active, a start that is no longer
+   * `expectedStart` or an invoice list that is not exactly the lease's invoices (StaleWriteError), the same start, an end
+   * before the start and a span that collides with another non-cancelled lease of the room. Amounts and statuses are
+   * never touched. Online this is the redate_lease RPC (owner/admin only, row-level security applies).
+   */
+  redateLease(input: RedateLeaseInput, orgId?: string): Promise<void>
 }
 
 /**
@@ -113,6 +167,8 @@ export interface OrgRepo {
   createInvitation(role: 'admin' | 'staff', label: string | null): Promise<CreatedInvitation>
   setMemberRole(userId: string, role: MemberRole): Promise<void>
   removeMember(userId: string): Promise<void>
+  /** see Repo.redateLease; scoped to this organisation */
+  redateLease(input: RedateLeaseInput): Promise<void>
   /** underlying unscoped repo, for the rare cross-org operations (organisation switcher, etc.) */
   readonly raw: Repo
 }
@@ -156,5 +212,6 @@ export function bindOrg(repo: Repo, orgId: string): OrgRepo {
     createInvitation: (role, label) => repo.createInvitation(orgId, role, label),
     setMemberRole: (userId, role) => repo.setMemberRole(orgId, userId, role),
     removeMember: (userId) => repo.removeMember(orgId, userId),
+    redateLease: (input) => repo.redateLease(input, orgId),
   }
 }

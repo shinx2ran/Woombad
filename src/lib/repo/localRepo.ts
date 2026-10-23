@@ -1,9 +1,25 @@
 import type { Insert, Row, TableName, Update } from '../../types/db'
 import { TABLE_NAMES } from '../../types/db'
 import { newId } from '../ids'
-import type { CreatedInvitation, ListOptions, Repo, StorageBucket } from './types'
-import { CODE_ALPHABET, DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, UPDATE_DENIED_MESSAGE, VOID_PAID_INVOICE_MESSAGE, formatCode } from './types'
+import type { CreatedInvitation, ListOptions, RedateLeaseInput, Repo, StorageBucket } from './types'
+import {
+  CODE_ALPHABET,
+  DELETE_DENIED_MESSAGE,
+  IN_USE_MESSAGE,
+  REDATE_BAD_PERIOD_MESSAGE,
+  REDATE_END_BEFORE_START_MESSAGE,
+  REDATE_INACTIVE_MESSAGE,
+  REDATE_INCOMPLETE_MESSAGE,
+  REDATE_NOT_FOUND_MESSAGE,
+  REDATE_OVERLAP_MESSAGE,
+  REDATE_SAME_DATE_MESSAGE,
+  StaleWriteError,
+  UPDATE_DENIED_MESSAGE,
+  VOID_PAID_INVOICE_MESSAGE,
+  formatCode,
+} from './types'
 import type { MemberRole } from '../../types/db'
+import { leaseOverlaps } from '../../domain/occupancy'
 
 export const STORAGE_KEY = 'woombad.local.db.v1'
 
@@ -272,6 +288,70 @@ export class LocalRepo implements Repo {
     )
     saveDb(this.db)
   }
+
+  /**
+   * Same checks and messages as public.redate_lease (SPEC 7.6), then every write at once: everything is validated
+   * before the first row changes, and a failed save restores the previous rows. Demo mode has one local owner, so the
+   * owner/admin check is the caller's (useLeaseActions refuses staff before any read or write).
+   */
+  async redateLease(input: RedateLeaseInput, orgId?: string): Promise<void> {
+    const lease = this.db.leases.find((l) => l.id === input.leaseId && (!orgId || l.org_id === orgId))
+    if (!lease) throw new Error(REDATE_NOT_FOUND_MESSAGE)
+    if (!isISODate(input.expectedStart) || !isISODate(input.newStart) || !isISODate(input.newEnd) || !Array.isArray(input.invoices)) {
+      throw new Error(REDATE_INCOMPLETE_MESSAGE)
+    }
+    if (lease.status !== 'active') throw new Error(REDATE_INACTIVE_MESSAGE)
+    if (lease.start_date !== input.expectedStart) throw new StaleWriteError()
+    if (input.invoices.some((p) => !p?.id || !isISODate(p.period_start) || !isISODate(p.period_end) || !isISODate(p.due_date))) {
+      throw new Error(REDATE_INCOMPLETE_MESSAGE)
+    }
+    // exactly the lease's invoices (void ones too), each once
+    const own = this.db.invoices.filter((i) => i.lease_id === lease.id)
+    const ids = new Set(input.invoices.map((i) => i.id))
+    if (ids.size !== input.invoices.length || ids.size !== own.length || own.some((i) => !ids.has(i.id))) throw new StaleWriteError()
+    if (input.newStart === lease.start_date) throw new Error(REDATE_SAME_DATE_MESSAGE)
+    if (input.newEnd < input.newStart) throw new Error(REDATE_END_BEFORE_START_MESSAGE)
+    if (input.invoices.some((p) => p.period_end < p.period_start)) throw new Error(REDATE_BAD_PERIOD_MESSAGE)
+    // only collisions the correction creates: a lease that already overlaps the stored span (the previous tenant of a
+    // room this lease moved into) is room history, as in public.redate_lease
+    const history = (o: Row<'leases'>) => leaseOverlaps([o], lease.room_id, lease.start_date, lease.end_date, lease.id)
+    if (leaseOverlaps(this.db.leases.filter((o) => !history(o)), lease.room_id, input.newStart, input.newEnd, lease.id)) {
+      throw new Error(REDATE_OVERLAP_MESSAGE)
+    }
+
+    const now = new Date().toISOString()
+    const byId = new Map(input.invoices.map((p) => [p.id, p]))
+    const prevInvoices = this.db.invoices
+    const prevLeases = this.db.leases
+    this.db.invoices = prevInvoices.map((inv) => {
+      const p = inv.lease_id === lease.id ? byId.get(inv.id) : undefined
+      if (!p || (p.period_start === inv.period_start && p.period_end === inv.period_end && p.due_date === inv.due_date)) return inv
+      return { ...inv, period_start: p.period_start, period_end: p.period_end, due_date: p.due_date, updated_at: now }
+    })
+    const note = input.note?.trim()
+    this.db.leases = prevLeases.map((l) =>
+      l.id === lease.id
+        ? {
+            ...l,
+            start_date: input.newStart,
+            end_date: input.newEnd,
+            notes: note ? (l.notes?.trim() ? `${l.notes.trim()}\n${note}` : note) : l.notes,
+            updated_at: now,
+          }
+        : l,
+    )
+    try {
+      saveDb(this.db)
+    } catch (err) {
+      this.db.invoices = prevInvoices
+      this.db.leases = prevLeases
+      throw err
+    }
+  }
+}
+
+function isISODate(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
 const TABLES_WITH_UPDATED_AT: ReadonlySet<TableName> = new Set<TableName>([

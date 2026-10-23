@@ -162,6 +162,7 @@ declare
   secret text[] := array['app_settings', 'join_attempts', 'invitation_codes', 'keepalive_heartbeat'];
   rpc text[] := array['ensure_membership()', 'join_with_code(text)', 'create_invitation(uuid,text,text)',
     'set_member_role(uuid,uuid,text)', 'remove_member(uuid,uuid)', 'recalc_invoice_status(uuid)',
+    'redate_lease(uuid,date,date,date,jsonb,text)',
     'is_org_member(uuid)', 'is_org_admin(uuid)', 'is_org_owner(uuid)', 'path_org_id(text)', 'invoice_status_for(bigint,bigint)'];
 begin
   -- secrets: RLS on, no policies, no table privileges for the API roles
