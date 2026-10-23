@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Insert, Row, TableName, Update } from '../../types/db'
 import type { CreatedInvitation, ListOptions, RedateLeaseInput, Repo, StorageBucket } from './types'
-import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, NotMemberError, StaleWriteError, UPDATE_DENIED_MESSAGE, formatCode, normalizeCode } from './types'
+import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, NotMemberError, REDATE_NOT_DEPLOYED_MESSAGE, StaleWriteError, UPDATE_DENIED_MESSAGE, formatCode, normalizeCode } from './types'
 import type { MemberRole } from '../../types/db'
 
 /** The parts of a PostgREST/Postgres error worth reading (Postgres puts "still referenced" in details). */
@@ -168,6 +168,8 @@ export class SupabaseRepo implements Repo {
     })
     // SQLSTATE WB002: the lease or its invoices changed since the screen read them; nothing was written
     if (error?.code === 'WB002') throw new StaleWriteError(error.message)
+    // PGRST202: no such function yet (the app went out before schema.sql was re-run on the project); nothing was written
+    if (error?.code === 'PGRST202') throw new Error(REDATE_NOT_DEPLOYED_MESSAGE)
     if (error) throw new Error(translateDbError(error))
   }
 }

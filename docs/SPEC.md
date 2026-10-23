@@ -458,7 +458,11 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   - Ditolak: tanggal sama ('Tanggal mulai sama dengan sebelumnya.'), tanggal kosong/tidak valid, sewa tidak aktif, dan rentang baru
     `[newStart, end_date baru]` yang bentrok dengan sewa non-cancelled lain di kamar yang sama (`leaseOverlaps`, konvensi 7.3:
     sewa `ended` menempati sampai malam sebelum `checkout_date`) → 'Bentrok dengan sewa <nama> di kamar ini (<tanggal>). Pilih
-    tanggal lain.'; tidak ada yang ditulis.
+    tanggal lain.'; tidak ada yang ditulis. Hanya bentrok yang **dibuat oleh koreksi ini** yang ditolak: sewa lain di kamar itu yang
+    sudah tumpang tindih dengan rentang tersimpan `[start_date, end_date]` diabaikan. Itu riwayat kamar: **Pindah kamar** (2b.9)
+    mengganti `room_id` pada baris sewa yang sama dan kamar baru hanya diperiksa sejak tanggal pindah, sehingga penyewa sebelumnya
+    di kamar baru selalu tampak tumpang tindih dengan seluruh masa sewa. Sama di perencana, `LocalRepo.redateLease`, dan
+    `redate_lease`.
 - **Penulisan atomik** lewat `repo.redateLease(input)` (antarmuka `Repo`, satu operasi): online satu fungsi SQL
   `public.redate_lease(p_lease_id uuid, p_expected_start date, p_new_start date, p_new_end date, p_invoices jsonb, p_note text default
   null)` — **security invoker** (RLS tetap berlaku; satu-satunya RPC fitur, pengecualian prinsip bagian 1 demi atomisitas). Fungsi:
@@ -470,7 +474,12 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   `start_date` saat update). Mode Demo: `LocalRepo.redateLease` dengan pemeriksaan & pesan yang sama, semua divalidasi sebelum baris
   pertama berubah dan dikembalikan bila penyimpanan gagal. Sebelum menulis, aksi membaca ulang sewa, tagihan, dan sewa di kamar itu;
   bila berbeda dari yang dipratinjau (`redateDataChanged`) ditolak dengan `LEASE_DATA_CHANGED_MESSAGE`. Setelahnya `leases` +
-  `invoices` di-invalidate.
+  `invoices` di-invalidate. Layar lama di perangkat lain: **Tagih/Perpanjang** (`issueInvoice`), **Checkout**, dan **Batalkan**
+  membaca ulang sewa sebelum menulis dan menolak dengan `LEASE_DATA_CHANGED_MESSAGE` bila `start_date` tersimpan bukan lagi yang
+  ditampilkan (jadwal lama akan menyisakan malam yang tidak ditagih atau membatalkan tagihan yang salah). Bila aplikasi terbit
+  sebelum `schema.sql` dijalankan ulang di proyek (PostgREST `PGRST202`, fungsi belum ada), simpan menampilkan 'Fitur ini belum
+  aktif di server. Minta operator memperbarui database.'; tidak ada yang ditulis. Urutan rilis: jalankan ulang `schema.sql` dulu,
+  baru push ke `master`.
 - **Riwayat**: trigger audit mencatat update sewa dan setiap tagihan; **Riwayat perubahan** tagihan menampilkan "Awal periode",
   "Check-out periode", "Jatuh tempo" lama → baru (urutan itu).
 - **Uji**: `redate.test.ts` (grid bulanan/mingguan/harian, lebih awal & lebih lambat, jangkar akhir bulan, kabisat, void, shift +

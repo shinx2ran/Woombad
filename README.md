@@ -79,7 +79,8 @@ Lewati langkah ini bila isinya hanya data contoh.
 1. **Proyek**: buat proyek Supabase baru (paket Free) di region **Southeast Asia (Singapore)**. Simpan kata sandi
    database di pengelola sandi; aplikasi tidak memakainya.
 2. **Skema**: **SQL Editor** → tempel seluruh isi `supabase/schema.sql` → **Run**. Berkas ini sudah lengkap (tidak
-   perlu `supabase/migrations/`) dan aman dijalankan ulang.
+   perlu `supabase/migrations/`) dan aman dijalankan ulang. Bila `schema.sql` berubah (mis. fitur **Ubah tanggal mulai**),
+   jalankan ulang di SQL Editor **sebelum** perubahan aplikasi di-push ke `master`.
 3. **Kode pemilik**: jalankan `node scripts/new-setup-code.mjs`, lalu jalankan baris
    `select public.set_setup_code('ABCD-EFGH');` yang dicetaknya di SQL Editor. Berikan kodenya kepada pemilik secara
    pribadi. Kode ini sekali pakai; bila hilang sebelum dipakai, buat kode baru dengan cara yang sama.
@@ -290,7 +291,8 @@ Ketahuan berbulan-bulan kemudian bahwa tanggal mulai sewa salah ketik (mis. 1 Se
 hari ini setelah diubah (mis. "Setelah diubah: telat 14 hari"). Jumlah tagihan, nomor tagihan, status bayar, pembayaran, add-on,
 dan uang jaminan **tidak berubah**; tagihan berikutnya (**Tagih**) langsung mengikuti tanggal yang baru. Bila ada tagihan dengan
 periode khusus (pro-rata, ganti jenis sewa), semua tanggal digeser dengan jumlah hari yang sama dan aplikasi memberi tahu. Tanggal
-yang bentrok dengan penyewa lain di kamar yang sama ditolak (nama dan tanggalnya disebutkan). Satu baris catatan otomatis
+yang bentrok dengan penyewa lain di kamar yang sama ditolak (nama dan tanggalnya disebutkan); penyewa yang sudah pernah
+**Pindah kamar** tetap bisa dikoreksi (penghuni lama kamar barunya tidak dihitung bentrok). Satu baris catatan otomatis
 ditambahkan ke catatan sewa ("Tanggal mulai dikoreksi dari … ke … (tanggal hari ini)", plus **Alasan** bila diisi), dan di Mode
 Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik/admin, dan hanya untuk sewa yang masih aktif
 (termasuk pesanan yang belum mulai); sewa yang sudah selesai atau dibatalkan tidak bisa diubah tanggal mulainya.

@@ -25,6 +25,10 @@ insert into zz.ids values
   ('r4', 'eeeeeeee-0000-0000-0000-000000000041'), ('l4', 'eeeeeeee-0000-0000-0000-000000000042'),
   ('r5', 'eeeeeeee-0000-0000-0000-000000000051'), ('l5', 'eeeeeeee-0000-0000-0000-000000000052'),
   ('l5_sep', 'eeeeeeee-0000-0000-0000-000000000053'),
+  ('r6', 'eeeeeeee-0000-0000-0000-000000000061'), ('prev6', 'eeeeeeee-0000-0000-0000-000000000062'),
+  ('next6', 'eeeeeeee-0000-0000-0000-000000000063'), ('r7', 'eeeeeeee-0000-0000-0000-000000000071'),
+  ('l6', 'eeeeeeee-0000-0000-0000-000000000072'), ('l6_sep', 'eeeeeeee-0000-0000-0000-000000000073'),
+  ('l6_oct', 'eeeeeeee-0000-0000-0000-000000000074'),
   ('org2', 'eeeeeeee-0000-0000-0000-000000000091'), ('prop9', 'eeeeeeee-0000-0000-0000-000000000092'),
   ('room9', 'eeeeeeee-0000-0000-0000-000000000093'), ('tenant9', 'eeeeeeee-0000-0000-0000-000000000094'),
   ('l9', 'eeeeeeee-0000-0000-0000-000000000095'), ('l9_sep', 'eeeeeeee-0000-0000-0000-000000000096');
@@ -277,6 +281,36 @@ select zz.chk('F-race', 'second phone is refused with the reload message', 'baru
 select * from zz.dblink_get_result('rd2', false) as t(r text);
 select zz.dblink_disconnect('rd1'), zz.dblink_disconnect('rd2');
 select zz.eq('F-race', 'L5 has the first correction only', '2026-08-25..2026-09-24 2026-08-25..2026-09-24..2026-08-25', zz.rd_dates('l5'));
+
+-- G. a lease that moved rooms (Pindah kamar, SPEC 2b.9): room_id changed on the same row, so the previous tenant of the
+-- new room already overlaps the stored span before any correction. Only collisions the correction creates are refused.
+do $$
+declare
+  o uuid := zz.id('owner');
+  org uuid := zz.id('org');
+begin
+  -- Siti lived in r6 until she checked out on 15 Sep; L6 started in r7 on 1 Sep (typed; really 18 Agt) and moved to r6 on
+  -- 15 Sep; the next tenant has booked r6 from 10 Nov
+  perform zz.rd_lease('r6', 'prev6', 'tenant_prev', '2026-01-01', '2026-09-14', 'ended', '2026-09-15');
+  perform zz.rd_lease('r7', 'l6', 'tenant', '2026-09-01', '2026-10-31');
+  perform zz.rd_invoice('l6_sep', 'l6', 'INV-202609-0006', '2026-09-01', '2026-09-30');
+  perform zz.rd_invoice('l6_oct', 'l6', 'INV-202610-0006', '2026-10-01', '2026-10-31');
+  perform zz.eq('seed', 'next booking of r6', 'ok:1', zz.att(o, format('insert into public.leases (id, org_id, property_id, room_id, tenant_id, period_type, price_per_period, deposit_amount, start_date, end_date) values (%L, %L, %L, %L, %L, %L, 1500000, 0, %L, %L)',
+    zz.id('next6'), org, zz.id('prop'), zz.id('r6'), zz.id('tenant_prev'), 'monthly', '2026-11-10', '2026-12-09'), true));
+  perform zz.eq('seed', 'L6 moves from r7 to r6', 'ok:1', zz.att(o, format('update public.leases set room_id = %L where id = %L', zz.id('r6'), zz.id('l6')), true));
+  perform zz.eq('G-moved', 'a later start that runs into the next booking of the new room is still refused', 'err:P0001:Jadwal bentrok dengan sewa lain di kamar yang sama.',
+    zz.rd_call('owner', 'l6', '2026-09-01', '2026-09-15', '2026-11-14',
+      jsonb_build_array(zz.rd_item('l6_sep', '2026-09-15', '2026-10-14'), zz.rd_item('l6_oct', '2026-10-15', '2026-11-14')), null, true));
+  perform zz.eq('G-moved', 'nothing written by the refusal', '2026-09-01..2026-10-31 2026-09-01..2026-09-30..2026-09-01 2026-10-01..2026-10-31..2026-10-01', zz.rd_dates('l6'));
+  perform zz.chk('G-moved', 'the previous tenant of the new room is not a conflict: 1 Sep -> 18 Agt', '^val:',
+    zz.rd_call('owner', 'l6', '2026-09-01', '2026-08-18', '2026-10-17',
+      jsonb_build_array(zz.rd_item('l6_sep', '2026-08-18', '2026-09-17'), zz.rd_item('l6_oct', '2026-09-18', '2026-10-17')), null, true));
+  perform zz.eq('G-moved', 'lease and invoices moved', '2026-08-18..2026-10-17 2026-08-18..2026-09-17..2026-08-18 2026-09-18..2026-10-17..2026-09-18', zz.rd_dates('l6'));
+  perform zz.eq('G-moved', 'still in the new room; the other leases of r6 untouched', 'r6|2026-01-01..2026-09-14 ended|2026-11-10..2026-12-09 active',
+    (select (select case when room_id = zz.id('r6') then 'r6' else room_id::text end from public.leases where id = zz.id('l6'))
+            || '|' || (select concat(start_date, '..', end_date, ' ', status) from public.leases where id = zz.id('prev6'))
+            || '|' || (select concat(start_date, '..', end_date, ' ', status) from public.leases where id = zz.id('next6'))));
+end $$;
 
 drop function zz.rd_lease(text, text, text, date, date, text, date), zz.rd_invoice(text, text, text, date, date, text),
   zz.rd_item(text, date, date, date), zz.rd_call(text, text, date, date, date, jsonb, text, boolean), zz.rd_money(), zz.rd_dates(text), zz.rd_good();

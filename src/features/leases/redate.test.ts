@@ -488,6 +488,40 @@ describe('planLeaseRedate: refusals', () => {
     expect(later.lease.end_date).toBe('2026-12-14')
     expect(later.error).toBe('Bentrok dengan sewa Dewi di kamar ini (5 Des 2026 – 5 Jan 2027). Pilih tanggal lain.')
   })
+
+  it('a lease that moved rooms (Pindah kamar) is not blocked by the previous tenant of its new room; new collisions still are', () => {
+    // Budi started 15 Jun in A1 and moved to B2 on 1 Sep; Siti lived in B2 until she checked out on 1 Sep. The lease row
+    // now says B2 for the whole stay, so Siti's stay already overlaps it before any correction.
+    const budi = mkLease({ id: 'BUDI', room_id: 'B2', start_date: '2026-06-15', end_date: '2026-11-14' })
+    const months = ['06', '07', '08', '09', '10'].map((m, i) =>
+      mkInv(`M${m}`, `2026-${m}-15`, `2026-${['07', '08', '09', '10', '11'][i]}-14`, { lease: 'BUDI', status: i < 4 ? 'paid' : 'unpaid' }),
+    )
+    const siti = mkLease({ id: 'SITI', room_id: 'B2', tenant_id: 'T2', start_date: '2026-01-01', end_date: '2026-09-30', status: 'ended', checkout_date: '2026-09-01' })
+    const dewi = mkLease({ id: 'DEWI', room_id: 'B2', tenant_id: 'T3', start_date: '2026-11-20', end_date: '2026-12-19' })
+    const tenants = [
+      { id: 'T2', full_name: 'Siti' },
+      { id: 'T3', full_name: 'Dewi' },
+    ]
+    const leases = [budi, siti, dewi]
+    for (const date of ['2026-06-01', '2026-06-14', '2026-06-20']) {
+      const plan = planLeaseRedate(budi, months, date, { leases, tenants })
+      expect(plan.mode).toBe('grid')
+      expect(plan.error).toBeNull()
+      expect(plan.conflict).toBeNull()
+    }
+    expect(planLeaseRedate(budi, months, '2026-06-01', { leases }).lease).toEqual({ start_date: '2026-06-01', end_date: '2026-10-31' })
+    // a booking the correction would now run into is still refused
+    const late = planLeaseRedate(budi, months, '2026-06-25', { leases, tenants })
+    expect(late.lease.end_date).toBe('2026-11-24')
+    expect(late.error).toBe('Bentrok dengan sewa Dewi di kamar ini (20 Nov – 20 Des 2026). Pilih tanggal lain.')
+    expect(late.conflict?.id).toBe('DEWI')
+
+    // the same with an earlier tenant who left before the move: X moved into B on 1 Agt, Y checked out of B on 1 Agt
+    const x = mkLease({ id: 'X', room_id: 'B', start_date: '2026-05-01', end_date: '2026-10-31' })
+    const xInv = ['05', '06', '07', '08', '09', '10'].map((m) => mkInv(`X${m}`, `2026-${m}-01`, addDaysISO(`2026-${String(Number(m) + 1).padStart(2, '0')}-01`, -1), { lease: 'X' }))
+    const y = mkLease({ id: 'Y', room_id: 'B', tenant_id: 'T2', start_date: '2026-01-01', end_date: '2026-07-31', status: 'ended', checkout_date: '2026-08-01' })
+    for (const date of ['2026-04-20', '2026-05-05', '2026-08-01']) expect(planLeaseRedate(x, xInv, date, { leases: [x, y] }).error).toBeNull()
+  })
 })
 
 describe('notes and the state preview', () => {

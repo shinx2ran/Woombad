@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, renderHook } from '@testing-library/react'
-import type { Invoice, Lease, MemberRole } from '../../types/db'
+import type { Invoice, Lease, MemberRole, Room } from '../../types/db'
 import { LocalRepo, emptyLocalDb } from '../../lib/repo/localRepo'
 import {
   REDATE_BAD_PERIOD_MESSAGE,
@@ -240,6 +240,51 @@ describe('Ubah tanggal mulai sewa (SPEC 7.6) through useLeaseActions', () => {
     expect(await data()).toEqual(before)
   })
 
+  it('a tenant who moved rooms (Pindah kamar) can still be corrected: the previous tenant of the new room is not a conflict', async () => {
+    await seed()
+    // Siti lived in B2 until she checked out on 15 Sep; that day this tenant moved from A1 to B2
+    await repo.insert('leases', { id: 'SITI', property_id: 'P1', room_id: 'R2', tenant_id: 'T2', period_type: 'monthly', price_per_period: 1_200_000, deposit_amount: 0, start_date: '2026-01-01', end_date: '2026-09-30', status: 'ended', checkout_date: '2026-09-15', notes: null } as never)
+    await actions().moveRoom(lease, { id: 'R1', name: 'A1' } as Room, { id: 'R2', name: 'B2' } as Room, null, '2026-09-15')
+    const before = await data()
+    expect(before.lease.room_id).toBe('R2')
+    const plan = await actions().redateLease({ lease: before.lease, invoices: before.invoices, newStart: '2026-08-18', tenants: [{ id: 'T2', full_name: 'Siti' }], today: '2026-10-23' })
+    expect(plan.error).toBeNull()
+    const after = await data()
+    expect(after.lease).toMatchObject({ room_id: 'R2', start_date: '2026-08-18', end_date: '2026-11-17' })
+    expect(dates(after.invoices)).toEqual([
+      ['SEP', '2026-08-18', '2026-09-17', '2026-08-18'],
+      ['OCT', '2026-09-18', '2026-10-17', '2026-09-18'],
+      ['NOV', '2026-10-18', '2026-11-17', '2026-10-18'],
+    ])
+    expect(after.leases.find((l) => l.id === 'SITI')).toEqual(before.leases.find((l) => l.id === 'SITI'))
+  })
+
+  it('a Tagih, check-out or cancel from a screen that still shows the old start is refused; nothing written', async () => {
+    await seed()
+    const stale = await data()
+    await actions().redateLease({ lease: stale.lease, invoices: stale.invoices, newStart: '2026-08-18', today: '2026-10-23' })
+    const corrected = await data()
+    invalidate.mockClear()
+    // the other phone bills the next month from its old rows: it would insert 1-31 Des and leave 18-30 Nov unbilled
+    await expect(
+      actions().issueInvoice({ lease: stale.lease, addons: [], quantity: 1, notes: null, existingInvoices: stale.invoices, orgInvoices: stale.invoices }),
+    ).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    expect(invalidate).toHaveBeenCalledWith('invoices', 'leases', 'lease_addons')
+    expect(await data()).toEqual(corrected)
+    // a check-out on 20 Okt from the old rows would void November (old start 1 Nov), which now starts on 18 Okt
+    const settlement = { refund: 0, rent: 0, damage: 0, damageNotes: '' }
+    await expect(
+      actions().checkout({ lease: stale.lease, checkoutDate: '2026-10-20', invoices: stale.invoices, payments: stale.payments, settlement, partialDecisions: {} }),
+    ).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    await expect(
+      actions().cancelLease({ lease: stale.lease, invoices: stale.invoices, payments: stale.payments, partialDecisions: { OCT: 'forfeit' }, settlement, dateISO: '2026-10-20' }),
+    ).rejects.toThrow(LEASE_DATA_CHANGED_MESSAGE)
+    expect(await data()).toEqual(corrected)
+    // the refreshed screen bills on the new grid
+    const issued = await actions().issueInvoice({ lease: corrected.lease, addons: [], quantity: 1, notes: null, existingInvoices: corrected.invoices, orgInvoices: corrected.invoices })
+    expect([issued.period_start, issued.period_end]).toEqual(['2026-11-18', '2026-12-17'])
+  })
+
   it('the same date is refused', async () => {
     await seed()
     const before = await data()
@@ -294,6 +339,29 @@ describe('LocalRepo.redateLease (Mode Demo) checks like the database and writes 
     const ended = local.snapshot()
     await expect(repo.redateLease(good())).rejects.toThrow(REDATE_INACTIVE_MESSAGE)
     expect(local.snapshot()).toEqual(ended)
+  })
+
+  it('a lease that moved into a room after its previous tenant left is corrected; a booking it would now run into is still refused', async () => {
+    await seed()
+    await repo.insert('leases', { id: 'SITI', property_id: 'P1', room_id: 'R2', tenant_id: 'T2', period_type: 'monthly', price_per_period: 1, deposit_amount: 0, start_date: '2026-01-01', end_date: '2026-09-30', status: 'ended', checkout_date: '2026-09-15', notes: null } as never)
+    await repo.insert('leases', { id: 'NEXT', property_id: 'P1', room_id: 'R2', tenant_id: 'T3', period_type: 'monthly', price_per_period: 1, deposit_amount: 0, start_date: '2026-12-05', end_date: '2027-01-04', status: 'active', checkout_date: null, notes: null } as never)
+    // Pindah kamar: the same lease row now says R2 for the whole stay
+    await repo.update('leases', 'L1', { room_id: 'R2' })
+    const before = local.snapshot()
+    const later: RedateLeaseInput = {
+      ...good(),
+      newStart: '2026-09-15',
+      newEnd: '2026-12-14',
+      invoices: [
+        { id: 'SEP', period_start: '2026-09-15', period_end: '2026-10-14', due_date: '2026-09-15' },
+        { id: 'OCT', period_start: '2026-10-15', period_end: '2026-11-14', due_date: '2026-10-15' },
+        { id: 'NOV', period_start: '2026-11-15', period_end: '2026-12-14', due_date: '2026-11-15' },
+      ],
+    }
+    await expect(repo.redateLease(later)).rejects.toThrow(REDATE_OVERLAP_MESSAGE)
+    expect(local.snapshot()).toEqual(before)
+    await repo.redateLease(good())
+    expect((await data()).lease).toMatchObject({ room_id: 'R2', start_date: '2026-08-18', end_date: '2026-11-17' })
   })
 
   it('a browser storage failure restores every row', async () => {

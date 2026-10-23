@@ -156,7 +156,8 @@ function emptyPlan(lease: Lease, newStart: string, error: string): LeaseRedatePl
  * Refused (error, no patches): a lease that is not active (REDATE_INACTIVE_MESSAGE), an empty/invalid date
  * (REDATE_INVALID_DATE_MESSAGE), the same date (REDATE_SAME_DATE_MESSAGE). A plan whose new span [newStart, new
  * end_date] collides with another non-cancelled lease of the room (leaseOverlaps, SPEC 2b.8 / 7.3) is computed in full
- * for the preview but carries the error redateConflictMessage and `conflict`.
+ * for the preview but carries the error redateConflictMessage and `conflict`. A lease of the room that already overlaps
+ * the stored [start_date, end_date] (the previous tenant of a room this lease moved into) is not a conflict.
  *
  * Invoices (`invoices` may hold other leases' rows; only the lease's own are planned):
  *  - mode 'grid' when billedPeriodCount(lease, invoices) !== null: walking the non-void invoices in order with grid
@@ -230,7 +231,12 @@ export function planLeaseRedate(lease: Lease, invoices: Invoice[], newStart: str
 
   const warnings = mode === 'shift' && own.length > 0 ? [redateShiftWarning(deltaDays)] : []
 
-  const others = (opts.leases ?? []).filter((l) => l.room_id === lease.room_id && l.id !== lease.id && l.status !== 'cancelled')
+  // Only collisions the correction itself creates count. A lease that already overlaps the stored span is room history:
+  // after 'Pindah kamar' (SPEC 2b.9: room_id changes on the same lease, the new room is checked from the move date only)
+  // the whole stay reads as being in the new room, so the room's previous tenant overlaps it before any correction.
+  const others = (opts.leases ?? []).filter(
+    (l) => l.room_id === lease.room_id && l.id !== lease.id && l.status !== 'cancelled' && !leaseOverlaps([l], lease.room_id, lease.start_date, lease.end_date),
+  )
   const conflict = others.find((l) => leaseOverlaps([l], lease.room_id, newStart, newEnd)) ?? null
   const error = conflict ? redateConflictMessage(opts.tenants?.find((t) => t.id === conflict.tenant_id)?.full_name, conflict) : null
 

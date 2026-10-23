@@ -171,6 +171,17 @@ export function useLeaseActions() {
       }
     }
 
+    /**
+     * SPEC 7.6: a start-date correction (redateLease) on another device moves every period of the lease. A bill, check-out
+     * or cancel computed from the old schedule would leave nights unbilled or void the wrong invoice, so the stored start
+     * must still be the one this screen planned from. Only that correction (or an admin editing start_date directly)
+     * moves it, so every other flow behaves as before.
+     */
+    async function leaseStartMoved(lease: Lease): Promise<boolean> {
+      const fresh = await repo.get('leases', lease.id)
+      return !!fresh && fresh.start_date !== lease.start_date
+    }
+
     /** Insert an invoice from a draft; on a duplicate number (two devices) rebuild with fresh numbering (SPEC 2b.11). */
     async function insertFromDraft(input: InvoiceDraftInput, notes: string | null): Promise<{ invoice: Invoice; draft: InvoiceDraft }> {
       let orgInvoices = input.orgInvoices ?? input.existingInvoices
@@ -200,6 +211,10 @@ export function useLeaseActions() {
       const typeSwitch = (input.makePermanent ?? false) && input.periodType !== undefined && input.periodType !== input.lease.period_type
       if (typeSwitch && !canWriteInvoiceStatus && invoicesToPinType(input.lease, input.existingInvoices, input.periodType).length > 0) {
         throw new Error('Hanya pemilik/admin yang dapat mengganti jenis sewa secara tetap (tagihan lama perlu ditandai jenisnya).')
+      }
+      if (await leaseStartMoved(input.lease)) {
+        await invalidate('invoices', 'leases', 'lease_addons')
+        throw new Error(LEASE_DATA_CHANGED_MESSAGE)
       }
       const { invoice, draft } = await insertFromDraft(
         {
@@ -434,10 +449,11 @@ export function useLeaseActions() {
 
     /**
      * Re-read the lease's invoices and the payments of the touched ones right before a checkout/cancel writes. When
-     * another device changed them since the screen loaded, nothing is written (leaseDataChanged); otherwise the
-     * fresh invoice rows are returned for the patches.
+     * another device changed them since the screen loaded, nothing is written (leaseDataChanged, or the start date was
+     * corrected meanwhile: leaseStartMoved); otherwise the fresh invoice rows are returned for the patches.
      */
     async function freshLeaseInvoices(lease: Lease, invoices: Invoice[], payments: Payment[], touched: Invoice[]): Promise<Invoice[]> {
+      if (await leaseStartMoved(lease)) throw new Error(LEASE_DATA_CHANGED_MESSAGE)
       const fresh = await repo.list('invoices', { where: { lease_id: lease.id } })
       const ids = [...new Set(touched.map((i) => i.id))]
       const freshPayments = ids.length > 0 ? await repo.list('payments', { where: { invoice_id: ids } }) : []

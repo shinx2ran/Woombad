@@ -57,6 +57,8 @@ export const REDATE_INCOMPLETE_MESSAGE = 'Data perubahan tanggal tidak lengkap.'
 export const REDATE_END_BEFORE_START_MESSAGE = 'Tanggal akhir sewa tidak boleh sebelum tanggal mulai.'
 export const REDATE_BAD_PERIOD_MESSAGE = 'Periode tagihan tidak valid: tanggal akhir sebelum tanggal mulai.'
 export const REDATE_OVERLAP_MESSAGE = 'Jadwal bentrok dengan sewa lain di kamar yang sama.'
+/** PGRST202: the app was published before supabase/schema.sql (with redate_lease) was re-run on the project. */
+export const REDATE_NOT_DEPLOYED_MESSAGE = 'Fitur ini belum aktif di server. Minta operator memperbarui database.'
 
 /** New dates of one invoice in a lease start correction. */
 export interface RedateInvoiceDates {

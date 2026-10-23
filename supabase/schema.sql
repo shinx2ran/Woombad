@@ -803,12 +803,16 @@ begin
     raise exception 'Periode tagihan tidak valid: tanggal akhir sebelum tanggal mulai.';
   end if;
   -- double booking (SPEC 2b.8, same rule as leaseOverlaps): another non-cancelled lease of the room holds a night of
-  -- [p_new_start, p_new_end]; an ended lease holds its room until the night before its checkout_date (SPEC 7.3)
+  -- [p_new_start, p_new_end]; an ended lease holds its room until the night before its checkout_date (SPEC 7.3).
+  -- Only collisions this correction creates: a lease that already overlaps the stored span [l.start_date, l.end_date]
+  -- is room history (the previous tenant of a room this lease moved into, SPEC 2b.9), not a new double booking.
   if exists (
     select 1 from public.leases o
      where o.room_id = l.room_id and o.id <> l.id and o.status <> 'cancelled'
        and o.start_date <= p_new_end
-       and (case when o.status = 'ended' and o.checkout_date is not null then o.checkout_date - 1 else o.end_date end) >= p_new_start) then
+       and (case when o.status = 'ended' and o.checkout_date is not null then o.checkout_date - 1 else o.end_date end) >= p_new_start
+       and not (o.start_date <= l.end_date
+                and (case when o.status = 'ended' and o.checkout_date is not null then o.checkout_date - 1 else o.end_date end) >= l.start_date)) then
     raise exception 'Jadwal bentrok dengan sewa lain di kamar yang sama.';
   end if;
 

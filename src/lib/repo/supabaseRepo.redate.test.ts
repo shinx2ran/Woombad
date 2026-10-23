@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseRepo } from './supabaseRepo'
-import { StaleWriteError, type RedateLeaseInput } from './types'
+import { REDATE_NOT_DEPLOYED_MESSAGE, StaleWriteError, type RedateLeaseInput } from './types'
 
 type RpcError = { message: string; code?: string; details?: string } | null
 
@@ -47,5 +47,15 @@ describe('SupabaseRepo.redateLease', () => {
     )
     await expect(fakeRpc({ code: '42501', message: 'permission denied for function redate_lease' }).repo.redateLease(input)).rejects.toThrow('Anda tidak memiliki izin untuk tindakan ini.')
     await expect(fakeRpc({ message: 'TypeError: Failed to fetch' }).repo.redateLease(input)).rejects.toThrow('Tidak dapat terhubung ke server. Periksa koneksi internet.')
+  })
+
+  it('PGRST202 (schema.sql not re-run on the project yet) reads in Indonesian, not as the PostgREST text', async () => {
+    const missing = {
+      code: 'PGRST202',
+      message:
+        'Could not find the function public.redate_lease(p_expected_start, p_invoices, p_lease_id, p_new_end, p_new_start, p_note) in the schema cache',
+    }
+    await expect(fakeRpc(missing).repo.redateLease(input)).rejects.toThrow(REDATE_NOT_DEPLOYED_MESSAGE)
+    expect(REDATE_NOT_DEPLOYED_MESSAGE).toBe('Fitur ini belum aktif di server. Minta operator memperbarui database.')
   })
 })

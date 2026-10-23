@@ -312,7 +312,12 @@ export class LocalRepo implements Repo {
     if (input.newStart === lease.start_date) throw new Error(REDATE_SAME_DATE_MESSAGE)
     if (input.newEnd < input.newStart) throw new Error(REDATE_END_BEFORE_START_MESSAGE)
     if (input.invoices.some((p) => p.period_end < p.period_start)) throw new Error(REDATE_BAD_PERIOD_MESSAGE)
-    if (leaseOverlaps(this.db.leases, lease.room_id, input.newStart, input.newEnd, lease.id)) throw new Error(REDATE_OVERLAP_MESSAGE)
+    // only collisions the correction creates: a lease that already overlaps the stored span (the previous tenant of a
+    // room this lease moved into) is room history, as in public.redate_lease
+    const history = (o: Row<'leases'>) => leaseOverlaps([o], lease.room_id, lease.start_date, lease.end_date, lease.id)
+    if (leaseOverlaps(this.db.leases.filter((o) => !history(o)), lease.room_id, input.newStart, input.newEnd, lease.id)) {
+      throw new Error(REDATE_OVERLAP_MESSAGE)
+    }
 
     const now = new Date().toISOString()
     const byId = new Map(input.invoices.map((p) => [p.id, p]))
