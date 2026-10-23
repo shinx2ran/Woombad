@@ -724,6 +724,12 @@ begin
      and not public.is_org_admin(old.org_id) then
     raise exception 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.';
   end if;
+  -- the start date anchors every billing period (SPEC 7.6): moving it is an owner/admin correction (redate_lease)
+  if auth.uid() is not null
+     and new.start_date is distinct from old.start_date
+     and not public.is_org_admin(old.org_id) then
+    raise exception 'Hanya pemilik/admin yang dapat mengubah tanggal mulai sewa.';
+  end if;
   return new;
 end $$;
 
@@ -731,6 +737,96 @@ drop trigger if exists leases_terms_guard on public.leases;
 create trigger leases_terms_guard
   before update on public.leases
   for each row execute function public.leases_terms_guard();
+
+-- ---------- lease start correction (SPEC 7.6) ----------
+-- The owner typed a wrong start date and noticed months later. The app plans the new dates of the lease and of every
+-- one of its invoices (src/features/leases/redate.ts) and saves them here in ONE transaction. Security invoker: the
+-- caller's row-level security and every trigger still apply (only owners/admins may update invoices); amounts, numbers,
+-- statuses and payments are never touched. SQLSTATE WB002 = the lease or its invoices changed since the screen read
+-- them (another device): nothing is written and the app reloads. Mode Demo mirrors this in LocalRepo.redateLease.
+create or replace function public.redate_lease(
+  p_lease_id uuid,
+  p_expected_start date,
+  p_new_start date,
+  p_new_end date,
+  p_invoices jsonb,
+  p_note text default null)
+returns void language plpgsql security invoker set search_path = public, pg_temp as $$
+declare
+  l public.leases%rowtype;
+  v_given int;
+  v_distinct int;
+  v_own int;
+  v_match int;
+  v_note text := nullif(btrim(coalesce(p_note, ''), E' \t\r\n'), '');
+  v_changed constant text := 'Tagihan atau pembayaran sewa ini baru saja diubah dari perangkat lain. Periksa angka terbaru di layar, lalu coba lagi.';
+begin
+  -- one correction at a time per lease; an invoice issued meanwhile (it extends end_date) waits for this one
+  select * into l from public.leases where id = p_lease_id for update;
+  if not found then
+    raise exception 'Sewa tidak ditemukan.';
+  end if;
+  if auth.uid() is not null and not public.is_org_admin(l.org_id) then
+    raise exception 'Hanya pemilik/admin yang dapat mengubah tanggal mulai sewa.';
+  end if;
+  if p_expected_start is null or p_new_start is null or p_new_end is null or p_invoices is null or jsonb_typeof(p_invoices) <> 'array' then
+    raise exception 'Data perubahan tanggal tidak lengkap.';
+  end if;
+  -- ended/cancelled leases keep their dates: their check-out and refunds were real events
+  if l.status <> 'active' then
+    raise exception 'Sewa yang sudah selesai atau dibatalkan tidak bisa diubah tanggal mulainya.';
+  end if;
+  if l.start_date <> p_expected_start then
+    raise exception using errcode = 'WB002', message = v_changed;
+  end if;
+  perform 1 from public.invoices where lease_id = l.id for update;
+  if exists (select 1 from jsonb_to_recordset(p_invoices) as g(id uuid, period_start date, period_end date, due_date date)
+              where g.id is null or g.period_start is null or g.period_end is null or g.due_date is null) then
+    raise exception 'Data perubahan tanggal tidak lengkap.';
+  end if;
+  -- exactly the lease's invoices (void ones too), each once
+  select count(*), count(distinct g.id) into v_given, v_distinct from jsonb_to_recordset(p_invoices) as g(id uuid);
+  select count(*) into v_own from public.invoices where lease_id = l.id;
+  select count(*) into v_match from public.invoices i
+   where i.lease_id = l.id and i.id in (select g.id from jsonb_to_recordset(p_invoices) as g(id uuid));
+  if v_given <> v_distinct or v_given <> v_own or v_match <> v_own then
+    raise exception using errcode = 'WB002', message = v_changed;
+  end if;
+  if p_new_start = l.start_date then
+    raise exception 'Tanggal mulai sama dengan sebelumnya.';
+  end if;
+  if p_new_end < p_new_start then
+    raise exception 'Tanggal akhir sewa tidak boleh sebelum tanggal mulai.';
+  end if;
+  if exists (select 1 from jsonb_to_recordset(p_invoices) as g(id uuid, period_start date, period_end date)
+              where g.period_end < g.period_start) then
+    raise exception 'Periode tagihan tidak valid: tanggal akhir sebelum tanggal mulai.';
+  end if;
+  -- double booking (SPEC 2b.8, same rule as leaseOverlaps): another non-cancelled lease of the room holds a night of
+  -- [p_new_start, p_new_end]; an ended lease holds its room until the night before its checkout_date (SPEC 7.3)
+  if exists (
+    select 1 from public.leases o
+     where o.room_id = l.room_id and o.id <> l.id and o.status <> 'cancelled'
+       and o.start_date <= p_new_end
+       and (case when o.status = 'ended' and o.checkout_date is not null then o.checkout_date - 1 else o.end_date end) >= p_new_start) then
+    raise exception 'Jadwal bentrok dengan sewa lain di kamar yang sama.';
+  end if;
+
+  update public.invoices i
+     set period_start = g.period_start, period_end = g.period_end, due_date = g.due_date
+    from jsonb_to_recordset(p_invoices) as g(id uuid, period_start date, period_end date, due_date date)
+   where i.id = g.id and i.lease_id = l.id
+     and (i.period_start, i.period_end, i.due_date) is distinct from (g.period_start, g.period_end, g.due_date);
+  update public.leases
+     set start_date = p_new_start,
+         end_date = p_new_end,
+         notes = case
+           when v_note is null then notes
+           when nullif(btrim(coalesce(notes, ''), E' \t\r\n'), '') is null then v_note
+           else btrim(notes, E' \t\r\n') || E'\n' || v_note
+         end
+   where id = l.id;
+end $$;
 
 -- created_by is always the signed-in user who inserted the row, and never changes afterwards.
 create or replace function public.set_created_by()
@@ -1033,6 +1129,7 @@ grant execute on function public.create_invitation(uuid, text, text) to authenti
 grant execute on function public.set_member_role(uuid, uuid, text) to authenticated;
 grant execute on function public.remove_member(uuid, uuid) to authenticated;
 grant execute on function public.recalc_invoice_status(uuid) to authenticated;
+grant execute on function public.redate_lease(uuid, date, date, date, jsonb, text) to authenticated;
 -- policy and trigger helpers are evaluated as the calling role and must stay executable
 grant execute on function public.is_org_member(uuid) to authenticated;
 grant execute on function public.is_org_admin(uuid) to authenticated;

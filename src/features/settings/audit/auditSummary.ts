@@ -161,6 +161,10 @@ const COLUMN_ORDER = [
   'start_date',
   'end_date',
   'checkout_date',
+  // an invoice moved by 'Ubah tanggal mulai' (SPEC 7.6) reads start, check-out, due date
+  'period_start',
+  'period_end',
+  'due_date',
   'room_id',
   'property_id',
   'tenant_id',

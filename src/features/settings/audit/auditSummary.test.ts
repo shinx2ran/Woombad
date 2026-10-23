@@ -250,3 +250,25 @@ describe('relativeTime / whenLabel', () => {
     expect(relativeTime('2026-10-12T06:57:00.123456+00:00', new Date('2026-10-12T07:00:00Z'))).toBe('2 menit lalu')
   })
 })
+
+describe('Ubah tanggal mulai sewa (SPEC 7.6) in the history', () => {
+  it('a moved invoice reads start, check-out and due date in that order; the lease reads its new start and check-out', () => {
+    const inv = summarizeAuditEntry(
+      entry({
+        table_name: 'invoices',
+        old_data: { invoice_number: 'INV-202609-0001', total_amount: 1_500_000, period_start: '2026-09-01', period_end: '2026-09-30', due_date: '2026-09-01', updated_at: 'a' },
+        new_data: { invoice_number: 'INV-202609-0001', total_amount: 1_500_000, period_start: '2026-08-18', period_end: '2026-09-17', due_date: '2026-08-18', updated_at: 'b' },
+      }),
+    )
+    expect(inv.subject).toBe('INV-202609-0001 · Rp 1.500.000')
+    expect(inv.changes).toEqual(['Awal periode: 1 Sep 2026 → 18 Agt 2026', 'Check-out periode: 1 Okt 2026 → 18 Sep 2026', 'Jatuh tempo: 1 Sep 2026 → 18 Agt 2026'])
+    const lease = summarizeAuditEntry(
+      entry({
+        table_name: 'leases',
+        old_data: { status: 'active', start_date: '2026-09-01', end_date: '2026-11-30', checkout_date: null, notes: null },
+        new_data: { status: 'active', start_date: '2026-08-18', end_date: '2026-11-17', checkout_date: null, notes: 'Tanggal mulai dikoreksi' },
+      }),
+    )
+    expect(lease.changes).toEqual(['Mulai: 1 Sep 2026 → 18 Agt 2026', 'Check-out: 1 Des 2026 → 18 Nov 2026', 'Catatan diubah'])
+  })
+})

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Insert, Row, TableName, Update } from '../../types/db'
-import type { CreatedInvitation, ListOptions, Repo, StorageBucket } from './types'
-import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, NotMemberError, UPDATE_DENIED_MESSAGE, formatCode, normalizeCode } from './types'
+import type { CreatedInvitation, ListOptions, RedateLeaseInput, Repo, StorageBucket } from './types'
+import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, NotMemberError, StaleWriteError, UPDATE_DENIED_MESSAGE, formatCode, normalizeCode } from './types'
 import type { MemberRole } from '../../types/db'
 
 /** The parts of a PostgREST/Postgres error worth reading (Postgres puts "still referenced" in details). */
@@ -153,6 +153,21 @@ export class SupabaseRepo implements Repo {
 
   async removeMember(orgId: string, userId: string): Promise<void> {
     const { error } = await this.sb.rpc('remove_member', { p_org_id: orgId, p_user_id: userId })
+    if (error) throw new Error(translateDbError(error))
+  }
+
+  /** One transaction in the database (redate_lease, security invoker: row-level security still applies). */
+  async redateLease(input: RedateLeaseInput): Promise<void> {
+    const { error } = await this.sb.rpc('redate_lease', {
+      p_lease_id: input.leaseId,
+      p_expected_start: input.expectedStart,
+      p_new_start: input.newStart,
+      p_new_end: input.newEnd,
+      p_invoices: input.invoices.map((i) => ({ id: i.id, period_start: i.period_start, period_end: i.period_end, due_date: i.due_date })),
+      p_note: input.note,
+    })
+    // SQLSTATE WB002: the lease or its invoices changed since the screen read them; nothing was written
+    if (error?.code === 'WB002') throw new StaleWriteError(error.message)
     if (error) throw new Error(translateDbError(error))
   }
 }

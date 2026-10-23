@@ -6,7 +6,7 @@
 import { useMemo } from 'react'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
-import type { AddonBilling, Invoice, Lease, LeaseAddon, OrgTableName, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
+import type { AddonBilling, Invoice, Lease, LeaseAddon, OrgTableName, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
 import {
   buildInvoiceDraft,
   deriveInvoiceStatus,
@@ -15,7 +15,7 @@ import {
   type InvoiceDraft,
   type InvoiceDraftInput,
 } from '../../domain/billing'
-import { formatRupiah } from '../../lib/format'
+import { formatRupiah, todayISO } from '../../lib/format'
 import {
   LEASE_DATA_CHANGED_MESSAGE,
   addonAmountUpdates,
@@ -38,8 +38,24 @@ import {
   type PartialDecision,
 } from './leaseUtils'
 import { validatePaymentEdit, type PaymentEditContext, type PaymentEditPatch } from './paymentEdit'
+import { REDATE_INACTIVE_MESSAGE, REDATE_STAFF_MESSAGE, planLeaseRedate, redateDataChanged, redateNoteLine, type LeaseRedatePlan } from './redate'
+import { StaleWriteError } from '../../lib/repo/types'
 
 export type { PartialDecision } from './leaseUtils'
+
+/** SPEC 7.6 Ubah tanggal mulai sewa */
+export interface RedateLeaseActionInput {
+  lease: Lease
+  /** the lease's invoices this screen planned (and previewed) from */
+  invoices: Invoice[]
+  newStart: string
+  /** 'Alasan' (optional), appended to the note line */
+  reason?: string | null
+  /** to name the tenant of a colliding lease */
+  tenants?: Pick<Tenant, 'id' | 'full_name'>[]
+  /** the day written in the note; default today */
+  today?: string
+}
 
 export interface IssueInvoiceInput {
   lease: Lease
@@ -552,6 +568,42 @@ export function useLeaseActions() {
       await invalidate('leases')
     }
 
+    /**
+     * SPEC 7.6: move an active lease (reservations included) and every one of its invoices to the right start date.
+     * Staff and ended/cancelled leases are refused before any read or write. The lease, its invoices and the room's
+     * leases are read fresh; when they no longer match what the dialog previewed (redateDataChanged) nothing is written.
+     * The plan is rebuilt from the fresh rows (planLeaseRedate) and written in ONE operation (repo.redateLease: the
+     * redate_lease RPC online, one LocalRepo write in Mode Demo), which refuses again when the start or the invoice list
+     * changed in between. Payments, amounts, numbers and statuses are never touched.
+     */
+    async function redateLease(input: RedateLeaseActionInput): Promise<LeaseRedatePlan> {
+      if (!canEditLeaseTerms) throw new Error(REDATE_STAFF_MESSAGE)
+      if (input.lease.status !== 'active') throw new Error(REDATE_INACTIVE_MESSAGE)
+      try {
+        const fresh = await repo.get('leases', input.lease.id)
+        const freshInvoices = await repo.list('invoices', { where: { lease_id: input.lease.id } })
+        if (!fresh || redateDataChanged(input.lease, input.invoices, fresh, freshInvoices)) throw new Error(LEASE_DATA_CHANGED_MESSAGE)
+        const roomLeases = await repo.list('leases', { where: { room_id: fresh.room_id } })
+        const plan = planLeaseRedate(fresh, freshInvoices, input.newStart, { leases: roomLeases, tenants: input.tenants })
+        if (plan.error) throw new Error(plan.error)
+        await repo.redateLease({
+          leaseId: fresh.id,
+          expectedStart: fresh.start_date,
+          newStart: plan.lease.start_date,
+          newEnd: plan.lease.end_date,
+          invoices: plan.patches,
+          note: redateNoteLine(fresh.start_date, plan.lease.start_date, input.today ?? todayISO(), input.reason),
+        })
+        return plan
+      } catch (err) {
+        if (err instanceof StaleWriteError) throw new Error(LEASE_DATA_CHANGED_MESSAGE)
+        throw err
+      } finally {
+        // also after a refusal, so the screen shows what is stored now
+        await invalidate('leases', 'invoices')
+      }
+    }
+
     return {
       isAdmin,
       canWriteInvoiceStatus,
@@ -573,6 +625,7 @@ export function useLeaseActions() {
       addAddon,
       removeAddon,
       updateLeaseNotes,
+      redateLease,
     }
   }, [repo, role, invalidate])
 }

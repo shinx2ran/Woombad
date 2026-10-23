@@ -274,7 +274,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - `rooms`: staf boleh update kecuali kolom harga (`price_daily/weekly/monthly`) → trigger menolak
   'Hanya pemilik/admin yang dapat mengubah harga kamar.'; insert/delete kamar admin saja.
 - `leases`: staf boleh update (perpanjang, checkout, pindah kamar) **kecuali** `price_per_period`, `deposit_amount`,
-  `period_type` → 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.'
+  `period_type` → 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.'; `start_date` → 'Hanya pemilik/admin yang dapat
+  mengubah tanggal mulai sewa.' (7.6)
 - `payments` & `expenses`: update **admin saja** (hapus kebijakan "pemilik baris"); trigger BEFORE INSERT memaksa
   `created_by = auth.uid()` bila `auth.uid()` tidak null; `created_by` dan `org_id` tidak dapat diubah lewat update.
   Karena itu foto struk pengeluaran baru diunggah **sebelum** insert dan `receipt_path` ikut di insert (staf tidak bisa
@@ -420,3 +421,59 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Riwayat perubahan** di bawah kedua dialog (`RecordHistory`): 20 baris `audit_log` terakhir untuk baris itu (6.3) — Dibuat / Diubah /
   Dihapus, kapan, oleh siapa, dan kolom yang berubah (mis. "Jumlah: Rp 360.000 → Rp 300.000", "Sewa dasar: …"). Hanya Mode Online dan hanya terlihat
   owner/admin (RLS `audit_log`); Mode Demo menampilkan keterangan bahwa riwayat tidak dicatat.
+
+### 7.6 Ubah tanggal mulai sewa
+- **Masalah**: pemilik salah input tanggal mulai sewa dan baru sadar berbulan-bulan kemudian; semua tagihan sejak itu dibuat dari
+  tanggal yang salah. Koreksi ini memindahkan seluruh jadwal tagihan ke tanggal mulai yang benar.
+- **Siapa/apa**: hanya pemilik/admin (menu disembunyikan untuk staf; `useLeaseActions.redateLease` menolak sebelum membaca/menulis
+  apa pun; database juga menolak). Hanya sewa `active` (termasuk pesanan yang belum mulai). Sewa `ended`/`cancelled`: menu tidak ada
+  dan aksi menolak 'Sewa yang sudah selesai atau dibatalkan tidak bisa diubah tanggal mulainya.' (check-out & pengembalian uang adalah
+  kejadian nyata).
+- **Pintu masuk**: detail sewa → **Lainnya → Ubah tanggal mulai** ("Salah input tanggal mulai? Semua periode tagihan ikut digeser").
+- **Dialog** (`RedateLeaseModal`): tanggal mulai sekarang, input tanggal yang benar, lalu **pratinjau langsung** sebelum menyimpan:
+  setiap tagihan (yang void abu-abu) dengan periode lama → baru (`formatStay`, konvensi check-out 7.3), jatuh tempo lama → baru,
+  jumlah periode & malam, jumlah uang dan status bayar (tidak berubah); check-out sewa lama → baru; **Dibayar s/d** lama → baru;
+  tagihan berikutnya; keadaan penyewa hari ini sebelum/sesudah ("Setelah diubah: telat 14 hari · sisa Rp …" / "lunas s/d 1 Nov · …",
+  `leaseStateText` dari `summarizeLeaseBilling` + `remainingDays`, sama dengan daftar sewa); peringatan bila ada tagihan di luar grid;
+  galat bentrok kamar yang menyebut penyewa lain dan tanggalnya. **Alasan** (opsional) ikut catatan otomatis di `leases.notes`:
+  "Tanggal mulai dikoreksi dari <lama> ke <baru> (<hari ini>)" + ": <alasan>". Simpan nonaktif selama tidak valid, belum berubah, atau
+  sedang menyimpan.
+- **Perencana murni** `src/features/leases/redate.ts` → `planLeaseRedate(lease, invoices, newStart, { leases, tenants })` →
+  `{ lease: { start_date, end_date }, invoices (sebelum/sesudah), patches (id, period_start, period_end, due_date), mode, deltaDays,
+  warnings, error, conflict }`:
+  - `mode 'grid'` bila `billedPeriodCount(lease, invoices) !== null` (semua tagihan non-void di grid dari tanggal mulai lama): tagihan
+    non-void ke-k (k += quantity) mendapat `periodBounds(newStart, type, k, quantity)`; tagihan void yang juga tepat di posisi grid k
+    tanggal mulai lama (`start == addPeriods(lama, type, k)` dan akhir cocok dengan quantity) diperlakukan sama, selainnya digeser
+    `deltaDays`. Hasilnya `billedPeriodCount` sama dengan sebelumnya, jadi **Tagih** berikutnya melanjutkan grid baru (akhir bulan
+    29/30/31 dan Februari tetap berjangkar, 5.2 / `periodBounds`).
+  - `mode 'shift'` selain itu (periode khusus/pro-rata, ganti jenis periode, celah): semua `period_start`/`period_end` digeser
+    `deltaDays = newStart − lama` hari kalender, dengan peringatan "Ada tagihan dengan periode khusus, jadi semua tanggal digeser N
+    hari." Susunan relatif tetap, sehingga `nextPeriodBounds` tetap mulai sehari setelah tagihan terakhir (tanpa tumpang tindih atau
+    celah; diuji untuk jangkar 29/30/31, Februari & kabisat).
+  - `due_date` mempertahankan selisih harinya dari `period_start` tagihan itu.
+  - `end_date`: bila sama dengan `period_end` tagihan non-void terakhir → ikut `period_end` barunya; selain itu batas check-out
+    (`end_date + 1`) dipetakan seperti batas tagihan (indeks grid bila titik grid tanggal lama, selain itu + `deltaDays`); tidak pernah
+    sebelum tanggal mulai baru.
+  - Pembayaran, `paid_at`, jumlah, nomor tagihan, status, add-on, deposit: tidak berubah. Harian, mingguan, bulanan.
+  - Ditolak: tanggal sama ('Tanggal mulai sama dengan sebelumnya.'), tanggal kosong/tidak valid, sewa tidak aktif, dan rentang baru
+    `[newStart, end_date baru]` yang bentrok dengan sewa non-cancelled lain di kamar yang sama (`leaseOverlaps`, konvensi 7.3:
+    sewa `ended` menempati sampai malam sebelum `checkout_date`) → 'Bentrok dengan sewa <nama> di kamar ini (<tanggal>). Pilih
+    tanggal lain.'; tidak ada yang ditulis.
+- **Penulisan atomik** lewat `repo.redateLease(input)` (antarmuka `Repo`, satu operasi): online satu fungsi SQL
+  `public.redate_lease(p_lease_id uuid, p_expected_start date, p_new_start date, p_new_end date, p_invoices jsonb, p_note text default
+  null)` — **security invoker** (RLS tetap berlaku; satu-satunya RPC fitur, pengecualian prinsip bagian 1 demi atomisitas). Fungsi:
+  mengunci baris sewa (`for update`) dan tagihannya; wajib `is_org_admin` organisasi sewa; menolak status selain `active`,
+  `start_date <> p_expected_start` atau `p_invoices` yang bukan tepat semua tagihan sewa (masing-masing sekali) dengan SQLSTATE
+  **WB002** (aplikasi: `StaleWriteError` → `LEASE_DATA_CHANGED_MESSAGE`); memeriksa ulang bentrok kamar; memperbarui semua tagihan
+  (hanya yang tanggalnya berubah) dan sewa (+ catatan) dalam satu transaksi; jumlah/status tidak disentuh. `grant execute` ke
+  `authenticated`. `leases_terms_guard` juga menolak perubahan `start_date` oleh non-admin (tidak ada alur staf yang menulis
+  `start_date` saat update). Mode Demo: `LocalRepo.redateLease` dengan pemeriksaan & pesan yang sama, semua divalidasi sebelum baris
+  pertama berubah dan dikembalikan bila penyimpanan gagal. Sebelum menulis, aksi membaca ulang sewa, tagihan, dan sewa di kamar itu;
+  bila berbeda dari yang dipratinjau (`redateDataChanged`) ditolak dengan `LEASE_DATA_CHANGED_MESSAGE`. Setelahnya `leases` +
+  `invoices` di-invalidate.
+- **Riwayat**: trigger audit mencatat update sewa dan setiap tagihan; **Riwayat perubahan** tagihan menampilkan "Awal periode",
+  "Check-out periode", "Jatuh tempo" lama → baru (urutan itu).
+- **Uji**: `redate.test.ts` (grid bulanan/mingguan/harian, lebih awal & lebih lambat, jangkar akhir bulan, kabisat, void, shift +
+  kesinambungan periode berikutnya, aturan `end_date`, jatuh tempo, bentrok, tanggal sama, sewa selesai), `redateLease.test.tsx`
+  (aksi dengan `LocalRepo`), `RedateLeaseModal.test.tsx`, `supabaseRepo.redate.test.ts`, `supabase/tests/26-redate.sql`,
+  `e2e/redate.spec.ts` (360 px, Mode Demo).

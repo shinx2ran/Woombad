@@ -83,6 +83,7 @@ function refetchRoleOnRefusal(repo: OrgRepo, onRefused: () => void): OrgRepo {
     createInvitation: watch(repo.createInvitation),
     setMemberRole: watch(repo.setMemberRole),
     removeMember: watch(repo.removeMember),
+    redateLease: watch(repo.redateLease),
   }
 }
 
