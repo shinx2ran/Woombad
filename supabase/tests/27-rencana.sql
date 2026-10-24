@@ -1,6 +1,6 @@
 -- Rencana check-in & daftar tunggu (SPEC 7.7): the double-booking guard on leases (public.leases_overlap_guard) and the
--- waitlist table. Every write goes through the API role (zz.att = one API call). Dates are relative to the server's
--- today, because the guard only checks future nights.
+-- waitlist table. Every write goes through the API role (zz.att = one API call). Dates are relative to the kos's today
+-- (WIB, as the guard: it only checks future nights).
 \set ON_ERROR_STOP on
 select set_config('zz.suite', '27-rencana', false);
 select zz.reset_data();
@@ -25,10 +25,10 @@ insert into zz.ids values
   ('w_staff', 'f7000000-0000-0000-0000-000000000041'), ('w_owner', 'f7000000-0000-0000-0000-000000000042'),
   ('w_kos', 'f7000000-0000-0000-0000-000000000043'),
   ('org2', 'f7000000-0000-0000-0000-000000000091'), ('prop9', 'f7000000-0000-0000-0000-000000000092'),
-  ('w9', 'f7000000-0000-0000-0000-000000000093');
+  ('w9', 'f7000000-0000-0000-0000-000000000093'), ('rd5', 'f7000000-0000-0000-0000-000000000051');
 
--- today + n
-create or replace function zz.rc_d(n int) returns date language sql stable as $$ select current_date + n $$;
+-- today (the kos's day, WIB) + n
+create or replace function zz.rc_d(n int) returns date language sql stable as $$ select (now() at time zone 'Asia/Jakarta')::date + n $$;
 
 -- one lease insert through the API, as the app sends it (Check-in cepat / Rencana / wizard); p_key null = a new id
 create or replace function zz.rc_lease(p_user text, p_key text, p_room text, p_tenant text, p_type text, p_start date, p_end date,
@@ -41,7 +41,7 @@ returns text language sql as $$
 $$;
 
 create or replace function zz.rc_leases(p_room text) returns text language sql as $$
-  select coalesce(string_agg(concat_ws('..', start_date - current_date, end_date - current_date, status), ' ' order by start_date, end_date), '')
+  select coalesce(string_agg(concat_ws('..', start_date - zz.rc_d(0), end_date - zz.rc_d(0), status), ' ' order by start_date, end_date), '')
     from public.leases where room_id = zz.id(p_room);
 $$;
 
@@ -156,6 +156,47 @@ begin
   perform zz.eq('C-update', 'r4 as stored', '-3..3..active 5..6..active', zz.rc_leases('r4'));
 end $$;
 
+-- C2. a caller who may not write the row learns nothing about the room: row-level security and the foreign key refuse
+-- as before, on booked and free nights alike (r1 holds Budi's booking on +5..+6)
+do $$
+declare
+  ins constant text := 'insert into public.leases (org_id, property_id, room_id, tenant_id, period_type, price_per_period, start_date, end_date) values (%L, %L, %L, %L, %L, 1, %L, %L)';
+begin
+  perform zz.chk('C2-outsiders', 'a non-member booking our room on its booked nights gets RLS (42501), not the guard''s answer', '^err:42501:',
+    zz.att(zz.id('stranger'), format(ins, zz.id('org'), zz.id('prop'), zz.id('r1'), zz.id('budi'), 'daily', zz.rc_d(5), zz.rc_d(6))));
+  perform zz.chk('C2-outsiders', '... and the same on free nights', '^err:42501:',
+    zz.att(zz.id('stranger'), format(ins, zz.id('org'), zz.id('prop'), zz.id('r1'), zz.id('budi'), 'daily', zz.rc_d(30), zz.rc_d(31))));
+  perform zz.chk('C2-outsiders', 'the other organisation, with its own kos and our room, gets the foreign key (23503) on booked nights', '^err:23503:',
+    zz.att(zz.id('o2owner'), format(ins, zz.id('org2'), zz.id('prop9'), zz.id('r1'), zz.id('budi'), 'daily', zz.rc_d(5), zz.rc_d(6))));
+  perform zz.chk('C2-outsiders', '... and the same on free nights', '^err:23503:',
+    zz.att(zz.id('o2owner'), format(ins, zz.id('org2'), zz.id('prop9'), zz.id('r1'), zz.id('budi'), 'daily', zz.rc_d(30), zz.rc_d(31))));
+  perform zz.eq('C2-outsiders', 'r1 unchanged', '5..6..active 7..8..active', zz.rc_leases('r1'));
+end $$;
+
+-- C3. the guard's today is the kos's day (WIB) whatever the session's time zone (Supabase runs in UTC: from 00:00 to 07:00
+-- WIB its date is still yesterday). At any hour one of these two sessions has another date than WIB.
+do $$
+declare
+  j constant date := zz.rc_d(0);
+  tz constant text := current_setting('timezone');
+begin
+  perform zz.eq('C3-wib-today', 'r2: a guest booked for tonight only', 'ok:1', zz.rc_lease('owner', null, 'r2', 'budi', 'daily', j, j));
+  -- UTC+14 is already on tomorrow from 17:00 WIB: tonight must still be checked
+  perform set_config('timezone', 'Etc/GMT-14', true);
+  perform zz.eq('C3-wib-today', 'a session on UTC+14 cannot book tonight a second time', 'err:WB003:Kamar sudah terisi atau dipesan pada tanggal itu.',
+    zz.rc_lease('staff', null, 'r2', 'sari', 'daily', j, j + 1));
+  perform set_config('timezone', tz, true);
+  perform zz.eq('C3-wib-today', 'r4: a guest who stayed last night (check-out today, not recorded)', 'ok:1', zz.rc_lease('owner', null, 'r4', 'budi', 'daily', j - 1, j - 1));
+  -- UTC-12 is still on yesterday until 19:00 WIB: last night is past in WIB and not checked (as in the app)
+  perform set_config('timezone', 'Etc/GMT+12', true);
+  perform zz.eq('C3-wib-today', 'a session on UTC-12 records another guest for last night (past, not checked)', 'ok:1',
+    zz.rc_lease('staff', null, 'r4', 'sari', 'daily', j - 1, j - 1, 'active', null, false));
+  perform set_config('timezone', tz, true);
+  perform zz.ok('C3-wib-today', 'the guard reads the WIB day, not current_date',
+    (select pg_get_functiondef(p.oid) ~ 'now\(\) at time zone ''Asia/Jakarta''' and pg_get_functiondef(p.oid) !~ 'current_date'
+       from pg_proc p where p.oid = 'public.leases_overlap_guard()'::regprocedure));
+end $$;
+
 -- D. two phones book the same room at the same moment: the second waits for the first, then is refused
 select zz.dbl_open('p1', zz.id('owner'));
 select set_config('zz.pid', zz.dbl_open('p2', zz.id('wife'))::text, false);
@@ -185,6 +226,35 @@ select zz.eq('D-race', '... and then goes through', '1', (select r from zz.dblin
 select * from zz.dblink_get_result('p2') as t(r text);
 select zz.dblink_disconnect('p1'), zz.dblink_disconnect('p2');
 select zz.eq('D-race', 'r6 has both', '10..12..active 13..14..active', zz.rc_leases('r6'));
+
+-- D2. a start-date correction (redate_lease) and a booking of the same room at the same moment are serialised as well
+select zz.eq('D2-redate-race', 'r5: Sari''s stay +20..+22 to correct', 'ok:1', zz.rc_lease('owner', 'rd5', 'r5', 'sari', 'daily', zz.rc_d(20), zz.rc_d(22)));
+select zz.dbl_open('p1', zz.id('owner'));
+select set_config('zz.pid', zz.dbl_open('p2', zz.id('wife'))::text, false);
+-- the correction first (not committed yet), then a booking of the nights it moves onto
+select zz.dblink_exec('p1', 'begin');
+select zz.eq('D2-redate-race', 'the owner moves Sari''s start to +15 (+15..+17, not committed yet)', '1', (select r from zz.dblink('p1', format(
+  'select count(*)::text from public.redate_lease(%L, %L, %L, %L, %L::jsonb, null)', zz.id('rd5'), zz.rc_d(20), zz.rc_d(15), zz.rc_d(17), '[]')) as t(r text)));
+select zz.dblink_send_query('p2', format(
+  'with x as (insert into public.leases (org_id, property_id, room_id, tenant_id, period_type, price_per_period, start_date, end_date) values (%L, %L, %L, %L, %L, 100000, %L, %L) returning 1) select count(*)::text from x',
+  zz.id('org'), zz.id('prop'), zz.id('r5'), zz.id('budi'), 'daily', zz.rc_d(16), zz.rc_d(16)));
+select zz.eq('D2-redate-race', 'the booking waits on the room lock', 'Lock', zz.wait_for_lock(current_setting('zz.pid')::int));
+select zz.dblink_exec('p1', 'commit');
+select count(*) from zz.dblink_get_result('p2', false) as t(r text);
+select zz.chk('D2-redate-race', '... and is refused once the correction committed', 'Kamar sudah terisi atau dipesan pada tanggal itu', zz.dblink_error_message('p2'));
+select * from zz.dblink_get_result('p2', false) as t(r text);
+-- a booking first (not committed yet), then a correction onto its nights
+select zz.dblink_exec('p1', 'begin');
+select zz.dblink_exec('p1', format('insert into public.leases (org_id, property_id, room_id, tenant_id, period_type, price_per_period, start_date, end_date) values (%L, %L, %L, %L, %L, 100000, %L, %L)',
+  zz.id('org'), zz.id('prop'), zz.id('r5'), zz.id('budi'), 'daily', zz.rc_d(25), zz.rc_d(26)));
+select zz.dblink_send_query('p2', format('select count(*)::text from public.redate_lease(%L, %L, %L, %L, %L::jsonb, null)', zz.id('rd5'), zz.rc_d(15), zz.rc_d(24), zz.rc_d(26), '[]'));
+select zz.eq('D2-redate-race', 'a correction onto the booked nights waits on the room lock', 'Lock', zz.wait_for_lock(current_setting('zz.pid')::int));
+select zz.dblink_exec('p1', 'commit');
+select count(*) from zz.dblink_get_result('p2', false) as t(r text);
+select zz.chk('D2-redate-race', '... and is refused once the booking committed', 'Jadwal bentrok dengan sewa lain di kamar yang sama', zz.dblink_error_message('p2'));
+select * from zz.dblink_get_result('p2', false) as t(r text);
+select zz.dblink_disconnect('p1'), zz.dblink_disconnect('p2');
+select zz.eq('D2-redate-race', 'r5: no night twice', '10..12..active 15..17..active 25..26..active', zz.rc_leases('r5'));
 
 -- E. daftar tunggu: front-desk work for every member, deleting for owners/admins, nothing across organisations
 do $$

@@ -833,6 +833,9 @@ begin
               where g.period_end < g.period_start) then
     raise exception 'Periode tagihan tidak valid: tanggal akhir sebelum tanggal mulai.';
   end if;
+  -- one booking per room at a time, as leases_overlap_guard (SPEC 7.7): a booking of this room by another phone in the
+  -- same moment waits for this correction, or this check waits for it and then sees its row
+  perform pg_advisory_xact_lock(hashtextextended('leases_overlap_guard:' || l.room_id::text, 0));
   -- double booking (SPEC 2b.8, same rule as leaseOverlaps): another non-cancelled lease of the room holds a night of
   -- [p_new_start, p_new_end]; an ended lease holds its room until the night before its checkout_date (SPEC 7.3).
   -- Only collisions this correction creates: a lease that already overlaps the stored span [l.start_date, l.end_date]
@@ -875,23 +878,30 @@ end $$;
 --    [greatest(old end_date + 1, today), new end_date];
 --  * not checked: room moves (the app checks them, SPEC 2b.9), start-date corrections (redate_lease checks itself),
 --    shorter ends, checkouts and cancels.
+-- "Today" is the kos's day in WIB (the server runs in UTC): the app and Mode Demo use the phone's date, and WIB is the
+-- westernmost Indonesian zone, so the guard never starts later than the app's own check. A caller who may not write the
+-- row (not a member of its organisation, or a room of another organisation) is left to row-level security and the
+-- foreign key, which refuse as before: checking first would tell them whether that room is booked.
 -- SQLSTATE WB003; the app shows the message as is (LEASE_OVERLAP_MESSAGE).
 create or replace function public.leases_overlap_guard()
 returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_from date;
+  v_today constant date := (now() at time zone 'Asia/Jakarta')::date;
 begin
   if tg_op = 'INSERT' then
     if new.status <> 'active' then return new; end if;
-    v_from := greatest(new.start_date, current_date);
+    v_from := greatest(new.start_date, v_today);
   else
     if new.room_id is distinct from old.room_id or new.start_date is distinct from old.start_date
        or old.status <> 'active' or new.status <> 'active' or new.end_date <= old.end_date then
       return new;
     end if;
-    v_from := greatest(old.end_date + 1, current_date);
+    v_from := greatest(old.end_date + 1, v_today);
   end if;
   if v_from > new.end_date then return new; end if;
+  if auth.uid() is not null and not public.is_org_member(new.org_id) then return new; end if;
+  if not exists (select 1 from public.rooms r where r.id = new.room_id and r.org_id = new.org_id) then return new; end if;
   -- one booking per room at a time; the check below runs after the lock, so it sees what the other phone committed
   perform pg_advisory_xact_lock(hashtextextended('leases_overlap_guard:' || new.room_id::text, 0));
   if exists (
