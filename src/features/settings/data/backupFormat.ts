@@ -29,6 +29,7 @@ export const TABLE_LABEL: Record<TableName, string> = {
   invoices: 'Tagihan',
   payments: 'Pembayaran',
   expenses: 'Pengeluaran',
+  waitlist: 'Daftar tunggu',
   audit_log: 'Riwayat perubahan',
 }
 

@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { FilePlus2, ScanLine, UserPlus, Wallet } from 'lucide-react'
+import { CalendarSearch, FilePlus2, ScanLine, UserPlus, Wallet } from 'lucide-react'
 
 const PRIMARY = 'bg-brand-700 text-white hover:bg-brand-800'
 const SECONDARY = 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
@@ -11,6 +11,9 @@ const QUICK_ACTIONS = [
   { to: '/pengeluaran?new=1', label: 'Catat pengeluaran', icon: Wallet, className: SECONDARY },
   { to: '/penyewa?new=1', label: 'Tambah penyewa', icon: UserPlus, className: SECONDARY },
 ]
+
+/** Rencana check-in (SPEC 7.7): a full-width row under the four on a phone, one more button on a wide screen. */
+const PLANNER = { to: '/rencana', label: 'Cek kamar kosong', icon: CalendarSearch }
 
 /** Big shortcuts for the most common tasks; Check-in first because it is what happens at the front desk. */
 export function QuickActions() {
@@ -26,6 +29,13 @@ export function QuickActions() {
           <span>{a.label}</span>
         </Link>
       ))}
+      <Link
+        to={PLANNER.to}
+        className={`col-span-4 flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium sm:h-10 sm:min-h-0 sm:rounded-lg sm:px-4 ${SECONDARY}`}
+      >
+        <PLANNER.icon className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
+        <span>{PLANNER.label}</span>
+      </Link>
     </nav>
   )
 }

@@ -9,6 +9,7 @@ import { dashboardRoutes } from '../features/dashboard/routes'
 import { propertiesRoutes } from '../features/properties/routes'
 import { tenantsRoutes } from '../features/tenants/routes'
 import { leasesRoutes } from '../features/leases/routes'
+import { rencanaRoutes } from '../features/rencana/routes'
 import { expensesRoutes } from '../features/expenses/routes'
 import { reportsRoutes } from '../features/reports/routes'
 import { settingsRoutes } from '../features/settings/routes'
@@ -40,6 +41,7 @@ const routes: RouteObject[] = [
           ...propertiesRoutes,
           ...tenantsRoutes,
           ...leasesRoutes,
+          ...rencanaRoutes,
           ...expensesRoutes,
           ...reportsRoutes,
           ...settingsRoutes,

@@ -15,9 +15,11 @@ import {
   type InvoiceDraft,
   type InvoiceDraftInput,
 } from '../../domain/billing'
-import { formatRupiah, todayISO } from '../../lib/format'
+import { formatCheckout, formatDate, formatRupiah, todayISO } from '../../lib/format'
+import { guardedNights, overlappingLease } from '../../domain/occupancy'
 import {
   LEASE_DATA_CHANGED_MESSAGE,
+  ROOM_AVAILABILITY_LABEL,
   addonAmountUpdates,
   allocateAcrossInvoices,
   appendMoveNote,
@@ -31,6 +33,7 @@ import {
   openInvoicesSorted,
   rentRefundExpense,
   rentRefundsToRecord,
+  roomAvailability,
   unrecordedRentRefunds,
   type Allocation,
   type DepositSettlement,
@@ -182,6 +185,44 @@ export function useLeaseActions() {
       return !!fresh && fresh.start_date !== lease.start_date
     }
 
+    /**
+     * SPEC 7.7: the database refuses an extension that runs into another booking of the room (leases_overlap_guard). Check
+     * the same rule on fresh rows BEFORE the invoice is written, so a refused extension leaves no invoice behind, and name
+     * the booking in the way. Only an extension the guard would refuse is stopped here.
+     */
+    async function assertExtensionFree(input: IssueInvoiceInput): Promise<void> {
+      let draft: InvoiceDraft
+      try {
+        draft = buildInvoiceDraft({
+          lease: input.lease,
+          addons: input.addons,
+          quantity: input.quantity,
+          periodEnd: input.periodEnd,
+          baseAmount: input.baseAmount,
+          periodType: input.periodType,
+          pricePerPeriod: input.pricePerPeriod,
+          addonsAmount: input.addonsAmount,
+          extraAmount: input.extraAmount,
+          discountAmount: input.discountAmount,
+          existingInvoices: input.existingInvoices,
+          orgInvoices: input.orgInvoices,
+        })
+      } catch {
+        return // the write itself reports the problem
+      }
+      const nights = guardedNights(input.lease, { ...input.lease, end_date: draft.new_lease_end_date }, todayISO())
+      if (!nights) return
+      const roomLeases = await repo.list('leases', { where: { room_id: input.lease.room_id } })
+      const other = overlappingLease(roomLeases, input.lease.room_id, nights.from, nights.to, input.lease.id)
+      if (!other) return
+      const tenant = await repo.get('tenants', other.tenant_id).catch(() => null)
+      await invalidate('leases')
+      throw new Error(
+        `Kamar ini sudah ${other.start_date > todayISO() ? 'dipesan' : 'ditempati'} ${tenant?.full_name ?? 'penyewa lain'} mulai ${formatDate(other.start_date)}, ` +
+          `jadi sewa ini tidak bisa diperpanjang sampai ${formatCheckout(draft.new_lease_end_date)}. Perpendek perpanjangan atau pindahkan salah satu ke kamar lain.`,
+      )
+    }
+
     /** Insert an invoice from a draft; on a duplicate number (two devices) rebuild with fresh numbering (SPEC 2b.11). */
     async function insertFromDraft(input: InvoiceDraftInput, notes: string | null): Promise<{ invoice: Invoice; draft: InvoiceDraft }> {
       let orgInvoices = input.orgInvoices ?? input.existingInvoices
@@ -216,6 +257,7 @@ export function useLeaseActions() {
         await invalidate('invoices', 'leases', 'lease_addons')
         throw new Error(LEASE_DATA_CHANGED_MESSAGE)
       }
+      await assertExtensionFree(input)
       const { invoice, draft } = await insertFromDraft(
         {
           lease: input.lease,
@@ -559,6 +601,15 @@ export function useLeaseActions() {
     async function moveRoom(lease: Lease, fromRoom: Room | undefined, toRoom: Room, newPrice: number | null, dateISO: string): Promise<void> {
       const priceChanged = newPrice !== null && newPrice !== lease.price_per_period
       if (priceChanged && !canEditLeaseTerms) throw new Error(STAFF_TERMS_ERROR)
+      // the dialog's check (roomAvailability) again on fresh rows: another phone may have booked or filled the room since
+      // the screen was read, and the database guard does not check room moves (SPEC 2b.9, 7.7)
+      const target = (await repo.get('rooms', toRoom.id)) ?? toRoom
+      const targetLeases = await repo.list('leases', { where: { room_id: toRoom.id } })
+      const availability = roomAvailability(target, targetLeases, dateISO, lease.end_date >= dateISO ? lease.end_date : dateISO, lease.id)
+      if (availability !== 'kosong') {
+        await invalidate('leases', 'rooms')
+        throw new Error(`Kamar ${toRoom.name} sudah tidak kosong (${ROOM_AVAILABILITY_LABEL[availability]}). Datanya baru saja berubah di HP lain: muat ulang lalu pilih kamar lain.`)
+      }
       await repo.update('leases', lease.id, {
         room_id: toRoom.id,
         // only sent when it changes: staff may move rooms but the database refuses any price change by them

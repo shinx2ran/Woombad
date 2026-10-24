@@ -79,6 +79,9 @@ begin
     zz.id('tenant_loose'), org, 'Loose tenant'), true));
   perform zz.eq('fixture', 'unpaid invoice', 'ok:1', zz.att(s, format('insert into public.invoices (id, org_id, property_id, lease_id, invoice_number, period_type, period_start, period_end, base_amount, total_amount, due_date) values (%L, %L, %L, %L, %L, %L, %L, %L, 1500000, 1500000, %L)',
     zz.id('inv_unpaid'), org, zz.id('prop1'), zz.id('lease1'), 'INV-202605-0001', 'monthly', '2026-05-01', '2026-05-31', '2026-05-01'), true));
+  -- daftar tunggu (SPEC 7.7), so re-running schema.sql (30-reapply) has a waitlist row to keep
+  perform zz.eq('fixture', 'staff waitlist entry', 'ok:1', zz.att(s, format('insert into public.waitlist (org_id, property_id, name, period_type, quantity) values (%L, %L, %L, %L, 2)',
+    org, zz.id('prop1'), 'Rina', 'daily'), true));
 end $$;
 
 -- storage objects

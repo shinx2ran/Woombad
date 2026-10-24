@@ -256,6 +256,6 @@ begin
     (select string_agg(r.relname || ':' || coalesce(substring(pg_get_constraintdef(c.oid) from 'SET NULL \(property_id\)$'), pg_get_constraintdef(c.oid)), ',' order by r.relname)
        from pg_constraint c join pg_class r on r.oid = c.conrelid
       where c.contype = 'f' and c.confrelid = 'public.properties'::regclass and r.relname in ('tenants', 'expenses')));
-  -- audit triggers on all twelve tables
-  perform zz.chk(p_grp, 'audit trigger on every audited table', '^12$', (select count(*)::text from pg_trigger where tgname = 'audit_row_change'));
+  -- audit triggers on all thirteen tables (waitlist since SPEC 7.7)
+  perform zz.chk(p_grp, 'audit trigger on every audited table', '^13$', (select count(*)::text from pg_trigger where tgname = 'audit_row_change'));
 end $$;

@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { clsx } from 'clsx'
-import { AlertTriangle, CalendarPlus, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Wallet, Zap } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, CalendarSearch, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Wallet, Zap } from 'lucide-react'
 import { Badge, Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
@@ -11,6 +11,7 @@ import { useLeaseData } from '../leases/useLeaseData'
 import { paidThroughText } from '../properties/roomUtils'
 import { BOARD_TONES, BOARD_TONE_META, boardStatusText, buildBoard, countTones, leaseActionLink, type BoardTile, type BoardTone } from './boardModel'
 import { QuickCheckInModal } from './QuickCheckInModal'
+import { plannerSearch } from '../rencana/rencanaParams'
 
 const TILE_CLASS: Record<BoardTone, string> = {
   // past due: a solid red sign, so it cannot be missed among the pale tiles
@@ -230,6 +231,14 @@ function RoomActionSheet({
             </button>
             <ActionLink to={`/sewa/baru?room=${room.id}`} icon={<FilePlus2 className="h-4 w-4" aria-hidden />}>
               Form lengkap
+            </ActionLink>
+          </div>
+        )}
+        {/* Rencana check-in (SPEC 7.7): plan a later stay in this room; the planner shows when it is free */}
+        {(tone === 'vacant' || tone === 'reserved') && (
+          <div className="grid">
+            <ActionLink to={`/rencana${plannerSearch({ periodType: 'daily', start: today, roomId: room.id })}`} icon={<CalendarSearch className="h-4 w-4" aria-hidden />}>
+              Pesan tanggal lain
             </ActionLink>
           </div>
         )}

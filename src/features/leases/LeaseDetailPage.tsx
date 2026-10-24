@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
 import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, DoorOpen, FilePlus2, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
 import {
+  Badge,
   Button,
   Card,
   CardBody,
@@ -27,6 +28,7 @@ import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
 import { agreedPriceText, invoiceTimeline, leaseEndDisplay, leaseReminderText, openInvoicesSorted, displayBillingState, priceDelta, priceDeltaText, roomPriceFor } from './leaseUtils'
 import { ActionMenu, BillingStateBadge, InvoiceTimeline, Row, type MenuItem } from './components'
+import { isLeaseReservedOn } from '../../domain/occupancy'
 import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
 import { EditPaymentModal } from './EditPaymentModal'
@@ -264,6 +266,8 @@ export function LeaseDetailPage() {
               <span>Penyewa tidak ditemukan</span>
             )}
             <LeaseStatusBadge status={lease.status} />
+            {/* a booking that has not started (SPEC 2a, 7.7): the same word as the room board and Kos & Kamar */}
+            {isLeaseReservedOn(lease, today) && <Badge tone="brand">Dipesan · mulai {formatDate(lease.start_date, 'd MMM')}</Badge>}
             {isActive && <BillingStateBadge state={displayBillingState(lease, summary, today)} />}
           </span>
         }

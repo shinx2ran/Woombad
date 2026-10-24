@@ -178,7 +178,8 @@ describe('DemoImportModal', () => {
       demo.lease_addons.filter((a) => demo.leases.some((l) => l.id === a.lease_id && l.property_id === melati.id)).length +
       demo.invoices.filter((i) => i.property_id === melati.id).length +
       demo.payments.filter((p) => p.property_id === melati.id).length +
-      demo.expenses.filter((e) => e.property_id === melati.id).length
+      demo.expenses.filter((e) => e.property_id === melati.id).length +
+      demo.waitlist.filter((w) => w.property_id === melati.id).length // daftar tunggu of the kos (SPEC 7.7)
     fireEvent.click(screen.getByRole('button', { name: `Impor ${expected} data` }))
 
     expect(await screen.findByText(`Impor selesai. ${expected} data masuk.`)).toBeTruthy()

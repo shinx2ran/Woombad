@@ -92,6 +92,55 @@ export function leaseOverlaps(leases: Lease[], roomId: string, startISO: string,
   return false
 }
 
+/**
+ * The database's double-booking guard (public.leases_overlap_guard, SPEC 7.7), for LocalRepo and the app's checks
+ * before a write: the first other lease of the room, not cancelled, that holds a night of [fromISO, toISO] (inclusive),
+ * or null. Same rule as leaseOverlaps (an ended lease holds until checkout_date - 1, an active lease until end_date),
+ * except that a lease without a night (an ended lease checked out on its first day) holds none.
+ */
+export function overlappingLease(leases: readonly Lease[], roomId: string, fromISO: string, toISO: string, excludeLeaseId?: string): Lease | null {
+  const from = day(fromISO)
+  const to = day(toISO)
+  for (const l of leases) {
+    if (l.room_id !== roomId || l.status === 'cancelled' || l.id === excludeLeaseId) continue
+    const lStart = day(l.start_date)
+    const lEnd = l.status === 'ended' ? leaseOccupiedUntil(l)! : day(l.end_date)
+    if (lEnd >= lStart && lStart <= to && lEnd >= from) return l
+  }
+  return null
+}
+
+/**
+ * The nights leases_overlap_guard checks for a lease write (SPEC 7.7), or null when it checks none. Only future nights
+ * (from today) are checked, so history and existing flows keep working:
+ *  - insert (`before` null) of an active lease: [max(start_date, today), end_date]; ended/cancelled rows (history) none;
+ *  - update that keeps the room, the start date and status active and moves end_date later (Perpanjang / Tagih):
+ *    [max(old end_date + 1, today), new end_date]. A room move (checked by the app, SPEC 2b.9), a start-date correction
+ *    (redate_lease checks itself), a shorter end, a checkout or a cancel are not checked.
+ */
+export function guardedNights(before: Lease | null, after: Lease, todayISO: string): { from: string; to: string } | null {
+  const today = day(todayISO)
+  let from: string
+  if (before === null) {
+    if (after.status !== 'active') return null
+    from = day(after.start_date) > today ? day(after.start_date) : today
+  } else {
+    if (
+      after.room_id !== before.room_id ||
+      day(after.start_date) !== day(before.start_date) ||
+      before.status !== 'active' ||
+      after.status !== 'active' ||
+      day(after.end_date) <= day(before.end_date)
+    ) {
+      return null
+    }
+    const next = addDaysISO(day(before.end_date), 1)
+    from = next > today ? next : today
+  }
+  const to = day(after.end_date)
+  return from <= to ? { from, to } : null
+}
+
 export interface OccupancySnapshot {
   /** all rooms given (any status) */
   total: number

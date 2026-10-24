@@ -79,7 +79,8 @@ Lewati langkah ini bila isinya hanya data contoh.
 1. **Proyek**: buat proyek Supabase baru (paket Free) di region **Southeast Asia (Singapore)**. Simpan kata sandi
    database di pengelola sandi; aplikasi tidak memakainya.
 2. **Skema**: **SQL Editor** → tempel seluruh isi `supabase/schema.sql` → **Run**. Berkas ini sudah lengkap (tidak
-   perlu `supabase/migrations/`) dan aman dijalankan ulang. Bila `schema.sql` berubah (mis. fitur **Ubah tanggal mulai**),
+   perlu `supabase/migrations/`) dan aman dijalankan ulang. Bila `schema.sql` berubah (mis. fitur **Ubah tanggal mulai**, atau
+   **Daftar tunggu** dan penjaga pesanan dobel),
    jalankan ulang di SQL Editor **sebelum** perubahan aplikasi di-push ke `master`.
 3. **Kode pemilik**: jalankan `node scripts/new-setup-code.mjs`, lalu jalankan baris
    `select public.set_setup_code('ABCD-EFGH');` yang dicetaknya di SQL Editor. Berikan kodenya kepada pemilik secara
@@ -157,7 +158,7 @@ langkah (aplikasi authenticator) di keduanya:
 |---|---|---|
 | **Pemilik** | Bapak (akun pertama) | Semua, termasuk mengubah peran anggota dan menghapus admin. |
 | **Admin** | Istri | Semua data: kos & rekening, kamar & harga, sewa, pembayaran, pengeluaran, Laporan, undang anggota, cadangan, Riwayat perubahan. Tidak bisa mengubah peran anggota atau menghapus admin lain. |
-| **Staf** | Pegawai / penjaga kos | Tambah/ubah penyewa, sewa baru, perpanjangan, tagihan, catat pembayaran & pengeluaran. **Tidak bisa** mengubah harga kamar/sewa, tanggal mulai sewa, data kos & rekening, daftar add-on, atau pembayaran/pengeluaran yang sudah dicatat. Menu **Laporan** tidak ditampilkan. |
+| **Staf** | Pegawai / penjaga kos | Tambah/ubah penyewa, sewa baru, pesan kamar & kelola daftar tunggu, perpanjangan, tagihan, catat pembayaran & pengeluaran. **Tidak bisa** mengubah harga kamar/sewa, tanggal mulai sewa, data kos & rekening, daftar add-on, atau pembayaran/pengeluaran yang sudah dicatat. Menu **Laporan** tidak ditampilkan. |
 
 Batasan ubah/hapus dijaga oleh database, bukan hanya oleh tampilan aplikasi. Staf tetap bisa **melihat** angka
 pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disembunyikan.
@@ -243,6 +244,8 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 
 | Kejadian | Yang dilakukan di aplikasi |
 |---|---|
+| Tamu harian/mingguan mau datang tanggal X | **Dashboard → Cek kamar kosong**: pilih Harian/Mingguan/Bulanan, tanggal check-in dan jumlahnya; kamar yang kosong tampil paling pas dulu, ketuk **Pesan** ([lihat di bawah](#rencana-check-in--daftar-tunggu)). |
+| "Belum ada kamar" | Di halaman yang sama ketuk **Masukkan ke daftar tunggu**; **Sewa → Daftar tunggu** menunjukkan kapan ada kamar cocok, lalu **Kabari** lewat WhatsApp dan **Pesan**. |
 | Penyewa baru datang | **Sewa → Sewa Baru**: pilih/buat penyewa (bisa **Scan KTP / Paspor**), kos & kamar kosong, periode & harga, deposit, add-on, lalu catat pembayaran pertama (boleh DP). |
 | Penyewa membayar | **Dashboard → Bayar** (atau buka sewa → **Catat pembayaran**). Status otomatis **DP / Sebagian** atau **Lunas**. Bisa kirim kwitansi ke WhatsApp. Salah ketik? **✏️ Ubah pembayaran** ([lihat di bawah](#salah-catat-pembayaran-atau-tagihan)). |
 | Mendekati jatuh tempo | Dashboard menampilkan **Perlu perhatian** (terlambat / jatuh tempo ≤3 hari). Tombol **Tagih** membuat tagihan periode berikutnya dan memperpanjang sewa; ikon WhatsApp mengirim pengingat berisi nomor rekening. Ikon oranye bertanda **+** berarti nomor HP penyewa belum diisi: ketuk untuk langsung mengisinya. |
@@ -273,6 +276,22 @@ terisi untuk **Bayar**, **Perpanjang**, atau **Check-out** (membuka dialog
 yang sama seperti di halaman sewa). Ketuk kamar kosong untuk **Check-in cepat** tamu harian: isi nama, jumlah malam, dan total
 bayar; nomor HP boleh diisi nanti. Saklar ini hanya berlaku di HP/tablet tempat ia dinyalakan dan bisa dimatikan kapan saja. Di
 Mode Demo papan selalu tampil, untuk dicoba dengan data contoh.
+
+### Rencana check-in & daftar tunggu
+
+**Cek kamar kosong** (Dashboard, atau **Sewa → Cek kamar**, atau **Pesan tanggal lain** di papan kamar) mencari kamar yang kosong
+untuk **seluruh** malam yang diminta, untuk tamu harian, mingguan atau bulanan, di kos yang sedang dipilih. Yang paling pas tampil
+paling atas (mis. "Pas sebelum pesanan 12 Nov"), dengan harga untuk seluruh menginap dan strip 14 hari (hijau kosong, biru terisi,
+ungu dipesan, kuning hari check-out). Kamar yang hanya kosong sebagian tampil di **Hampir cocok** dengan alasannya ("Kosong 5–9 Nov,
+lalu dipesan Budi"). Kamar penyewa bulanan tidak pernah ditawarkan sampai checkout-nya dicatat, juga bila ia baru dipesan dan
+belum masuk. Untuk check-in **hari ini**, kamar yang tamunya belum dicatat check-out tidak ditawarkan: catat checkout-nya dulu,
+seperti Check-in cepat. **Pesan**: isi nama (penyewa lama
+dikenali supaya tidak dobel), HP boleh nanti, total, DP bila ada; kamar langsung tampil **Dipesan**. Dua HP yang memesan kamar yang
+sama pada saat bersamaan tidak bisa dobel: yang kedua ditolak dengan nama pesanan yang lebih dulu. Tamu tidak jadi datang? Buka
+sewanya → **Lainnya → Batalkan sewa**. Bila tidak ada kamar, masukkan tamu ke **Daftar tunggu** (Sewa → Daftar tunggu, atau kartu
+di Dashboard): setiap entri menunjukkan kamar yang cocok saat ini, tombol **Kabari** membuka WhatsApp dengan pesan berisi kamar,
+tanggal, dan harga, dan **Pesan** langsung memesankan kamarnya (di kos yang diminta tamu itu). Entri yang sudah dipesankan dari HP
+lain tidak bisa dipesankan lagi atau dibatalkan dari layar lama. Staf boleh mengelola daftar tunggu; menghapus hanya pemilik/admin.
 
 ### Salah catat pembayaran atau tagihan?
 
@@ -311,7 +330,8 @@ Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik
 ## Menguji skema database secara lokal (opsional)
 
 `supabase/tests/run.sh` memasang `schema.sql` ke PostgreSQL lokal dengan tiruan objek Supabase dan menjalankan
-pengujian fungsional (pendaftaran, kode undangan, RLS, pembatasan staf, trigger tagihan). Lihat komentar di dalam skrip.
+pengujian fungsional (pendaftaran, kode undangan, RLS, pembatasan staf, trigger tagihan, penjaga pesanan dobel, daftar tunggu).
+Lihat komentar di dalam skrip.
 
 ## Install ke HP
 
