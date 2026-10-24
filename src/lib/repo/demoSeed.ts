@@ -205,6 +205,25 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
     })
   }
 
+  // Daftar tunggu (SPEC 7.7): a daily guest a free room fits, a weekly guest no room fits yet, one who cancelled.
+  db.waitlist.push(
+    {
+      id: newId(), org_id: DEMO_ORG_ID, property_id: kosA, name: 'Rina Kartika', phone: '+6281234567811',
+      wanted_from: toDateISO(addDays(today, 2)), period_type: 'daily', quantity: 2, max_price: 110_000,
+      room_note: 'Lantai bawah', notes: null, status: 'waiting', lease_id: null, created_by: null, ...ts,
+    },
+    {
+      id: newId(), org_id: DEMO_ORG_ID, property_id: kosB, name: 'Joko Susilo', phone: '+6281234567812',
+      wanted_from: toDateISO(addDays(today, 1)), period_type: 'weekly', quantity: 2, max_price: null,
+      room_note: 'Kamar mandi dalam', notes: 'Kerja proyek 2 minggu', status: 'waiting', lease_id: null, created_by: null, ...ts,
+    },
+    {
+      id: newId(), org_id: DEMO_ORG_ID, property_id: kosA, name: 'Wulan Sari', phone: null,
+      wanted_from: toDateISO(addDays(today, -5)), period_type: 'daily', quantity: 3, max_price: null,
+      room_note: null, notes: 'Batal, sudah dapat tempat lain', status: 'cancelled', lease_id: null, created_by: null, ...ts,
+    },
+  )
+
   // Expenses: monthly wages + utilities per property, a few maintenance items.
   const mkExpense = (property_id: string | null, category: Expense['category'], amount: number, date: Date, description: string, vendor: string | null = null): Expense => ({
     id: newId(), org_id: DEMO_ORG_ID, property_id, lease_id: null, category, amount, expense_date: toDateISO(date), description, vendor, receipt_path: null, created_by: null, ...ts,

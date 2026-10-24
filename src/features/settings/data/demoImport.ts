@@ -21,12 +21,13 @@ import {
   PERIOD_TYPES,
   REFUND_CATEGORIES,
   ROOM_STATUSES,
+  WAITLIST_STATUSES,
   type Row,
 } from '../../../types/db'
 import type { BackupRow, ParsedBackup } from './backupFormat'
 
 /** Insert order: parents before children. */
-export const IMPORT_ORDER = ['properties', 'rooms', 'addon_catalog', 'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] as const
+export const IMPORT_ORDER = ['properties', 'rooms', 'addon_catalog', 'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'waitlist', 'expenses'] as const
 export type ImportTable = (typeof IMPORT_ORDER)[number]
 
 export const SKIP_REASONS = ['exists', 'invalid_id', 'other_org', 'invalid_data', 'broken_ref'] as const
@@ -237,6 +238,19 @@ const COLUMNS: { [T in ImportTable]: { [K in DataColumns<T>]: Col } } = {
     vendor: text,
     receipt_path: { type: 'text', clear: true },
   },
+  waitlist: {
+    property_id: uuid,
+    name: reqText,
+    phone: text,
+    wanted_from: date,
+    period_type: { type: PERIOD_TYPES, def: 'daily' },
+    quantity: { type: 'int', def: 1, min: 1 },
+    max_price: money(),
+    room_note: text,
+    notes: text,
+    status: { type: WAITLIST_STATUSES, def: 'waiting' },
+    lease_id: uuid,
+  },
 }
 
 interface ForeignKey {
@@ -269,6 +283,11 @@ const FOREIGN_KEYS: Record<ImportTable, ForeignKey[]> = {
   expenses: [
     { column: 'property_id', target: 'properties' },
     { column: 'lease_id', target: 'leases' },
+  ],
+  // ON DELETE SET NULL on both: an entry whose kos or booked lease does not come along keeps waiting for any kos
+  waitlist: [
+    { column: 'property_id', target: 'properties', nullIfMissing: true },
+    { column: 'lease_id', target: 'leases', nullIfMissing: true },
   ],
 }
 
@@ -327,6 +346,8 @@ function passesChecks(table: ImportTable, r: Record<string, unknown>): boolean {
       return (r.kind === 'rent') === (r.invoice_id !== null)
     case 'expenses':
       return !(REFUND_CATEGORIES as readonly unknown[]).includes(r.category) || r.lease_id !== null
+    case 'waitlist':
+      return s('name').trim() !== ''
     default:
       return true
   }
@@ -473,6 +494,7 @@ export function previewBackup(backup: ParsedBackup, existing: ExistingOnline = e
         ['invoices', invoices],
         ['payments', payments],
         ['expenses', expenses.filter((e) => !splitParts.has(key(e.id) ?? ''))],
+        ['waitlist', of(t.waitlist)],
       ]
       for (const [table, rows] of under) {
         for (const r of rows) {
@@ -571,6 +593,9 @@ export function emptySkipped(): Record<SkipReason, number> {
  * org-wide add-ons, tenants) are imported only with includeSample. Parts of the owner's split expense that sit on
  * an unticked sample kos come along as shared expenses when the rest of the group is imported, so the total stays
  * whole without importing the sample kos.
+ *
+ * Daftar tunggu entries (SPEC 7.7) follow their kos; entries for any kos follow the rule for rows outside any kos; a
+ * booked entry whose lease does not come along keeps its status with lease_id cleared (ON DELETE SET NULL).
  *
  * Skipped (counted per reason): non-UUID ids, rows of another organisation, ids already online, rows that
  * break a column rule, and rows whose parent is neither imported nor online. A tenant's missing home kos is
@@ -701,6 +726,14 @@ export function planDemoImport(backup: ParsedBackup, selection: ImportSelection,
     const before = tables.expenses.rows.length
     take('expenses', e, { adjust: toShared })
     if (tables.expenses.rows.length > before) sharedSplits.add(group.name)
+  }
+
+  // daftar tunggu (SPEC 7.7): entries of a selected kos; entries for any kos (or a kos no longer in the file) like
+  // other rows outside any kos
+  for (const w of t.waitlist) {
+    const pid = key(w.property_id)
+    const ownKos = pid !== null && backupPropertyIds.has(pid)
+    if (ownKos ? selected.has(pid) : outsideKos(w, anySelected)) take('waitlist', w)
   }
 
   return {
