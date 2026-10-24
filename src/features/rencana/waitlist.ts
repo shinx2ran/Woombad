@@ -61,6 +61,11 @@ export interface WaitlistMatch {
   stay: PlannedStay | null
   /** rooms free for the whole stay within budget, best fit first */
   rooms: FreeRoom[]
+  /**
+   * "Bisa kosong" rooms (SPEC 7.8): free for the stay if their monthly tenant leaves at the end of his billed period. Only a
+   * hint ("+2 bisa kosong"): they are not matches until his Rencana keluar is recorded.
+   */
+  maybeFree: number
 }
 
 /** Live matches of a waiting entry: its own kos, or every shown kos for an entry for any kos. */
@@ -73,7 +78,7 @@ export function waitlistMatches(entry: WaitlistEntry, input: WaitlistMatchInput)
     propertyIds: entry.property_id ? [entry.property_id] : input.propertyIds,
     tenants: input.tenants,
   })
-  return { stay: result?.stay ?? null, rooms: result?.free ?? [] }
+  return { stay: result?.stay ?? null, rooms: result?.free ?? [], maybeFree: result?.maybeFree.length ?? 0 }
 }
 
 /** 'Kamar cocok: A3, B1 (Rp 360.000)', '… (mulai Rp 300.000)', '+2 lainnya'; 'Belum ada kamar' without a match. */
@@ -94,6 +99,11 @@ export function wantText(entry: WaitlistEntry, stay?: PlannedStay | null): strin
   const duration = `${entry.quantity} ${unit}${entry.wanted_from && stay ? ` (check-out ${formatCheckout(stay.end)})` : ''}`
   const budget = entry.max_price !== null ? `maks. ${formatRupiah(entry.max_price)} / ${unit}` : null
   return [when, duration, budget].filter(Boolean).join(' · ')
+}
+
+/** '+2 bisa kosong' under the matches (SPEC 7.8), or null when no monthly tenant's room could become free for the entry. */
+export function maybeFreeText(match: Pick<WaitlistMatch, 'maybeFree'>): string | null {
+  return match.maybeFree > 0 ? `+${match.maybeFree} bisa kosong` : null
 }
 
 /** Counts for the Dashboard card: waiting entries, and how many of them a free room fits now. */
