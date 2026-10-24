@@ -236,9 +236,11 @@ function RoomActionSheet({
         )}
         {/* Rencana check-in (SPEC 7.7): plan a later stay in this room; the planner shows when it is free */}
         {(tone === 'vacant' || tone === 'reserved') && (
-          <ActionLink to={`/rencana${plannerSearch({ periodType: 'daily', start: today, roomId: room.id })}`} icon={<CalendarSearch className="h-4 w-4" aria-hidden />}>
-            Pesan tanggal lain
-          </ActionLink>
+          <div className="grid">
+            <ActionLink to={`/rencana${plannerSearch({ periodType: 'daily', start: today, roomId: room.id })}`} icon={<CalendarSearch className="h-4 w-4" aria-hidden />}>
+              Pesan tanggal lain
+            </ActionLink>
+          </div>
         )}
         {lease ? (
           <Link to={`/sewa/${lease.id}`} className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline">

@@ -82,7 +82,7 @@ Postgres tidak bisa menjaga aturan berikut; UI wajib:
 5. **Checkout** (`ended`): `checkout_date` wajib = hari penyewa keluar (malam itu sudah tidak dihuni, 7.3); tagihan yang `period_start >= checkout_date` (termasuk yang mulai **pada** hari checkout) dianggap sesudah checkout: unpaid di-void, partial diputuskan seperti 2b.4 (kembalikan / anggap hangus), lunas dibiarkan (dicatat sebagai catatan); sisa tagihan yang mulai sebelum checkout tetap piutang (boleh dipotong jaminan: payment rent, method `deposit`). Deposit yang dipegang **wajib** diselesaikan: dikembalikan (expense `deposit_refund`, `lease_id`), dipotong untuk kerusakan (payment `kind='other'`, `method='deposit'`, catatan "Potongan jaminan: …"), atau dipotong untuk sewa (payment rent method deposit). `end_date` = min(end_date, checkout_date − 1) (malam terakhir, 7.3), tidak sebelum `start_date`.
 6. **Pembayaran** rent selalu `invoice_id` terisi; deposit/other selalu `invoice_id = null` (DB: `(kind = 'rent') = (invoice_id is not null)`). `property_id` pembayaran = `property_id` tagihan/sewa.
 7. **Kelebihan bayar**: `validateRentPayment` menolak jumlah > sisa. Form menawarkan: "Catat kelebihan Rp X sebagai Pemasukan Lain" (payment `other`, `lease_id`) atau "Jadikan diskon tagihan berikutnya" (isi `discount_amount` pada draft tagihan berikutnya lewat catatan sewa). **Kekurangan yang disepakati** ("kurang 50 ribu, anggap lunas"): tambahkan `discount_amount` sebesar selisih lalu status menjadi paid.
-8. **Double-booking**: saat membuat/mengubah sewa, tolak kamar yang punya sewa non-cancelled yang tumpang tindih dengan `[start_date, end_date]` (`leaseOverlaps`). Kamar dengan sewa aktif berawal di masa depan ditampilkan **Dipesan**.
+8. **Double-booking**: saat membuat/mengubah sewa, tolak kamar yang punya sewa non-cancelled yang tumpang tindih dengan `[start_date, end_date]` (`leaseOverlaps`). Kamar dengan sewa aktif berawal di masa depan ditampilkan **Dipesan**. Sejak 7.7 database juga menjaganya (trigger `leases_overlap_guard`, dua HP sekaligus): sewa aktif baru dan perpanjangan ditolak bila mengambil malam **mulai hari ini** yang sudah dipegang sewa lain di kamar itu ('Kamar sudah terisi atau dipesan pada tanggal itu.'); riwayat, pindah kamar, koreksi tanggal mulai, checkout dan pembatalan tidak diperiksa (lihat 7.7).
 9. **Pindah kamar** dalam kos yang sama: ubah `room_id` (+ `price_per_period` bila beda) pada sewa aktif dan tambahkan catatan otomatis "Pindah dari A1 ke B2 pada <tanggal>" di `leases.notes`; pindah antar kos = checkout + sewa baru. Cek double-booking berlaku.
 10. **Perpanjangan**: jumlah periode (`quantity`) yang menentukan `end_date` (`end_date = period_end` tagihan terakhir). Jika pengguna memasukkan tanggal akhir, tampilkan jumlah periode hasil `periodsToCover` dan tanggal akhir hasil perhitungan, minta konfirmasi bila berbeda. Pro-rata ("tambah 2 minggu saja" pada sewa bulanan) memakai `periodEnd` + `baseAmount` pada `InvoiceDraftInput`.
 11. **Nomor tagihan**: `nextInvoiceSequence` dari seluruh tagihan org (termasuk void). Pada error unik (dua perangkat bersamaan), ulangi dengan nomor berikutnya.
@@ -486,3 +486,78 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   kesinambungan periode berikutnya, aturan `end_date`, jatuh tempo, bentrok, tanggal sama, sewa selesai), `redateLease.test.tsx`
   (aksi dengan `LocalRepo`), `RedateLeaseModal.test.tsx`, `supabaseRepo.redate.test.ts`, `supabase/tests/26-redate.sql`,
   `e2e/redate.spec.ts` (360 px, Mode Demo).
+
+### 7.7 Rencana check-in & daftar tunggu
+- **Masalah**: kos penuh (31 kamar, kebanyakan bulanan); tamu harian/mingguan menelepon untuk tanggal tertentu. Pemilik ingin
+  cepat tahu kamar mana yang kosong, memesannya tanpa dobel check-in, dan mencatat orang yang belum dapat kamar.
+- **Cek kamar & pesan** (`/rencana`, modul `src/features/rencana`; pintu masuk: tombol cepat Dashboard **Cek kamar kosong**,
+  tombol **Cek kamar** di `/sewa`, dan **Pesan tanggal lain** pada lembar kamar Kosong/Dipesan di papan kamar, terisi kamar itu).
+  Isian (disimpan di alamat: `?jenis=harian|mingguan|bulanan&mulai=&jumlah=&maks=&kamar=&tunggu=`, `rencanaParams.ts`): jenis
+  Harian/Mingguan/Bulanan (bawaan Harian), tanggal check-in (bawaan hari ini), jumlah malam/minggu/bulan (`CountInput`), harga
+  maks. **per malam/minggu/bulan** (opsional); kos = filter kos global (`propertyFilterIds`). Hari check-out tampil langsung (7.3).
+- **Perhitungan murni** `availability.ts` → `findAvailability({ rooms, leases, request, today, propertyIds?, roomId?, tenants? })`:
+  - Malam yang dipegang sewa (`leaseHold`): `cancelled` tidak; `ended` sampai `checkout_date − 1` (`end_date` bila kosong);
+    pesanan yang belum mulai (aktif, `start_date` > hari ini) `[start_date, end_date]`; tamu harian/mingguan yang sedang menginap
+    `[start_date, end_date]` (diharapkan keluar di hari check-out; ditandai "masih menginap"); **penyewa bulanan yang sedang
+    tinggal, dan tamu yang hari check-out-nya sudah lewat tanpa checkout, memegang kamar sampai checkout dicatat** (sewa aktif
+    tanpa batas atas, 2a) — kamar penyewa bulanan tidak pernah ditawarkan; bila ia akan keluar, catat **Checkout** dengan tanggal
+    keluarnya. Sewa tanpa malam (checkout di hari mulai) tidak memegang apa pun. Kamar perbaikan tidak pernah ditawarkan. Aturan
+    ini tidak pernah lebih longgar dari penjaga database (yang memakai `end_date` untuk sewa aktif).
+  - (1) **Kosong untuk seluruh tanggal**: harga = tarif kamar × jumlah (harian × malam, mingguan × minggu, bulanan × bulan; tanpa
+    tarif: "Harga belum diatur", total diketik di lembar pesan); urutan **paling pas**: sisa malam kosong terkecil sebelum pesanan
+    berikutnya setelah check-out (tanpa pesanan berikutnya paling akhir), lalu malam menganggur terkecil sebelum check-in (dihitung
+    sejak hari ini), lalu harga, lalu nama kamar; alasan satu baris ("Pas sebelum pesanan 12 Nov", "Sisa 3 malam sebelum pesanan
+    15 Nov", "Kosong sampai seterusnya") + catatan tamu sebelumnya ("Sari masih menginap, jadwal check-out 5 Nov", "Langsung
+    setelah Sari check-out"). Kamar di atas harga maks. tidak ditampilkan (dihitung `overBudget`); kamar tanpa tarif tetap tampil.
+  - (2) **Hampir cocok** (maks. 5, malam kosong terbanyak dulu): alasan persis dari rentang kosong terpanjang ("Kosong 5–9 Nov,
+    lalu dipesan Budi", "Ditempati Sari sampai 7 Nov, lalu kosong 7–12 Nov").
+  - (3) Tidak ada yang kosong: keadaan kosong yang jelas + tombol **Masukkan ke daftar tunggu** (form terisi tanggal, jenis,
+    jumlah, harga maks.). Untuk satu kamar (`?kamar=`) kamar yang tidak kosong tampil dengan penyebabnya ("Dipesan Budi 27–29 Okt").
+  - Setiap kamar punya **strip 14 hari** mulai tanggal check-in (`availabilityStrip`: kosong / terisi / dipesan / hari check-out,
+    malam yang dipilih bergaris) dengan teks pengganti untuk pembaca layar (`stripText`).
+- **Pesan** → lembar `BookingSheet`: nama penyewa dengan pencocokan penyewa lama seperti Check-in cepat (`tenantsNamed` +
+  `resolveTenantChoice`), HP opsional ("HP belum diisi" diingatkan), total (terisi dari tarif, bisa diubah; per malam/minggu/bulan
+  tampil), DP opsional (jumlah + Tunai/Transfer/QRIS; sama dengan total = lunas), catatan. Simpan lewat **jalur yang sama dengan
+  Check-in cepat**: `saveQuickCheckIn` diperumum menjadi `saveStayBooking` (semua jenis periode, tanggal mulai kapan saja, DP
+  bertanda 'DP' seperti wizard): penyewa (bila baru) → sewa `active` (`start_date` = check-in) → tagihan pertama lewat
+  `insertFromDraft` → pembayaran → status tagihan. Check-in hari ini = Check-in cepat; tanggal nanti = **Dipesan** di papan kamar,
+  Kos & Kamar, dan detail sewa (lencana "Dipesan · mulai 27 Okt"). Tepat sebelum menulis, `useRencanaActions.bookStay` membaca
+  ulang kamar dan sewa-sewanya (`stayConflict`) dan menolak dengan nama pesanan yang menghalangi ("Kamar A3 sudah tidak kosong pada
+  tanggal itu: dipesan Budi 27–29 Okt. Pilih kamar atau tanggal lain."); penolakan penjaga database di detik terakhir diberi nama
+  yang sama. Tamu tidak datang: pemilik/admin membuka sewanya → **Batalkan sewa** (tanggal hari itu; 2b.4, 7.3 "belum menginap").
+- **Daftar tunggu** (`/daftar-tunggu`; dari tombol di `/sewa`, dari `/rencana`, dan kartu Dashboard "Daftar tunggu: N orang ·
+  M ada kamar cocok" yang hanya tampil bila N > 0). Tabel `public.waitlist`: `id, org_id, property_id` (null = kos mana saja),
+  `name` (wajib), `phone`, `wanted_from` (null = secepatnya), `period_type`, `quantity ≥ 1`, `max_price` (per unit), `room_note`,
+  `notes`, `status` waiting|booked|cancelled (bawaan waiting), `lease_id` (diisi saat dipesan; FK ke leases on delete set null),
+  `created_by` (dipaksa `auth.uid()`), `created_at/updated_at`; FK komposit `(org_id, …)`; RLS: select/insert/update anggota
+  (staf termasuk), delete pemilik/admin; trigger `set_updated_at`, `keep_org_id`, `set_created_by`, `audit_row_change`; ikut
+  `export_backup`, cadangan JSON, impor Mode Demo (mengikuti kosnya; tanpa kos seperti baris lain di luar kos; `lease_id` yang
+  sewanya tidak ikut dikosongkan) dan Riwayat perubahan. Bila aplikasi terbit sebelum `schema.sql` dijalankan ulang, halaman
+  menjelaskannya dan cadangan/impor melewatkan tabel ini.
+  - Daftar: Menunggu dulu (secepatnya paling atas, lalu tanggal terdekat), chip **Menunggu / Sudah dipesan / Batal**. Kartu: nama,
+    HP (wa.me) atau gelembung oranye "HP belum diisi" yang membuka form di Nomor HP, yang diinginkan (`wantText`), preferensi,
+    kecocokan langsung dari `availability.ts` ("Kamar cocok: A3, B1 (Rp 360.000)" / "Belum ada kamar"). Aksi: **Kabari** (WhatsApp:
+    sapaan, kamar, tanggal dengan check-out, harga, nama kos; `kabariText`), **Pesan** (membuka `/rencana` terisi; setelah pesanan
+    tersimpan entri menjadi `booked` dengan `lease_id` dalam alur yang sama), **Ubah**, **Batal** (`cancelled`; bisa diaktifkan
+    lagi); **Hapus** hanya pemilik/admin. Form: nama, HP, kos, mulai (tanggal atau Secepatnya), jenis + jumlah, harga maks.,
+    preferensi, catatan.
+- **Penjaga database** `public.leases_overlap_guard` (BEFORE INSERT OR UPDATE ON leases, security definer): mengambil
+  `pg_advisory_xact_lock` per kamar (HP kedua menunggu HP pertama selesai, lalu melihat barisnya), lalu menolak dengan SQLSTATE
+  **WB003** 'Kamar sudah terisi atau dipesan pada tanggal itu.' bila tulisan membuat tumpang tindih **baru** dengan sewa
+  non-cancelled lain di kamar yang sama (aturan `leaseOverlaps`; `ended` sampai `checkout_date − 1`). Hanya malam mendatang:
+  INSERT sewa `active` → `[greatest(start_date, hari ini), end_date]`; UPDATE yang mempertahankan kamar, `start_date` dan status
+  `active` sambil memperpanjang `end_date` (Perpanjang/Tagih) → `[greatest(end_date lama + 1, hari ini), end_date baru]`. Tidak
+  diperiksa: pindah kamar (aplikasi, 2b.9), koreksi tanggal mulai (`redate_lease` memeriksa sendiri), baris riwayat
+  ended/cancelled (impor), memperpendek, checkout, batal. Bukan RPC (pengecualian prinsip bagian 1 seperti 7.6 demi dua HP
+  sekaligus). `LocalRepo` meniru aturan yang sama dengan hari ini perangkat (`overlappingLease` + `guardedNights` di
+  `domain/occupancy.ts`, pesan `LEASE_OVERLAP_MESSAGE`; `translateDbError` memetakan WB003). **Perpanjang/Tagih** memeriksa aturan
+  yang sama pada data segar **sebelum** tagihan dibuat, jadi perpanjangan yang ditolak tidak meninggalkan tagihan dan menyebut
+  pesanannya ("Kamar ini sudah dipesan Budi mulai 5 Nov 2026, jadi sewa ini tidak bisa diperpanjang sampai 12 Nov 2026 …").
+  Urutan rilis: jalankan ulang `schema.sql` dulu, baru push ke `master`.
+- **Uji**: `availability.test.ts` (rentang harian/mingguan/bulanan, hari check-out dipakai lagi, sewa ended dengan
+  checkout_date, pesanan mendatang, perbaikan, urutan paling pas, teks hampir cocok, harga, akhir bulan & kabisat, strip),
+  `waitlist.test.ts`, `occupancyGuard.test.ts`, `localRepo.guard.test.ts`, `useRencanaActions.test.tsx` (pesanan + tagihan + DP,
+  Dipesan, penolakan saat kamar diambil HP lain, tautan daftar tunggu, staf boleh memesan & mengelola tetapi tidak menghapus,
+  perpanjangan ke pesanan ditolak tanpa tagihan), `supabase/tests/27-rencana.sql` (penjaga insert/perpanjangan termasuk dua sesi
+  dblink bersamaan, riwayat boleh, pindah kamar & redate tidak terganggu, RLS daftar tunggu per peran & lintas organisasi, riwayat
+  perubahan, `export_backup`), `e2e/rencana.spec.ts` (360 px, Mode Demo, jam tetap).

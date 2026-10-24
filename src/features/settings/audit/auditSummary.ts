@@ -166,6 +166,7 @@ const COLUMN_ORDER = [
   'paid_at',
   'expense_date',
   'start_date',
+  'wanted_from',
   'end_date',
   'checkout_date',
   // an invoice moved by 'Ubah tanggal mulai' (SPEC 7.6) reads start, check-out, due date

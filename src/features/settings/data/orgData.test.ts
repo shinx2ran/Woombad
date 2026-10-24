@@ -4,7 +4,7 @@ import { LocalRepo } from '../../../lib/repo/localRepo'
 import { bindOrg, type OrgRepo } from '../../../lib/repo/types'
 import { parseBackupText } from './backupFormat'
 import { localBackupFile } from './backupFile'
-import { BACKUP_TABLES, fetchOrgBackup } from './orgData'
+import { BACKUP_TABLES, fetchExistingOnline, fetchOrgBackup, isMissingTableError } from './orgData'
 
 function demoRepo() {
   const db = buildDemoDb(new Date(2026, 9, 12))
@@ -43,6 +43,30 @@ describe('fetchOrgBackup', () => {
     const file = await fetchOrgBackup(failingAudit)
     expect(file.tables).not.toHaveProperty('audit_log')
     expect(file.tables.rooms).toHaveLength(10)
+  })
+})
+
+describe('a server without the daftar tunggu table yet (schema.sql not re-run, SPEC 7.7)', () => {
+  const missing = (repo: OrgRepo): OrgRepo => ({
+    ...repo,
+    list: ((table: Parameters<OrgRepo['list']>[0], opts?: Parameters<OrgRepo['list']>[1]) =>
+      table === 'waitlist' ? Promise.reject(new Error("Could not find the table 'public.waitlist' in the schema cache")) : repo.list(table, opts)) as OrgRepo['list'],
+  })
+
+  it('the backup and the demo import leave the table out instead of failing', async () => {
+    const { repo } = demoRepo()
+    const file = await fetchOrgBackup(missing(repo))
+    expect(file.tables.waitlist).toEqual([])
+    expect(file.tables.rooms).toHaveLength(10)
+    expect((await fetchExistingOnline(missing(repo))).ids.waitlist.size).toBe(0)
+  })
+
+  it('other errors still stop the backup', async () => {
+    const { repo } = demoRepo()
+    const offline: OrgRepo = { ...repo, list: (() => Promise.reject(new Error('Tidak dapat terhubung ke server.'))) as OrgRepo['list'] }
+    await expect(fetchOrgBackup(offline)).rejects.toThrow('Tidak dapat terhubung')
+    expect(isMissingTableError(new Error('relation "public.waitlist" does not exist'))).toBe(true)
+    expect(isMissingTableError(new Error('Tidak dapat terhubung ke server.'))).toBe(false)
   })
 })
 

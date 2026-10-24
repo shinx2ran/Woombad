@@ -152,4 +152,33 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     await page.getByRole('tab', { name: 'Sudah dipesan (1)' }).click()
     await expect(page.locator('[data-testid="waitlist-entry"][data-name="Rina Kartika"]').getByRole('link', { name: 'Lihat sewa' })).toBeVisible()
   })
+
+  test('Mingguan: a guest leaving mid-stay is "Hampir cocok" with the reason; the pages render without errors at 360 px', async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(`console: ${m.text()}`)
+    })
+    await loginDemo(page)
+    await page.goto('/sewa')
+    await expect(page.getByRole('link', { name: 'Cek kamar' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Daftar tunggu' })).toBeVisible()
+    expect(await noSideScroll(page)).toBe(true)
+
+    await page.getByRole('link', { name: 'Cek kamar' }).click()
+    await page.waitForURL(/\/rencana/)
+    await page.getByRole('radio', { name: 'Mingguan' }).click()
+    await page.getByLabel('Check-in').fill('2026-10-24')
+    await expect(page.getByTestId('planner-checkout')).toContainText('Check-out Sabtu, 31 Okt 2026 · 7 malam')
+    expect(await freeRooms(page)).toEqual(['A3', 'B3'])
+    await expect(page.locator('[data-testid="free-room"][data-room="A3"]')).toContainText('Rp 600.000')
+    const partial = page.locator('[data-testid="partial-room"][data-room="102"]')
+    await expect(partial).toContainText('Ditempati Hendra Wijaya sampai 27 Okt, lalu kosong 27–31 Okt')
+    await expect(partial).toContainText('4 dari 7 malam')
+    expect(await noSideScroll(page)).toBe(true)
+    await page.goto('/daftar-tunggu?status=cancelled')
+    await expect(page.locator('[data-testid="waitlist-entry"][data-name="Wulan Sari"]')).toContainText('HP belum diisi')
+    expect(await noSideScroll(page)).toBe(true)
+    expect(errors, errors.join('\n')).toEqual([])
+  })
 })
