@@ -283,12 +283,15 @@ Mode Demo papan selalu tampil, untuk dicoba dengan data contoh.
 untuk **seluruh** malam yang diminta, untuk tamu harian, mingguan atau bulanan, di kos yang sedang dipilih. Yang paling pas tampil
 paling atas (mis. "Pas sebelum pesanan 12 Nov"), dengan harga untuk seluruh menginap dan strip 14 hari (hijau kosong, biru terisi,
 ungu dipesan, kuning hari check-out). Kamar yang hanya kosong sebagian tampil di **Hampir cocok** dengan alasannya ("Kosong 5–9 Nov,
-lalu dipesan Budi"). Kamar penyewa bulanan tidak pernah ditawarkan sampai checkout-nya dicatat. **Pesan**: isi nama (penyewa lama
+lalu dipesan Budi"). Kamar penyewa bulanan tidak pernah ditawarkan sampai checkout-nya dicatat, juga bila ia baru dipesan dan
+belum masuk. Untuk check-in **hari ini**, kamar yang tamunya belum dicatat check-out tidak ditawarkan: catat checkout-nya dulu,
+seperti Check-in cepat. **Pesan**: isi nama (penyewa lama
 dikenali supaya tidak dobel), HP boleh nanti, total, DP bila ada; kamar langsung tampil **Dipesan**. Dua HP yang memesan kamar yang
 sama pada saat bersamaan tidak bisa dobel: yang kedua ditolak dengan nama pesanan yang lebih dulu. Tamu tidak jadi datang? Buka
 sewanya → **Lainnya → Batalkan sewa**. Bila tidak ada kamar, masukkan tamu ke **Daftar tunggu** (Sewa → Daftar tunggu, atau kartu
 di Dashboard): setiap entri menunjukkan kamar yang cocok saat ini, tombol **Kabari** membuka WhatsApp dengan pesan berisi kamar,
-tanggal, dan harga, dan **Pesan** langsung memesankan kamarnya. Staf boleh mengelola daftar tunggu; menghapus hanya pemilik/admin.
+tanggal, dan harga, dan **Pesan** langsung memesankan kamarnya (di kos yang diminta tamu itu). Entri yang sudah dipesankan dari HP
+lain tidak bisa dipesankan lagi atau dibatalkan dari layar lama. Staf boleh mengelola daftar tunggu; menghapus hanya pemilik/admin.
 
 ### Salah catat pembayaran atau tagihan?
 

@@ -118,6 +118,17 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     expect(text).toContain('kamar A3 kosong untuk 25 Okt 2026 – 27 Okt 2026 (2 malam, check-out 27 Okt 2026)')
     expect(text).toContain('Harganya Rp 200.000 untuk 2 malam.')
 
+    // Joko asked for Kos Anggrek: Pesan searches there only, as his card does (nothing there for those dates)
+    await entries.nth(0).getByRole('link', { name: 'Pesan' }).click()
+    await page.waitForURL(/\/rencana\?.*kos=/)
+    await expect(page.getByTestId('planner-scope')).toHaveText('Mencari di Kos Anggrek.')
+    await expect(page.getByRole('button', { name: /Hanya Kos Anggrek/ })).toBeVisible()
+    await expect(page.getByText('Tidak ada kamar kosong untuk seluruh tanggal')).toBeVisible()
+    await expect(page.getByTestId('free-room')).toHaveCount(0)
+    expect(await noSideScroll(page)).toBe(true)
+    await page.getByTestId('planner-scope').evaluate((el) => el.scrollIntoView({ block: 'center' }))
+    await page.screenshot({ path: join(SHOTS, 'planner-waitlist-kos.png') })
+
     // nothing free within budget: the planner offers the daftar tunggu, prefilled with the dates
     await page.goto('/rencana?jenis=harian&mulai=2026-10-30&jumlah=3&maks=50000')
     await expect(page.getByText('Tidak ada kamar kosong untuk seluruh tanggal')).toBeVisible()
