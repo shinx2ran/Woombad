@@ -138,7 +138,7 @@ test.describe('Rencana keluar & "Bisa kosong" (SPEC 7.8)', () => {
     await expect(page.getByRole('dialog').getByLabel(/Tanggal checkout/)).toHaveValue('2026-11-21')
     await page.keyboard.press('Escape')
 
-    // the plan can be cancelled from the lease page: the room is "Bisa kosong" again (the booking after it stays)
+    // the plan can be cancelled from the lease page (the booking after it stays: extending Budi into it would be refused)
     await page.getByRole('button', { name: 'Aksi sewa', exact: true }).click()
     const item = page.getByRole('menuitem', { name: /Rencana keluar/ })
     await expect(item).toContainText('Keluar 21 Nov 2026 · ubah atau batalkan')
