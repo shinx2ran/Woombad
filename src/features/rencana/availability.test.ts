@@ -56,7 +56,7 @@ function lease(roomId: string, tenantId: string, type: PeriodType, start: string
 }
 
 const names = new Map<string, Pick<Tenant, 'full_name'>>(
-  ['Budi', 'Citra', 'Sari', 'Dodi', 'Eka', 'Fajar', 'Gita', 'Hana', 'Indra'].map((n) => [n, { full_name: n }]),
+  ['Budi', 'Citra', 'Sari', 'Dodi', 'Eka', 'Fajar', 'Gita', 'Hana', 'Indra', 'Zaki', 'Hendra'].map((n) => [n, { full_name: n }]),
 )
 
 const daily = (start: string, quantity: number, maxPrice?: number | null) => ({ periodType: 'daily' as const, start, quantity, maxPrice })
@@ -100,8 +100,14 @@ describe('leaseHold: what holds a room', () => {
     expect(leaseHold(lease('R', 'Dodi', 'daily', '2026-10-20', '2026-10-20', { status: 'ended', checkout_date: '2026-10-20' }), TODAY)).toBeNull()
   })
 
-  it('a booking that has not started holds its nights ("Dipesan")', () => {
-    expect(leaseHold(lease('R', 'Budi', 'monthly', '2026-11-07', '2026-12-06'), TODAY)).toMatchObject({ start: '2026-11-07', end: '2026-12-06', kind: 'reserved' })
+  it('a daily/weekly booking that has not started holds its nights ("Dipesan")', () => {
+    expect(leaseHold(lease('R', 'Budi', 'daily', '2026-11-07', '2026-11-09'), TODAY)).toMatchObject({ start: '2026-11-07', end: '2026-11-09', kind: 'reserved', expectedLeave: false })
+    expect(leaseHold(lease('R', 'Budi', 'weekly', '2026-11-07', '2026-11-20'), TODAY)).toMatchObject({ end: '2026-11-20', kind: 'reserved' })
+  })
+
+  it('a monthly booking that has not started rolls on like a monthly tenant staying now: no last night', () => {
+    // changed with the review fix: a booked monthly tenant was held only for his first paid month
+    expect(leaseHold(lease('R', 'Budi', 'monthly', '2026-11-07', '2026-12-06'), TODAY)).toMatchObject({ start: '2026-11-07', end: null, kind: 'reserved', expectedLeave: false })
   })
 
   it('a daily/weekly guest staying now is expected to leave on the check-out day', () => {
@@ -300,6 +306,73 @@ describe('findAvailability: future bookings, partial stays and longer periods', 
       ['A1', 2],
       ['A2', 2],
     ])
+  })
+})
+
+describe('findAvailability: a monthly tenant booked ahead rolls on after his first month', () => {
+  // 24 Okt: Zaki is booked monthly in A1 from 1 Nov (first paid month 1–30 Nov), not moved in yet
+  const today = '2026-10-24'
+  const rooms = [room('A1'), room('A2')]
+  const leases = [lease('A1', 'Zaki', 'monthly', '2026-11-01', '2026-11-30')]
+
+  it('a daily stay after his first paid month is not offered in his room, before and after he moves in', () => {
+    const before = findAvailability({ rooms, leases, request: daily('2026-12-01', 2), today, tenants: names })!
+    expect(before.free.map((f) => f.room.name)).toEqual(['A2'])
+    expect(before.partial).toEqual([])
+    expect(before.taken).toEqual([{ room: rooms[0], reason: 'Dipesan Zaki mulai 1 Nov (bulanan)' }])
+    const after = findAvailability({ rooms, leases, request: daily('2026-12-01', 2), today: '2026-11-02', tenants: names })!
+    expect(after.free.map((f) => f.room.name)).toEqual(['A2'])
+    expect(after.taken).toEqual([{ room: rooms[0], reason: 'Ditempati Zaki sampai check-out dicatat' }])
+  })
+
+  it('a monthly booking from +8 blocks a daily stay at +40 (the booking re-check refuses it too)', () => {
+    const booked = [lease('A1', 'Zaki', 'monthly', '2026-11-09', '2026-12-08')]
+    const stay = plannedStay('2026-12-11', 'daily', 1)!
+    expect(findAvailability({ rooms: [rooms[0]], leases: booked, request: daily(stay.start, 1), today: TODAY, tenants: names })).toMatchObject({
+      free: [],
+      partial: [],
+      taken: [{ reason: 'Dipesan Zaki mulai 9 Nov (bulanan)' }],
+    })
+    expect(stayConflict(rooms[0], booked, stay, TODAY, names)?.message).toBe('Kamar A1 sudah tidak kosong pada tanggal itu: dipesan Zaki mulai 9 Nov (bulanan). Pilih kamar atau tanggal lain.')
+  })
+
+  it('the nights before his first night still fit, and the strip shows him from then on', () => {
+    const fit = findAvailability({ rooms, leases, request: daily('2026-10-30', 2), today, tenants: names })!
+    expect(fit.free[0]).toMatchObject({ room: rooms[0], gapAfter: 0, reason: 'Pas sebelum pesanan 1 Nov' })
+    const partial = findAvailability({ rooms: [rooms[0]], leases, request: daily('2026-10-30', 5), today, tenants: names })!
+    expect(partial.partial[0].reason).toBe('Kosong 30 Okt – 1 Nov, lalu dipesan Zaki')
+    const cells = availabilityStrip(roomHolds('A1', leases, today), '2026-11-28')
+    expect(cells.every((c) => c.state === 'reserved')).toBe(true)
+  })
+})
+
+describe('findAvailability: a check-in today follows Check-in cepat (a guest still checked in)', () => {
+  const rooms = [room('A1'), room('A2')]
+  // Hendra's daily stay: last night 31 Okt, check-out day today (1 Nov), his checkout is not recorded yet
+  const leases = [lease('A1', 'Hendra', 'daily', '2026-10-28', '2026-10-31')]
+
+  it('a stay from today is not offered in his room; from tomorrow it is, with the note', () => {
+    const tonight = findAvailability({ rooms, leases, request: daily(TODAY, 1), today: TODAY, tenants: names })!
+    expect(tonight.free.map((f) => f.room.name)).toEqual(['A2'])
+    expect(tonight.taken).toEqual([{ room: rooms[0], reason: 'Ditempati Hendra sampai check-out dicatat' }])
+    const tomorrow = findAvailability({ rooms, leases, request: daily('2026-11-02', 1), today: TODAY, tenants: names })!
+    expect(tomorrow.free.map((f) => [f.room.name, f.note])).toEqual([
+      ['A1', 'Hendra masih menginap, jadwal check-out 1 Nov'],
+      ['A2', null],
+    ])
+  })
+
+  it('once his checkout is recorded the room is free tonight', () => {
+    const out = [{ ...leases[0], status: 'ended' as const, checkout_date: TODAY }]
+    expect(findAvailability({ rooms, leases: out, request: daily(TODAY, 1), today: TODAY })!.free.map((f) => f.room.name)).toEqual(['A1', 'A2'])
+  })
+
+  it('the booking re-check refuses a check-in today in his room, naming him', () => {
+    expect(stayConflict(rooms[0], leases, plannedStay(TODAY, 'daily', 1)!, TODAY, names)?.message).toBe(
+      'Kamar A1 masih ditempati Hendra: check-out-nya belum dicatat. Catat check-out dulu, lalu coba lagi.',
+    )
+    expect(stayConflict(rooms[0], leases, plannedStay('2026-11-02', 'daily', 1)!, TODAY, names)).toBeNull()
+    expect(stayConflict(rooms[1], leases, plannedStay(TODAY, 'daily', 1)!, TODAY, names)).toBeNull()
   })
 })
 

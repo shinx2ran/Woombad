@@ -6,14 +6,18 @@
  *  - a cancelled lease holds nothing;
  *  - an ended lease holds [start_date, checkout_date - 1] (end_date when no checkout date was recorded): the room is
  *    free again ON the check-out day (same-day turnover);
- *  - a booking that has not started yet (active, start_date after today: "Dipesan") holds [start_date, end_date];
+ *  - a daily or weekly booking that has not started yet (active, start_date after today: "Dipesan") holds
+ *    [start_date, end_date];
  *  - a guest staying now (active, start_date on or before today) on a daily or weekly stay holds [start_date, end_date]:
  *    the guest is expected to leave on the check-out day end_date + 1 (shown as "masih menginap" so the owner knows);
- *  - a monthly tenant staying now, and a guest whose check-out day has passed without a recorded checkout, hold the
- *    room until the checkout is recorded (an active lease occupies its room without an upper bound, SPEC 2a): a monthly
- *    tenant rolls on from month to month, so his room is never offered as free after his last paid night.
+ *  - a monthly tenant, booked ("Dipesan") or staying now, and a guest whose check-out day has passed without a recorded
+ *    checkout, hold the room from start_date until the checkout is recorded (an active lease occupies its room without
+ *    an upper bound, SPEC 2a): a monthly tenant rolls on from month to month, so his room is never offered as free
+ *    after his first or last paid night, whether he has moved in yet or not.
  * A hold without a night (an ended lease checked out on its first day) holds nothing. Rooms under maintenance are never
- * offered. This is never looser than the database guard (leases_overlap_guard), which uses end_date for active leases.
+ * offered. A stay from today is never put in a room whose guest is still checked in (Check-in cepat's rule, SPEC 7.4):
+ * a daily/weekly guest whose check-out day is today holds the room until that checkout is recorded. This is never
+ * looser than the database guard (leases_overlap_guard), which uses end_date for active leases.
  */
 import type { Lease, PeriodType, Room, Tenant } from '../../types/db'
 import { PERIOD_UNIT_LABEL } from '../../types/db'
@@ -84,9 +88,11 @@ export function leaseHold(lease: Lease, today: string): RoomHold | null {
     return end < start ? null : { lease, start, end, kind, expectedLeave: false }
   }
   const end = lease.end_date.slice(0, 10)
+  // a monthly tenant rolls on from month to month, from the first night of the booking on (booked or staying)
+  if (lease.period_type === 'monthly') return { lease, start, end: null, kind, expectedLeave: false }
   if (kind === 'reserved') return { lease, start, end, kind, expectedLeave: false }
-  // staying now: a monthly tenant rolls on; a guest past the check-out day without a checkout is still in the room
-  if (lease.period_type === 'monthly' || addDaysISO(end, 1) < today) return { lease, start, end: null, kind, expectedLeave: false }
+  // staying now: a guest past the check-out day without a checkout is still in the room
+  if (addDaysISO(end, 1) < today) return { lease, start, end: null, kind, expectedLeave: false }
   return { lease, start, end, kind, expectedLeave: true }
 }
 
@@ -109,6 +115,16 @@ export function holdsNight(hold: RoomHold, day: string): boolean {
 /** Holds that take at least one night of [start, end] (inclusive), earliest first. */
 export function holdsWithin(holds: readonly RoomHold[], start: string, end: string): RoomHold[] {
   return holds.filter((h) => h.start <= end && (h.end === null || h.end >= start))
+}
+
+/**
+ * Check-in cepat's rule for a stay from today (SPEC 7.4): a daily/weekly guest whose check-out day is the check-in day is
+ * still in the room until that checkout is recorded, so the room is not free for a check-in now (a later stay may count
+ * on the planned check-out). The guest's hold, or undefined.
+ */
+export function stillCheckedIn(holds: readonly RoomHold[], stay: Pick<PlannedStay, 'start'>, today: string): RoomHold | undefined {
+  if (stay.start > today) return undefined
+  return holds.find((h) => h.expectedLeave && h.start <= stay.start && h.end !== null && h.end < stay.start)
 }
 
 // ---------- texts ----------
@@ -135,10 +151,13 @@ function nameOf(hold: RoomHold, names?: TenantNames): string {
   return names?.get(hold.lease.tenant_id)?.full_name ?? 'penyewa lain'
 }
 
-/** 'dipesan Budi 5–9 Nov', 'ditempati Sari sampai 7 Nov', 'ditempati Sari sampai check-out dicatat' (lower case). */
+/**
+ * 'dipesan Budi 5–9 Nov', 'ditempati Sari sampai 7 Nov', 'ditempati Sari sampai check-out dicatat', 'dipesan Zaki mulai
+ * 1 Nov (bulanan)' (lower case).
+ */
 export function holdText(hold: RoomHold, names?: TenantNames): string {
   const who = nameOf(hold, names)
-  if (hold.end === null) return `ditempati ${who} sampai check-out dicatat`
+  if (hold.end === null) return hold.kind === 'reserved' ? `dipesan ${who} mulai ${shortDay(hold.start)} (bulanan)` : `ditempati ${who} sampai check-out dicatat`
   if (hold.kind === 'reserved') return `dipesan ${who} ${shortStay(hold.start, hold.end)}`
   return `ditempati ${who} sampai ${shortDay(addDaysISO(hold.end, 1))}`
 }
@@ -194,7 +213,7 @@ export interface Availability {
   free: FreeRoom[]
   /** "Hampir cocok": free for part of the stay, most free nights first (at most `maxPartial`) */
   partial: PartialRoom[]
-  /** rooms without a free night of the stay (or under maintenance), by room name */
+  /** rooms without a free night of the stay (or under maintenance, or for a check-in today still checked in), by room name */
   taken: TakenRoom[]
   /** rooms left out because their rate is above maxPrice */
   overBudget: number
@@ -288,7 +307,8 @@ function partialReason(run: Run, conflicts: RoomHold[], stay: PlannedStay, names
  * Rooms for a planned stay: (1) free for every night, best fit first: the smallest idle gap left before the room's next
  * booking after the stay (null = nothing booked after it, last), then the smallest idle gap before the stay, then the
  * total price (no rate last), then the room name; (2) "Hampir cocok": free for some nights, most free nights first, at
- * most `maxPartial`; (3) the rest with the booking in the way. Maintenance rooms are never free. A room whose rate is
+ * most `maxPartial`; (3) the rest with the booking in the way. Maintenance rooms are never free, nor for a check-in today
+ * a room whose guest's checkout of today is not recorded yet (stillCheckedIn). A room whose rate is
  * above `maxPrice` is left out of (1) and (2) and counted in overBudget; a room without a rate stays in (its price is
  * unknown). Null when the stay itself cannot be computed.
  */
@@ -311,6 +331,11 @@ export function findAvailability(input: AvailabilityInput): Availability | null 
     }
     const holds = roomHolds(room.id, input.leases, today)
     const conflicts = holdsWithin(holds, stay.start, stay.end)
+    const checkedIn = conflicts.length === 0 ? stillCheckedIn(holds, stay, today) : undefined
+    if (checkedIn) {
+      taken.push({ room, reason: capitalize(holdText({ ...checkedIn, end: null }, names)) })
+      continue
+    }
     const runs = freeRuns(conflicts, stay.start, stay.end)
     if (runs.length === 0) {
       taken.push({ room, reason: capitalize(holdText(conflicts[0], names)) })
@@ -350,12 +375,21 @@ export interface StayConflict {
 
 /**
  * The first booking that takes a night of the stay in the room (checked on fresh rows right before a booking is
- * written), or null when the room is free for every night. Maintenance is the caller's check (room.status).
+ * written), or for a check-in today the guest still checked in (stillCheckedIn); null when the room is free for every
+ * night. Maintenance is the caller's check (room.status).
  */
 export function stayConflict(room: Room, leases: readonly Lease[], stay: PlannedStay, today: string, names?: TenantNames): StayConflict | null {
-  const [hold] = holdsWithin(roomHolds(room.id, leases, today), stay.start, stay.end)
-  if (!hold) return null
-  return { hold, message: `Kamar ${room.name} sudah tidak kosong pada tanggal itu: ${holdText(hold, names)}. Pilih kamar atau tanggal lain.` }
+  const holds = roomHolds(room.id, leases, today)
+  const [hold] = holdsWithin(holds, stay.start, stay.end)
+  if (hold) return { hold, message: `Kamar ${room.name} sudah tidak kosong pada tanggal itu: ${holdText(hold, names)}. Pilih kamar atau tanggal lain.` }
+  const staying = stillCheckedIn(holds, stay, today)
+  if (staying) {
+    return {
+      hold: staying,
+      message: `Kamar ${room.name} masih ditempati ${nameOf(staying, names)}: check-out-nya belum dicatat. Catat check-out dulu, lalu coba lagi.`,
+    }
+  }
+  return null
 }
 
 // ---------- the 14-day strip ----------
