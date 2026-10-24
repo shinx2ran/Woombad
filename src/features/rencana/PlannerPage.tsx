@@ -28,7 +28,8 @@ function lapsedText(days: number): string {
   return days === 0 ? 'belum diperpanjang, jatuh tempo hari ini' : `belum diperpanjang ${days} hari`
 }
 
-const CARD_ACTION = 'inline-flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium'
+/** two side by side on a 360 px phone: a label may take two short lines */
+const CARD_ACTION = 'inline-flex min-h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 py-1 text-center text-sm font-medium leading-tight'
 
 /**
  * Cek kamar & pesan (SPEC 7.7, 7.8): pick Harian / Mingguan / Bulanan, the check-in day and how long; every room free
