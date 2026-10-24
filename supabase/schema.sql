@@ -554,6 +554,35 @@ create table if not exists public.expenses (
   foreign key (org_id, lease_id) references public.leases (org_id, id) on delete restrict
 );
 
+-- Daftar tunggu (SPEC 7.7): people waiting for a room, with what they want. Front-desk work: every member may add and
+-- change entries (staff included); only owners/admins may delete one (cancelling is the normal path). lease_id is the
+-- lease booked for the entry; deleting that lease (or the kos) only clears the reference.
+create table if not exists public.waitlist (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  -- null = any kos
+  property_id uuid,
+  name text not null check (btrim(name) <> ''),
+  phone text,
+  -- first night wanted; null = secepatnya (as soon as possible)
+  wanted_from date,
+  period_type text not null default 'daily' check (period_type in ('daily', 'weekly', 'monthly')),
+  quantity int not null default 1 check (quantity >= 1),
+  -- highest price per night / week / month
+  max_price bigint check (max_price is null or max_price >= 0),
+  -- room preference, e.g. 'lantai bawah, kamar mandi dalam'
+  room_note text,
+  notes text,
+  status text not null default 'waiting' check (status in ('waiting', 'booked', 'cancelled')),
+  lease_id uuid,
+  created_by uuid default auth.uid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (org_id, id),
+  foreign key (org_id, property_id) references public.properties (org_id, id) on delete set null (property_id),
+  foreign key (org_id, lease_id) references public.leases (org_id, id) on delete set null (lease_id)
+);
+
 -- Deleting a property clears only property_id on its tenants and expenses (v0.2 cleared org_id too,
 -- which failed). Replace older constraints in place.
 do $$
@@ -595,12 +624,14 @@ create index if not exists payments_invoice_idx on public.payments (invoice_id);
 create index if not exists payments_lease_idx on public.payments (lease_id);
 create index if not exists expenses_org_idx on public.expenses (org_id, expense_date);
 create index if not exists expenses_lease_idx on public.expenses (lease_id);
+create index if not exists waitlist_org_idx on public.waitlist (org_id, status);
+create index if not exists waitlist_lease_idx on public.waitlist (lease_id);
 
 -- updated_at triggers
 do $$
 declare t text;
 begin
-  foreach t in array array['properties', 'rooms', 'tenants', 'leases', 'invoices', 'expenses'] loop
+  foreach t in array array['properties', 'rooms', 'tenants', 'leases', 'invoices', 'expenses', 'waitlist'] loop
     execute format('drop trigger if exists set_updated_at on public.%I', t);
     execute format('create trigger set_updated_at before update on public.%I for each row execute function public.set_updated_at()', t);
   end loop;
@@ -832,6 +863,55 @@ begin
    where id = l.id;
 end $$;
 
+-- ---------- double booking (SPEC 2b.8, 7.7) ----------
+-- The app checks a room before it books it, but two phones can book the same room at the same moment. This trigger
+-- serialises bookings per room (a transaction advisory lock on the room id: the second phone waits until the first
+-- commits, then sees its row) and refuses a write that would create a NEW double booking: another lease of the room,
+-- not cancelled, holding a night the write adds (same rule as leaseOverlaps: an ended lease holds its room until
+-- checkout_date - 1, an active one until end_date; a lease without a night holds none). Only future nights (from today)
+-- are checked, so history and the existing flows keep working:
+--  * INSERT of an active lease: [greatest(start_date, today), end_date]; ended/cancelled rows (history, imports) pass;
+--  * UPDATE keeping room, start_date and status active while end_date grows (Perpanjang / Tagih):
+--    [greatest(old end_date + 1, today), new end_date];
+--  * not checked: room moves (the app checks them, SPEC 2b.9), start-date corrections (redate_lease checks itself),
+--    shorter ends, checkouts and cancels.
+-- SQLSTATE WB003; the app shows the message as is (LEASE_OVERLAP_MESSAGE).
+create or replace function public.leases_overlap_guard()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_from date;
+begin
+  if tg_op = 'INSERT' then
+    if new.status <> 'active' then return new; end if;
+    v_from := greatest(new.start_date, current_date);
+  else
+    if new.room_id is distinct from old.room_id or new.start_date is distinct from old.start_date
+       or old.status <> 'active' or new.status <> 'active' or new.end_date <= old.end_date then
+      return new;
+    end if;
+    v_from := greatest(old.end_date + 1, current_date);
+  end if;
+  if v_from > new.end_date then return new; end if;
+  -- one booking per room at a time; the check below runs after the lock, so it sees what the other phone committed
+  perform pg_advisory_xact_lock(hashtextextended('leases_overlap_guard:' || new.room_id::text, 0));
+  if exists (
+    select 1 from (
+      select o.start_date as first_night,
+             case when o.status = 'ended' and o.checkout_date is not null then o.checkout_date - 1 else o.end_date end as last_night
+        from public.leases o
+       where o.room_id = new.room_id and o.id <> new.id and o.status <> 'cancelled'
+    ) h
+     where h.last_night >= h.first_night and h.first_night <= new.end_date and h.last_night >= v_from) then
+    raise exception using errcode = 'WB003', message = 'Kamar sudah terisi atau dipesan pada tanggal itu.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists leases_overlap_guard on public.leases;
+create trigger leases_overlap_guard
+  before insert or update on public.leases
+  for each row execute function public.leases_overlap_guard();
+
 -- created_by is always the signed-in user who inserted the row, and never changes afterwards.
 create or replace function public.set_created_by()
 returns trigger language plpgsql set search_path = public, pg_temp as $$
@@ -860,11 +940,11 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['organizations', 'payments', 'expenses'] loop
+  foreach t in array array['organizations', 'payments', 'expenses', 'waitlist'] loop
     execute format('drop trigger if exists set_created_by on public.%I', t);
     execute format('create trigger set_created_by before insert or update of created_by on public.%I for each row execute function public.set_created_by()', t);
   end loop;
-  foreach t in array array['properties', 'rooms', 'addon_catalog', 'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] loop
+  foreach t in array array['properties', 'rooms', 'addon_catalog', 'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses', 'waitlist'] loop
     execute format('drop trigger if exists keep_org_id on public.%I', t);
     execute format('create trigger keep_org_id before update of org_id on public.%I for each row execute function public.keep_org_id()', t);
   end loop;
@@ -907,7 +987,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['organizations', 'organization_members', 'invitations', 'properties', 'rooms', 'addon_catalog',
-                           'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] loop
+                           'tenants', 'leases', 'lease_addons', 'invoices', 'payments', 'expenses', 'waitlist'] loop
     execute format('drop trigger if exists audit_row_change on public.%I', t);
     execute format('create trigger audit_row_change after insert or update or delete on public.%I for each row execute function public.audit_row_change()', t);
   end loop;
@@ -939,6 +1019,7 @@ alter table public.invoices enable row level security;
 alter table public.payments enable row level security;
 alter table public.expenses enable row level security;
 alter table public.audit_log enable row level security;
+alter table public.waitlist enable row level security;
 -- invitation_codes, app_settings, join_attempts: no policies (and no grants) on purpose
 
 -- organizations: created only by join_with_code() (security definer)
@@ -1004,6 +1085,16 @@ begin
     execute format('create policy %I on public.%I for delete using (public.is_org_admin(org_id))', t || '_delete', t);
   end loop;
 end $$;
+
+-- waitlist (SPEC 7.7): front-desk work, so every member reads, adds and changes entries; deleting is owner/admin only
+drop policy if exists waitlist_select on public.waitlist;
+create policy waitlist_select on public.waitlist for select using (public.is_org_member(org_id));
+drop policy if exists waitlist_insert on public.waitlist;
+create policy waitlist_insert on public.waitlist for insert with check (public.is_org_member(org_id));
+drop policy if exists waitlist_update on public.waitlist;
+create policy waitlist_update on public.waitlist for update using (public.is_org_member(org_id)) with check (public.is_org_member(org_id));
+drop policy if exists waitlist_delete on public.waitlist;
+create policy waitlist_delete on public.waitlist for delete using (public.is_org_admin(org_id));
 
 -- ---------- Storage (KTP photos, receipts & kos logos) ----------
 -- Object paths are "<org_id>/<file>"; access is granted to members of that org. The logos bucket holds the
@@ -1094,7 +1185,7 @@ begin
   for o in select * from public.organizations order by created_at, id loop
     tables := jsonb_build_object('organizations', jsonb_build_array(to_jsonb(o)));
     foreach t in array array['organization_members', 'invitations', 'properties', 'rooms', 'addon_catalog', 'tenants',
-                             'leases', 'lease_addons', 'invoices', 'payments', 'expenses'] loop
+                             'leases', 'lease_addons', 'invoices', 'payments', 'expenses', 'waitlist'] loop
       execute format('select coalesce(jsonb_agg(to_jsonb(x) order by x.created_at, x.id), ''[]'') from public.%I x where x.org_id = $1', t)
         into rows using o.id;
       tables := tables || jsonb_build_object(t, rows);
@@ -1125,6 +1216,7 @@ grant select on public.organization_members to authenticated;
 grant select, delete on public.invitations to authenticated;
 grant select, insert, update, delete on public.properties, public.rooms, public.addon_catalog, public.tenants,
   public.leases, public.lease_addons, public.invoices, public.payments, public.expenses to authenticated;
+grant select, insert, update, delete on public.waitlist to authenticated;
 grant select on public.audit_log to authenticated;
 -- RPCs
 grant execute on function public.ensure_membership() to authenticated;

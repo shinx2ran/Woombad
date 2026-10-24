@@ -26,7 +26,7 @@ begin
   perform zz.eq('export', 'version 1', '1', f ->> 'version');
   perform zz.eq('export', 'organisation name', 'Kos Saya', f ->> 'orgName');
   perform zz.eq('export', 'all organisation tables',
-    'addon_catalog,audit_log,expenses,invitations,invoices,lease_addons,leases,organization_members,organizations,payments,properties,rooms,tenants',
+    'addon_catalog,audit_log,expenses,invitations,invoices,lease_addons,leases,organization_members,organizations,payments,properties,rooms,tenants,waitlist',
     (select string_agg(k, ',' order by k) from jsonb_object_keys(f -> 'tables') k));
   perform zz.eq('export', 'kos row', 'Kos Cadangan', f -> 'tables' -> 'properties' -> 0 ->> 'name');
   perform zz.eq('export', 'tenant details kept', '3201010101010001', f -> 'tables' -> 'tenants' -> 0 ->> 'nik');

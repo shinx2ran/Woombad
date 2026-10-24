@@ -16,7 +16,9 @@ import {
   PAYMENT_KIND_LABEL,
   PAYMENT_METHOD_LABEL,
   PERIOD_TYPE_LABEL,
+  PERIOD_UNIT_LABEL,
   ROOM_STATUS_LABEL,
+  WAITLIST_STATUS_LABEL,
   type AuditAction,
   type AuditLogEntry,
   type OrganizationMember,
@@ -62,6 +64,7 @@ const MONEY_COLUMNS = new Set([
   'price_weekly',
   'price_monthly',
   'default_price',
+  'max_price',
 ])
 
 /** Bookkeeping columns that never say anything to the owner. */
@@ -92,6 +95,9 @@ const COLUMN_LABEL: Record<string, string> = {
   price_weekly: 'Harga mingguan',
   price_monthly: 'Harga bulanan',
   default_price: 'Harga',
+  max_price: 'Harga maks.',
+  wanted_from: 'Mulai',
+  room_note: 'Preferensi kamar',
   payment_info: 'Info rekening',
   status: 'Status',
   period_type: 'Jenis sewa',
@@ -186,6 +192,7 @@ const STATUS_LABELS: Record<string, Record<string, string>> = {
   invoices: INVOICE_STATUS_LABEL,
   leases: LEASE_STATUS_LABEL,
   rooms: ROOM_STATUS_LABEL,
+  waitlist: WAITLIST_STATUS_LABEL,
 }
 
 /** Resolves a referenced id (room_id, tenant_id, user_id, ...) to a readable name; null when unknown. */
@@ -339,6 +346,12 @@ export function auditSubject(table: string, data: Data | null, resolve?: RefReso
       return join(str(data, 'email') ?? ref('user_id'), enumText(MEMBER_ROLE_LABEL, str(data, 'role')))
     case 'invitations':
       return join(str(data, 'label') ?? str(data, 'email'), enumText(MEMBER_ROLE_LABEL, str(data, 'role')))
+    case 'waitlist': {
+      const qty = asMoney(data.quantity)
+      const type = str(data, 'period_type')
+      const unit = type ? PERIOD_UNIT_LABEL[type as keyof typeof PERIOD_UNIT_LABEL] : null
+      return join(str(data, 'name'), qty !== null && unit ? `${qty} ${unit}` : null)
+    }
     case 'properties':
     case 'organizations':
       return str(data, 'name')

@@ -6,6 +6,7 @@ import {
   CODE_ALPHABET,
   DELETE_DENIED_MESSAGE,
   IN_USE_MESSAGE,
+  LEASE_OVERLAP_MESSAGE,
   REDATE_BAD_PERIOD_MESSAGE,
   REDATE_END_BEFORE_START_MESSAGE,
   REDATE_INACTIVE_MESSAGE,
@@ -18,8 +19,10 @@ import {
   VOID_PAID_INVOICE_MESSAGE,
   formatCode,
 } from './types'
-import type { MemberRole } from '../../types/db'
-import { leaseOverlaps } from '../../domain/occupancy'
+import type { Lease, MemberRole, WaitlistEntry } from '../../types/db'
+import { PERIOD_TYPES, WAITLIST_STATUSES } from '../../types/db'
+import { guardedNights, leaseOverlaps, overlappingLease } from '../../domain/occupancy'
+import { todayISO } from '../format'
 
 export const STORAGE_KEY = 'woombad.local.db.v1'
 
@@ -95,12 +98,19 @@ function compare(a: unknown, b: unknown): number {
  * Browser-only persistence (localStorage). Used for "Mode Demo" when Supabase is not configured,
  * and for unit tests. Data never leaves the device.
  */
+export interface LocalRepoOptions {
+  /** the device's today ('YYYY-MM-DD') for the double-booking guard; tests pin it */
+  today?: () => string
+}
+
 export class LocalRepo implements Repo {
   readonly mode = 'local' as const
   private db: Db
+  private readonly today: () => string
 
-  constructor(initial?: Db) {
+  constructor(initial?: Db, options: LocalRepoOptions = {}) {
     this.db = initial ?? loadDb()
+    this.today = options.today ?? (() => todayISO())
   }
 
   /** Replace everything (used by demo seeding / reset). */
@@ -166,8 +176,18 @@ export class LocalRepo implements Repo {
         created_at: (row as { created_at?: string }).created_at ?? now,
       } as Record<string, unknown>
       if (hasUpdatedAt(table)) full.updated_at = (row as { updated_at?: string }).updated_at ?? now
+      if (table === 'waitlist') return withWaitlistDefaults(full) as unknown as Row<T>
       return full as unknown as Row<T>
     })
+    // the database checks every row before any of them is stored (one statement): so does this
+    if (table === 'leases') {
+      const seen = [...this.db.leases]
+      for (const row of created as unknown as Lease[]) {
+        this.assertNoDoubleBooking(null, row, seen)
+        seen.push(row)
+      }
+    }
+    if (table === 'waitlist') for (const row of created as unknown as WaitlistEntry[]) assertWaitlistRow(row)
     ;(this.db[table] as Row<T>[]).push(...created)
     saveDb(this.db)
     return created.map((r) => ({ ...r }))
@@ -182,6 +202,8 @@ export class LocalRepo implements Repo {
       throw new Error(VOID_PAID_INVOICE_MESSAGE)
     }
     const next = { ...rows[idx], ...patch } as Record<string, unknown>
+    if (table === 'leases') this.assertNoDoubleBooking(rows[idx] as unknown as Lease, next as unknown as Lease, this.db.leases)
+    if (table === 'waitlist') assertWaitlistRow(next as unknown as WaitlistEntry)
     if (hasUpdatedAt(table)) next.updated_at = new Date().toISOString()
     rows[idx] = next as unknown as Row<T>
     saveDb(this.db)
@@ -195,7 +217,21 @@ export class LocalRepo implements Repo {
     if (idx < 0) throw new Error(DELETE_DENIED_MESSAGE)
     if (this.isReferenced(table, id)) throw new Error(IN_USE_MESSAGE)
     rows.splice(idx, 1)
+    // waitlist -> properties / leases: ON DELETE SET NULL (property_id) / (lease_id)
+    if (table === 'properties' || table === 'leases') {
+      const column = table === 'properties' ? 'property_id' : 'lease_id'
+      this.db.waitlist = this.db.waitlist.map((w) => (w[column] === id ? { ...w, [column]: null } : w))
+    }
     saveDb(this.db)
+  }
+
+  /**
+   * public.leases_overlap_guard (SPEC 7.7) with the device's today: a new active lease, or an extension of one, must not
+   * take a future night another lease of the room already holds. `others` are the leases to check against.
+   */
+  private assertNoDoubleBooking(before: Lease | null, after: Lease, others: readonly Lease[]): void {
+    const nights = guardedNights(before, after, this.today())
+    if (nights && overlappingLease(others, after.room_id, nights.from, nights.to, after.id)) throw new Error(LEASE_OVERLAP_MESSAGE)
   }
 
   /** Mirror the database's ON DELETE RESTRICT rules so demo mode behaves like online mode. */
@@ -348,6 +384,36 @@ export class LocalRepo implements Repo {
       throw err
     }
   }
+}
+
+/** Column defaults of public.waitlist for rows inserted without them. */
+function withWaitlistDefaults(row: Record<string, unknown>): Record<string, unknown> {
+  const defaults: Record<string, unknown> = {
+    property_id: null,
+    phone: null,
+    wanted_from: null,
+    period_type: 'daily',
+    quantity: 1,
+    max_price: null,
+    room_note: null,
+    notes: null,
+    status: 'waiting',
+    lease_id: null,
+    created_by: null,
+  }
+  const next = { ...row }
+  for (const [k, v] of Object.entries(defaults)) if (next[k] === undefined) next[k] = v
+  return next
+}
+
+/** The CHECK constraints of public.waitlist. */
+function assertWaitlistRow(row: WaitlistEntry): void {
+  if (typeof row.name !== 'string' || !row.name.trim()) throw new Error('Nama wajib diisi.')
+  if (!(PERIOD_TYPES as readonly string[]).includes(row.period_type)) throw new Error('Jenis sewa tidak valid.')
+  if (!Number.isInteger(row.quantity) || row.quantity < 1) throw new Error('Jumlah minimal 1.')
+  if (row.max_price !== null && (!Number.isFinite(row.max_price) || row.max_price < 0)) throw new Error('Harga maksimal tidak boleh negatif.')
+  if (!(WAITLIST_STATUSES as readonly string[]).includes(row.status)) throw new Error('Status daftar tunggu tidak valid.')
+  if (row.wanted_from !== null && !isISODate(row.wanted_from)) throw new Error('Tanggal mulai tidak valid.')
 }
 
 function isISODate(value: unknown): value is string {

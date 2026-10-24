@@ -33,6 +33,11 @@ export const UPDATE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memil
 export const DELETE_DENIED_MESSAGE = 'Data tidak ditemukan atau Anda tidak memiliki izin untuk menghapusnya.'
 /** ON DELETE RESTRICT: another row still points at the one being deleted. */
 export const IN_USE_MESSAGE = 'Data ini masih dipakai oleh data lain (mis. sewa/tagihan/pembayaran) dan tidak dapat dihapus.'
+/**
+ * Same text as the leases_overlap_guard trigger in supabase/schema.sql (SQLSTATE WB003, SPEC 7.7): a new booking or an
+ * extension would take a future night another lease of the room already holds.
+ */
+export const LEASE_OVERLAP_MESSAGE = 'Kamar sudah terisi atau dipesan pada tanggal itu.'
 /** Same text as the invoices_void_guard trigger in supabase/schema.sql. */
 export const VOID_PAID_INVOICE_MESSAGE = 'Tagihan yang sudah ada pembayarannya tidak dapat dibatalkan.'
 

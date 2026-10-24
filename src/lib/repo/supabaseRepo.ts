@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Insert, Row, TableName, Update } from '../../types/db'
 import type { CreatedInvitation, ListOptions, RedateLeaseInput, Repo, StorageBucket } from './types'
-import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, NotMemberError, REDATE_NOT_DEPLOYED_MESSAGE, StaleWriteError, UPDATE_DENIED_MESSAGE, formatCode, normalizeCode } from './types'
+import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, LEASE_OVERLAP_MESSAGE, NotMemberError, REDATE_NOT_DEPLOYED_MESSAGE, StaleWriteError, UPDATE_DENIED_MESSAGE, formatCode, normalizeCode } from './types'
 import type { MemberRole } from '../../types/db'
 
 /** The parts of a PostgREST/Postgres error worth reading (Postgres puts "still referenced" in details). */
@@ -22,6 +22,8 @@ export function translateDbError(error: string | DbError): string {
   if ((code === '23503' || /violates foreign key constraint/i.test(message)) && /^update or delete on table|still referenced/i.test(`${message}\n${details ?? ''}`)) {
     return IN_USE_MESSAGE
   }
+  // leases_overlap_guard (SQLSTATE WB003): a double booking of a room (SPEC 7.7)
+  if (code === 'WB003') return LEASE_OVERLAP_MESSAGE
   if (/Failed to fetch|Load failed|NetworkError|network/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
   if (/Signups not allowed|signup.*disabled/i.test(message)) return 'Pendaftaran akun baru sedang ditutup. Minta pemilik kos membuatkan akun.'
   return message
