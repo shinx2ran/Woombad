@@ -19,7 +19,7 @@ export PGOPTIONS="${PGOPTIONS:-} -c client_min_messages=warning"
 
 T=supabase/tests
 ATTACKS="$T/20-attack-fixture.sql $T/21-attacks.sql"
-LATER="$T/22-skeptic.sql $T/23-redteam.sql $T/24-refund.sql $T/25-backup.sql $T/26-redate.sql $T/27-rencana.sql"
+LATER="$T/22-skeptic.sql $T/23-redteam.sql $T/24-refund.sql $T/25-backup.sql $T/26-redate.sql $T/27-rencana.sql $T/28-keluar.sql"
 SUITES="$T/01-harness.sql $T/10-schema-tests.sql $ATTACKS $LATER"
 FRESH="$T/00-mock-supabase.sql supabase/schema.sql $SUITES"
 TWICE="$T/00-mock-supabase.sql supabase/schema.sql supabase/schema.sql $T/01-harness.sql $T/10-schema-tests.sql $ATTACKS $T/30-reapply.sql $LATER"
