@@ -7,6 +7,7 @@ import {
   DELETE_DENIED_MESSAGE,
   IN_USE_MESSAGE,
   LEASE_OVERLAP_MESSAGE,
+  PLANNED_CHECKOUT_BEFORE_START_MESSAGE,
   REDATE_BAD_PERIOD_MESSAGE,
   REDATE_END_BEFORE_START_MESSAGE,
   REDATE_INACTIVE_MESSAGE,
@@ -65,6 +66,7 @@ const COLUMN_DEFAULTS: Partial<Record<TableName, Record<string, unknown>>> = {
   payments: { created_by: null },
   expenses: { lease_id: null, created_by: null },
   properties: { payment_info: null, logo_path: null },
+  leases: { planned_checkout_date: null },
 }
 
 function withColumnDefaults(table: TableName, row: Record<string, unknown>): Record<string, unknown> {
@@ -183,6 +185,7 @@ export class LocalRepo implements Repo {
     if (table === 'leases') {
       const seen = [...this.db.leases]
       for (const row of created as unknown as Lease[]) {
+        assertLeaseRow(row)
         this.assertNoDoubleBooking(null, row, seen)
         seen.push(row)
       }
@@ -202,7 +205,10 @@ export class LocalRepo implements Repo {
       throw new Error(VOID_PAID_INVOICE_MESSAGE)
     }
     const next = { ...rows[idx], ...patch } as Record<string, unknown>
-    if (table === 'leases') this.assertNoDoubleBooking(rows[idx] as unknown as Lease, next as unknown as Lease, this.db.leases)
+    if (table === 'leases') {
+      assertLeaseRow(next as unknown as Lease)
+      this.assertNoDoubleBooking(rows[idx] as unknown as Lease, next as unknown as Lease, this.db.leases)
+    }
     if (table === 'waitlist') assertWaitlistRow(next as unknown as WaitlistEntry)
     if (hasUpdatedAt(table)) next.updated_at = new Date().toISOString()
     rows[idx] = next as unknown as Row<T>
@@ -348,6 +354,8 @@ export class LocalRepo implements Repo {
     if (input.newStart === lease.start_date) throw new Error(REDATE_SAME_DATE_MESSAGE)
     if (input.newEnd < input.newStart) throw new Error(REDATE_END_BEFORE_START_MESSAGE)
     if (input.invoices.some((p) => p.period_end < p.period_start)) throw new Error(REDATE_BAD_PERIOD_MESSAGE)
+    // the planned check-out (SPEC 7.8) does not move with the start: the check constraint refuses a start on or after it
+    if (lease.planned_checkout_date && lease.planned_checkout_date <= input.newStart) throw new Error(PLANNED_CHECKOUT_BEFORE_START_MESSAGE)
     // only collisions the correction creates: a lease that already overlaps the stored span (the previous tenant of a
     // room this lease moved into) is room history, as in public.redate_lease
     const history = (o: Row<'leases'>) => leaseOverlaps([o], lease.room_id, lease.start_date, lease.end_date, lease.id)
@@ -404,6 +412,12 @@ function withWaitlistDefaults(row: Record<string, unknown>): Record<string, unkn
   const next = { ...row }
   for (const [k, v] of Object.entries(defaults)) if (next[k] === undefined) next[k] = v
   return next
+}
+
+/** The CHECK constraint leases_planned_checkout_check (SPEC 7.8): a planned check-out is after the start date. */
+function assertLeaseRow(row: Lease): void {
+  const planned = row.planned_checkout_date
+  if (planned !== null && planned !== undefined && !(isISODate(planned) && planned > row.start_date)) throw new Error(PLANNED_CHECKOUT_BEFORE_START_MESSAGE)
 }
 
 /** The CHECK constraints of public.waitlist. */

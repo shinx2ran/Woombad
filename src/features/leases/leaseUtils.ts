@@ -22,7 +22,7 @@ import {
 import { reminderText } from '../../domain/messages'
 import { addDaysISO, daysBetween, periodEnd, periodsToCover } from '../../domain/period'
 import { compareRoomNames, isCancelledWithoutStay, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
-import { checkoutISO, formatCheckout, formatDate, formatRupiah, lastNightISO, todayISO } from '../../lib/format'
+import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 
 // ---------- billing state presentation ----------
 
@@ -462,6 +462,87 @@ export function coverUntilCheckout(lease: Lease, invoices: Invoice[], periodType
 export function coverUntilCheckoutHint(info: CoverUntilCheckout, unit: string, checkoutDay: string): string {
   const text = `Dihitung ${info.n} ${unit}, check-out ${formatCheckout(info.end)}`
   return info.differs ? `${text} (bukan ${formatDate(checkoutDay)}: periode dibulatkan ke atas)` : text
+}
+
+// ---------- Rencana keluar (SPEC 7.8) ----------
+
+export const PLANNED_CHECKOUT_INACTIVE_MESSAGE = 'Sewa ini sudah selesai atau dibatalkan, jadi rencana keluarnya tidak bisa diubah.'
+
+/**
+ * The day the Rencana keluar sheet starts with: the plan already recorded, else the check-out day of the billed period
+ * (end_date + 1, SPEC 7.3) — what a monthly tenant who does not extend means by "saya keluar" — or today when that day
+ * has already passed (a day in the past would not free the room: he is still in it until the checkout is recorded).
+ */
+export function defaultPlannedCheckout(lease: Pick<Lease, 'end_date' | 'planned_checkout_date'>, todayISO: string): string {
+  if (lease.planned_checkout_date) return lease.planned_checkout_date
+  const out = checkoutISO(lease.end_date)
+  return out < todayISO ? todayISO : out
+}
+
+/**
+ * The badge of a lease with a Rencana keluar: 'Akan keluar 24 Nov' (today or later), 'Rencana keluar 20 Okt lewat' once
+ * the day passed without a recorded checkout (record the checkout, or a new plan).
+ */
+export function plannedCheckoutBadge(planned: string, todayISO: string): { text: string; overdue: boolean } {
+  const date = formatDate(planned, 'd MMM')
+  return planned < todayISO ? { text: `Rencana keluar ${date} lewat`, overdue: true } : { text: `Akan keluar ${date}`, overdue: false }
+}
+
+/** Why `day` cannot be the lease's planned check-out (a check-out day, after the first night), or null. */
+export function plannedCheckoutError(lease: Pick<Lease, 'start_date'>, day: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return 'Isi tanggal keluar.'
+  if (day <= lease.start_date) return `Tanggal keluar harus sesudah tanggal mulai sewa (${formatDate(lease.start_date)}).`
+  return null
+}
+
+/**
+ * What the chosen day means against the billed period (end_date = last billed night): null on its check-out day;
+ *  - earlier: the nights up to the billed check-out stay the tenant's until his checkout is recorded (the database guard
+ *    holds the room through end_date), so Cek kamar offers the room from the billed check-out day;
+ *  - later: nights after the billed period are not billed yet (the plan never bills anything by itself).
+ */
+export function plannedCheckoutNote(lease: Pick<Lease, 'end_date'>, day: string): string | null {
+  const billedOut = checkoutISO(lease.end_date)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day === billedOut) return null
+  if (day < billedOut) {
+    return `Sewa sudah ditagih sampai check-out ${formatDate(billedOut)}. Cek kamar menawarkan kamar ini mulai ${formatDate(billedOut)}, atau sejak checkout dicatat.`
+  }
+  return `Malam ${formatStay(billedOut, lastNightISO(day))} belum ditagih. Buat tagihan berikutnya bila penyewa tetap tinggal sampai hari itu.`
+}
+
+/**
+ * The nights a Rencana keluar of `day` (null = cancelled: he rolls on) gives back to the tenant beyond his billed period,
+ * from today on: [max(end_date + 1, today), day - 1] ('9999-12-31' when cancelled), or null when there are none. Another
+ * booking of the room in them is a double booking (a booking after his billed period was only possible because of the
+ * plan, SPEC 7.8): setPlannedCheckout refuses it. A plan moved earlier, or on his billed check-out day, gives back none.
+ */
+export function plannedCheckoutHeldNights(lease: Pick<Lease, 'end_date'>, day: string | null, todayISO: string): { from: string; to: string } | null {
+  const billedOut = checkoutISO(lease.end_date)
+  const from = billedOut > todayISO ? billedOut : todayISO
+  const to = day === null ? '9999-12-31' : lastNightISO(day)
+  return from <= to ? { from, to } : null
+}
+
+/**
+ * Refusal of a Rencana keluar of `day` (null = cancel) that runs into `other`, the earliest booking of the room in the
+ * nights it would give back (plannedCheckoutHeldNights `from`): names the booking, and for a new day the latest day
+ * that still works. 'Kamar A1 sudah dipesan Sari mulai 21 Nov 2026, jadi tanggal keluar paling lambat 21 Nov 2026. …'
+ */
+export function plannedCheckoutBookedMessage(
+  roomName: string | null,
+  other: Pick<Lease, 'start_date'>,
+  otherName: string | null,
+  day: string | null,
+  from: string,
+  todayISO: string,
+): string {
+  const start = other.start_date.slice(0, 10)
+  const booked = start > todayISO
+  const what = `kamar ${roomName ?? 'ini'} sudah ${booked ? 'dipesan' : 'ditempati'} ${otherName ?? 'penyewa lain'} mulai ${formatDate(start)}`
+  const fix = `Pindahkan atau batalkan ${booked ? 'pesanan' : 'sewa'} itu dulu`
+  if (day === null) return `Rencana keluar tidak bisa dibatalkan: ${what}. ${fix}.`
+  const latest = start > from ? start : from
+  return `${what[0].toUpperCase()}${what.slice(1)}, jadi tanggal keluar paling lambat ${formatDate(latest)}. ${fix} bila penyewa tetap tinggal.`
 }
 
 // ---------- lifecycle helpers (checkout / cancel) ----------

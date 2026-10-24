@@ -5,6 +5,7 @@ import type { Invoice, Lease, LeaseAddon, Payment, PeriodType, Room } from '../.
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { buildInvoiceDraft, nextPeriodBounds, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO } from '../../lib/format'
+import { plannedCheckoutOf } from '../../domain/occupancy'
 import {
   checkoutInputError,
   composeInvoiceNotes,
@@ -243,6 +244,12 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     [preview.draft, lease, leaseInvoices, makePermanent],
   )
 
+  // SPEC 7.8: the tenant said he leaves on or before the start of the period billed here. Only a warning: he may have
+  // changed his mind (the plan is changed or cancelled on the lease page), and nothing about the billing changes.
+  const planned = plannedCheckoutOf(lease)
+  const billedFrom = preview.draft?.period_start ?? nextBounds?.period_start ?? null
+  const leavingBefore = planned !== null && billedFrom !== null && planned <= billedFrom
+
   const dateError = customError ?? untilError
   const submit = async () => {
     setTouched(true)
@@ -294,6 +301,15 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
       }
     >
       <div className="space-y-4">
+        {leavingBefore && (
+          <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="planned-checkout-warning">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              <strong>Penyewa berencana keluar {formatDate(planned)}.</strong> Tagihan ini untuk periode mulai {formatDate(billedFrom)}: pastikan ia memang
+              memperpanjang. Bila rencananya berubah, ubah atau batalkan lewat Lainnya → Rencana keluar.
+            </span>
+          </p>
+        )}
         {nextBounds && (
           <p className="text-sm text-slate-600">
             Periode berikutnya mulai <strong>{formatDate(nextBounds.period_start)}</strong>. Sewa saat ini {PERIOD_TYPE_LABEL[lease.period_type].toLowerCase()}{' '}

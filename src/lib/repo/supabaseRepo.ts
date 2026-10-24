@@ -1,7 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Insert, Row, TableName, Update } from '../../types/db'
 import type { CreatedInvitation, ListOptions, RedateLeaseInput, Repo, StorageBucket } from './types'
-import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, LEASE_OVERLAP_MESSAGE, NotMemberError, REDATE_NOT_DEPLOYED_MESSAGE, StaleWriteError, UPDATE_DENIED_MESSAGE, formatCode, normalizeCode } from './types'
+import {
+  DELETE_DENIED_MESSAGE,
+  IN_USE_MESSAGE,
+  LEASE_OVERLAP_MESSAGE,
+  NotMemberError,
+  PLANNED_CHECKOUT_BEFORE_START_MESSAGE,
+  REDATE_NOT_DEPLOYED_MESSAGE,
+  StaleWriteError,
+  UPDATE_DENIED_MESSAGE,
+  formatCode,
+  normalizeCode,
+} from './types'
 import type { MemberRole } from '../../types/db'
 
 /** The parts of a PostgREST/Postgres error worth reading (Postgres puts "still referenced" in details). */
@@ -24,6 +35,10 @@ export function translateDbError(error: string | DbError): string {
   }
   // leases_overlap_guard (SQLSTATE WB003): a double booking of a room (SPEC 7.7)
   if (code === 'WB003') return LEASE_OVERLAP_MESSAGE
+  // Rencana keluar (SPEC 7.8): leases_planned_checkout_check; or the column is not on the server yet (PGRST204: the app
+  // went out before schema.sql was re-run)
+  if (/leases_planned_checkout_check/.test(message)) return PLANNED_CHECKOUT_BEFORE_START_MESSAGE
+  if (/planned_checkout_date/.test(message) && (code === 'PGRST204' || /schema cache|does not exist/i.test(message))) return REDATE_NOT_DEPLOYED_MESSAGE
   if (/Failed to fetch|Load failed|NetworkError|network/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
   if (/Signups not allowed|signup.*disabled/i.test(message)) return 'Pendaftaran akun baru sedang ditutup. Minta pemilik kos membuatkan akun.'
   return message

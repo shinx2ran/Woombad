@@ -35,7 +35,7 @@ Prinsip:
 | rooms | Kamar | harga default harian/mingguan/bulanan; `status` hanya `active`/`maintenance`; hunian diturunkan dari leases |
 | addon_catalog | Katalog add-on | contoh: kasur tambahan, parkir, laundry; `property_id` null = semua kos |
 | tenants | Penyewa | data KTP (NIK, nama, TTL, alamat, …) + **telepon diisi manual (KTP tidak memuat nomor HP)** |
-| leases | Sewa / kontrak | `period_type`, `price_per_period`, `deposit_amount`, `start_date`, `end_date`, `status`, `checkout_date` |
+| leases | Sewa / kontrak | `period_type`, `price_per_period`, `deposit_amount`, `start_date`, `end_date`, `status`, `checkout_date`, `planned_checkout_date` (Rencana keluar, 7.8) |
 | lease_addons | Add-on per sewa | `per_period` (dikali jumlah periode) atau `one_time` (hanya di tagihan pertama) |
 | invoices | Tagihan | mencakup `quantity` periode dari `period_start` s/d `period_end` (inklusif); `total = base + addons + extra - discount` |
 | payments | Pembayaran | `kind`: `rent` (lawan tagihan, = pendapatan), `deposit` (uang jaminan, bukan pendapatan), `other`; `method` termasuk `deposit` = **potong jaminan** |
@@ -499,10 +499,12 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   - Malam yang dipegang sewa (`leaseHold`): `cancelled` tidak; `ended` sampai `checkout_date − 1` (`end_date` bila kosong);
     pesanan **harian/mingguan** yang belum mulai (aktif, `start_date` > hari ini) `[start_date, end_date]`; tamu harian/mingguan
     yang sedang menginap `[start_date, end_date]` (diharapkan keluar di hari check-out; ditandai "masih menginap"); **penyewa
-    bulanan — yang sudah tinggal maupun yang baru dipesan (Dipesan) — dan tamu yang hari check-out-nya sudah lewat tanpa
-    checkout, memegang kamar mulai `start_date` sampai checkout dicatat** (sewa aktif tanpa batas atas, 2a; pesanan bulanan
-    tertulis "Dipesan Zaki mulai 1 Nov (bulanan)") — kamar penyewa bulanan tidak pernah ditawarkan sesudah bulan pertamanya,
-    sebelum maupun sesudah ia masuk; bila ia akan keluar, catat **Checkout** dengan tanggal keluarnya. Sewa tanpa malam
+    bulanan — yang sudah tinggal maupun yang baru dipesan (Dipesan) — tanpa Rencana keluar, dan tamu yang hari check-out-nya
+    sudah lewat tanpa checkout, memegang kamar mulai `start_date` sampai checkout dicatat** (sewa aktif tanpa batas atas, 2a;
+    pesanan bulanan tertulis "Dipesan Zaki mulai 1 Nov (bulanan)") — kamar penyewa bulanan tidak ditawarkan sebagai kosong
+    sesudah bulan pertamanya, sebelum maupun sesudah ia masuk, sampai ia bilang akan keluar: **Rencana keluar** (7.8) membatasi
+    pegangannya sampai malam sebelum hari keluar itu (tidak pernah kurang dari `end_date`), dan bila masa yang sudah ditagih
+    berakhir sebelum tanggal yang dicari kamarnya tampil di **Bisa kosong** (7.8). Sewa tanpa malam
     (checkout di hari mulai) tidak memegang apa pun. Kamar perbaikan tidak pernah ditawarkan. **Check-in hari ini** mengikuti
     aturan Check-in cepat (7.4): kamar yang tamunya ber-check-out hari ini tetapi checkout-nya belum dicatat tidak ditawarkan
     ("Ditempati Hendra sampai check-out dicatat", `stillCheckedIn`); untuk tanggal sesudahnya kamar itu tetap ditawarkan dengan
@@ -511,14 +513,18 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
     tarif: "Harga belum diatur", total diketik di lembar pesan); urutan **paling pas**: sisa malam kosong terkecil sebelum pesanan
     berikutnya setelah check-out (tanpa pesanan berikutnya paling akhir), lalu malam menganggur terkecil sebelum check-in (dihitung
     sejak hari ini), lalu harga, lalu nama kamar; alasan satu baris ("Pas sebelum pesanan 12 Nov", "Sisa 3 malam sebelum pesanan
-    15 Nov", "Kosong sampai seterusnya") + catatan tamu sebelumnya ("Sari masih menginap, jadwal check-out 5 Nov", "Langsung
-    setelah Sari check-out"). Kamar di atas harga maks. tidak ditampilkan (dihitung `overBudget`); kamar tanpa tarif tetap tampil.
+    15 Nov"; tanpa pesanan sesudahnya: "Kosong mulai 5 Nov (setelah Sari check-out)" selama ada tamu yang menginap atau dipesan
+    sebelum itu, "Kosong mulai 21 Nov (Budi akan keluar)" sesudah Rencana keluar, dan "Kosong sampai seterusnya" **hanya** untuk
+    kamar yang kosong sejak hari ini, 7.8) + catatan tamu sebelumnya ("Sari masih menginap, jadwal check-out 5 Nov", "Budi masih
+    menginap, rencana keluar 21 Nov", "Langsung setelah Sari check-out"). Kamar di atas harga maks. tidak ditampilkan (dihitung `overBudget`); kamar tanpa tarif tetap tampil.
   - (2) **Hampir cocok** (maks. 5, malam kosong terbanyak dulu): alasan persis dari rentang kosong terpanjang ("Kosong 5–9 Nov,
     lalu dipesan Budi", "Ditempati Sari sampai 7 Nov, lalu kosong 7–12 Nov").
   - (3) Tidak ada yang kosong: keadaan kosong yang jelas + tombol **Masukkan ke daftar tunggu** (form terisi tanggal, jenis,
     jumlah, harga maks.). Untuk satu kamar (`?kamar=`) kamar yang tidak kosong tampil dengan penyebabnya ("Dipesan Budi 27–29 Okt").
+  - Sejak 7.8 ada kelompok **Bisa kosong** di antara (1) dan (2); urutan tampil: Kosong untuk seluruh tanggal, Bisa kosong, Hampir
+    cocok.
   - Setiap kamar punya **strip 14 hari** mulai tanggal check-in (`availabilityStrip`: kosong / terisi / dipesan / hari check-out,
-    malam yang dipilih bergaris) dengan teks pengganti untuk pembaca layar (`stripText`).
+    malam yang dipilih bergaris; hari Rencana keluar juga "hari check-out") dengan teks pengganti untuk pembaca layar (`stripText`).
 - **Pesan** → lembar `BookingSheet`: nama penyewa dengan pencocokan penyewa lama seperti Check-in cepat (`tenantsNamed` +
   `resolveTenantChoice`), HP opsional ("HP belum diisi" diingatkan), total (terisi dari tarif, bisa diubah; per malam/minggu/bulan
   tampil), DP opsional (jumlah + Tunai/Transfer/QRIS; sama dengan total = lunas), catatan. Simpan lewat **jalur yang sama dengan
@@ -544,7 +550,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   menjelaskannya dan cadangan/impor melewatkan tabel ini.
   - Daftar: Menunggu dulu (secepatnya paling atas, lalu tanggal terdekat), chip **Menunggu / Sudah dipesan / Batal**. Kartu: nama,
     HP (wa.me) atau gelembung oranye "HP belum diisi" yang membuka form di Nomor HP, yang diinginkan (`wantText`), preferensi,
-    kecocokan langsung dari `availability.ts` ("Kamar cocok: A3, B1 (Rp 360.000)" / "Belum ada kamar"). Aksi: **Kabari** (WhatsApp:
+    kecocokan langsung dari `availability.ts` ("Kamar cocok: A3, B1 (Rp 360.000)" / "Belum ada kamar"; hanya kelompok kosong —
+    kamar Bisa kosong hanya petunjuk "+2 bisa kosong", 7.8, dan tidak dihitung di kartu Dashboard). Aksi: **Kabari** (WhatsApp:
     sapaan, kamar, tanggal dengan check-out, harga, nama kos; `kabariText`), **Pesan** (membuka `/rencana` terisi, termasuk kos
     entri (`kos=`): planner hanya mencari di kos itu seperti kecocokannya, dengan chip "Hanya <kos>" untuk melepasnya; setelah
     pesanan tersimpan entri menjadi `booked` dengan `lease_id` dalam alur yang sama), **Ubah**, **Batal** (`cancelled`; bisa
@@ -577,3 +584,83 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   dblink bersamaan, riwayat boleh, pindah kamar & redate tidak terganggu, RLS daftar tunggu per peran & lintas organisasi, riwayat
   perubahan, `export_backup`; sejak tinjauan: tanggal WIB apa pun zona sesi, orang luar/organisasi lain mendapat 42501/23503
   bukan WB003, balapan `redate_lease` vs pemesanan lewat dblink), `e2e/rencana.spec.ts` (360 px, Mode Demo, jam tetap).
+
+### 7.8 Rencana keluar & "Bisa kosong"
+- **Masalah** (data live: 31 kamar terisi semua; 28 sewa bulanan — 26 dibayar s/d akhir Okt–Nov 2026, 2 s/d Juni 2027 — 2
+  mingguan, 1 harian): karena penyewa bulanan dianggap terus memperpanjang sampai checkout dicatat (7.7), mencari 1 malam pada
+  24 Des 2026 hanya menawarkan 3 kamar harian/mingguan, dan menulis "Kosong sampai seterusnya" di samping "<nama> masih menginap,
+  jadwal check-out 30 Okt". Keputusan pemilik: kamar bulanan yang masa bayarnya berakhir sebelum tanggal yang dicari tampil di
+  kelompok terpisah **Bisa kosong**; memesannya mensyaratkan Rencana keluar penyewa itu dicatat lebih dulu.
+- **Data**: kolom `public.leases.planned_checkout_date date` (nullable) = **hari check-out** yang dikatakan penyewa (7.3: malam itu
+  kamar sudah kosong); constraint `leases_planned_checkout_check`: `null` atau `> start_date`. Bukan syarat sewa: semua anggota
+  (termasuk staf, pekerjaan meja depan) boleh mengisi/menghapusnya, `leases_terms_guard` tidak memeriksanya, RLS sama dengan kolom
+  sewa lain. Tidak ada perubahan pada `leases_overlap_guard`: pesanan sesudah `end_date` penyewa bulanan memang sudah diizinkan
+  database; aplikasi yang mensyaratkan Rencana keluar dulu. Skema hanya bertambah (tanpa DROP): `alter table … add column if not
+  exists` + do-block yang menambah constraint bernama bila belum ada. Ikut `export_backup`, cadangan JSON, impor Mode Demo (kolom
+  `date`; cadangan lama tanpa kolom = `null`; baris dengan rencana ≤ mulai dilewati seperti baris tidak valid lain), Riwayat
+  perubahan ("Rencana keluar: – → 21 Nov 2026"), `LocalRepo` (bawaan `null` untuk baris lama, constraint ditiru dengan pesan
+  `PLANNED_CHECKOUT_BEFORE_START_MESSAGE`), `translateDbError` (nama constraint → pesan itu; kolom belum ada di server,
+  PGRST204/42703 → 'Fitur ini belum aktif di server. …'). Tipe: `Lease.planned_checkout_date?: string | null` (opsional: baris
+  lama tidak membawanya; tidak ada = tanpa rencana). Data contoh Mode Demo: Dewi Lestari (B2) bulanan, dibayar s/d malam
+  sebelum hari ini + 21, rencana keluar hari ini + 21.
+- **Rencana keluar** (detail sewa → **Lainnya → Rencana keluar**, untuk sewa bulanan aktif atau sewa aktif yang sudah punya
+  rencana; juga **Tandai akan keluar** di Bisa kosong): lembar `PlannedCheckoutModal` — "Ditagih s/d (check-out)", rencana sekarang,
+  input **Tanggal keluar (check-out)** dengan bawaan rencana yang ada, atau `end_date + 1`, atau hari ini bila hari itu sudah lewat
+  (`defaultPlannedCheckout`); galat bila ≤ tanggal mulai (`plannedCheckoutError`); keterangan bila sebelum masa yang ditagih
+  berakhir ("Cek kamar menawarkan kamar ini mulai <check-out tagihan>, atau sejak checkout dicatat") atau sesudahnya ("Malam … belum
+  ditagih", `plannedCheckoutNote`); peringatan bila tanggal sudah lewat; **Simpan** dan **Batalkan rencana keluar**. Aksi
+  `useLeaseActions.setPlannedCheckout(lease, day | null)`: membaca ulang sewa, menolak sewa yang sudah tidak aktif
+  (`PLANNED_CHECKOUT_INACTIVE_MESSAGE`) dan tanggal ≤ mulai segar, menulis hanya kolom itu, invalidate `leases` (juga bila
+  ditolak). Tagihan, `end_date`, kamar, harga tidak berubah; checkout tetap dicatat saat penyewa benar-benar keluar.
+  **Pesanan yang bergantung pada rencana**: membatalkan rencana atau memundurkannya mengembalikan malam sesudah masa yang ditagih
+  kepada penyewa, `[max(end_date + 1, hari ini), rencana baru − 1]` (tanpa batas bila dibatalkan; `plannedCheckoutHeldNights`).
+  Bila sewa lain di kamar itu (pesanan yang dibuat karena rencana itu membebaskan kamar) memegang salah satu malam itu
+  (`overlappingLease`, yang paling awal), aksi menolak sebelum menulis dan menyebut pesanan itu (`plannedCheckoutBookedMessage`:
+  'Rencana keluar tidak bisa dibatalkan: kamar A1 sudah dipesan Sari mulai 1 Des 2026. Pindahkan atau batalkan pesanan itu
+  dulu.' / 'Kamar A1 sudah dipesan Sari mulai 1 Des 2026, jadi tanggal keluar paling lambat 1 Des 2026. Pindahkan atau batalkan
+  pesanan itu dulu bila penyewa tetap tinggal.'; lembar tetap terbuka, pesan sebagai toast). Memajukan rencana, atau tepat di
+  hari check-in pesanan itu, selalu diterima. Online dan Mode Demo memakai jalur yang sama (penjaga database dan `LocalRepo` tidak
+  memeriksa kolom ini).
+- **Tampil di mana**: lencana "Akan keluar 21 Nov" (`plannedCheckoutBadge`; sesudah harinya lewat tanpa checkout: "Rencana keluar
+  20 Okt lewat", merah) di judul detail sewa (+ baris "Rencana keluar" di Info sewa), baris ketiga di daftar sewa
+  (`lease-planned-checkout`), papan kamar (kotak "Keluar 21 Nov" menggantikan "Terisi", atau "N hari" bila ia keluar paling lambat
+  pada jatuh tempo itu; Telat/Hari ini tetap; lembar kamar "Akan keluar 21 Nov"), dan baris Dashboard **Akan berakhir**.
+  **Checkout**: tanggal bawaan = rencana keluar bila ada ("Sesuai rencana keluar penyewa."). **Tagih/Perpanjang**: bila rencana
+  keluar ≤ awal periode yang akan ditagih, peringatan "Penyewa berencana keluar <tgl>. …" (tidak memblokir, tidak mengubah tagihan).
+- **Ubah tanggal mulai** (7.6): rencana keluar tidak ikut bergeser; mulai baru ≥ rencana keluar ditolak sebelum menulis apa pun —
+  perencana (`redatePlannedCheckoutMessage`: 'Rencana keluar penyewa 15 Sep 2026 tidak sesudah tanggal mulai yang baru. Ubah atau
+  batalkan rencana keluar dulu.'), `LocalRepo.redateLease`, dan database (constraint menggagalkan seluruh `redate_lease`, satu
+  transaksi; pesan diterjemahkan).
+- **Perencana** (`availability.ts`): sewa **bulanan** aktif dengan rencana keluar memegang `[start_date, max(rencana − 1, end_date)]`
+  (tidak pernah lebih longgar dari penjaga database, yang memegang sampai `end_date` selama checkout belum dicatat); hari rencana
+  keluar itu kosong (dipakai ulang di hari check-out) dan tampil "hari check-out" di strip; bila hari rencana itu sendiri sudah
+  lewat tanpa checkout ia kembali memegang tanpa batas — juga bila rencana itu jatuh sebelum akhir masa yang ditagih (sama dengan
+  lencana merah "Rencana keluar … lewat"); bila hari itu hari ini, check-in hari ini mengikuti aturan Check-in cepat (belum
+  ditawarkan sampai checkout dicatat). Tanpa rencana: bergulir seperti 7.7, **kecuali** masa yang ditagih (`end_date`) berakhir
+  sebelum check-in: kamar masuk **`maybeFree`** bila semua pegangan yang mengambil malam menginap adalah penyewa bulanan semacam itu
+  dan, seolah ia keluar di hari check-out masanya, tidak ada pegangan lain yang mengambil malam menginap (`maybeFreeHold`); di dalam
+  harga maks. Untuk check-in hari ini penyewa yang masih di kamar tidak pernah tampil di Bisa kosong (aturan Check-in cepat:
+  hanya mencatat checkout-nya yang membebaskan kamar, sama seperti sesudah rencana keluar hari ini). Catatan kamar kosong sesudah
+  rencana keluar memakai tanggal rencana penyewa sendiri; bila rencana itu sebelum akhir masa yang ditagih: "Budi masih menginap,
+  rencana keluar 10 Nov (ditagih s/d 1 Des)" (kamar ditawarkan mulai 1 Des). Kamar itu tetap tercantum di `taken` (belum kosong) dan pemeriksaan ulang pesanan (`stayConflict`) tetap menolaknya.
+  Urutan: dibayar s/d paling awal, lalu nama kamar. Setiap entri: kamar, penyewa (tautan ke sewa), "dibayar s/d <check-out>" (atau
+  "ditagih s/d … · sisa Rp …" bila belum lunas), "belum diperpanjang N hari" bila hari check-out masanya sudah lewat (`lapsedDays`),
+  harga menginap; aksi **Tanya perpanjang** (WhatsApp, teks `extensionQuestionText` dari Dashboard; tanpa HP: "HP belum diisi" ke
+  profil penyewa) dan **Tandai akan keluar** (lembar Rencana keluar); tidak ada **Pesan**. Setelah disimpan data dibaca ulang dan
+  kamar langsung pindah ke kelompok kosong bila rencana keluar ≤ check-in (atau ke Hampir cocok bila sesudahnya). Tampil 8 pertama +
+  **Tampilkan semua (N)**. Judul: "Bisa kosong — penyewa bulanan belum konfirmasi (N)"; keadaan kosong menambahkan "N kamar bisa
+  kosong bila penyewa bulanannya keluar". Satu kamar (`?kamar=`): kartu Bisa kosong menggantikan kartu "tidak kosong".
+- **Daftar tunggu**: kecocokan hanya kelompok kosong; `WaitlistMatch.maybeFree` → petunjuk "+N bisa kosong" (`maybeFreeText`) di
+  samping kecocokan; kartu Dashboard tetap menghitung kelompok kosong saja.
+- **Rilis**: jalankan SQL kolom + constraint (tanpa DROP) di proyek live lebih dulu, baru push ke `master` (aplikasi lama mengabaikan
+  kolom itu; aplikasi baru sebelum SQL: menyimpan rencana keluar menampilkan 'Fitur ini belum aktif di server. …').
+- **Uji**: `availability.keluar.test.ts` (kasus pemilik: 31 kamar, 1 malam 24 Des; rencana keluar sebelum/sesudah menginap, hari
+  check-out dipakai ulang, rencana sebelum akhir tagihan (+ catatannya), rencana lewat (juga yang sebelum akhir tagihan), check-in
+  hari ini (juga tanpa Bisa kosong), strip, syarat Bisa kosong, urutan, kata "Kosong mulai …"), `plannedCheckout.test.tsx` (aksi
+  pemilik & staf, penolakan, batal/mundur di atas pesanan ditolak, constraint Mode Demo, redate, Checkout, peringatan Tagih, lembar),
+  `plannedCheckoutUtils.test.ts`, `boardModel.keluar.test.ts`, `plannedCheckout.data.test.ts` (data contoh, baris
+  lama, impor, riwayat, `translateDbError`), `supabase/tests/28-keluar.sql` (kolom + constraint, staf boleh, organisasi lain/orang
+  luar ditolak RLS, penjaga pesanan tidak berubah, redate ditolak & rencana tidak bergeser, riwayat, `export_backup`; di ketiga
+  skenario), `e2e/keluar.spec.ts` (360 px, Mode Demo, jam tetap 24 Okt 2026; membatalkan/memundurkan rencana Budi di atas pesanan yang
+  dibuat karenanya ditolak, memajukannya diterima). `e2e/rencana.spec.ts` kini mengharapkan "Kosong mulai
+  27 Okt (setelah Hendra Wijaya check-out)" alih-alih "Kosong sampai seterusnya" untuk kamar yang tamunya masih menginap.

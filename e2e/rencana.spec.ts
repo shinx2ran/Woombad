@@ -46,7 +46,8 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     await expect(page.getByTestId('free-room')).toHaveCount(3)
     expect(await freeRooms(page)).toEqual(['102', 'A3', 'B3'])
     const first = page.getByTestId('free-room').first()
-    await expect(first).toContainText('Kosong sampai seterusnya')
+    // SPEC 7.8: a room whose guest is still staying says when it empties, never "Kosong sampai seterusnya"
+    await expect(first).toContainText('Kosong mulai 27 Okt (setelah Hendra Wijaya check-out)')
     await expect(first).toContainText('Hendra Wijaya masih menginap, jadwal check-out 27 Okt')
     await expect(first).toContainText('Rp 260.000')
     const a3 = page.locator('[data-testid="free-room"][data-room="A3"]')

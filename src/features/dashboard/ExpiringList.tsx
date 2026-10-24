@@ -1,7 +1,9 @@
 import { Link } from 'react-router'
 import { CalendarClock, MessageCircle } from 'lucide-react'
 import { Badge } from '../../components/ui'
-import { formatDate, whatsappLink } from '../../lib/format'
+import { formatDate, todayISO, whatsappLink } from '../../lib/format'
+import { plannedCheckoutOf } from '../../domain/occupancy'
+import { plannedCheckoutBadge } from '../leases/leaseUtils'
 import { EXPIRING_WITHIN_DAYS, checkoutDaysLabel, extensionQuestionText, type ExpiringItem } from './dashboardModel'
 import { SectionCard, SectionEmpty } from './SectionCard'
 import { MissingPhoneLink } from '../tenants/MissingPhoneLink'
@@ -33,6 +35,9 @@ function ExpiringRow({ item }: { item: ExpiringItem }) {
   const roomName = room?.name ?? '-'
   const propertyName = property?.name ?? '-'
   const wa = whatsappLink(tenant?.phone, extensionQuestionText({ tenantName, roomName, propertyName, endDate: lease.end_date }))
+  // SPEC 7.8: the tenant already said when he leaves
+  const planned = plannedCheckoutOf(lease)
+  const leaving = planned ? plannedCheckoutBadge(planned, todayISO()) : null
 
   return (
     <li className="px-4 py-3">
@@ -50,6 +55,11 @@ function ExpiringRow({ item }: { item: ExpiringItem }) {
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
             <Badge tone={daysLeft <= 1 ? 'danger' : 'warning'}>{checkoutDaysLabel(daysLeft)}</Badge>
             <span>{formatDate(checkoutDate, 'EEE, d MMM yyyy')}</span>
+            {leaving && (
+              <span data-testid="expiring-planned-checkout">
+                <Badge tone={leaving.overdue ? 'danger' : 'info'}>{leaving.text}</Badge>
+              </span>
+            )}
           </p>
         </div>
         {wa ? (

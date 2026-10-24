@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, DoorOpen, FilePlus2, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, DoorOpen, FilePlus2, LogOut, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -26,17 +26,29 @@ import { depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summar
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
-import { agreedPriceText, invoiceTimeline, leaseEndDisplay, leaseReminderText, openInvoicesSorted, displayBillingState, priceDelta, priceDeltaText, roomPriceFor } from './leaseUtils'
+import {
+  agreedPriceText,
+  invoiceTimeline,
+  leaseEndDisplay,
+  leaseReminderText,
+  openInvoicesSorted,
+  displayBillingState,
+  plannedCheckoutBadge,
+  priceDelta,
+  priceDeltaText,
+  roomPriceFor,
+} from './leaseUtils'
 import { ActionMenu, BillingStateBadge, InvoiceTimeline, Row, type MenuItem } from './components'
-import { isLeaseReservedOn } from '../../domain/occupancy'
+import { isLeaseReservedOn, plannedCheckoutOf } from '../../domain/occupancy'
 import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
 import { EditPaymentModal } from './EditPaymentModal'
 import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAddon } from './LifecycleModals'
 import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
 import { RedateLeaseModal } from './RedateLeaseModal'
+import { PlannedCheckoutModal } from './PlannedCheckoutModal'
 
-type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon' | 'redate'
+type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon' | 'redate' | 'keluar'
 type Confirm =
   | { kind: 'void-invoice'; invoice: Invoice }
   | { kind: 'delete-invoice'; invoice: Invoice }
@@ -112,6 +124,9 @@ export function LeaseDetailPage() {
   const isActive = lease.status === 'active'
   // 'Check-out <end_date + 1>' (active) / 'Checkout <checkout_date>' (ended) / 'Berakhir …' (cancelled), SPEC 7.3
   const leaseEnd = leaseEndDisplay(lease)
+  // Rencana keluar (SPEC 7.8): the day the tenant said he leaves (active leases only)
+  const planned = plannedCheckoutOf(lease)
+  const plannedBadge = planned ? plannedCheckoutBadge(planned, today) : null
   // SPEC 5.4: the room's current rate for the lease's type is the 'harga standar'.
   const standardPrice = roomPriceFor(room, lease.period_type)
   const openInvoices = openInvoicesSorted(lease.id, leaseInvoices, data.payments)
@@ -168,6 +183,15 @@ export function LeaseDetailPage() {
         hint: 'Salah input tanggal mulai? Semua periode tagihan ikut digeser',
         icon: <CalendarClock className="h-4 w-4" />,
         onClick: () => setModal('redate'),
+      })
+    }
+    // SPEC 7.8: a monthly tenant rolls on until he says he leaves; front-desk work, so staff may record it too
+    if (lease.period_type === 'monthly' || planned) {
+      menuItems.push({
+        label: 'Rencana keluar',
+        hint: planned ? `Keluar ${formatDate(planned)} · ubah atau batalkan` : 'Penyewa bilang mau keluar? Catat tanggalnya',
+        icon: <LogOut className="h-4 w-4" />,
+        onClick: () => setModal('keluar'),
       })
     }
     if (deposit.shortfall > 0 || deposit.agreed > 0) {
@@ -269,6 +293,11 @@ export function LeaseDetailPage() {
             {/* a booking that has not started (SPEC 2a, 7.7): the same word as the room board and Kos & Kamar */}
             {isLeaseReservedOn(lease, today) && <Badge tone="brand">Dipesan · mulai {formatDate(lease.start_date, 'd MMM')}</Badge>}
             {isActive && <BillingStateBadge state={displayBillingState(lease, summary, today)} />}
+            {plannedBadge && (
+              <span data-testid="planned-checkout-badge">
+                <Badge tone={plannedBadge.overdue ? 'danger' : 'warning'}>{plannedBadge.text}</Badge>
+              </span>
+            )}
           </span>
         }
         actions={
@@ -328,6 +357,7 @@ export function LeaseDetailPage() {
             </p>
             <Row label="Mulai" value={formatDate(lease.start_date)} />
             <Row label={leaseEnd.label} value={leaseEnd.date} />
+            {planned && <Row label="Rencana keluar" value={formatDate(planned)} />}
             <Row label="Deposit disepakati" value={formatRupiah(lease.deposit_amount)} />
             <Row label="Penyewa" value={tenant?.phone ?? '-'} />
             {lease.notes && <p className="whitespace-pre-wrap border-t border-slate-100 pt-2 text-xs text-slate-600">{lease.notes}</p>}
@@ -534,6 +564,9 @@ export function LeaseDetailPage() {
       <CancelLeaseModal open={modal === 'cancel'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
       <MoveRoomModal open={modal === 'move'} onClose={() => setModal(null)} lease={lease} rooms={data.rooms} leases={data.leases} currentRoom={room} actions={actions} />
       <AddonModal open={modal === 'addon'} onClose={() => setModal(null)} lease={lease} catalog={data.addonCatalog} actions={actions} />
+      {modal === 'keluar' && isActive && (
+        <PlannedCheckoutModal lease={lease} tenantName={tenant?.full_name ?? 'Penyewa'} roomName={room?.name ?? '?'} actions={actions} onClose={() => setModal(null)} />
+      )}
       {modal === 'redate' && isActive && isAdmin && (
         <RedateLeaseModal
           onClose={() => setModal(null)}

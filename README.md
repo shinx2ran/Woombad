@@ -251,7 +251,8 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 | Mendekati jatuh tempo | Dashboard menampilkan **Perlu perhatian** (terlambat / jatuh tempo ≤3 hari). Tombol **Tagih** membuat tagihan periode berikutnya dan memperpanjang sewa; ikon WhatsApp mengirim pengingat berisi nomor rekening. Ikon oranye bertanda **+** berarti nomor HP penyewa belum diisi: ketuk untuk langsung mengisinya. |
 | Perpanjang 2 minggu saja | Buka sewa → **Buat tagihan berikutnya** → **Periode khusus** (pro-rata). |
 | Bayar listrik / denda | Saat membuat tagihan isi kolom **Listrik / Denda / Lainnya**. |
-| Penyewa pindah / keluar | Buka sewa → **Lainnya → Pindah kamar** atau **Checkout** (uang jaminan dikembalikan atau dipotong). |
+| Penyewa bulanan bilang mau keluar | Buka sewa → **Lainnya → Rencana keluar**: isi hari check-out-nya (bawaan: akhir masa yang sudah ditagih). Mulai hari itu kamarnya ditawarkan di **Cek kamar**; sewa dan tagihan tidak berubah. Berubah pikiran? **Batalkan rencana keluar** (atau ubah tanggalnya) di tempat yang sama; bila kamarnya sudah dipesan orang lain mulai tanggal itu, aplikasi menolak dan menyebut pesanan itu: pindahkan atau batalkan pesanan itu dulu. Semua anggota, termasuk staf, boleh mencatatnya. |
+| Penyewa pindah / keluar | Buka sewa → **Lainnya → Pindah kamar** atau **Checkout** (uang jaminan dikembalikan atau dipotong; tanggal checkout terisi dari rencana keluar bila ada). |
 | Salah input tanggal mulai sewa | Buka sewa → **Lainnya → Ubah tanggal mulai** (pemilik/admin): semua periode tagihan ikut digeser ([lihat di bawah](#salah-input-tanggal-mulai-sewa)). |
 | Pengeluaran | **Pengeluaran → Catat**: gaji, listrik/air, perbaikan, dll., per kos atau **Bersama**; ada tombol **Duplikat ke bulan ini** untuk biaya rutin. |
 | Lihat kinerja | **Laporan**: harian / mingguan / bulanan / tahunan, laba-rugi, piutang, hunian, grafik, lalu **Unduh XLSX / CSV** atau **Cetak / PDF**. |
@@ -282,14 +283,20 @@ Mode Demo papan selalu tampil, untuk dicoba dengan data contoh.
 **Cek kamar kosong** (Dashboard, atau **Sewa → Cek kamar**, atau **Pesan tanggal lain** di papan kamar) mencari kamar yang kosong
 untuk **seluruh** malam yang diminta, untuk tamu harian, mingguan atau bulanan, di kos yang sedang dipilih. Yang paling pas tampil
 paling atas (mis. "Pas sebelum pesanan 12 Nov"), dengan harga untuk seluruh menginap dan strip 14 hari (hijau kosong, biru terisi,
-ungu dipesan, kuning hari check-out). Kamar yang hanya kosong sebagian tampil di **Hampir cocok** dengan alasannya ("Kosong 5–9 Nov,
-lalu dipesan Budi"). Kamar penyewa bulanan tidak pernah ditawarkan sampai checkout-nya dicatat, juga bila ia baru dipesan dan
-belum masuk. Untuk check-in **hari ini**, kamar yang tamunya belum dicatat check-out tidak ditawarkan: catat checkout-nya dulu,
+ungu dipesan, kuning hari check-out). Kamar yang tamunya masih menginap menyebut kapan kosong ("Kosong mulai 28 Okt (setelah Sari
+check-out)"); "Kosong sampai seterusnya" hanya untuk kamar yang memang kosong. Kamar yang hanya kosong sebagian tampil di **Hampir
+cocok** dengan alasannya ("Kosong 5–9 Nov, lalu dipesan Budi"). Penyewa bulanan dianggap terus memperpanjang sampai ia bilang
+keluar: kamar yang sewanya sudah dibayar hanya sampai sebelum tanggal yang dicari tampil di **Bisa kosong — penyewa bulanan belum
+konfirmasi** (dibayar s/d kapan, "belum diperpanjang N hari" bila sudah lewat). Di situ belum bisa dipesan: ketuk **Tanya
+perpanjang** (WhatsApp ke penyewa), dan bila ia akan keluar ketuk **Tandai akan keluar** (Rencana keluar, terisi hari check-out masa
+yang sudah dibayar); kamar langsung pindah ke daftar kosong ("Kosong mulai 21 Nov (Budi akan keluar)") dan bisa dipesan. Untuk
+check-in **hari ini**, kamar yang tamunya (atau penyewa bulanannya) belum dicatat check-out tidak ditawarkan, juga tidak di Bisa kosong: catat checkout-nya dulu,
 seperti Check-in cepat. **Pesan**: isi nama (penyewa lama
 dikenali supaya tidak dobel), HP boleh nanti, total, DP bila ada; kamar langsung tampil **Dipesan**. Dua HP yang memesan kamar yang
 sama pada saat bersamaan tidak bisa dobel: yang kedua ditolak dengan nama pesanan yang lebih dulu. Tamu tidak jadi datang? Buka
 sewanya → **Lainnya → Batalkan sewa**. Bila tidak ada kamar, masukkan tamu ke **Daftar tunggu** (Sewa → Daftar tunggu, atau kartu
-di Dashboard): setiap entri menunjukkan kamar yang cocok saat ini, tombol **Kabari** membuka WhatsApp dengan pesan berisi kamar,
+di Dashboard): setiap entri menunjukkan kamar yang cocok saat ini (plus "+2 bisa kosong" bila ada kamar penyewa bulanan yang
+belum konfirmasi), tombol **Kabari** membuka WhatsApp dengan pesan berisi kamar,
 tanggal, dan harga, dan **Pesan** langsung memesankan kamarnya (di kos yang diminta tamu itu). Entri yang sudah dipesankan dari HP
 lain tidak bisa dipesankan lagi atau dibatalkan dari layar lama. Staf boleh mengelola daftar tunggu; menghapus hanya pemilik/admin.
 
@@ -330,7 +337,8 @@ Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik
 ## Menguji skema database secara lokal (opsional)
 
 `supabase/tests/run.sh` memasang `schema.sql` ke PostgreSQL lokal dengan tiruan objek Supabase dan menjalankan
-pengujian fungsional (pendaftaran, kode undangan, RLS, pembatasan staf, trigger tagihan, penjaga pesanan dobel, daftar tunggu).
+pengujian fungsional (pendaftaran, kode undangan, RLS, pembatasan staf, trigger tagihan, penjaga pesanan dobel, daftar tunggu,
+rencana keluar).
 Lihat komentar di dalam skrip.
 
 ## Install ke HP

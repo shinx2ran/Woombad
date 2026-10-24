@@ -111,6 +111,8 @@ const COLUMN_LABEL: Record<string, string> = {
   start_date: 'Mulai',
   end_date: 'Check-out',
   checkout_date: 'Checkout',
+  // SPEC 7.8: already a check-out day (the day the tenant leaves), shown as is
+  planned_checkout_date: 'Rencana keluar',
   period_start: 'Awal periode',
   period_end: 'Check-out periode',
   due_date: 'Jatuh tempo',
@@ -169,6 +171,7 @@ const COLUMN_ORDER = [
   'wanted_from',
   'end_date',
   'checkout_date',
+  'planned_checkout_date',
   // an invoice moved by 'Ubah tanggal mulai' (SPEC 7.6) reads start, check-out, due date
   'period_start',
   'period_end',

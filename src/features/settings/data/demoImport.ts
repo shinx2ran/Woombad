@@ -193,6 +193,8 @@ const COLUMNS: { [T in ImportTable]: { [K in DataColumns<T>]: Col } } = {
     end_date: reqDate,
     status: { type: LEASE_STATUSES, def: 'active' },
     checkout_date: date,
+    // Rencana keluar (SPEC 7.8); missing in older backups -> null
+    planned_checkout_date: date,
     notes: text,
   },
   lease_addons: {
@@ -339,7 +341,7 @@ function passesChecks(table: ImportTable, r: Record<string, unknown>): boolean {
   const s = (c: string) => r[c] as string
   switch (table) {
     case 'leases':
-      return s('end_date') >= s('start_date')
+      return s('end_date') >= s('start_date') && (r.planned_checkout_date === null || s('planned_checkout_date') > s('start_date'))
     case 'invoices':
       return s('period_end') >= s('period_start') && n('total_amount') === n('base_amount') + n('addons_amount') + n('extra_amount') - n('discount_amount')
     case 'payments':

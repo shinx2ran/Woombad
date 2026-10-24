@@ -6,7 +6,7 @@ import { Badge, Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import type { Room } from '../../types/db'
-import { leaseReminderText } from '../leases/leaseUtils'
+import { leaseReminderText, plannedCheckoutBadge } from '../leases/leaseUtils'
 import { useLeaseData } from '../leases/useLeaseData'
 import { paidThroughText } from '../properties/roomUtils'
 import { BOARD_TONES, BOARD_TONE_META, boardStatusText, buildBoard, countTones, leaseActionLink, type BoardTile, type BoardTone } from './boardModel'
@@ -105,12 +105,19 @@ export function RoomBoard() {
                   data-testid="board-tile"
                   data-room={t.room.name}
                   data-tone={t.tone}
-                  aria-label={`Kamar ${t.room.name}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}`}
+                  aria-label={`Kamar ${t.room.name}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}`}
                   onClick={() => setOpenRoomId(t.room.id)}
                   className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-center', TILE_CLASS[t.tone])}
                 >
                   <span className="max-w-full truncate text-sm font-semibold tabular-nums">{t.room.name}</span>
-                  <span className={clsx('max-w-full truncate text-[10px] leading-tight', t.tone === 'overdue' && 'font-bold uppercase tracking-wide', t.tone === 'today' && 'font-bold')}>{t.caption}</span>
+                  {t.leavingOn ? (
+                    // two short lines on a 360 px phone: 'Keluar' / '24 Nov'
+                    <span className="max-w-full text-[10px] font-semibold leading-tight" data-testid="board-tile-leaving">
+                      Keluar <span className="whitespace-nowrap">{t.leavingOn}</span>
+                    </span>
+                  ) : (
+                    <span className={clsx('max-w-full truncate text-[10px] leading-tight', t.tone === 'overdue' && 'font-bold uppercase tracking-wide', t.tone === 'today' && 'font-bold')}>{t.caption}</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -161,9 +168,10 @@ function RoomActionSheet({
   onClose: () => void
   onCheckIn: () => void
 }) {
-  const { room, lease, tenant, summary, tone } = tile
+  const { room, lease, tenant, summary, tone, plannedCheckout } = tile
   const living = Boolean(lease && summary)
   const status = boardStatusText(summary, today)
+  const leaving = plannedCheckout ? plannedCheckoutBadge(plannedCheckout, today) : null
 
   return (
     <Modal open onClose={onClose} title={`Kamar ${room.name}`} size="sm">
@@ -187,6 +195,12 @@ function RoomActionSheet({
                 paidThroughText(summary.paidThrough) && <p>{paidThroughText(summary.paidThrough)}</p>
               )}
               {status && <p className={tone === 'overdue' ? 'font-medium text-red-700' : 'text-slate-500'}>{status}</p>}
+              {/* SPEC 7.8: the tenant said when he leaves (lease page: Lainnya → Rencana keluar) */}
+              {leaving && (
+                <p data-testid="board-planned-checkout" className={clsx('font-medium', leaving.overdue ? 'text-red-700' : 'text-amber-800')}>
+                  {leaving.text}
+                </p>
+              )}
             </>
           )}
           {tone === 'reserved' && lease && <p>Mulai {formatDate(lease.start_date)}</p>}

@@ -18,6 +18,7 @@ import {
   inKosFilter,
   kabariText,
   matchText,
+  maybeFreeText,
   plannerLinkFor,
   sortWaitlist,
   waitlistMatches,
@@ -191,8 +192,16 @@ export function WaitlistPage() {
                     <p className="text-sm text-slate-700">{wantText(e, match?.stay)}</p>
                     {(e.room_note || e.notes) && <p className="text-xs text-slate-500">{[e.room_note, e.notes].filter(Boolean).join(' · ')}</p>}
                     {e.status === 'waiting' && match && (
-                      <p className={clsx('text-sm font-medium', match.rooms.length > 0 ? 'text-emerald-700' : 'text-slate-500')} data-testid="waitlist-match">
-                        {matchText(match.rooms)}
+                      <p className="flex flex-wrap items-baseline gap-x-2">
+                        <span className={clsx('text-sm font-medium', match.rooms.length > 0 ? 'text-emerald-700' : 'text-slate-500')} data-testid="waitlist-match">
+                          {matchText(match.rooms)}
+                        </span>
+                        {/* SPEC 7.8: rooms of monthly tenants who have not said whether they extend; not a match yet */}
+                        {maybeFreeText(match) && (
+                          <span className="text-xs font-medium text-amber-700" data-testid="waitlist-maybe-free">
+                            {maybeFreeText(match)}
+                          </span>
+                        )}
                       </p>
                     )}
 
