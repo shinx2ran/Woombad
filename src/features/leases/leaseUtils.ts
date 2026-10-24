@@ -22,7 +22,7 @@ import {
 import { reminderText } from '../../domain/messages'
 import { addDaysISO, daysBetween, periodEnd, periodsToCover } from '../../domain/period'
 import { compareRoomNames, isCancelledWithoutStay, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
-import { checkoutISO, formatCheckout, formatDate, formatRupiah, lastNightISO, todayISO } from '../../lib/format'
+import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 
 // ---------- billing state presentation ----------
 
