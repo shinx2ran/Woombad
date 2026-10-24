@@ -612,6 +612,15 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   `useLeaseActions.setPlannedCheckout(lease, day | null)`: membaca ulang sewa, menolak sewa yang sudah tidak aktif
   (`PLANNED_CHECKOUT_INACTIVE_MESSAGE`) dan tanggal ≤ mulai segar, menulis hanya kolom itu, invalidate `leases` (juga bila
   ditolak). Tagihan, `end_date`, kamar, harga tidak berubah; checkout tetap dicatat saat penyewa benar-benar keluar.
+  **Pesanan yang bergantung pada rencana**: membatalkan rencana atau memundurkannya mengembalikan malam sesudah masa yang ditagih
+  kepada penyewa, `[max(end_date + 1, hari ini), rencana baru − 1]` (tanpa batas bila dibatalkan; `plannedCheckoutHeldNights`).
+  Bila sewa lain di kamar itu (pesanan yang dibuat karena rencana itu membebaskan kamar) memegang salah satu malam itu
+  (`overlappingLease`, yang paling awal), aksi menolak sebelum menulis dan menyebut pesanan itu (`plannedCheckoutBookedMessage`:
+  'Rencana keluar tidak bisa dibatalkan: kamar A1 sudah dipesan Sari mulai 1 Des 2026. Pindahkan atau batalkan pesanan itu
+  dulu.' / 'Kamar A1 sudah dipesan Sari mulai 1 Des 2026, jadi tanggal keluar paling lambat 1 Des 2026. Pindahkan atau batalkan
+  pesanan itu dulu bila penyewa tetap tinggal.'; lembar tetap terbuka, pesan sebagai toast). Memajukan rencana, atau tepat di
+  hari check-in pesanan itu, selalu diterima. Online dan Mode Demo memakai jalur yang sama (penjaga database dan `LocalRepo` tidak
+  memeriksa kolom ini).
 - **Tampil di mana**: lencana "Akan keluar 21 Nov" (`plannedCheckoutBadge`; sesudah harinya lewat tanpa checkout: "Rencana keluar
   20 Okt lewat", merah) di judul detail sewa (+ baris "Rencana keluar" di Info sewa), baris ketiga di daftar sewa
   (`lease-planned-checkout`), papan kamar (kotak "Keluar 21 Nov" menggantikan "Terisi", atau "N hari" bila ia keluar paling lambat
@@ -624,12 +633,16 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   transaksi; pesan diterjemahkan).
 - **Perencana** (`availability.ts`): sewa **bulanan** aktif dengan rencana keluar memegang `[start_date, max(rencana − 1, end_date)]`
   (tidak pernah lebih longgar dari penjaga database, yang memegang sampai `end_date` selama checkout belum dicatat); hari rencana
-  keluar itu kosong (dipakai ulang di hari check-out) dan tampil "hari check-out" di strip; bila hari itu sudah lewat tanpa
-  checkout ia kembali memegang tanpa batas; bila hari itu hari ini, check-in hari ini mengikuti aturan Check-in cepat (belum
+  keluar itu kosong (dipakai ulang di hari check-out) dan tampil "hari check-out" di strip; bila hari rencana itu sendiri sudah
+  lewat tanpa checkout ia kembali memegang tanpa batas — juga bila rencana itu jatuh sebelum akhir masa yang ditagih (sama dengan
+  lencana merah "Rencana keluar … lewat"); bila hari itu hari ini, check-in hari ini mengikuti aturan Check-in cepat (belum
   ditawarkan sampai checkout dicatat). Tanpa rencana: bergulir seperti 7.7, **kecuali** masa yang ditagih (`end_date`) berakhir
   sebelum check-in: kamar masuk **`maybeFree`** bila semua pegangan yang mengambil malam menginap adalah penyewa bulanan semacam itu
   dan, seolah ia keluar di hari check-out masanya, tidak ada pegangan lain yang mengambil malam menginap (`maybeFreeHold`); di dalam
-  harga maks. Kamar itu tetap tercantum di `taken` (belum kosong) dan pemeriksaan ulang pesanan (`stayConflict`) tetap menolaknya.
+  harga maks. Untuk check-in hari ini penyewa yang masih di kamar tidak pernah tampil di Bisa kosong (aturan Check-in cepat:
+  hanya mencatat checkout-nya yang membebaskan kamar, sama seperti sesudah rencana keluar hari ini). Catatan kamar kosong sesudah
+  rencana keluar memakai tanggal rencana penyewa sendiri; bila rencana itu sebelum akhir masa yang ditagih: "Budi masih menginap,
+  rencana keluar 10 Nov (ditagih s/d 1 Des)" (kamar ditawarkan mulai 1 Des). Kamar itu tetap tercantum di `taken` (belum kosong) dan pemeriksaan ulang pesanan (`stayConflict`) tetap menolaknya.
   Urutan: dibayar s/d paling awal, lalu nama kamar. Setiap entri: kamar, penyewa (tautan ke sewa), "dibayar s/d <check-out>" (atau
   "ditagih s/d … · sisa Rp …" bila belum lunas), "belum diperpanjang N hari" bila hari check-out masanya sudah lewat (`lapsedDays`),
   harga menginap; aksi **Tanya perpanjang** (WhatsApp, teks `extensionQuestionText` dari Dashboard; tanpa HP: "HP belum diisi" ke
@@ -642,10 +655,12 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Rilis**: jalankan SQL kolom + constraint (tanpa DROP) di proyek live lebih dulu, baru push ke `master` (aplikasi lama mengabaikan
   kolom itu; aplikasi baru sebelum SQL: menyimpan rencana keluar menampilkan 'Fitur ini belum aktif di server. …').
 - **Uji**: `availability.keluar.test.ts` (kasus pemilik: 31 kamar, 1 malam 24 Des; rencana keluar sebelum/sesudah menginap, hari
-  check-out dipakai ulang, rencana sebelum akhir tagihan, rencana lewat, check-in hari ini, strip, syarat Bisa kosong, urutan, kata
-  "Kosong mulai …"), `plannedCheckout.test.tsx` (aksi pemilik & staf, penolakan, constraint Mode Demo, redate, Checkout, peringatan
-  Tagih, lembar), `plannedCheckoutUtils.test.ts`, `boardModel.keluar.test.ts`, `plannedCheckout.data.test.ts` (data contoh, baris
+  check-out dipakai ulang, rencana sebelum akhir tagihan (+ catatannya), rencana lewat (juga yang sebelum akhir tagihan), check-in
+  hari ini (juga tanpa Bisa kosong), strip, syarat Bisa kosong, urutan, kata "Kosong mulai …"), `plannedCheckout.test.tsx` (aksi
+  pemilik & staf, penolakan, batal/mundur di atas pesanan ditolak, constraint Mode Demo, redate, Checkout, peringatan Tagih, lembar),
+  `plannedCheckoutUtils.test.ts`, `boardModel.keluar.test.ts`, `plannedCheckout.data.test.ts` (data contoh, baris
   lama, impor, riwayat, `translateDbError`), `supabase/tests/28-keluar.sql` (kolom + constraint, staf boleh, organisasi lain/orang
   luar ditolak RLS, penjaga pesanan tidak berubah, redate ditolak & rencana tidak bergeser, riwayat, `export_backup`; di ketiga
-  skenario), `e2e/keluar.spec.ts` (360 px, Mode Demo, jam tetap 24 Okt 2026). `e2e/rencana.spec.ts` kini mengharapkan "Kosong mulai
+  skenario), `e2e/keluar.spec.ts` (360 px, Mode Demo, jam tetap 24 Okt 2026; membatalkan/memundurkan rencana Budi di atas pesanan yang
+  dibuat karenanya ditolak, memajukannya diterima). `e2e/rencana.spec.ts` kini mengharapkan "Kosong mulai
   27 Okt (setelah Hendra Wijaya check-out)" alih-alih "Kosong sampai seterusnya" untuk kamar yang tamunya masih menginap.

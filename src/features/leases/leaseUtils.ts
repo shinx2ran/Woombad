@@ -510,6 +510,41 @@ export function plannedCheckoutNote(lease: Pick<Lease, 'end_date'>, day: string)
   return `Malam ${formatStay(billedOut, lastNightISO(day))} belum ditagih. Buat tagihan berikutnya bila penyewa tetap tinggal sampai hari itu.`
 }
 
+/**
+ * The nights a Rencana keluar of `day` (null = cancelled: he rolls on) gives back to the tenant beyond his billed period,
+ * from today on: [max(end_date + 1, today), day - 1] ('9999-12-31' when cancelled), or null when there are none. Another
+ * booking of the room in them is a double booking (a booking after his billed period was only possible because of the
+ * plan, SPEC 7.8): setPlannedCheckout refuses it. A plan moved earlier, or on his billed check-out day, gives back none.
+ */
+export function plannedCheckoutHeldNights(lease: Pick<Lease, 'end_date'>, day: string | null, todayISO: string): { from: string; to: string } | null {
+  const billedOut = checkoutISO(lease.end_date)
+  const from = billedOut > todayISO ? billedOut : todayISO
+  const to = day === null ? '9999-12-31' : lastNightISO(day)
+  return from <= to ? { from, to } : null
+}
+
+/**
+ * Refusal of a Rencana keluar of `day` (null = cancel) that runs into `other`, the earliest booking of the room in the
+ * nights it would give back (plannedCheckoutHeldNights `from`): names the booking, and for a new day the latest day
+ * that still works. 'Kamar A1 sudah dipesan Sari mulai 21 Nov 2026, jadi tanggal keluar paling lambat 21 Nov 2026. …'
+ */
+export function plannedCheckoutBookedMessage(
+  roomName: string | null,
+  other: Pick<Lease, 'start_date'>,
+  otherName: string | null,
+  day: string | null,
+  from: string,
+  todayISO: string,
+): string {
+  const start = other.start_date.slice(0, 10)
+  const booked = start > todayISO
+  const what = `kamar ${roomName ?? 'ini'} sudah ${booked ? 'dipesan' : 'ditempati'} ${otherName ?? 'penyewa lain'} mulai ${formatDate(start)}`
+  const fix = `Pindahkan atau batalkan ${booked ? 'pesanan' : 'sewa'} itu dulu`
+  if (day === null) return `Rencana keluar tidak bisa dibatalkan: ${what}. ${fix}.`
+  const latest = start > from ? start : from
+  return `${what[0].toUpperCase()}${what.slice(1)}, jadi tanggal keluar paling lambat ${formatDate(latest)}. ${fix} bila penyewa tetap tinggal.`
+}
+
 // ---------- lifecycle helpers (checkout / cancel) ----------
 
 /**

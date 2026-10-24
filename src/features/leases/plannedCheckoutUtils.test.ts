@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { plannedCheckoutOf } from '../../domain/occupancy'
-import { defaultPlannedCheckout, plannedCheckoutBadge, plannedCheckoutError, plannedCheckoutNote } from './leaseUtils'
+import { defaultPlannedCheckout, plannedCheckoutBadge, plannedCheckoutBookedMessage, plannedCheckoutError, plannedCheckoutHeldNights, plannedCheckoutNote } from './leaseUtils'
 
 // SPEC 7.8 Rencana keluar: the helpers behind the sheet and the badges. Today: 24 Okt 2026.
 const TODAY = '2026-10-24'
@@ -59,5 +59,30 @@ describe('plannedCheckoutBadge', () => {
     expect(plannedCheckoutBadge('2026-11-24', TODAY)).toEqual({ text: 'Akan keluar 24 Nov', overdue: false })
     expect(plannedCheckoutBadge(TODAY, TODAY)).toEqual({ text: 'Akan keluar 24 Okt', overdue: false })
     expect(plannedCheckoutBadge('2026-10-20', TODAY)).toEqual({ text: 'Rencana keluar 20 Okt lewat', overdue: true })
+  })
+})
+
+describe('plannedCheckoutHeldNights / plannedCheckoutBookedMessage (a booking in the nights a plan change gives back)', () => {
+  const billed = { end_date: '2026-11-30' }
+  it('the nights after his billed period up to the night before the new day, from today on; none when moved earlier', () => {
+    expect(plannedCheckoutHeldNights(billed, '2026-12-10', TODAY)).toEqual({ from: '2026-12-01', to: '2026-12-09' })
+    expect(plannedCheckoutHeldNights(billed, null, TODAY)).toEqual({ from: '2026-12-01', to: '9999-12-31' })
+    expect(plannedCheckoutHeldNights(billed, '2026-12-01', TODAY)).toBeNull()
+    expect(plannedCheckoutHeldNights(billed, '2026-11-15', TODAY)).toBeNull()
+    // lapsed (billed check-out day passed): from today
+    expect(plannedCheckoutHeldNights({ end_date: '2026-10-19' }, '2026-10-30', TODAY)).toEqual({ from: TODAY, to: '2026-10-29' })
+  })
+
+  it('names the booking, and for a new day the latest day that still works', () => {
+    expect(plannedCheckoutBookedMessage('A1', { start_date: '2026-12-05' }, 'Sari', null, '2026-12-01', TODAY)).toBe(
+      'Rencana keluar tidak bisa dibatalkan: kamar A1 sudah dipesan Sari mulai 5 Des 2026. Pindahkan atau batalkan pesanan itu dulu.',
+    )
+    expect(plannedCheckoutBookedMessage('A1', { start_date: '2026-12-05' }, 'Sari', '2026-12-10', '2026-12-01', TODAY)).toBe(
+      'Kamar A1 sudah dipesan Sari mulai 5 Des 2026, jadi tanggal keluar paling lambat 5 Des 2026. Pindahkan atau batalkan pesanan itu dulu bila penyewa tetap tinggal.',
+    )
+    // a guest already staying (started before the nights given back): the latest day is the first of those nights
+    expect(plannedCheckoutBookedMessage(null, { start_date: '2026-10-20' }, null, '2026-10-30', TODAY, TODAY)).toBe(
+      'Kamar ini sudah ditempati penyewa lain mulai 20 Okt 2026, jadi tanggal keluar paling lambat 24 Okt 2026. Pindahkan atau batalkan sewa itu dulu bila penyewa tetap tinggal.',
+    )
   })
 })

@@ -140,6 +140,79 @@ describe('setPlannedCheckout (useLeaseActions)', () => {
   })
 })
 
+/** Budi's plan of 1 Des freed A1; Sari was booked into it from that day (daily, 1–3 Des, nights 1 and 2 Des). */
+async function seedBookedAfterPlan(sariStart = '2026-12-01', sariEnd = '2026-12-02') {
+  await seed()
+  await repo.insert('rooms', { id: 'R1', property_id: 'P1', name: 'A1', floor: null, price_daily: 100_000, price_weekly: null, price_monthly: 1_500_000, status: 'active', notes: null } as never)
+  await repo.insert('tenants', { id: 'T1', property_id: 'P1', full_name: 'Budi', phone: null } as never)
+  const sari = await repo.insert('tenants', { id: 'T2', property_id: 'P1', full_name: 'Sari', phone: null } as never)
+  lease = await repo.update('leases', 'L1', { planned_checkout_date: '2026-12-01' })
+  const booking = await repo.insert('leases', {
+    id: 'L2',
+    property_id: 'P1',
+    room_id: 'R1',
+    tenant_id: sari.id,
+    period_type: 'daily',
+    price_per_period: 100_000,
+    deposit_amount: 0,
+    start_date: sariStart,
+    end_date: sariEnd,
+    status: 'active',
+    checkout_date: null,
+    notes: null,
+  } as never)
+  return booking
+}
+
+describe('a booking made because the Rencana keluar freed the room (SPEC 7.8)', () => {
+  const CANCEL_REFUSED = 'Rencana keluar tidak bisa dibatalkan: kamar A1 sudah dipesan Sari mulai 1 Des 2026. Pindahkan atau batalkan pesanan itu dulu.'
+  const LATER_REFUSED = 'Kamar A1 sudah dipesan Sari mulai 1 Des 2026, jadi tanggal keluar paling lambat 1 Des 2026. Pindahkan atau batalkan pesanan itu dulu bila penyewa tetap tinggal.'
+
+  for (const role of ['owner', 'staff'] as const) {
+    it(`${role}: cancelling the plan or moving it later over the booking is refused before writing, naming the booking`, async () => {
+      await seedBookedAfterPlan()
+      state.role = role
+      await expect(actions().setPlannedCheckout(lease, null)).rejects.toThrow(CANCEL_REFUSED)
+      await expect(actions().setPlannedCheckout(lease, '2026-12-10')).rejects.toThrow(LATER_REFUSED)
+      // one night later is already Sari's first night
+      await expect(actions().setPlannedCheckout(lease, '2026-12-02')).rejects.toThrow(LATER_REFUSED)
+      expect((await stored()).planned_checkout_date).toBe('2026-12-01')
+      expect(invalidate).toHaveBeenCalledWith('leases')
+      // earlier, or back on the booking's check-in day (same-day turnover): accepted
+      await actions().setPlannedCheckout(lease, '2026-11-20')
+      expect((await stored()).planned_checkout_date).toBe('2026-11-20')
+      await actions().setPlannedCheckout(await stored(), '2026-12-01')
+      expect((await stored()).planned_checkout_date).toBe('2026-12-01')
+    })
+  }
+
+  it('the latest day is the booking\'s check-in day; once the booking is cancelled the plan may be cancelled', async () => {
+    await seedBookedAfterPlan('2026-12-10', '2026-12-11')
+    await actions().setPlannedCheckout(lease, '2026-12-05')
+    expect((await stored()).planned_checkout_date).toBe('2026-12-05')
+    await expect(actions().setPlannedCheckout(await stored(), '2026-12-12')).rejects.toThrow(
+      'Kamar A1 sudah dipesan Sari mulai 10 Des 2026, jadi tanggal keluar paling lambat 10 Des 2026.',
+    )
+    await local.update('leases', 'L2', { status: 'cancelled' })
+    await actions().setPlannedCheckout(await stored(), null)
+    expect((await stored()).planned_checkout_date).toBeNull()
+  })
+
+  it('the Rencana keluar sheet shows the refusal and stays open', async () => {
+    await seedBookedAfterPlan()
+    const onClose = vi.fn()
+    render(
+      <ToastProvider>
+        <PlannedCheckoutModal lease={lease} tenantName="Budi" roomName="A1" actions={actions()} onClose={onClose} />
+      </ToastProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Batalkan rencana keluar/ }))
+    await waitFor(() => expect(screen.getByText(CANCEL_REFUSED)).toBeTruthy())
+    expect(onClose).not.toHaveBeenCalled()
+    expect((await stored()).planned_checkout_date).toBe('2026-12-01')
+  })
+})
+
 describe('Ubah tanggal mulai with a Rencana keluar (SPEC 7.6 + 7.8)', () => {
   it('the planned check-out does not move with the start', async () => {
     await seed()

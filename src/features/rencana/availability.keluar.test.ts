@@ -153,6 +153,19 @@ describe('leaseHold: a monthly tenant with a Rencana keluar (planned_checkout_da
     expect(leaseHold({ ...l, planned_checkout_date: TODAY }, TODAY)).toMatchObject({ end: '2026-10-23', expectedLeave: true })
   })
 
+  it('a planned day that passed rolls on even when it was set before the end of his billed period', () => {
+    // plan 20 Okt, billed through 30 Nov, today 24 Okt, no checkout recorded: every badge says "Rencana keluar 20 Okt lewat"
+    const l = lease('A1', 'Budi', 'monthly', '2026-06-01', '2026-11-30', { planned_checkout_date: '2026-10-20' })
+    expect(leaseHold(l, TODAY)).toMatchObject({ end: null, expectedLeave: false, plannedLeave: false })
+    const r = findAvailability({ rooms: [room('A1')], leases: [l], request: oneNight('2026-12-24'), today: TODAY, tenants: tenantNames(['Budi']) })!
+    expect(r.free).toEqual([])
+    expect(r.maybeFree).toEqual([])
+    expect(r.taken).toEqual([{ room: room('A1'), reason: 'Ditempati Budi sampai check-out dicatat' }])
+    expect(stayConflict(room('A1'), [l], r.stay, TODAY)).not.toBeNull()
+    // the same plan with today on it still frees the room from the end of his billed period
+    expect(leaseHold({ ...l, planned_checkout_date: TODAY }, TODAY)).toMatchObject({ end: '2026-11-30', expectedLeave: true, plannedLeave: true })
+  })
+
   it('a monthly booking that has not started holds [start, planned check-out - 1]', () => {
     const l = lease('A1', 'Zaki', 'monthly', '2026-11-01', '2026-11-30', { planned_checkout_date: '2027-01-01' })
     expect(leaseHold(l, TODAY)).toMatchObject({ start: '2026-11-01', end: '2026-12-31', kind: 'reserved', expectedLeave: false, plannedLeave: true })
@@ -223,6 +236,16 @@ describe('findAvailability with a Rencana keluar', () => {
     })
   })
 
+  it('a plan before the end of his billed period: offered from the billed check-out day, the note names his own plan', () => {
+    const early = { ...budi, planned_checkout_date: '2026-11-10' }
+    const r = findAvailability({ rooms: [rooms[0]], leases: [early], request: oneNight('2026-12-24'), today: TODAY, tenants: names })!
+    expect(r.free[0]).toMatchObject({ reason: 'Kosong mulai 1 Des (Budi akan keluar)', note: 'Budi masih menginap, rencana keluar 10 Nov (ditagih s/d 1 Des)' })
+    // a plan on or after the billed check-out day: one date
+    expect(findAvailability({ rooms: [rooms[0]], leases: [budi], request: oneNight('2026-12-24'), today: TODAY, tenants: names })!.free[0].note).toBe(
+      'Budi masih menginap, rencana keluar 1 Des',
+    )
+  })
+
   it('the 14-day strip shows his planned check-out day as "hari check-out"', () => {
     const cells = availabilityStrip(roomHolds('A1', [budi], TODAY), '2026-11-28')
     expect(stripText(cells)).toBe('28–30 Nov terisi; 1 Des hari check-out; 2–11 Des kosong')
@@ -262,6 +285,30 @@ describe('"Bisa kosong": only a room that would be free for the whole stay', () 
     const r = findAvailability({ rooms, leases, request: oneNight('2026-12-24'), today: TODAY, tenants: names })!
     expect(r.maybeFree.map((m) => m.room.name)).toEqual(['B2', 'A2', 'A10'])
     expect(r.taken.find((t) => t.room.name === 'C1')?.reason).toBe('Ditempati Dodi sampai check-out dicatat')
+  })
+
+  it('a check-in today never lists a tenant still in the room (Check-in cepat: record his checkout first)', () => {
+    const rooms = [room('A1'), room('A2')]
+    // A1 lapsed (check-out day 21 Okt passed, next month not billed), A2's check-out day is today
+    const leases = [budi('A1', '2026-10-20'), lease('A2', 'Dodi', 'monthly', '2026-06-01', '2026-10-23')]
+    const today = findAvailability({ rooms, leases, request: oneNight(TODAY), today: TODAY, tenants: names })!
+    expect(today.maybeFree).toEqual([])
+    expect(today.free).toEqual([])
+    expect(today.taken.map((t) => t.reason)).toEqual(['Ditempati Budi sampai check-out dicatat', 'Ditempati Dodi sampai check-out dicatat'])
+    expect(waitlistMatches(
+      { id: 'W', property_id: null, name: 'Tamu', phone: null, wanted_from: TODAY, period_type: 'daily', quantity: 1, max_price: null, room_note: null, notes: null, status: 'waiting', lease_id: null, created_by: null, ...ts },
+      { rooms, leases, today: TODAY, propertyIds: ['P1'], tenants: names },
+    ).maybeFree).toBe(0)
+    // from tomorrow both are "Bisa kosong"; marked with the sheet's default (today) A1 becomes free
+    const tomorrow = findAvailability({ rooms, leases, request: oneNight('2026-10-25'), today: TODAY, tenants: names })!
+    expect(tomorrow.maybeFree.map((m) => [m.room.name, m.lapsedDays])).toEqual([
+      ['A1', 3],
+      ['A2', 0],
+    ])
+    const marked = leases.map((l) => (l.room_id === 'A1' ? { ...l, planned_checkout_date: TODAY } : l))
+    const after = findAvailability({ rooms, leases: marked, request: oneNight('2026-10-25'), today: TODAY, tenants: names })!
+    expect(after.free.map((f) => [f.room.name, f.reason])).toEqual([['A1', 'Kosong mulai 24 Okt (Budi akan keluar)']])
+    expect(after.maybeFree.map((m) => m.room.name)).toEqual(['A2'])
   })
 
   it('one room only (?kamar=): its "Bisa kosong" entry as well', () => {

@@ -108,12 +108,12 @@ export function leaseHold(lease: Lease, today: string): RoomHold | null {
     const planned = plannedCheckoutOf(lease)
     // no Rencana keluar: he rolls on from month to month, from the first night of the booking on (booked or staying)
     if (!planned || planned <= start) return hold(null)
+    // his planned day passed without a recorded checkout: he is still in the room (also when the plan fell inside his
+    // billed period: the plan, not the billing, says when he leaves)
+    if (kind === 'occupied' && planned < today) return hold(null)
     // free from his planned check-out day, never before the end of his billed period (the database guard's rule)
     const lastNight = laterDay(addDaysISO(planned, -1), end)
-    if (kind === 'reserved') return hold(lastNight, false, true)
-    // that day passed without a recorded checkout: he is still in the room
-    if (addDaysISO(lastNight, 1) < today) return hold(null)
-    return hold(lastNight, true, true)
+    return hold(lastNight, kind === 'occupied', true)
   }
   if (kind === 'reserved') return hold(end)
   // staying now: a guest past the check-out day without a checkout is still in the room
@@ -343,7 +343,11 @@ function freeRoomFor(room: Room, holds: RoomHold[], stay: PlannedStay, rate: num
   else if (before) reason = `Kosong mulai ${shortDay(out!)} (setelah ${nameOf(before, names)} check-out)`
   else reason = 'Kosong sampai seterusnya'
   let note: string | null = null
-  if (previous?.expectedLeave) note = `${nameOf(previous, names)} masih menginap, ${previous.plannedLeave ? 'rencana keluar' : 'jadwal check-out'} ${shortDay(out!)}`
+  if (previous?.expectedLeave && previous.plannedLeave) {
+    // his own planned day (what the lease page says), and the billed check-out day when the plan falls before it
+    const planned = plannedCheckoutOf(previous.lease) ?? out!
+    note = `${nameOf(previous, names)} masih menginap, rencana keluar ${shortDay(planned)}${planned < out! ? ` (ditagih s/d ${shortDay(out!)})` : ''}`
+  } else if (previous?.expectedLeave) note = `${nameOf(previous, names)} masih menginap, jadwal check-out ${shortDay(out!)}`
   else if (previous && out === stay.start) note = `Langsung setelah ${nameOf(previous, names)} check-out`
   return { room, rate, total: rate === null ? null : rate * stay.quantity, gapAfter, gapBefore, next, previous, reason, note }
 }
@@ -371,12 +375,14 @@ function unconfirmedMonthly(hold: RoomHold, stay: PlannedStay): boolean {
 /**
  * The monthly tenant who stands between the room and the stay when it is "Bisa kosong": the room's holds that take a
  * night of the stay are all such tenants, and as if each left on the check-out day of his billed period, nothing else
- * takes a night of the stay (nor, for a check-in today, is a guest still checked in). Null otherwise.
+ * takes a night of the stay, nor, for a check-in today, is anybody still checked in — the tenant himself included, so a
+ * check-in today never lists a tenant who is still in the room: only recording his checkout frees it (Check-in cepat),
+ * exactly as after a Rencana keluar of today. Null otherwise.
  */
 function maybeFreeHold(holds: readonly RoomHold[], conflicts: readonly RoomHold[], stay: PlannedStay, today: string): RoomHold | null {
   const soft = conflicts.filter((h) => unconfirmedMonthly(h, stay))
   if (soft.length === 0) return null
-  const ifLeaving = holds.map((h) => (soft.includes(h) ? { ...h, end: h.lease.end_date.slice(0, 10) } : h))
+  const ifLeaving = holds.map((h) => (soft.includes(h) ? { ...h, end: h.lease.end_date.slice(0, 10), expectedLeave: h.kind === 'occupied' } : h))
   if (holdsWithin(ifLeaving, stay.start, stay.end).length > 0 || stillCheckedIn(ifLeaving, stay, today)) return null
   return soft.reduce((a, b) => (b.lease.end_date > a.lease.end_date ? b : a))
 }
