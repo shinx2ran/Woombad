@@ -17,6 +17,7 @@ export const BACKUP_TABLES = [
   'invoices',
   'payments',
   'expenses',
+  'waitlist',
 ] as const satisfies readonly OrgTableName[]
 
 function listOrdered<T extends OrgTableName>(repo: OrgRepo, table: T, column: string): Promise<Row<T>[]> {

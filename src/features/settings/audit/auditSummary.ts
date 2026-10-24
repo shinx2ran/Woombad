@@ -35,6 +35,7 @@ export const AUDIT_TABLE_LABEL: Record<string, string> = {
   organization_members: 'Anggota',
   invitations: 'Undangan',
   organizations: 'Organisasi',
+  waitlist: 'Daftar tunggu',
 }
 
 export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {

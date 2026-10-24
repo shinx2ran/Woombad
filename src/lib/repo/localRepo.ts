@@ -361,6 +361,7 @@ const TABLES_WITH_UPDATED_AT: ReadonlySet<TableName> = new Set<TableName>([
   'leases',
   'invoices',
   'expenses',
+  'waitlist',
 ])
 
 function hasUpdatedAt(table: TableName): boolean {

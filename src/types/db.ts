@@ -60,6 +60,10 @@ export const EXPENSE_CATEGORIES = [
 export const REFUND_CATEGORIES: readonly ExpenseCategory[] = ['deposit_refund', 'rent_refund']
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number]
 
+/** Daftar tunggu (SPEC 7.7): waiting = no room yet, booked = a lease was made for it (lease_id), cancelled = no longer wanted */
+export const WAITLIST_STATUSES = ['waiting', 'booked', 'cancelled'] as const
+export type WaitlistStatus = (typeof WAITLIST_STATUSES)[number]
+
 export const GENDERS = ['L', 'P'] as const
 export type Gender = (typeof GENDERS)[number]
 
@@ -265,6 +269,33 @@ export interface Expense extends TimestampedRow {
   created_by: string | null
 }
 
+/**
+ * Someone waiting for a room (daftar tunggu, SPEC 7.7): what they want (from when, how long, budget, preference) and,
+ * once a room was booked for them, the lease. Front-desk work: every member may add and change entries; only owners
+ * and admins may delete one (cancel instead).
+ */
+export interface WaitlistEntry extends TimestampedRow {
+  /** wanted kos; null = any kos */
+  property_id: string | null
+  name: string
+  phone: string | null
+  /** first night wanted; null = secepatnya (as soon as possible) */
+  wanted_from: string | null
+  period_type: PeriodType
+  /** nights / weeks / months (>= 1) */
+  quantity: number
+  /** highest price per night / week / month; null = any */
+  max_price: number | null
+  /** room preference, e.g. 'lantai bawah, kamar mandi dalam' */
+  room_note: string | null
+  notes: string | null
+  status: WaitlistStatus
+  /** the lease booked for this entry (status booked); cleared when that lease is deleted */
+  lease_id: string | null
+  /** auth user who added it (DB default auth.uid()); null in demo mode */
+  created_by: string | null
+}
+
 // ---------- Table map ----------
 
 export interface Tables {
@@ -280,6 +311,7 @@ export interface Tables {
   invoices: Invoice
   payments: Payment
   expenses: Expense
+  waitlist: WaitlistEntry
   audit_log: AuditLogEntry
 }
 
@@ -314,6 +346,7 @@ export const TABLE_NAMES: TableName[] = [
   'invoices',
   'payments',
   'expenses',
+  'waitlist',
   'audit_log',
 ]
 
@@ -385,6 +418,12 @@ export const MEMBER_ROLE_LABEL: Record<MemberRole, string> = {
 export const ADDON_BILLING_LABEL: Record<AddonBilling, string> = {
   per_period: 'Per periode',
   one_time: 'Sekali bayar',
+}
+
+export const WAITLIST_STATUS_LABEL: Record<WaitlistStatus, string> = {
+  waiting: 'Menunggu',
+  booked: 'Sudah dipesan',
+  cancelled: 'Batal',
 }
 
 export const GENDER_LABEL: Record<Gender, string> = {
