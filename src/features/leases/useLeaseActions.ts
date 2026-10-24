@@ -19,6 +19,7 @@ import { formatCheckout, formatDate, formatRupiah, todayISO } from '../../lib/fo
 import { guardedNights, overlappingLease } from '../../domain/occupancy'
 import {
   LEASE_DATA_CHANGED_MESSAGE,
+  ROOM_AVAILABILITY_LABEL,
   addonAmountUpdates,
   allocateAcrossInvoices,
   appendMoveNote,
@@ -32,6 +33,7 @@ import {
   openInvoicesSorted,
   rentRefundExpense,
   rentRefundsToRecord,
+  roomAvailability,
   unrecordedRentRefunds,
   type Allocation,
   type DepositSettlement,
@@ -599,6 +601,15 @@ export function useLeaseActions() {
     async function moveRoom(lease: Lease, fromRoom: Room | undefined, toRoom: Room, newPrice: number | null, dateISO: string): Promise<void> {
       const priceChanged = newPrice !== null && newPrice !== lease.price_per_period
       if (priceChanged && !canEditLeaseTerms) throw new Error(STAFF_TERMS_ERROR)
+      // the dialog's check (roomAvailability) again on fresh rows: another phone may have booked or filled the room since
+      // the screen was read, and the database guard does not check room moves (SPEC 2b.9, 7.7)
+      const target = (await repo.get('rooms', toRoom.id)) ?? toRoom
+      const targetLeases = await repo.list('leases', { where: { room_id: toRoom.id } })
+      const availability = roomAvailability(target, targetLeases, dateISO, lease.end_date >= dateISO ? lease.end_date : dateISO, lease.id)
+      if (availability !== 'kosong') {
+        await invalidate('leases', 'rooms')
+        throw new Error(`Kamar ${toRoom.name} sudah tidak kosong (${ROOM_AVAILABILITY_LABEL[availability]}). Datanya baru saja berubah di HP lain: muat ulang lalu pilih kamar lain.`)
+      }
       await repo.update('leases', lease.id, {
         room_id: toRoom.id,
         // only sent when it changes: staff may move rooms but the database refuses any price change by them

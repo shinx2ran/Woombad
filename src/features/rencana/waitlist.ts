@@ -20,10 +20,10 @@ export function waitlistRequest(entry: WaitlistEntry, today: string): StayReques
   return { periodType: entry.period_type, start: waitlistStart(entry, today), quantity: entry.quantity, maxPrice: entry.max_price }
 }
 
-/** '/rencana?…' that books for this entry: the planner opens with its dates, duration and budget. */
+/** '/rencana?…' that books for this entry: the planner opens with its dates, duration, budget and kos (as its matches). */
 export function plannerLinkFor(entry: WaitlistEntry, today: string): string {
   const r = waitlistRequest(entry, today)
-  return `/rencana${plannerSearch({ periodType: r.periodType, start: r.start, quantity: r.quantity, maxPrice: r.maxPrice, waitlistId: entry.id })}`
+  return `/rencana${plannerSearch({ periodType: r.periodType, start: r.start, quantity: r.quantity, maxPrice: r.maxPrice, kosId: entry.property_id, waitlistId: entry.id })}`
 }
 
 // ---------- list ----------

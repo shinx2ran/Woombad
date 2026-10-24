@@ -2,7 +2,9 @@
  * Writes of Rencana check-in & daftar tunggu (SPEC 7.7). A booking goes through the same path as Check-in cepat
  * (saveStayBooking: tenant -> lease -> first invoice via insertFromDraft -> DP -> invoice status), after a fresh read
  * of the room's leases: a room another phone booked meanwhile is refused with the booking named, before anything is
- * written. The database guard (leases_overlap_guard) catches the last race; its refusal is named the same way.
+ * written. The database guard (leases_overlap_guard) catches the last race; its refusal is named the same way. A booking
+ * for a daftar tunggu entry, and Batal / Aktifkan lagi, first re-read the entry: an entry another phone booked meanwhile
+ * is never booked twice nor turned back (WAITLIST_CHANGED_MESSAGE).
  */
 import { useMemo } from 'react'
 import { useOrg } from '../../hooks/useOrg'
@@ -16,6 +18,8 @@ import { plannedStay, stayConflict } from './availability'
 import { formToWaitlistInsert, formToWaitlistPatch, type WaitlistForm } from './waitlist'
 
 export const WAITLIST_DELETE_STAFF_MESSAGE = 'Hanya pemilik/admin yang dapat menghapus data daftar tunggu. Pilih Batal saja.'
+/** The entry was booked, cancelled or deleted on another phone after this screen read it. */
+export const WAITLIST_CHANGED_MESSAGE = 'Entri daftar tunggu ini sudah dipesan, dibatalkan atau dihapus di HP lain. Muat ulang lalu periksa.'
 
 export interface BookStayInput {
   room: Room
@@ -73,6 +77,12 @@ export function useRencanaActions() {
       const stay = plannedStay(input.startDate, input.periodType, input.quantity)
       if (!stay) throw new Error('Isi tanggal check-in dan jumlahnya.')
       try {
+        // the daftar tunggu entry as stored now: another phone may have booked (or cancelled) this person meanwhile, in
+        // another room too, which no room check would catch; a second booking would also replace the entry's lease link
+        if (input.waitlistId) {
+          const entry = await repo.get('waitlist', input.waitlistId)
+          if (!entry || entry.status !== 'waiting') throw new Error(WAITLIST_CHANGED_MESSAGE)
+        }
         // fresh rows right before writing: another phone may have booked the room or put it under repair meanwhile
         const room = await repo.get('rooms', input.room.id)
         if (!room) throw new Error('Kamar tidak ditemukan. Muat ulang lalu coba lagi.')
@@ -136,9 +146,14 @@ export function useRencanaActions() {
       }
     }
 
-    /** 'Batal' (no longer wanted) or back to 'Menunggu'; a booked entry keeps its lease link. */
+    /**
+     * 'Batal' (no longer wanted) or back to 'Menunggu'. Read fresh first: an entry another phone booked meanwhile keeps
+     * its booking and lease link (a stale card must not turn it into Batal or Menunggu while the lease stays active).
+     */
     async function setEntryStatus(entry: WaitlistEntry, status: 'waiting' | 'cancelled'): Promise<void> {
       try {
+        const fresh = await repo.get('waitlist', entry.id)
+        if (!fresh || fresh.status === 'booked') throw new Error(WAITLIST_CHANGED_MESSAGE)
         await repo.update('waitlist', entry.id, { status })
       } finally {
         await invalidate('waitlist')

@@ -45,17 +45,20 @@ export function PlannerPage() {
         leases: data.leases,
         request: { periodType: p.periodType, start: p.start, quantity: p.quantity, maxPrice: p.maxPrice },
         today,
-        // one room: whatever kos is selected; otherwise the global kos filter
-        propertyIds: p.roomId ? undefined : propertyFilterIds,
+        // one room: whatever kos is selected; a daftar tunggu entry for one kos: that kos; otherwise the global kos filter
+        propertyIds: p.roomId ? undefined : p.kosId ? [p.kosId] : propertyFilterIds,
         roomId: p.roomId,
         tenants: data.tenantById,
       }),
-    [data.rooms, data.leases, data.tenantById, p.periodType, p.start, p.quantity, p.maxPrice, p.roomId, propertyFilterIds, today],
+    [data.rooms, data.leases, data.tenantById, p.periodType, p.start, p.quantity, p.maxPrice, p.kosId, p.roomId, propertyFilterIds, today],
   )
 
   const unit = PERIOD_UNIT_LABEL[p.periodType]
-  const kosLabel = selectedPropertyId === 'all' ? (properties.length > 1 ? 'semua kos' : properties[0]?.name ?? 'kos') : (properties.find((x) => x.id === selectedPropertyId)?.name ?? 'kos terpilih')
-  const showKos = selectedPropertyId === 'all' && properties.length > 1
+  const pinnedKos = p.kosId ? (properties.find((x) => x.id === p.kosId)?.name ?? 'kos terpilih') : null
+  const kosLabel =
+    pinnedKos ??
+    (selectedPropertyId === 'all' ? (properties.length > 1 ? 'semua kos' : properties[0]?.name ?? 'kos') : (properties.find((x) => x.id === selectedPropertyId)?.name ?? 'kos terpilih'))
+  const showKos = selectedPropertyId === 'all' && properties.length > 1 && !p.kosId
 
   const strip = (roomId: string, stay: PlannedStay) => availabilityStrip(roomHolds(roomId, data.leases, today), stay.start, stay)
 
@@ -106,9 +109,14 @@ export function PlannerPage() {
               {p.start < today && <span className="block text-xs text-amber-700">Tanggal check-in sudah lewat.</span>}
             </p>
           )}
-          <p className="text-xs text-slate-500">
-            Mencari di {p.roomId ? `kamar ${pinnedRoom?.name ?? '?'}` : kosLabel}. {p.roomId ? '' : 'Ganti kos lewat pilihan kos di atas.'}
+          <p className="text-xs text-slate-500" data-testid="planner-scope">
+            Mencari di {p.roomId ? `kamar ${pinnedRoom?.name ?? '?'}` : kosLabel}. {p.roomId || p.kosId ? '' : 'Ganti kos lewat pilihan kos di atas.'}
           </p>
+          {!p.roomId && p.kosId && (
+            <button type="button" onClick={() => update({ kosId: null })} className="inline-flex h-11 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50">
+              Hanya {pinnedKos} <X className="h-4 w-4" aria-hidden /> <span className="sr-only">Cari di semua kos</span>
+            </button>
+          )}
           {p.roomId && (
             <button type="button" onClick={() => update({ roomId: null })} className="inline-flex h-11 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50">
               Hanya kamar {pinnedRoom?.name ?? '?'} <X className="h-4 w-4" aria-hidden /> <span className="sr-only">Tampilkan semua kamar</span>
@@ -258,7 +266,7 @@ export function PlannerPage() {
             periodType: p.periodType,
             quantity: p.quantity,
             maxPrice: p.maxPrice ?? 0,
-            propertyId: pinnedRoom?.property_id ?? (selectedPropertyId === 'all' ? '' : selectedPropertyId),
+            propertyId: pinnedRoom?.property_id ?? p.kosId ?? (selectedPropertyId === 'all' ? '' : selectedPropertyId),
           }}
           properties={properties}
           onClose={() => setWaitlistOpen(false)}

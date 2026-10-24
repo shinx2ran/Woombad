@@ -17,7 +17,7 @@ vi.mock('../../hooks/useOrg', () => ({
 }))
 vi.mock('../../hooks/useTable', () => ({ useInvalidate: () => invalidate }))
 
-import { useRencanaActions, WAITLIST_DELETE_STAFF_MESSAGE, type BookStayInput } from './useRencanaActions'
+import { useRencanaActions, WAITLIST_CHANGED_MESSAGE, WAITLIST_DELETE_STAFF_MESSAGE, type BookStayInput } from './useRencanaActions'
 import { useLeaseActions } from '../leases/useLeaseActions'
 
 const TODAY = '2026-11-01'
@@ -133,6 +133,21 @@ describe('bookStay: a planned stay through the Check-in cepat path', () => {
     expect(invalidate).toHaveBeenCalledWith('leases', 'invoices', 'payments', 'tenants', 'waitlist')
   })
 
+  it('a check-in today waits for the checkout of the guest still in the room (Check-in cepat rule)', async () => {
+    // Hendra's last night was 31 Okt: today is his check-out day, not recorded yet
+    const hendra = await bookedBy('Hendra', '2026-10-29', '2026-10-31')
+    await expect(actionsHook().bookStay(booking({ startDate: TODAY, quantity: 1, total: 100_000 }))).rejects.toThrow(
+      'Kamar A3 masih ditempati Hendra: check-out-nya belum dicatat. Catat check-out dulu, lalu coba lagi.',
+    )
+    expect(await repo.list('leases')).toHaveLength(1)
+    // a stay from tomorrow counts on his planned check-out
+    await actionsHook().bookStay(booking({ startDate: '2026-11-02', quantity: 1, total: 100_000, name: 'Besok' }))
+    // once his checkout is recorded, tonight is free
+    await repo.update('leases', hendra.id, { status: 'ended', checkout_date: TODAY })
+    const { lease } = await actionsHook().bookStay(booking({ startDate: TODAY, quantity: 1, total: 100_000 }))
+    expect(lease).toMatchObject({ start_date: TODAY, end_date: TODAY, status: 'active' })
+  })
+
   it('refuses a room put under repair meanwhile', async () => {
     await repo.update('rooms', 'R1', { status: 'maintenance' })
     await expect(actionsHook().bookStay(booking())).rejects.toThrow('Kamar A3 sedang perbaikan.')
@@ -175,13 +190,66 @@ describe('daftar tunggu', () => {
     expect(await repo.get('waitlist', entry.id)).toMatchObject({ status: 'booked', lease_id: lease.id })
   })
 
-  it('a booking still stands when its entry is gone; the warning says so', async () => {
+  // changed with the review fix: a booking for an entry that is gone was saved with a warning; the entry is now read
+  // fresh first, so a booking from a stale screen is refused before anything is written (see the two-phone tests below)
+  it('a booking for an entry deleted meanwhile is refused before anything is written', async () => {
     const actions = actionsHook()
     const entry = await actions.addEntry(form())
     await repo.remove('waitlist', entry.id)
-    const { lease, waitlistError } = await actions.bookStay(booking({ waitlistId: entry.id }))
+    await expect(actions.bookStay(booking({ waitlistId: entry.id }))).rejects.toThrow(WAITLIST_CHANGED_MESSAGE)
+    expect(await repo.list('leases')).toEqual([])
+    expect(await repo.list('tenants')).toEqual([])
+    expect(invalidate).toHaveBeenCalledWith('leases', 'invoices', 'payments', 'tenants', 'waitlist')
+  })
+
+  it('a booking still stands when the entry cannot be marked afterwards; the warning says so', async () => {
+    const actions = actionsHook()
+    const entry = await actions.addEntry(form())
+    const update = repo.update.bind(repo)
+    state.repo = {
+      ...repo,
+      update: ((table, id, patch) => (table === 'waitlist' ? Promise.reject(new Error('Data daftar tunggu tidak ditemukan.')) : update(table, id, patch))) as OrgRepo['update'],
+    }
+    const { lease, waitlistError } = await actionsHook().bookStay(booking({ waitlistId: entry.id }))
     expect(lease.status).toBe('active')
     expect(waitlistError).toMatch(/tidak ditemukan/)
+  })
+
+  it('two phones: the second Pesan for the same waiting person is refused, in another room too, and the link stays', async () => {
+    await repo.insert('rooms', { id: 'R2', property_id: 'P1', name: 'B1', floor: '1', price_daily: 100_000, price_weekly: null, price_monthly: null, status: 'active', notes: null })
+    const phoneA = actionsHook()
+    const phoneB = actionsHook()
+    const entry = await phoneA.addEntry(form())
+    // both phones show Rina as Menunggu; A books A3, then B (stale screen) books B1 for her
+    const first = await phoneA.bookStay(booking({ waitlistId: entry.id }))
+    const room2 = (await repo.get('rooms', 'R2'))!
+    await expect(phoneB.bookStay(booking({ room: room2, waitlistId: entry.id }))).rejects.toThrow(WAITLIST_CHANGED_MESSAGE)
+    expect((await repo.list('leases')).map((l) => l.room_id)).toEqual(['R1'])
+    expect(await repo.list('invoices')).toHaveLength(1)
+    expect((await repo.list('tenants')).map((t) => t.full_name)).toEqual(['Rina Kartika'])
+    expect(await repo.get('waitlist', entry.id)).toMatchObject({ status: 'booked', lease_id: first.lease.id })
+  })
+
+  it('a stale Batal or Aktifkan lagi does not undo a booking made on another phone', async () => {
+    const actions = actionsHook()
+    const entry = await actions.addEntry(form())
+    const { lease } = await actions.bookStay(booking({ waitlistId: entry.id }))
+    // `entry` is the card as the other phone still shows it: Menunggu
+    await expect(actions.setEntryStatus(entry, 'cancelled')).rejects.toThrow(WAITLIST_CHANGED_MESSAGE)
+    await expect(actions.setEntryStatus(entry, 'waiting')).rejects.toThrow(WAITLIST_CHANGED_MESSAGE)
+    expect(await repo.get('waitlist', entry.id)).toMatchObject({ status: 'booked', lease_id: lease.id })
+    expect(invalidate).toHaveBeenCalledWith('waitlist')
+  })
+
+  it('a cancelled entry is not booked from a stale screen; once active again it is', async () => {
+    const actions = actionsHook()
+    const entry = await actions.addEntry(form())
+    await actions.setEntryStatus(entry, 'cancelled')
+    await expect(actions.bookStay(booking({ waitlistId: entry.id }))).rejects.toThrow(WAITLIST_CHANGED_MESSAGE)
+    expect(await repo.list('leases')).toEqual([])
+    await actions.setEntryStatus(entry, 'waiting')
+    const { lease } = await actions.bookStay(booking({ waitlistId: entry.id }))
+    expect(await repo.get('waitlist', entry.id)).toMatchObject({ status: 'booked', lease_id: lease.id })
   })
 
   it('staff can book and manage the list but not delete entries; owners can', async () => {
@@ -202,6 +270,29 @@ describe('daftar tunggu', () => {
     state.role = 'owner'
     await actionsHook().removeEntry(entry)
     expect(await repo.get('waitlist', entry.id)).toBeNull()
+  })
+})
+
+describe('Pindah kamar into a room booked meanwhile (SPEC 2b.9, 7.7)', () => {
+  it('is refused on fresh rows with the reason, and works once the room is free again', async () => {
+    const r2 = await repo.insert('rooms', { id: 'R2', property_id: 'P1', name: 'B1', floor: '1', price_daily: 100_000, price_weekly: 600_000, price_monthly: null, status: 'active', notes: null })
+    const sari = await bookedBy('Sari', '2026-10-29', '2026-11-04')
+    // the dialog (stale screen) still lists B1 as Kosong; another phone books it meanwhile
+    const budi = await bookedBy('Budi', '2026-11-08', '2026-11-09', 'R2')
+    const leaseActions = renderHook(() => useLeaseActions()).result.current
+    await expect(leaseActions.moveRoom(sari, room, r2, null, TODAY)).rejects.toThrow(
+      'Kamar B1 sudah tidak kosong (Dipesan). Datanya baru saja berubah di HP lain: muat ulang lalu pilih kamar lain.',
+    )
+    expect((await repo.get('leases', sari.id))!.room_id).toBe('R1')
+    expect(invalidate).toHaveBeenCalledWith('leases', 'rooms')
+    // a room put under repair meanwhile
+    await repo.update('leases', budi.id, { status: 'cancelled', end_date: budi.start_date })
+    await repo.update('rooms', 'R2', { status: 'maintenance' })
+    await expect(leaseActions.moveRoom(sari, room, r2, null, TODAY)).rejects.toThrow('Kamar B1 sudah tidak kosong (Perbaikan).')
+    // free again: the move goes through as before
+    await repo.update('rooms', 'R2', { status: 'active' })
+    await leaseActions.moveRoom(sari, room, r2, null, TODAY)
+    expect((await repo.get('leases', sari.id))!).toMatchObject({ room_id: 'R2', notes: 'Pindah dari A3 ke B1 pada 2026-11-01' })
   })
 })
 

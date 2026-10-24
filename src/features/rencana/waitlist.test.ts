@@ -81,6 +81,13 @@ describe('the stay an entry asks for', () => {
   it('links to the planner filled in for this entry', () => {
     expect(plannerLinkFor(entry('W1', { wanted_from: '2026-11-05', max_price: 150_000 }), TODAY)).toBe('/rencana?jenis=harian&mulai=2026-11-05&jumlah=2&maks=150000&tunggu=W1')
   })
+
+  it('an entry for one kos opens the planner on that kos only, as its matches are searched there', () => {
+    const joko = entry('W2', { property_id: 'P2', period_type: 'weekly', wanted_from: '2026-11-05' })
+    const link = plannerLinkFor(joko, TODAY)
+    expect(link).toBe('/rencana?jenis=mingguan&mulai=2026-11-05&jumlah=2&kos=P2&tunggu=W2')
+    expect(parsePlannerParams(new URLSearchParams(link.split('?')[1]), TODAY)).toMatchObject({ kosId: 'P2', waitlistId: 'W2', roomId: null })
+  })
 })
 
 describe('sortWaitlist', () => {
@@ -220,12 +227,14 @@ describe('form', () => {
 
 describe('planner address', () => {
   it('reads the inputs and falls back to Harian, today, 1', () => {
-    expect(parsePlannerParams(new URLSearchParams(''), TODAY)).toEqual({ periodType: 'daily', start: TODAY, quantity: 1, maxPrice: null, roomId: null, waitlistId: null })
-    expect(parsePlannerParams(new URLSearchParams('jenis=mingguan&mulai=2026-11-05&jumlah=2&maks=700000&kamar=R1&tunggu=W1'), TODAY)).toEqual({
+    // kosId added with the review fix (a daftar tunggu entry's kos travels in the address)
+    expect(parsePlannerParams(new URLSearchParams(''), TODAY)).toEqual({ periodType: 'daily', start: TODAY, quantity: 1, maxPrice: null, kosId: null, roomId: null, waitlistId: null })
+    expect(parsePlannerParams(new URLSearchParams('jenis=mingguan&mulai=2026-11-05&jumlah=2&maks=700000&kos=P1&kamar=R1&tunggu=W1'), TODAY)).toEqual({
       periodType: 'weekly',
       start: '2026-11-05',
       quantity: 2,
       maxPrice: 700_000,
+      kosId: 'P1',
       roomId: 'R1',
       waitlistId: 'W1',
     })
@@ -235,7 +244,7 @@ describe('planner address', () => {
   it('writes them back', () => {
     expect(plannerSearch({ periodType: 'monthly', start: '2026-11-05', quantity: 1 })).toBe('?jenis=bulanan&mulai=2026-11-05')
     expect(PERIOD_PARAM.weekly).toBe('mingguan')
-    const p = { periodType: 'weekly' as const, start: '2026-11-05', quantity: 3, maxPrice: 650_000, roomId: 'R1', waitlistId: null }
+    const p = { periodType: 'weekly' as const, start: '2026-11-05', quantity: 3, maxPrice: 650_000, kosId: 'P2', roomId: 'R1', waitlistId: null }
     expect(parsePlannerParams(new URLSearchParams(plannerSearch(p)), TODAY)).toEqual(p)
   })
 })

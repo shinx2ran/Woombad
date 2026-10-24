@@ -1,5 +1,5 @@
 /**
- * The planner's inputs live in the address (/rencana?jenis=harian&mulai=2026-11-05&jumlah=2&maks=150000&kamar=…&tunggu=…),
+ * The planner's inputs live in the address (/rencana?jenis=harian&mulai=2026-11-05&jumlah=2&maks=150000&kos=…&kamar=…&tunggu=…),
  * so a link from the room board or the daftar tunggu opens it filled in, and Back keeps what was typed. Pure.
  */
 import type { PeriodType } from '../../types/db'
@@ -13,6 +13,8 @@ export interface PlannerParams {
   quantity: number
   /** highest price per night / week / month; null = any */
   maxPrice: number | null
+  /** only the rooms of this kos (a daftar tunggu entry for one kos); null = the global kos filter */
+  kosId: string | null
   /** only this room (room board "Pesan tanggal lain") */
   roomId: string | null
   /** booking for this daftar tunggu entry */
@@ -38,6 +40,7 @@ export function parsePlannerParams(params: URLSearchParams, today: string): Plan
     start: ISO_DAY.test(start) ? start : today,
     quantity: Math.min(positiveInt(params.get('jumlah')) ?? 1, 9999),
     maxPrice: positiveInt(params.get('maks')),
+    kosId: params.get('kos') || null,
     roomId: params.get('kamar') || null,
     waitlistId: params.get('tunggu') || null,
   }
@@ -50,6 +53,7 @@ export function plannerSearch(p: Partial<PlannerParams>): string {
   if (p.start) q.set('mulai', p.start)
   if (p.quantity && p.quantity > 1) q.set('jumlah', String(p.quantity))
   if (p.maxPrice) q.set('maks', String(p.maxPrice))
+  if (p.kosId) q.set('kos', p.kosId)
   if (p.roomId) q.set('kamar', p.roomId)
   if (p.waitlistId) q.set('tunggu', p.waitlistId)
   return `?${q.toString()}`
