@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
-import { ArrowUpDown, Plus, Search, Share2 } from 'lucide-react'
+import { ArrowUpDown, CalendarSearch, Plus, Search, Share2, Users } from 'lucide-react'
 import { Button, Card, EmptyState, ErrorState, LoadingState, PageHeader, useToast } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import type { Invoice, Lease } from '../../types/db'
@@ -116,9 +116,18 @@ export function LeasesPage() {
         title="Sewa & Tagihan"
         subtitle={data.isPending ? 'Memuat…' : `${active.length} sewa aktif di ${kosName}${attention > 0 ? ` · ${attention} perlu perhatian` : ''}`}
         actions={
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/sewa/baru')}>
-            Sewa Baru
-          </Button>
+          <>
+            {/* Rencana check-in & daftar tunggu (SPEC 7.7) */}
+            <Link to="/rencana" className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50">
+              <CalendarSearch className="h-4 w-4" aria-hidden /> Cek kamar
+            </Link>
+            <Link to="/daftar-tunggu" className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50">
+              <Users className="h-4 w-4" aria-hidden /> Daftar tunggu
+            </Link>
+            <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/sewa/baru')}>
+              Sewa Baru
+            </Button>
+          </>
         }
       />
 

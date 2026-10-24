@@ -15,6 +15,7 @@ import { RecentPaymentsCard } from './RecentPaymentsCard'
 import { CashflowChart } from './CashflowChart'
 import { useIsDesktop } from './useIsDesktop'
 import { useQuickButtons } from '../quick/quickFlag'
+import { WaitlistCard } from '../rencana/WaitlistCard'
 
 // Tombol cepat (SPEC 7.4) is loaded only when its switch is on, so with it off the dashboard runs exactly as before.
 const RoomBoard = lazy(() => import('../quick/RoomBoard').then((m) => ({ default: m.RoomBoard })))
@@ -64,6 +65,7 @@ export function DashboardPage() {
           <div className="sm:hidden">
             <QuickActions />
           </div>
+          <WaitlistCard />
           {quick.enabled && (
             <Suspense fallback={null}>
               <RoomBoard />
