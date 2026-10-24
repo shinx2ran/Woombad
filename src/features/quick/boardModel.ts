@@ -6,6 +6,7 @@
  */
 import { summarizeLeaseBilling, type LeaseBillingSummary } from '../../domain/billing'
 import { daysBetween } from '../../domain/period'
+import { plannedCheckoutOf } from '../../domain/occupancy'
 import { formatDate } from '../../lib/format'
 import type { Invoice, Lease, Payment, Property, Room, Tenant } from '../../types/db'
 import { roomDisplayState, sortRoomsNatural } from '../properties/roomUtils'
@@ -41,6 +42,10 @@ export interface BoardTile {
   tenant: Tenant | null
   /** billing of `lease` when the room is occupied, else null */
   summary: LeaseBillingSummary | null
+  /** the occupying tenant's Rencana keluar (SPEC 7.8), else null */
+  plannedCheckout: string | null
+  /** '24 Nov': the tile says 'Keluar 24 Nov' instead of its caption while that day is ahead and nothing is due before it (boardLeavingOn) */
+  leavingOn: string | null
 }
 
 export interface BoardGroup {
@@ -80,6 +85,18 @@ export function boardStatusText(summary: LeaseBillingSummary | null, todayISO: s
   return `Jatuh tempo ${date} · ${days} hari lagi`
 }
 
+/**
+ * SPEC 7.8: the tile of a tenant who said he leaves on a day (today or later) reads 'Keluar 24 Nov' (this returns
+ * '24 Nov') instead of 'Terisi', or instead of the days left when he leaves on or before that due date (no reminder
+ * needed then). A tile that is past due or due today keeps its warning; a planned day that passed (checkout not
+ * recorded) is no reason either. Null when the caption stays.
+ */
+export function boardLeavingOn(tone: BoardTone, planned: string | null, summary: LeaseBillingSummary | null, todayISO: string): string | null {
+  if (!planned || planned < todayISO) return null
+  const leaves = tone === 'occupied' || (tone === 'soon' && summary?.nextDueDate != null && planned <= summary.nextDueDate)
+  return leaves ? formatDate(planned, 'd MMM') : null
+}
+
 /** Rooms of the given kos (in that order), each sorted naturally (A2 before A10); kos without rooms are left out. */
 export function buildBoard(
   properties: Property[],
@@ -101,7 +118,9 @@ export function buildBoard(
       const summary = state.occupancy === 'occupied' && state.lease ? summarizeLeaseBilling(state.lease, invoices, payments, todayISO) : null
       const days = daysToDue(summary, todayISO)
       const tone = boardTone(state.kind, days)
-      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, summary }
+      const plannedCheckout = summary && state.lease ? plannedCheckoutOf(state.lease) : null
+      const leavingOn = boardLeavingOn(tone, plannedCheckout, summary, todayISO)
+      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, summary, plannedCheckout, leavingOn }
     })
     groups.push({ property, tiles })
   }

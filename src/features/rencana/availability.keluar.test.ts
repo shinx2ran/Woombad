@@ -122,7 +122,7 @@ describe("the owner's case: 31 rooms all occupied, 1 night on 24 Des 2026", () =
 
   it('the daftar tunggu counts only the free rooms and hints at the rest', () => {
     const entry = {
-      id: 'W', org_id: 'org-1', property_id: null, name: 'Tamu', phone: null, wanted_from: '2026-12-24', period_type: 'daily' as const, quantity: 1,
+      id: 'W', property_id: null, name: 'Tamu', phone: null, wanted_from: '2026-12-24', period_type: 'daily' as const, quantity: 1,
       max_price: null, room_note: null, notes: null, status: 'waiting' as const, lease_id: null, created_by: null, ...ts,
     }
     const match = waitlistMatches(entry, { rooms, leases, today: TODAY, propertyIds: ['P1'], tenants: names })

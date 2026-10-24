@@ -4,7 +4,7 @@ import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../compon
 import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddon, Payment, Room } from '../../types/db'
 import { ADDON_BILLINGS, ADDON_BILLING_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { depositBalance, outstandingFor, paidAmountFor } from '../../domain/billing'
-import { isCancelledWithoutStay } from '../../domain/occupancy'
+import { isCancelledWithoutStay, plannedCheckoutOf } from '../../domain/occupancy'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import {
   cancelledLeaseEndDate,
@@ -92,19 +92,21 @@ export interface CheckoutModalProps {
 /**
  * SPEC 2b.5: checkout date, void future unpaid invoices, decide per future partially-paid invoice (refund /
  * forfeit, so no receivable survives on an ended lease), settle the held deposit, status ended. The checkout date is
- * the day the tenant leaves: invoices starting ON that day count as future (SPEC 7.3, futureInvoicesAtCheckout).
+ * the day the tenant leaves: invoices starting ON that day count as future (SPEC 7.3, futureInvoicesAtCheckout). It
+ * starts at the tenant's Rencana keluar when one is recorded (SPEC 7.8), else today.
  */
 export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions }: CheckoutModalProps) {
   const toast = useToast()
   const balance = useMemo(() => depositBalance(lease, payments, expenses), [lease, payments, expenses])
-  const [date, setDate] = useState(todayISO())
+  const planned = plannedCheckoutOf(lease)
+  const [date, setDate] = useState(planned ?? todayISO())
   const [decisions, setDecisions] = useState<Record<string, PartialDecision>>({})
   const [settlement, setSettlement] = useState<DepositSettlement>(emptySettlement(balance.held))
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setDate(todayISO())
+    setDate(planned ?? todayISO())
     setDecisions({})
     setSettlement(emptySettlement(balance.held))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,7 +171,11 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
           onChange={(e) => setDate(e.target.value)}
           required
           error={dateError ?? undefined}
-          hint="Hari penyewa keluar kamar; malam itu tidak ditagih lagi."
+          hint={
+            planned && date === planned
+              ? 'Sesuai rencana keluar penyewa. Hari penyewa keluar kamar; malam itu tidak ditagih lagi.'
+              : 'Hari penyewa keluar kamar; malam itu tidak ditagih lagi.'
+          }
         />
         <div className="space-y-1 rounded-lg bg-slate-50 p-3 text-sm">
           <Row label="Check-out menjadi" value={formatDate(date)} />

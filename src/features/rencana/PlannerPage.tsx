@@ -1,37 +1,57 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { AlertTriangle, CalendarCheck, ListPlus, Users, X } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, ListPlus, MessageCircle, MessageCirclePlus, Users, X } from 'lucide-react'
 import { Badge, Button, Card, CardBody, CountInput, EmptyState, ErrorState, Input, LoadingState, MoneyInput, PageHeader } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { useTable } from '../../hooks/useTable'
-import { formatCheckout, formatRupiah, todayISO } from '../../lib/format'
+import { summarizeLeaseBilling } from '../../domain/billing'
+import { formatCheckout, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import type { PeriodType, Room, WaitlistEntry } from '../../types/db'
 import { PERIOD_UNIT_LABEL } from '../../types/db'
+import { extensionQuestionText } from '../dashboard/dashboardModel'
 import { PeriodTypePicker } from '../leases/components'
+import { PlannedCheckoutModal } from '../leases/PlannedCheckoutModal'
+import { useLeaseActions } from '../leases/useLeaseActions'
 import { useLeaseData } from '../leases/useLeaseData'
 import { AvailabilityStrip, StripLegend } from './AvailabilityStrip'
-import { availabilityStrip, findAvailability, rateText, roomHolds, type FreeRoom, type PlannedStay } from './availability'
+import { availabilityStrip, findAvailability, rateText, roomHolds, type FreeRoom, type MaybeFreeRoom, type PlannedStay } from './availability'
 import { BookingSheet } from './BookingSheet'
 import { parsePlannerParams, plannerSearch, type PlannerParams } from './rencanaParams'
 import { WaitlistFormModal } from './WaitlistFormModal'
 import { emptyWaitlistForm } from './waitlist'
 
+/** "Bisa kosong" cards shown before "Tampilkan semua (N)" */
+const MAYBE_FREE_SHOWN = 8
+
+/** 'belum diperpanjang 3 hari' / '… jatuh tempo hari ini' for a monthly tenant whose billed period ended (SPEC 7.8). */
+function lapsedText(days: number): string {
+  return days === 0 ? 'belum diperpanjang, jatuh tempo hari ini' : `belum diperpanjang ${days} hari`
+}
+
+const CARD_ACTION = 'inline-flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium'
+
 /**
- * Cek kamar & pesan (SPEC 7.7): pick Harian / Mingguan / Bulanan, the check-in day and how long; every room free for
- * the whole stay is listed best fit first, with the price and a 14-day strip, then "Hampir cocok" rooms with the exact
- * reason. Pesan books the room through the Check-in cepat path. Nothing free: put the guest on the daftar tunggu.
- * The inputs live in the address (rencanaParams), so the room board and the daftar tunggu can open it filled in.
+ * Cek kamar & pesan (SPEC 7.7, 7.8): pick Harian / Mingguan / Bulanan, the check-in day and how long; every room free
+ * for the whole stay is listed best fit first, with the price and a 14-day strip; then "Bisa kosong": rooms of monthly
+ * tenants paid only up to before the stay who have not said whether they extend (ask on WhatsApp, or record their
+ * Rencana keluar, after which the room moves up to the free list); then "Hampir cocok" rooms with the exact reason.
+ * Pesan books the room through the Check-in cepat path. Nothing free: put the guest on the daftar tunggu. The inputs live
+ * in the address (rencanaParams), so the room board and the daftar tunggu can open it filled in.
  */
 export function PlannerPage() {
   const { properties, propertyFilterIds, selectedPropertyId } = useOrg()
   const data = useLeaseData()
   const waitlist = useTable('waitlist')
+  const leaseActions = useLeaseActions()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const today = todayISO()
   const p = parsePlannerParams(params, today)
   const [booking, setBooking] = useState<FreeRoom | null>(null)
   const [waitlistOpen, setWaitlistOpen] = useState(false)
+  /** the "Bisa kosong" room whose tenant is being marked as leaving (Rencana keluar sheet) */
+  const [leaving, setLeaving] = useState<MaybeFreeRoom | null>(null)
+  const [showAllMaybe, setShowAllMaybe] = useState(false)
 
   const update = (patch: Partial<PlannerParams>) => setParams(new URLSearchParams(plannerSearch({ ...p, ...patch }).slice(1)), { replace: true })
 
@@ -63,6 +83,18 @@ export function PlannerPage() {
   const strip = (roomId: string, stay: PlannedStay) => availabilityStrip(roomHolds(roomId, data.leases, today), stay.start, stay)
 
   const openWaitlistForm = () => setWaitlistOpen(true)
+
+  const maybeFree = result?.maybeFree ?? []
+  const maybeIds = new Set(maybeFree.map((m) => m.room.id))
+  const shownMaybe = showAllMaybe ? maybeFree : maybeFree.slice(0, MAYBE_FREE_SHOWN)
+  const maybeHint =
+    maybeFree.length > 0 ? ` ${maybeFree.length} kamar bisa kosong bila penyewa bulanannya keluar: lihat “Bisa kosong” di bawah.` : ''
+  /** 'dibayar s/d 20 Nov', or 'ditagih s/d 20 Nov · sisa Rp …' while the billed period is not paid in full */
+  const paidText = (m: MaybeFreeRoom) => {
+    const summary = summarizeLeaseBilling(m.lease, data.invoices, data.payments, today)
+    const out = formatCheckout(m.paidThrough, 'd MMM')
+    return summary.outstanding > 0 ? `ditagih s/d ${out} · sisa ${formatRupiah(summary.outstanding)}` : `dibayar s/d ${out}`
+  }
 
   return (
     <>
@@ -143,9 +175,9 @@ export function PlannerPage() {
                 icon={<CalendarCheck className="h-10 w-10" />}
                 title={p.roomId ? `Kamar ${pinnedRoom?.name ?? ''} tidak kosong untuk tanggal ini` : 'Tidak ada kamar kosong untuk seluruh tanggal'}
                 description={
-                  result.overBudget > 0
+                  (result.overBudget > 0
                     ? `${result.overBudget} kamar kosong tetapi harganya di atas batas. Ubah tanggal atau harga maks., atau catat tamu di daftar tunggu.`
-                    : 'Ubah tanggal atau jumlahnya, atau catat tamu di daftar tunggu supaya dikabari bila ada kamar.'
+                    : 'Ubah tanggal atau jumlahnya, atau catat tamu di daftar tunggu supaya dikabari bila ada kamar.') + maybeHint
                 }
                 action={
                   <Button size="lg" icon={<ListPlus className="h-5 w-5" />} onClick={openWaitlistForm}>
@@ -191,6 +223,84 @@ export function PlannerPage() {
             {result.free.length > 0 && result.overBudget > 0 && <p className="text-xs text-slate-500">{result.overBudget} kamar lain kosong tetapi di atas harga maks.</p>}
           </section>
 
+          {maybeFree.length > 0 && (
+            <section aria-labelledby="maybe-heading" className="space-y-2" data-testid="maybe-free-section">
+              <h2 id="maybe-heading" className="text-sm font-semibold text-slate-900">
+                Bisa kosong — penyewa bulanan belum konfirmasi ({maybeFree.length})
+              </h2>
+              <p className="text-xs text-slate-500">
+                Sewanya dibayar sampai sebelum tanggal ini dan belum diperpanjang. Tanyakan dulu; bila ia akan keluar, tandai rencana keluarnya, lalu kamar bisa
+                dipesan.
+              </p>
+              <ul className="space-y-2">
+                {shownMaybe.map((m) => {
+                  const tenant = data.tenantById.get(m.lease.tenant_id)
+                  const name = tenant?.full_name ?? 'Penyewa'
+                  const wa = whatsappLink(
+                    tenant?.phone,
+                    extensionQuestionText({ tenantName: name, roomName: m.room.name, propertyName: data.propertyById.get(m.room.property_id)?.name ?? 'Kos', endDate: m.paidThrough }),
+                  )
+                  return (
+                    <li key={m.room.id}>
+                      <Card data-testid="maybe-free-room" data-room={m.room.name}>
+                        <CardBody className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-base font-semibold text-slate-900">
+                                Kamar {m.room.name}
+                                {showKos && <span className="ml-1.5 text-xs font-normal text-slate-500">{data.propertyById.get(m.room.property_id)?.name}</span>}
+                              </p>
+                              <p className="truncate text-sm">
+                                <Link to={`/sewa/${m.lease.id}`} className="font-medium text-brand-700 hover:underline">
+                                  {name}
+                                </Link>
+                                <span className="text-slate-500"> · bulanan</span>
+                              </p>
+                              <p className="text-xs text-slate-600">{paidText(m)}</p>
+                              {m.lapsedDays !== null && <p className="text-xs font-medium text-amber-700">{lapsedText(m.lapsedDays)}</p>}
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className="text-sm font-semibold tabular-nums text-slate-900">{m.total !== null ? formatRupiah(m.total) : 'Harga belum diatur'}</p>
+                              {m.rate !== null && <p className="text-[11px] text-slate-500">{rateText(m.rate, p.periodType)}</p>}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {wa ? (
+                              <a href={wa} target="_blank" rel="noopener noreferrer" className={`${CARD_ACTION} bg-green-600 text-white hover:bg-green-700`}>
+                                <MessageCircle className="h-4 w-4 shrink-0" aria-hidden /> Tanya perpanjang
+                              </a>
+                            ) : (
+                              <Link
+                                to={tenant ? `/penyewa/${tenant.id}?isi=hp` : `/sewa/${m.lease.id}`}
+                                aria-label={`Nomor HP ${name} belum diisi: isi sekarang`}
+                                className={`${CARD_ACTION} bg-amber-50 text-amber-700 hover:bg-amber-100`}
+                              >
+                                <MessageCirclePlus className="h-4 w-4 shrink-0" aria-hidden /> HP belum diisi
+                              </Link>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setLeaving(m)}
+                              aria-label={`Tandai ${name} akan keluar`}
+                              className={`${CARD_ACTION} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}
+                            >
+                              Tandai akan keluar
+                            </button>
+                          </div>
+                        </CardBody>
+                      </Card>
+                    </li>
+                  )
+                })}
+              </ul>
+              {!showAllMaybe && maybeFree.length > MAYBE_FREE_SHOWN && (
+                <Button variant="outline" size="lg" fullWidth onClick={() => setShowAllMaybe(true)}>
+                  Tampilkan semua ({maybeFree.length})
+                </Button>
+              )}
+            </section>
+          )}
+
           {result.partial.length > 0 && (
             <section aria-labelledby="partial-heading" className="space-y-2">
               <h2 id="partial-heading" className="text-sm font-semibold text-slate-900">
@@ -222,16 +332,19 @@ export function PlannerPage() {
             </section>
           )}
 
+          {/* one room (?kamar=): why it is not free; a "Bisa kosong" room has its card above instead */}
           {p.roomId &&
-            result.taken.map((t) => (
-              <Card key={t.room.id} data-testid="taken-room">
-                <CardBody className="space-y-2">
-                  <p className="font-semibold text-slate-900">Kamar {t.room.name}</p>
-                  <p className="text-sm text-red-700">{t.reason}</p>
-                  <AvailabilityStrip cells={strip(t.room.id, result.stay)} />
-                </CardBody>
-              </Card>
-            ))}
+            result.taken
+              .filter((t) => !maybeIds.has(t.room.id))
+              .map((t) => (
+                <Card key={t.room.id} data-testid="taken-room">
+                  <CardBody className="space-y-2">
+                    <p className="font-semibold text-slate-900">Kamar {t.room.name}</p>
+                    <p className="text-sm text-red-700">{t.reason}</p>
+                    <AvailabilityStrip cells={strip(t.room.id, result.stay)} />
+                  </CardBody>
+                </Card>
+              ))}
 
           {result.free.length > 0 && (
             <p className="text-center text-sm text-slate-600">
@@ -255,6 +368,16 @@ export function PlannerPage() {
           tenantById={data.tenantById}
           orgInvoices={data.invoices}
           onClose={() => setBooking(null)}
+        />
+      )}
+      {leaving && (
+        <PlannedCheckoutModal
+          // the room re-evaluates as soon as the leases are read again: free from his check-out day on
+          lease={data.leases.find((l) => l.id === leaving.lease.id) ?? leaving.lease}
+          tenantName={data.tenantById.get(leaving.lease.tenant_id)?.full_name ?? 'Penyewa'}
+          roomName={leaving.room.name}
+          actions={leaseActions}
+          onClose={() => setLeaving(null)}
         />
       )}
       {waitlistOpen && (

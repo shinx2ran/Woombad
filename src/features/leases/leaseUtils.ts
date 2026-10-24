@@ -470,10 +470,22 @@ export const PLANNED_CHECKOUT_INACTIVE_MESSAGE = 'Sewa ini sudah selesai atau di
 
 /**
  * The day the Rencana keluar sheet starts with: the plan already recorded, else the check-out day of the billed period
- * (end_date + 1, SPEC 7.3) — what a monthly tenant who does not extend means by "saya keluar".
+ * (end_date + 1, SPEC 7.3) — what a monthly tenant who does not extend means by "saya keluar" — or today when that day
+ * has already passed (a day in the past would not free the room: he is still in it until the checkout is recorded).
  */
-export function defaultPlannedCheckout(lease: Lease): string {
-  return lease.planned_checkout_date ?? checkoutISO(lease.end_date)
+export function defaultPlannedCheckout(lease: Pick<Lease, 'end_date' | 'planned_checkout_date'>, todayISO: string): string {
+  if (lease.planned_checkout_date) return lease.planned_checkout_date
+  const out = checkoutISO(lease.end_date)
+  return out < todayISO ? todayISO : out
+}
+
+/**
+ * The badge of a lease with a Rencana keluar: 'Akan keluar 24 Nov' (today or later), 'Rencana keluar 20 Okt lewat' once
+ * the day passed without a recorded checkout (record the checkout, or a new plan).
+ */
+export function plannedCheckoutBadge(planned: string, todayISO: string): { text: string; overdue: boolean } {
+  const date = formatDate(planned, 'd MMM')
+  return planned < todayISO ? { text: `Rencana keluar ${date} lewat`, overdue: true } : { text: `Akan keluar ${date}`, overdue: false }
 }
 
 /** Why `day` cannot be the lease's planned check-out (a check-out day, after the first night), or null. */

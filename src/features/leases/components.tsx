@@ -4,12 +4,14 @@ import { clsx } from 'clsx'
 import { AlertTriangle, CalendarClock, FilePlus2, MessageCircle, MoreHorizontal, User, Wallet } from 'lucide-react'
 import { Badge, LeaseStatusBadge, MoneyInput, Input } from '../../components/ui'
 import type { DepositBalance } from '../../domain/billing'
+import { plannedCheckoutOf } from '../../domain/occupancy'
 import type { PeriodType } from '../../types/db'
 import { PERIOD_TYPES, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay } from '../../lib/format'
 import {
   BILLING_STATE_META,
   leaseEndDisplay,
+  plannedCheckoutBadge,
   priceDelta,
   priceDeltaText,
   remainingDays,
@@ -301,6 +303,9 @@ export function LeaseRow({
   const owes = summary.outstanding > 0
   // finished tab: 'Checkout <checkout_date>' / 'Berakhir <check-out day of end_date>' (SPEC 7.3)
   const end = leaseEndDisplay(lease)
+  // SPEC 7.8: 'Akan keluar 24 Nov' under the billing line (only rows of tenants who said they leave grow a line)
+  const planned = plannedCheckoutOf(lease)
+  const plannedBadge = planned ? plannedCheckoutBadge(planned, today) : null
 
   const items: MenuItem[] = []
   if (isActive) {
@@ -330,6 +335,17 @@ export function LeaseRow({
               {showKos && ` · ${propertyName}`}
             </span>
           </span>
+          {plannedBadge && (
+            <span
+              data-testid="lease-planned-checkout"
+              className={clsx(
+                'mt-0.5 inline-flex max-w-full rounded px-1.5 text-[11px] font-medium leading-4',
+                plannedBadge.overdue ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800',
+              )}
+            >
+              <span className="truncate">{plannedBadge.text}</span>
+            </span>
+          )}
         </span>
         <span className="hidden w-28 shrink-0 text-right text-sm tabular-nums text-slate-700 lg:block">{summary.paidThrough ? formatCheckout(summary.paidThrough) : '-'}</span>
         <span className={clsx('hidden w-32 shrink-0 text-right text-sm tabular-nums lg:block', owes ? 'font-medium text-red-700' : 'text-slate-700')}>{formatRupiah(summary.outstanding)}</span>
