@@ -65,6 +65,12 @@ export const REDATE_OVERLAP_MESSAGE = 'Jadwal bentrok dengan sewa lain di kamar 
 /** PGRST202: the app was published before supabase/schema.sql (with redate_lease) was re-run on the project. */
 export const REDATE_NOT_DEPLOYED_MESSAGE = 'Fitur ini belum aktif di server. Minta operator memperbarui database.'
 
+/**
+ * Rencana keluar (SPEC 7.8): the check constraint leases_planned_checkout_check (planned_checkout_date null or after
+ * start_date). A start-date correction never moves the planned check-out, so one that would reach it is refused too.
+ */
+export const PLANNED_CHECKOUT_BEFORE_START_MESSAGE = 'Rencana keluar harus sesudah tanggal mulai sewa. Ubah atau batalkan rencana keluar dulu.'
+
 /** New dates of one invoice in a lease start correction. */
 export interface RedateInvoiceDates {
   id: string

@@ -18,6 +18,15 @@ import { appendLeaseNote, remainingDays } from './leaseUtils'
 export { REDATE_INACTIVE_MESSAGE, REDATE_SAME_DATE_MESSAGE, REDATE_STAFF_MESSAGE } from '../../lib/repo/types'
 export const REDATE_INVALID_DATE_MESSAGE = 'Isi tanggal mulai yang benar.'
 
+/**
+ * Rencana keluar (SPEC 7.8) stays where it is when the start moves; a new start on or after it would leave no night
+ * before it (the database's leases_planned_checkout_check refuses that too): 'Rencana keluar penyewa 13 Nov 2026 tidak
+ * sesudah tanggal mulai yang baru. Ubah atau batalkan rencana keluar dulu.'
+ */
+export function redatePlannedCheckoutMessage(planned: string): string {
+  return `Rencana keluar penyewa ${formatDate(planned)} tidak sesudah tanggal mulai yang baru. Ubah atau batalkan rencana keluar dulu.`
+}
+
 /** Shift mode: some invoice is off the anchored grid, so every date moves by the same number of days. */
 export function redateShiftWarning(days: number): string {
   return `Ada tagihan dengan periode khusus, jadi semua tanggal digeser ${Math.abs(days)} hari.`
@@ -157,7 +166,9 @@ function emptyPlan(lease: Lease, newStart: string, error: string): LeaseRedatePl
  * (REDATE_INVALID_DATE_MESSAGE), the same date (REDATE_SAME_DATE_MESSAGE). A plan whose new span [newStart, new
  * end_date] collides with another non-cancelled lease of the room (leaseOverlaps, SPEC 2b.8 / 7.3) is computed in full
  * for the preview but carries the error redateConflictMessage and `conflict`. A lease of the room that already overlaps
- * the stored [start_date, end_date] (the previous tenant of a room this lease moved into) is not a conflict.
+ * the stored [start_date, end_date] (the previous tenant of a room this lease moved into) is not a conflict. A new start
+ * on or after the lease's planned check-out (planned_checkout_date, SPEC 7.8: it never moves with the start) is computed
+ * in full too, with the error redatePlannedCheckoutMessage.
  *
  * Invoices (`invoices` may hold other leases' rows; only the lease's own are planned):
  *  - mode 'grid' when billedPeriodCount(lease, invoices) !== null: walking the non-void invoices in order with grid
@@ -238,7 +249,12 @@ export function planLeaseRedate(lease: Lease, invoices: Invoice[], newStart: str
     (l) => l.room_id === lease.room_id && l.id !== lease.id && l.status !== 'cancelled' && !leaseOverlaps([l], lease.room_id, lease.start_date, lease.end_date),
   )
   const conflict = others.find((l) => leaseOverlaps([l], lease.room_id, newStart, newEnd)) ?? null
-  const error = conflict ? redateConflictMessage(opts.tenants?.find((t) => t.id === conflict.tenant_id)?.full_name, conflict) : null
+  const planned = lease.planned_checkout_date ?? null
+  const error = conflict
+    ? redateConflictMessage(opts.tenants?.find((t) => t.id === conflict.tenant_id)?.full_name, conflict)
+    : planned && planned <= newStart
+      ? redatePlannedCheckoutMessage(planned)
+      : null
 
   return {
     leaseId: lease.id,

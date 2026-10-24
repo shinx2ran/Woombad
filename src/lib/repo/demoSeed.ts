@@ -105,10 +105,17 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
   db.tenants.push(...tenants)
 
   // Monthly leases that started 5 months ago; invoices each month; most paid, latest ones partially / unpaid.
-  const start = addDays(subMonths(today, 5), -3)
-  const monthlyLeaseFor = (room: Room, tenant: Tenant, monthsPaid: number, deposit: number, addons: { name: string; amount: number }[] = []) => {
+  const defaultStart = addDays(subMonths(today, 5), -3)
+  const monthlyLeaseFor = (
+    room: Room,
+    tenant: Tenant,
+    monthsPaid: number,
+    deposit: number,
+    addons: { name: string; amount: number }[] = [],
+    { start = defaultStart, periods = 6, leaving = false }: { start?: Date; periods?: number; leaving?: boolean } = {},
+  ) => {
     const leaseId = newId()
-    const periods = 6
+    const end = addDays(addMonths(start, periods), -1)
     const lease: Lease = {
       id: leaseId,
       org_id: DEMO_ORG_ID,
@@ -119,9 +126,11 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
       price_per_period: room.price_monthly!,
       deposit_amount: deposit,
       start_date: toDateISO(start),
-      end_date: toDateISO(addDays(addMonths(start, periods), -1)),
+      end_date: toDateISO(end),
       status: 'active',
       checkout_date: null,
+      // Rencana keluar (SPEC 7.8): the tenant said he leaves on the check-out day of his paid period
+      ...(leaving ? { planned_checkout_date: toDateISO(addDays(end, 1)) } : {}),
       notes: null,
       ...ts,
     }
@@ -172,7 +181,9 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
   monthlyLeaseFor(roomsA[0], tenants[0], 6, 1_200_000, [{ name: 'Parkir motor', amount: 50_000 }])
   monthlyLeaseFor(roomsA[1], tenants[1], 5, 1_200_000)
   monthlyLeaseFor(roomsA[3], tenants[2], 5, 0, [{ name: 'Kasur tambahan', amount: 150_000 }])
-  monthlyLeaseFor(roomsA[4], tenants[3], 6, 1_500_000)
+  // Dewi moved in three weeks later than the others; she paid five months, through the night before today + 3 weeks,
+  // and told the owner she will not extend (Rencana keluar, SPEC 7.8)
+  monthlyLeaseFor(roomsA[4], tenants[3], 6, 1_500_000, [], { start: addDays(subMonths(today, 5), 21), periods: 5, leaving: true })
   monthlyLeaseFor(roomsB[0], tenants[4], 6, 1_800_000, [{ name: 'Laundry', amount: 100_000 }])
   monthlyLeaseFor(roomsB[2], tenants[5], 4, 2_000_000)
 

@@ -464,6 +464,40 @@ export function coverUntilCheckoutHint(info: CoverUntilCheckout, unit: string, c
   return info.differs ? `${text} (bukan ${formatDate(checkoutDay)}: periode dibulatkan ke atas)` : text
 }
 
+// ---------- Rencana keluar (SPEC 7.8) ----------
+
+export const PLANNED_CHECKOUT_INACTIVE_MESSAGE = 'Sewa ini sudah selesai atau dibatalkan, jadi rencana keluarnya tidak bisa diubah.'
+
+/**
+ * The day the Rencana keluar sheet starts with: the plan already recorded, else the check-out day of the billed period
+ * (end_date + 1, SPEC 7.3) — what a monthly tenant who does not extend means by "saya keluar".
+ */
+export function defaultPlannedCheckout(lease: Lease): string {
+  return lease.planned_checkout_date ?? checkoutISO(lease.end_date)
+}
+
+/** Why `day` cannot be the lease's planned check-out (a check-out day, after the first night), or null. */
+export function plannedCheckoutError(lease: Pick<Lease, 'start_date'>, day: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return 'Isi tanggal keluar.'
+  if (day <= lease.start_date) return `Tanggal keluar harus sesudah tanggal mulai sewa (${formatDate(lease.start_date)}).`
+  return null
+}
+
+/**
+ * What the chosen day means against the billed period (end_date = last billed night): null on its check-out day;
+ *  - earlier: the nights up to the billed check-out stay the tenant's until his checkout is recorded (the database guard
+ *    holds the room through end_date), so Cek kamar offers the room from the billed check-out day;
+ *  - later: nights after the billed period are not billed yet (the plan never bills anything by itself).
+ */
+export function plannedCheckoutNote(lease: Pick<Lease, 'end_date'>, day: string): string | null {
+  const billedOut = checkoutISO(lease.end_date)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day === billedOut) return null
+  if (day < billedOut) {
+    return `Sewa sudah ditagih sampai check-out ${formatDate(billedOut)}. Cek kamar menawarkan kamar ini mulai ${formatDate(billedOut)}, atau sejak checkout dicatat.`
+  }
+  return `Malam ${formatStay(billedOut, lastNightISO(day))} belum ditagih. Buat tagihan berikutnya bila penyewa tetap tinggal sampai hari itu.`
+}
+
 // ---------- lifecycle helpers (checkout / cancel) ----------
 
 /**

@@ -19,6 +19,7 @@ import { formatCheckout, formatDate, formatRupiah, todayISO } from '../../lib/fo
 import { guardedNights, overlappingLease } from '../../domain/occupancy'
 import {
   LEASE_DATA_CHANGED_MESSAGE,
+  PLANNED_CHECKOUT_INACTIVE_MESSAGE,
   ROOM_AVAILABILITY_LABEL,
   addonAmountUpdates,
   allocateAcrossInvoices,
@@ -31,6 +32,7 @@ import {
   invoicesToPinType,
   leaseDataChanged,
   openInvoicesSorted,
+  plannedCheckoutError,
   rentRefundExpense,
   rentRefundsToRecord,
   roomAvailability,
@@ -636,6 +638,26 @@ export function useLeaseActions() {
     }
 
     /**
+     * SPEC 7.8 Rencana keluar: record the CHECK-OUT day the tenant said he will leave (`checkoutDay`), or clear the plan
+     * (null). Front-desk work, so staff may do it; it is not a lease term: billing, end_date, the room and the price stay
+     * as they are, and the checkout itself is still recorded when he leaves. The lease is read fresh first: one that was
+     * checked out or cancelled on another device meanwhile is refused, and the day must be after its (fresh) start.
+     */
+    async function setPlannedCheckout(lease: Lease, checkoutDay: string | null): Promise<Lease> {
+      try {
+        const fresh = await repo.get('leases', lease.id)
+        if (!fresh) throw new Error('Sewa tidak ditemukan.')
+        if (fresh.status !== 'active') throw new Error(PLANNED_CHECKOUT_INACTIVE_MESSAGE)
+        const error = checkoutDay === null ? null : plannedCheckoutError(fresh, checkoutDay)
+        if (error) throw new Error(error)
+        return await repo.update('leases', lease.id, { planned_checkout_date: checkoutDay })
+      } finally {
+        // also after a refusal, so the screen shows what is stored now
+        await invalidate('leases')
+      }
+    }
+
+    /**
      * SPEC 7.6: move an active lease (reservations included) and every one of its invoices to the right start date.
      * Staff and ended/cancelled leases are refused before any read or write. The lease, its invoices and the room's
      * leases are read fresh; when they no longer match what the dialog previewed (redateDataChanged) nothing is written.
@@ -692,6 +714,7 @@ export function useLeaseActions() {
       addAddon,
       removeAddon,
       updateLeaseNotes,
+      setPlannedCheckout,
       redateLease,
     }
   }, [repo, role, invalidate])

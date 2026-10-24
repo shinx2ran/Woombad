@@ -201,6 +201,13 @@ export interface Lease extends TimestampedRow {
   status: LeaseStatus
   /** actual move-out date when status = ended */
   checkout_date: string | null
+  /**
+   * Rencana keluar (SPEC 7.8): the CHECK-OUT day the tenant said he will leave (the room is free that day, SPEC 7.3);
+   * null = no plan (a monthly tenant rolls on). Not a lease term: every member may set or clear it, and a start-date
+   * correction leaves it alone (database: null or after start_date). Optional because rows stored before the column
+   * existed (backups, Mode Demo data, fixtures) do not carry it: missing reads as null.
+   */
+  planned_checkout_date?: string | null
   notes: string | null
 }
 

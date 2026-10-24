@@ -462,6 +462,8 @@ create table if not exists public.leases (
   end_date date not null,
   status text not null default 'active' check (status in ('active', 'ended', 'cancelled')),
   checkout_date date,
+  -- Rencana keluar (SPEC 7.8): the check-out day the tenant said he will leave; null = no plan
+  planned_checkout_date date,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -471,6 +473,19 @@ create table if not exists public.leases (
   foreign key (org_id, room_id) references public.rooms (org_id, id) on delete restrict,
   foreign key (org_id, tenant_id) references public.tenants (org_id, id) on delete restrict
 );
+-- Rencana keluar (SPEC 7.8, added after 7.7; the create above is a no-op on an existing installation): the CHECK-OUT
+-- day (SPEC 7.3) a tenant said he will leave, so the planner may offer his room from that day. Not a lease term: every
+-- member may set or clear it (leases_terms_guard does not look at it), and a start-date correction (redate_lease) never
+-- moves it: the constraint below refuses a start on or after it. Added without dropping anything, so this file stays
+-- safe to re-run on the live project.
+alter table public.leases add column if not exists planned_checkout_date date;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conrelid = 'public.leases'::regclass and conname = 'leases_planned_checkout_check') then
+    alter table public.leases add constraint leases_planned_checkout_check
+      check (planned_checkout_date is null or planned_checkout_date > start_date);
+  end if;
+end $$;
 
 create table if not exists public.lease_addons (
   id uuid primary key default gen_random_uuid(),
@@ -775,6 +790,8 @@ create trigger leases_terms_guard
 -- caller's row-level security and every trigger still apply (only owners/admins may update invoices); amounts, numbers,
 -- statuses and payments are never touched. SQLSTATE WB002 = the lease or its invoices changed since the screen read
 -- them (another device): nothing is written and the app reloads. Mode Demo mirrors this in LocalRepo.redateLease.
+-- A planned check-out (planned_checkout_date, SPEC 7.8) is never moved: a new start on or after it is refused by
+-- leases_planned_checkout_check, which rolls the whole correction back (the app refuses it before calling).
 create or replace function public.redate_lease(
   p_lease_id uuid,
   p_expected_start date,

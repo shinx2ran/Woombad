@@ -39,6 +39,14 @@ export function isLeaseActiveOn(lease: Lease, dateISO: string): boolean {
   return until === null || d <= until
 }
 
+/**
+ * Rencana keluar (SPEC 7.8): the check-out day an active lease's tenant said he will leave ('YYYY-MM-DD'), or null
+ * when there is no plan or the lease is no longer active (an ended lease has its real checkout_date).
+ */
+export function plannedCheckoutOf(lease: Pick<Lease, 'status' | 'planned_checkout_date'>): string | null {
+  return lease.status === 'active' && lease.planned_checkout_date ? day(lease.planned_checkout_date) : null
+}
+
 /** Active lease whose start_date is after the date: the room is booked ("Dipesan") but not yet occupied. */
 export function isLeaseReservedOn(lease: Lease, dateISO: string): boolean {
   return lease.status === 'active' && day(dateISO) < day(lease.start_date)
