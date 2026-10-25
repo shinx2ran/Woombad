@@ -7,6 +7,7 @@ import { DataCard } from './DataCard'
 import { AuditCard } from './AuditCard'
 import { InstallCard } from './InstallCard'
 import { AboutCard } from './AboutCard'
+import { KosShortcutCard } from './KosShortcutCard'
 
 export function SettingsPage() {
   const { org, role, repo, isLocalMode } = useOrg()
@@ -17,6 +18,7 @@ export function SettingsPage() {
     <>
       <PageHeader title="Pengaturan" subtitle={isLocalMode ? 'Mode Demo: data hanya di perangkat ini' : 'Mode Online: data tersinkron lewat Supabase'} />
       <div className="grid gap-4 lg:grid-cols-2">
+        <KosShortcutCard isAdmin={isAdmin} />
         <OrganizationCard orgId={org.id} orgName={org.name} role={role} isAdmin={isAdmin} isLocalMode={isLocalMode} />
         <MembersCard isAdmin={isAdmin} currentUserId={session?.user.id ?? ''} />
         <DataCard isLocalMode={isLocalMode} isAdmin={isAdmin} />
