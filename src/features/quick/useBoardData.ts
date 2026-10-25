@@ -6,6 +6,7 @@ import type { Invoice, Lease, LeaseAddon, Payment, Property, Room, Tenant } from
 export interface BoardData {
   leases: Lease[]
   rooms: Room[]
+  tenants: Tenant[]
   invoices: Invoice[]
   payments: Payment[]
   leaseAddons: LeaseAddon[]
@@ -16,9 +17,9 @@ export interface BoardData {
 }
 
 /**
- * Only the tables the Papan kamar reads, all of which useDashboardData already loads: on the Dashboard the board then
- * renders in the same pass as the stats instead of popping in later and pushing them down (useLeaseData would also
- * wait for addon_catalog, which the Dashboard never loads).
+ * Only the tables the Papan kamar and its Check-in cepat read, all of which useDashboardData already loads: on the
+ * Dashboard the board then renders in the same pass as the stats instead of popping in later and pushing them down, and
+ * Check-in cepat opens ready (useLeaseData would also wait for addon_catalog, which the Dashboard never loads).
  */
 export function useBoardData(): BoardData {
   const { properties } = useOrg()
@@ -39,6 +40,7 @@ export function useBoardData(): BoardData {
   return {
     leases: leases.data ?? [],
     rooms: rooms.data ?? [],
+    tenants: tenants.data ?? [],
     invoices: invoices.data ?? [],
     payments: payments.data ?? [],
     leaseAddons: leaseAddons.data ?? [],

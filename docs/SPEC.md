@@ -392,8 +392,9 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Dirilis** (Okt 2026): setelah diuji pemilik sebagai fitur percobaan, papan kamar tampil di Dashboard untuk semua peran (bila
   kos yang dipilih punya kamar); saklar "Fitur percobaan" (`woombad.quickButtons`) dan label "Percobaan" dihapus. Papan dimuat
   bersama Dashboard (bukan `lazy`) dan hanya menunggu tabel yang juga dimuat `useDashboardData` (`useBoardData`), jadi papan muncul
-  bersamaan dengan angka ringkasan, tidak menyusul lalu mendorong halaman ke bawah. Nama kamar panjang ("Kamar 12") dibungkus
-  menjadi dua baris, tidak dipotong.
+  bersamaan dengan angka ringkasan, tidak menyusul lalu mendorong halaman ke bawah; Check-in cepat memakai hook yang sama, jadi
+  formnya langsung siap. Nama kamar panjang ("Kamar 12") dibungkus sampai dua baris (bukan dipotong jadi "Kama…"); nama yang
+  butuh lebih dari dua baris berakhir "…".
 - **Papan kamar** di Dashboard (`RoomBoard`, `boardModel.ts`): satu kotak per kamar kos yang dipilih, warna dari fungsi yang sama dengan
   Kos & Kamar (`roomDisplayState`) dan daftar sewa (`summarizeLeaseBilling`). Hitungan = hari sampai jatuh tempo berikutnya
   (`daysUntilDue`; sewa lunas: hari check-out = awal periode berikutnya, 7.3): **< 0 → merah penuh "Telat"** sejak hari pertama

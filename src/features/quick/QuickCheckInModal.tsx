@@ -7,7 +7,6 @@ import { useInvalidate } from '../../hooks/useTable'
 import { formatCheckout, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type PaymentMethod, type Room } from '../../types/db'
 import { useLeaseActions } from '../leases/useLeaseActions'
-import { useLeaseData } from '../leases/useLeaseData'
 import {
   perNightText,
   planQuickCheckIn,
@@ -18,6 +17,7 @@ import {
   validateQuickCheckIn,
   type QuickCheckInInput,
 } from './quickCheckIn'
+import { useBoardData } from './useBoardData'
 
 const CASH_METHODS = PAYMENT_METHODS.filter((m) => m !== 'deposit').map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))
 const NEW_TENANT = 'baru'
@@ -28,7 +28,7 @@ const NEW_TENANT = 'baru'
  */
 export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () => void }) {
   const { repo } = useOrg()
-  const data = useLeaseData()
+  const data = useBoardData()
   const actions = useLeaseActions()
   const invalidate = useInvalidate()
   const toast = useToast()
