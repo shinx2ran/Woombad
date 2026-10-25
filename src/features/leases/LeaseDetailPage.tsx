@@ -28,6 +28,7 @@ import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
 import {
   agreedPriceText,
+  invoiceDueText,
   invoiceTimeline,
   leaseEndDisplay,
   leaseReminderText,
@@ -245,7 +246,12 @@ export function LeaseDetailPage() {
         </span>
       ),
     },
-    { key: 'due', header: 'Jatuh tempo', hideOnMobile: true, render: (inv) => formatDate(inv.due_date) },
+    {
+      key: 'due',
+      header: 'Jatuh tempo',
+      hideOnMobile: true,
+      render: (inv) => (inv.status === 'paid' ? <span className="text-emerald-700">{invoiceDueText(inv, data.payments)}</span> : formatDate(inv.due_date)),
+    },
     { key: 'total', header: 'Total', align: 'right', render: (inv) => formatRupiah(inv.total_amount) },
     { key: 'paid', header: 'Dibayar', align: 'right', hideOnMobile: true, render: (inv) => formatRupiah(paidAmountFor(inv.id, data.payments)) },
     {
@@ -398,7 +404,7 @@ export function LeaseDetailPage() {
                       <InvoiceStatusBadge status={inv.status} />
                     </p>
                     <p className="text-xs text-slate-500">
-                      {formatStay(inv.period_start, inv.period_end)} · {inv.quantity} {invoiceUnitLabel(inv, lease)} · jatuh tempo {formatDate(inv.due_date)}
+                      {formatStay(inv.period_start, inv.period_end)} · {inv.quantity} {invoiceUnitLabel(inv, lease)} · {invoiceDueText(inv, data.payments)}
                     </p>
                     <p className="mt-0.5 text-sm tabular-nums">
                       <span className="text-slate-800">{formatRupiah(inv.total_amount)}</span>
