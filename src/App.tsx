@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RouterProvider } from 'react-router'
+// the react-dom build of RouterProvider honours `flushSync` on a navigation (the planner's inputs rely on it)
+import { RouterProvider } from 'react-router/dom'
 import { AuthProvider } from './hooks/useAuth'
 import { ToastProvider } from './components/ui'
 import { router } from './app/routes'

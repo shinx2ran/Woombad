@@ -54,7 +54,10 @@ export function PlannerPage() {
   const [leaving, setLeaving] = useState<MaybeFreeRoom | null>(null)
   const [showAllMaybe, setShowAllMaybe] = useState(false)
 
-  const update = (patch: Partial<PlannerParams>) => setParams(new URLSearchParams(plannerSearch({ ...p, ...patch }).slice(1)), { replace: true })
+  // flushSync: the router otherwise re-renders in a transition, and a second input that lands before it (Mingguan, then
+  // a date right away on a slow phone) would be built from the old `p` and undo the first.
+  const update = (patch: Partial<PlannerParams>) =>
+    setParams(new URLSearchParams(plannerSearch({ ...p, ...patch }).slice(1)), { replace: true, flushSync: true })
 
   const entry: WaitlistEntry | null = p.waitlistId ? (waitlist.data ?? []).find((w) => w.id === p.waitlistId) ?? null : null
   const pinnedRoom: Room | undefined = p.roomId ? data.roomById.get(p.roomId) : undefined
