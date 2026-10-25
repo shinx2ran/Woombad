@@ -193,4 +193,22 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     expect(await noSideScroll(page)).toBe(true)
     expect(errors, errors.join('\n')).toEqual([])
   })
+
+  test('on a slow phone, a quick second choice keeps the first (Mingguan, then a date; a date, then a max price)', async ({ page, context }) => {
+    await loginDemo(page)
+    await page.goto('/rencana')
+    await expect(page.getByTestId('planner-checkout')).toContainText('1 malam')
+    // a 20x slower CPU: before the fix the router re-rendered in a transition, the second input was built from the
+    // old choices and undid the first (lost every time at this speed)
+    const cdp = await context.newCDPSession(page)
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 20 })
+    await page.getByRole('radio', { name: 'Mingguan' }).click()
+    await page.getByLabel('Check-in').fill('2026-10-24')
+    await expect(page.getByTestId('planner-checkout')).toContainText('Check-out Sabtu, 31 Okt 2026 · 7 malam')
+    await page.getByLabel('Check-in').fill('2026-10-26')
+    await page.getByLabel(/Harga maks/).fill('700000')
+    await expect(page).toHaveURL(/jenis=mingguan&mulai=2026-10-26&.*maks=700000/)
+    await expect(page.getByTestId('planner-checkout')).toContainText('Check-out Senin, 2 Nov 2026 · 7 malam')
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+  })
 })
