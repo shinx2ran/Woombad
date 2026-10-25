@@ -24,7 +24,7 @@ test.describe('Mode Demo', () => {
     await page.waitForURL(/\/dashboard$/)
     const gear = page.getByRole('link', { name: 'Pengaturan' })
     await expect(gear).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Keluar' })).toBeInViewport()
+    await expect(page.getByRole('button', { name: 'Keluar', exact: true })).toBeInViewport()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await gear.click()
     await expect(page).toHaveURL(/\/pengaturan$/)

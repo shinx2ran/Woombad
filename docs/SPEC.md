@@ -388,10 +388,12 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - Logika: `isPaidUpAndEnding` memakai hari check-out (`checkoutISO(end_date)` di [hari ini, hari ini + 7]), jadi pada hari check-out sewa lunas
   tampil "Hari ini / check-out", bukan "jatuh tempo hari ini"; checkout membatalkan juga tagihan yang mulai **pada** `checkout_date` (2b.5).
 
-### 7.4 Tombol cepat (papan kamar) — fitur percobaan
-- **Saklar** per perangkat: Pengaturan → Fitur percobaan → Tombol cepat (`localStorage` `woombad.quickButtons`, `src/features/quick/quickFlag.ts`).
-  Mati secara bawaan di Mode Online; selalu hidup di Mode Demo untuk dicoba dengan data contoh. Saat mati, kode papan tidak dimuat
-  (`lazy` di `DashboardPage`), jadi Dashboard berjalan persis seperti sebelumnya.
+### 7.4 Tombol cepat (papan kamar)
+- **Dirilis** (Okt 2026): setelah diuji pemilik sebagai fitur percobaan, papan kamar tampil di Dashboard untuk semua peran (bila
+  kos yang dipilih punya kamar); saklar "Fitur percobaan" (`woombad.quickButtons`) dan label "Percobaan" dihapus. Papan dimuat
+  bersama Dashboard (bukan `lazy`) dan hanya menunggu tabel yang juga dimuat `useDashboardData` (`useBoardData`), jadi papan muncul
+  bersamaan dengan angka ringkasan, tidak menyusul lalu mendorong halaman ke bawah. Nama kamar panjang ("Kamar 12") dibungkus
+  menjadi dua baris, tidak dipotong.
 - **Papan kamar** di Dashboard (`RoomBoard`, `boardModel.ts`): satu kotak per kamar kos yang dipilih, warna dari fungsi yang sama dengan
   Kos & Kamar (`roomDisplayState`) dan daftar sewa (`summarizeLeaseBilling`). Hitungan = hari sampai jatuh tempo berikutnya
   (`daysUntilDue`; sewa lunas: hari check-out = awal periode berikutnya, 7.3): **< 0 → merah penuh "Telat"** sejak hari pertama
