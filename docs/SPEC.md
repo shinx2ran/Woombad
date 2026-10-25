@@ -121,6 +121,8 @@ Konvensi kode:
 - Bahasa UI: **Bahasa Indonesia** (label, pesan error, empty state). Kode/komentar boleh Inggris.
 - Mobile-first (lebar 360px harus nyaman), tabel boleh `hideOnMobile` untuk kolom sekunder; aksi utama berupa
   tombol besar; form di `Modal` (bottom-sheet di HP).
+- Navigasi HP: tab bawah memuat 5 menu (Dashboard, Sewa, Penyewa, Pengeluaran, Laporan); Pengaturan lewat ikon ⚙️ di atas, dan
+  Kos & Kamar lewat kartu pintasan paling atas di Pengaturan (`KosShortcutCard`). Di layar ≥ 768px semua menu ada di sisi kiri.
 - TypeScript strict, `erasableSyntaxOnly` (tanpa `enum`, tanpa parameter properties), `verbatimModuleSyntax`
   (`import type`). Import router dari `'react-router'` (v8; API sama dengan v6/v7: `Link`, `useNavigate`, …).
 - Dependensi sudah terpasang: react-router, @tanstack/react-query, recharts, tesseract.js, write-excel-file,

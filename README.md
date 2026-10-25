@@ -256,6 +256,7 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 | Salah input tanggal mulai sewa | Buka sewa → **Lainnya → Ubah tanggal mulai** (pemilik/admin): semua periode tagihan ikut digeser ([lihat di bawah](#salah-input-tanggal-mulai-sewa)). |
 | Pengeluaran | **Pengeluaran → Catat**: gaji, listrik/air, perbaikan, dll., per kos atau **Bersama**; ada tombol **Duplikat ke bulan ini** untuk biaya rutin. |
 | Lihat kinerja | **Laporan**: harian / mingguan / bulanan / tahunan, laba-rugi, piutang, hunian, grafik, lalu **Unduh XLSX / CSV** atau **Cetak / PDF**. |
+| Tambah kos baru | Di HP: **Pengaturan** (ikon ⚙️ di atas) → **Kos & Kamar** → **Tambah Kos**. Di iPad/laptop: menu kiri **Kos & Kamar** → **Tambah Kos**. Lalu buka kos itu dan isi kamarnya (**Tambah kamar** / **Tambah banyak**). |
 | Istri / pegawai ikut mengelola | **Pengaturan → Anggota → Undang**, kirim kodenya lewat WhatsApp (lihat [langkah 6](#6-pemilik--istri-undang-istri)). |
 | Akhir minggu | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**. |
 
