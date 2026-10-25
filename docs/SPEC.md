@@ -150,7 +150,8 @@ data diri, tombol WhatsApp, riwayat sewa & pembayaran (read-only, link ke modul 
 (`summarizeLeaseBilling`: dibayar s/d, sisa tagihan, status). Wizard **sewa baru**: pilih kos → kamar kosong →
 penyewa (atau buat cepat) → periode & harga (prefill dari kamar) → deposit → add-on (dari katalog) → jumlah periode
 pertama → ringkasan → simpan (lease + lease_addons + invoice pertama via `buildInvoiceDraft` + opsional payment
-deposit/rent). Detail sewa: info, add-on, daftar tagihan (status badge), **Buat tagihan berikutnya**,
+deposit/rent). Detail sewa: info, add-on, daftar tagihan (status badge; baris tagihan lunas menulis "dibayar <tanggal pembayaran
+terakhir>", yang belum lunas/dibatalkan "jatuh tempo <tanggal>": `invoiceDueText`), **Buat tagihan berikutnya**,
 **Catat pembayaran** (validasi `validateRentPayment`, metode, tanggal, DP/lunas otomatis), ubah/void tagihan,
 hapus pembayaran (admin), **Checkout** (deposit dikembalikan), **Batalkan** sewa. Setiap mutasi meng-update
 `invoices.status` via `deriveInvoiceStatus` dan `leases.end_date` sesuai aturan.

@@ -11,6 +11,7 @@ import {
   coverUntilCheckout,
   coverUntilCheckoutHint,
   futureInvoicesAtCheckout,
+  invoiceDueText,
   invoiceTimeline,
   LEASE_SORT_KEYS,
   LEASE_SORT_LABEL,
@@ -613,5 +614,27 @@ describe('leaseReminderText', () => {
     expect(leaseReminderText({ ...input([pay('a', 1_000_000)]), lease: { ...lease, status: 'ended', checkout_date: '2026-03-09' } })).toContain('*Rp 1.000.000*')
     // room / kos unknown -> placeholders, no crash
     expect(leaseReminderText({ ...input([]), room: undefined, property: undefined })).toContain('Tagihan kamar - periode')
+  })
+})
+
+describe('invoiceDueText', () => {
+  const paidOn = (p: Payment, paid_at: string): Payment => ({ ...p, id: `${p.id}-${paid_at}`, paid_at })
+
+  it('a paid invoice says when it was paid (its latest rent payment), not a due date long past', () => {
+    // a year paid up front: due on the first day of the stay, paid in two parts
+    const year = inv('y', '2026-06-04', '2027-07-03', 19_200_000, 'paid')
+    const payments = [paidOn(pay('y', 9_600_000), '2026-06-04'), paidOn(pay('y', 9_600_000), '2026-06-20'), paidOn(pay('other', 5), '2026-09-01')]
+    expect(invoiceDueText(year, payments)).toBe('dibayar 20 Jun 2026')
+  })
+
+  it('open, partly paid and cancelled invoices keep the due date', () => {
+    expect(invoiceDueText(inv('u', '2026-06-04', '2026-07-03'), [])).toBe('jatuh tempo 4 Jun 2026')
+    expect(invoiceDueText(inv('p', '2026-06-04', '2026-07-03', 1_000_000, 'partial'), [pay('p', 400_000)])).toBe('jatuh tempo 4 Jun 2026')
+    expect(invoiceDueText(inv('v', '2026-06-04', '2026-07-03', 1_000_000, 'void'), [pay('v', 1_000_000)])).toBe('jatuh tempo 4 Jun 2026')
+  })
+
+  it('a paid invoice without a rent payment (a zero total) says just lunas; deposits never count', () => {
+    const free = inv('z', '2026-06-04', '2026-07-03', 0, 'paid')
+    expect(invoiceDueText(free, [{ ...pay('z', 1_000_000), kind: 'deposit' }])).toBe('lunas')
   })
 })

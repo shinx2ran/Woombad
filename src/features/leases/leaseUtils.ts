@@ -888,6 +888,18 @@ export function periodChangeNote(type: PeriodType, price: number, startISO: stri
   return `Ganti ke ${PERIOD_TYPE_LABEL[type]} ${formatRupiah(price)} mulai ${formatDate(startISO)}`
 }
 
+/**
+ * The date part of an invoice line on the lease page. A paid invoice says when it was paid (its latest rent payment),
+ * not a due date that is long past once a year was paid up front ('dibayar 4 Jun 2026'); a paid invoice with no rent
+ * payment (a zero total) just says 'lunas'. Open and cancelled invoices keep 'jatuh tempo 4 Jun 2026'.
+ */
+export function invoiceDueText(invoice: Pick<Invoice, 'id' | 'status' | 'due_date'>, payments: Payment[]): string {
+  if (invoice.status !== 'paid') return `jatuh tempo ${formatDate(invoice.due_date)}`
+  let paidOn: string | null = null
+  for (const p of payments) if (p.kind === 'rent' && p.invoice_id === invoice.id && (paidOn === null || p.paid_at > paidOn)) paidOn = p.paid_at
+  return paidOn ? `dibayar ${formatDate(paidOn)}` : 'lunas'
+}
+
 /** Append one line to lease notes (existing notes trimmed; null/empty notes -> just the line). */
 export function appendLeaseNote(notes: string | null, line: string): string {
   return notes?.trim() ? `${notes.trim()}\n${line}` : line

@@ -66,6 +66,8 @@ test.describe('Ubah pembayaran & tagihan (SPEC 7.5)', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'Simpan' }).click()
     await expect(page.getByRole('dialog')).toBeHidden()
     await expect(invoiceRow(page)).toContainText('sisa Rp 60.000')
+    // still owed: the row keeps the due date
+    await expect(invoiceRow(page)).toContainText('jatuh tempo 11 Okt 2026')
 
     await page.getByRole('button', { name: /^Aksi tagihan/ }).first().click()
     await page.getByRole('menuitem', { name: /^Ubah/ }).click()
@@ -85,5 +87,8 @@ test.describe('Ubah pembayaran & tagihan (SPEC 7.5)', () => {
     await expect(invoiceRow(page)).toContainText('Lunas')
     await expect(invoiceRow(page)).toContainText('Rp 300.000')
     await expect(invoiceRow(page)).not.toContainText('sisa')
+    // paid: the row says when, instead of a due date that would look overdue later
+    await expect(invoiceRow(page)).toContainText('dibayar 11 Okt 2026')
+    await expect(invoiceRow(page)).not.toContainText('jatuh tempo')
   })
 })
