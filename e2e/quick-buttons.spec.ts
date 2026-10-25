@@ -117,11 +117,32 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     await expect(page.getByRole('dialog').getByRole('link', { name: 'Kirim pengingat WhatsApp' })).toBeVisible()
   })
 
-  test('Pengaturan shows the switch, always on in Mode Demo', async ({ page }) => {
+  test('released: the board is a regular part of the Dashboard, with no experiment switch or badge', async ({ page }) => {
+    await expect(page.getByTestId('room-board')).toBeVisible()
+    await expect(page.getByTestId('room-board').getByText('Percobaan', { exact: true })).toHaveCount(0)
     await page.goto('/pengaturan')
-    const box = page.getByRole('checkbox', { name: 'Tombol cepat' })
-    await expect(box).toBeChecked()
-    await expect(box).toBeDisabled()
-    await expect(page.getByText(/Selalu aktif di Mode Demo/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Pengaturan' })).toBeVisible()
+    await expect(page.getByText('Fitur percobaan')).toHaveCount(0)
+    await expect(page.getByRole('checkbox', { name: 'Tombol cepat' })).toHaveCount(0)
+  })
+
+  test('long room names wrap to two lines on a 360px phone instead of being cut to the same "Kama…"', async ({ page }) => {
+    await expect(page.getByTestId('room-board')).toBeVisible()
+    const names = ['Kamar 12', 'Kamar 13', 'Melati 3']
+    await page.evaluate((renamed) => {
+      const raw = localStorage.getItem('woombad.local.db.v1')
+      if (!raw) return
+      const db = JSON.parse(raw)
+      db.rooms.slice(0, renamed.length).forEach((r: { name: string }, i: number) => (r.name = renamed[i]))
+      localStorage.setItem('woombad.local.db.v1', JSON.stringify(db))
+    }, names)
+    await page.reload()
+    for (const name of names) {
+      const label = page.locator(`[data-testid="board-tile"][data-room="${name}"] [data-testid="board-tile-name"]`)
+      await expect(label).toHaveText(name)
+      const clip = await label.evaluate((el) => ({ w: el.scrollWidth - el.clientWidth, h: el.scrollHeight - el.clientHeight }))
+      expect(clip, name).toEqual({ w: 0, h: 0 })
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 })

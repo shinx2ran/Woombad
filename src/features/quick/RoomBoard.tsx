@@ -2,15 +2,15 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { clsx } from 'clsx'
 import { AlertTriangle, CalendarPlus, CalendarSearch, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Wallet, Zap } from 'lucide-react'
-import { Badge, Card, CardHeader, Modal } from '../../components/ui'
+import { Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import type { Room } from '../../types/db'
 import { leaseReminderText, plannedCheckoutBadge } from '../leases/leaseUtils'
-import { useLeaseData } from '../leases/useLeaseData'
 import { paidThroughText } from '../properties/roomUtils'
 import { BOARD_TONES, BOARD_TONE_META, boardStatusText, buildBoard, countTones, leaseActionLink, type BoardTile, type BoardTone } from './boardModel'
 import { QuickCheckInModal } from './QuickCheckInModal'
+import { useBoardData } from './useBoardData'
 import { plannerSearch } from '../rencana/rencanaParams'
 
 const TILE_CLASS: Record<BoardTone, string> = {
@@ -42,7 +42,7 @@ const DOT_CLASS: Record<BoardTone, string> = {
  */
 export function RoomBoard() {
   const { properties, propertyFilterIds } = useOrg()
-  const data = useLeaseData()
+  const data = useBoardData()
   const today = todayISO()
   const [openRoomId, setOpenRoomId] = useState<string | null>(null)
   const [checkInRoom, setCheckInRoom] = useState<Room | null>(null)
@@ -83,7 +83,6 @@ export function RoomBoard() {
           </span>
         }
         subtitle="Ketuk kamar untuk aksi cepat"
-        action={<Badge tone="brand">Percobaan</Badge>}
       />
       <div className="space-y-3 px-4 py-3">
         <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600" aria-label="Keterangan warna">
@@ -109,7 +108,10 @@ export function RoomBoard() {
                   onClick={() => setOpenRoomId(t.room.id)}
                   className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-center', TILE_CLASS[t.tone])}
                 >
-                  <span className="max-w-full truncate text-sm font-semibold tabular-nums">{t.room.name}</span>
+                  {/* up to two lines, so 'Kamar 12' and 'Kamar 13' stay apart on a 360 px phone */}
+                  <span className="line-clamp-2 max-w-full break-words text-sm font-semibold tabular-nums" data-testid="board-tile-name">
+                    {t.room.name}
+                  </span>
                   {t.leavingOn ? (
                     // two short lines on a 360 px phone: 'Keluar' / '24 Nov'
                     <span className="max-w-full text-[10px] font-semibold leading-tight" data-testid="board-tile-leaving">

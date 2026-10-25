@@ -7,7 +7,6 @@ import { DataCard } from './DataCard'
 import { AuditCard } from './AuditCard'
 import { InstallCard } from './InstallCard'
 import { AboutCard } from './AboutCard'
-import { QuickSettingsCard } from '../quick/QuickSettingsCard'
 
 export function SettingsPage() {
   const { org, role, repo, isLocalMode } = useOrg()
@@ -22,7 +21,6 @@ export function SettingsPage() {
         <MembersCard isAdmin={isAdmin} currentUserId={session?.user.id ?? ''} />
         <DataCard isLocalMode={isLocalMode} isAdmin={isAdmin} />
         <InstallCard />
-        <QuickSettingsCard isLocalMode={isLocalMode} />
         <AboutCard onSignOut={() => auth.signOut()} email={session?.user.email ?? null} repoMode={repo.mode} />
         {isAdmin && <AuditCard isLocalMode={isLocalMode} />}
       </div>

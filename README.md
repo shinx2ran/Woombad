@@ -268,15 +268,14 @@ check-out itu. "Dibayar s/d 15 Nov" berarti lunas sampai hari check-out 15 Nov. 
 tanggal check-out. Pesanan yang dibatalkan sebelum penyewa menginap (tanggal pembatalan paling lambat sehari setelah mulai)
 hanya menampilkan tanggal mulainya, "belum menginap"; bila penyewa sudah menginap, gunakan **Checkout**.
 
-### Tombol cepat (fitur percobaan)
+### Tombol cepat (papan kamar)
 
-**Pengaturan → Fitur percobaan → Tombol cepat** menampilkan **Papan kamar** di Dashboard: setiap kamar berwarna — **merah
+**Papan kamar** di Dashboard: setiap kamar berwarna — **merah
 "Telat"** bila sudah lewat jatuh tempo, **jingga-merah "Hari ini"** bila jatuh tempo hari ini, **oranye "3 hari"** bila jatuh tempo dalam 7 hari (sisa hari sampai harus
 bayar/perpanjang), biru "Terisi" bila masih aman, hijau "Kosong". Ketuk kamar merah atau oranye untuk **Kirim pengingat WhatsApp** (pesan tagihan sudah terisi, tinggal tekan kirim). Ketuk kamar
 terisi untuk **Bayar**, **Perpanjang**, atau **Check-out** (membuka dialog
 yang sama seperti di halaman sewa). Ketuk kamar kosong untuk **Check-in cepat** tamu harian: isi nama, jumlah malam, dan total
-bayar; nomor HP boleh diisi nanti. Saklar ini hanya berlaku di HP/tablet tempat ia dinyalakan dan bisa dimatikan kapan saja. Di
-Mode Demo papan selalu tampil, untuk dicoba dengan data contoh.
+bayar; nomor HP boleh diisi nanti.
 
 ### Rencana check-in & daftar tunggu
 
