@@ -40,6 +40,8 @@ export interface BoardTile {
   /** the lease living in (or booked into) the room, also kept for a room under maintenance */
   lease: Lease | null
   tenant: Tenant | null
+  /** the tenant's name on the tile ('Budi' for 'Pak Budi Santoso', shortTenantName), null without a tenant */
+  name: string | null
   /** billing of `lease` when the room is occupied, else null */
   summary: LeaseBillingSummary | null
   /** the occupying tenant's Rencana keluar (SPEC 7.8), else null */
@@ -97,6 +99,26 @@ export function boardLeavingOn(tone: BoardTone, planned: string | null, summary:
   return leaves ? formatDate(planned, 'd MMM') : null
 }
 
+/** Titles typed in front of a name ('Pak Budi', 'Kak Rina', 'Ibu Hj. Sri'), skipped on a tile so it shows the name itself. */
+const NAME_TITLES = new Set([
+  'pak', 'bapak', 'bpk', 'bu', 'ibu', 'kak', 'kakak', 'bang', 'abang', 'mas', 'mbak', 'mba', 'dik', 'adik', 'om', 'tante',
+  'koh', 'ko', 'cik', 'ci', 'ce', 'sdr', 'sdri', 'saudara', 'saudari', 'tuan', 'nyonya', 'ny', 'nona', 'h', 'hj', 'haji', 'hajah',
+  'dr', 'drs', 'ir', 'prof',
+])
+
+/**
+ * The name on a tile, which has room for about one short word: the first word after any titles ('Pak Budi Santoso' ->
+ * 'Budi'), or the first two when the first is an initial or a two-letter name ('M. Rizki', 'Ho Wei'). A name that is
+ * only a title stays as typed. The full name is in the tile's label and its action sheet.
+ */
+export function shortTenantName(fullName: string): string {
+  const words = fullName.trim().split(/\s+/).filter(Boolean)
+  let i = 0
+  while (i < words.length - 1 && NAME_TITLES.has(words[i].replace(/\.$/, '').toLowerCase())) i++
+  const first = words[i] ?? ''
+  return first.length <= 2 && i + 1 < words.length ? `${first} ${words[i + 1]}` : first
+}
+
 /** Rooms of the given kos (in that order), each sorted naturally (A2 before A10); kos without rooms are left out. */
 export function buildBoard(
   properties: Property[],
@@ -120,7 +142,8 @@ export function buildBoard(
       const tone = boardTone(state.kind, days)
       const plannedCheckout = summary && state.lease ? plannedCheckoutOf(state.lease) : null
       const leavingOn = boardLeavingOn(tone, plannedCheckout, summary, todayISO)
-      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, summary, plannedCheckout, leavingOn }
+      const name = state.tenant ? shortTenantName(state.tenant.full_name) : null
+      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, name, summary, plannedCheckout, leavingOn }
     })
     groups.push({ property, tiles })
   }

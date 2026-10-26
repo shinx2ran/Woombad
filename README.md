@@ -273,7 +273,8 @@ hanya menampilkan tanggal mulainya, "belum menginap"; bila penyewa sudah mengina
 
 **Papan kamar** di Dashboard: setiap kamar berwarna — **merah
 "Telat"** bila sudah lewat jatuh tempo, **jingga-merah "Hari ini"** bila jatuh tempo hari ini, **oranye "3 hari"** bila jatuh tempo dalam 7 hari (sisa hari sampai harus
-bayar/perpanjang), biru "Terisi" bila masih aman, hijau "Kosong". Ketuk kamar merah atau oranye untuk **Kirim pengingat WhatsApp** (pesan tagihan sudah terisi, tinggal tekan kirim). Ketuk kamar
+bayar/perpanjang), biru "Terisi" bila masih aman, hijau "Kosong". Di bawah nomor kamar tertulis nama penyewanya (nama depan, tanpa sapaan seperti
+"Pak"/"Kak": "Pak Budi Santoso" → **Budi**). Ketuk kamar merah atau oranye untuk **Kirim pengingat WhatsApp** (pesan tagihan sudah terisi, tinggal tekan kirim). Ketuk kamar
 terisi untuk **Bayar**, **Perpanjang**, atau **Check-out** (membuka dialog
 yang sama seperti di halaman sewa). Ketuk kamar kosong untuk **Check-in cepat** tamu harian: isi nama, jumlah malam, dan total
 bayar; nomor HP boleh diisi nanti.

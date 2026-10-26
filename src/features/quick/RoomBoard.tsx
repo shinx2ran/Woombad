@@ -104,7 +104,7 @@ export function RoomBoard() {
                   data-testid="board-tile"
                   data-room={t.room.name}
                   data-tone={t.tone}
-                  aria-label={`Kamar ${t.room.name}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}`}
+                  aria-label={`Kamar ${t.room.name}${t.tenant ? ` (${t.tenant.full_name})` : ''}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}`}
                   onClick={() => setOpenRoomId(t.room.id)}
                   className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-center', TILE_CLASS[t.tone])}
                 >
@@ -112,6 +112,11 @@ export function RoomBoard() {
                   <span className="line-clamp-2 max-w-full break-words text-sm font-semibold tabular-nums" data-testid="board-tile-name">
                     {t.room.name}
                   </span>
+                  {t.name && (
+                    <span className="max-w-full truncate text-[10px] font-medium leading-tight" data-testid="board-tile-tenant">
+                      {t.name}
+                    </span>
+                  )}
                   {t.leavingOn ? (
                     // two short lines on a 360 px phone: 'Keluar' / '24 Nov'
                     <span className="max-w-full text-[10px] font-semibold leading-tight" data-testid="board-tile-leaving">

@@ -24,6 +24,19 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 
+  test('each occupied tile names its tenant (first name, cut to fit); an empty room has none', async ({ page }) => {
+    const late = tiles(page).and(page.locator('[data-tone="overdue"]')).first()
+    const name = late.getByTestId('board-tile-tenant')
+    await expect(name).toHaveText(/^(Budi|Siti|Agus|Dewi|Rizky|Putri|Hendra)$/)
+    // the full name stays in the tile's label for screen readers
+    expect(await late.getAttribute('aria-label')).toContain(`${await name.innerText()} `)
+    const vacant = tiles(page).and(page.locator('[data-tone="vacant"]')).first()
+    await expect(vacant.getByTestId('board-tile-tenant')).toHaveCount(0)
+    // a long name is cut inside the tile, never widening it or the page
+    expect(await name.evaluate((el) => el.getBoundingClientRect().width <= (el.parentElement as HTMLElement).getBoundingClientRect().width)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
+
   test('check-in cepat: an empty room, a name, 2 nights, 360k -> a paid daily lease with check-out 13 Okt', async ({ page }) => {
     const vacant = tiles(page).and(page.locator('[data-tone="vacant"]')).first()
     const roomName = (await vacant.getAttribute('data-room'))!
