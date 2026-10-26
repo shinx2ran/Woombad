@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Invoice, Lease, Payment, Property, Room, Tenant } from '../../types/db'
-import { boardStatusText, buildBoard, countTones, leaseActionLink } from './boardModel'
+import { boardStatusText, buildBoard, countTones, leaseActionLink, shortTenantName } from './boardModel'
 
 const TODAY = '2026-10-15'
 const ts = { org_id: 'org', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
@@ -169,6 +169,11 @@ describe('Papan kamar (SPEC 7.4)', () => {
     expect(a1.lease).toBeNull()
   })
 
+  it('names the tenant on the tile; an empty room has no name', () => {
+    expect(board[0].tiles.find((t) => t.room.name === 'A10')!.name).toBe('Budi')
+    expect(board[0].tiles.find((t) => t.room.name === 'A1')!.name).toBeNull()
+  })
+
   it('counts tiles per colour for the legend', () => {
     expect(countTones(board)).toEqual({ overdue: 3, today: 1, soon: 1, occupied: 2, vacant: 1, reserved: 1, maintenance: 1 })
     expect(countTones([])).toEqual({ overdue: 0, today: 0, soon: 0, occupied: 0, vacant: 0, reserved: 0, maintenance: 0 })
@@ -186,5 +191,35 @@ describe('Papan kamar (SPEC 7.4)', () => {
     expect(leaseActionLink('l1', 'checkout')).toBe('/sewa/l1?action=checkout')
     expect(leaseActionLink('l1', 'bayar')).toBe('/sewa/l1?action=bayar')
     expect(leaseActionLink('l1', 'tagih')).toBe('/sewa/l1?action=tagih')
+  })
+})
+
+describe('shortTenantName (the name on a board tile)', () => {
+  it('shows the first name', () => {
+    expect(shortTenantName('Budi Santoso')).toBe('Budi')
+    expect(shortTenantName('  Ica  ')).toBe('Ica')
+    expect(shortTenantName('Erikafloren Maria Putri')).toBe('Erikafloren')
+  })
+
+  it('skips titles typed in front of the name, in any case and with or without a dot', () => {
+    expect(shortTenantName('Pak Budi Santoso')).toBe('Budi')
+    expect(shortTenantName('Kak Rina')).toBe('Rina')
+    expect(shortTenantName('Bang Togar')).toBe('Togar')
+    expect(shortTenantName('bu siti')).toBe('siti')
+    expect(shortTenantName('Ibu Hj. Sri Wahyuni')).toBe('Sri')
+    expect(shortTenantName('Mbak Ayu')).toBe('Ayu')
+  })
+
+  it('keeps two words when the first is an initial or a two-letter name', () => {
+    expect(shortTenantName('M. Rizki Pratama')).toBe('M. Rizki')
+    expect(shortTenantName('Ho Wei Lun')).toBe('Ho Wei')
+    expect(shortTenantName('Pak M. Yusuf')).toBe('M. Yusuf')
+  })
+
+  it('never ends up empty: a lone title or a lone short word stays as typed', () => {
+    expect(shortTenantName('Pak')).toBe('Pak')
+    expect(shortTenantName('Ho')).toBe('Ho')
+    expect(shortTenantName('Kak Bu')).toBe('Bu')
+    expect(shortTenantName('')).toBe('')
   })
 })

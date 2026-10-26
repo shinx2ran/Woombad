@@ -43,7 +43,7 @@ test.describe('Rencana keluar & "Bisa kosong" (SPEC 7.8)', () => {
     // the room board shows Dewi's plan on her tile
     const tile = page.locator('[data-testid="board-tile"][data-room="B2"]')
     await expect(tile).toContainText('Keluar 14 Nov')
-    await expect(tile).toHaveAttribute('aria-label', 'Kamar B2: Terisi, aman (> 7 hari), akan keluar 14 Nov')
+    await expect(tile).toHaveAttribute('aria-label', 'Kamar B2 (Dewi Lestari): Terisi, aman (> 7 hari), akan keluar 14 Nov')
     await tile.click()
     await expect(page.getByRole('dialog').getByTestId('board-planned-checkout')).toHaveText('Akan keluar 14 Nov')
     await page.getByTestId('room-board').evaluate((el) => {

@@ -403,6 +403,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   (`daysUntilDue`; sewa lunas: hari check-out = awal periode berikutnya, 7.3): **< 0 → merah penuh "Telat"** sejak hari pertama
   lewat jatuh tempo (permintaan pemilik; daftar sewa tetap memakai masa tenggang "tenggang"), **0 → jingga-merah "Hari ini"** (lebih lembut dari merah penuh), **1–7 → oranye "N hari"**,
   > 7 → biru "Terisi"; lalu Kosong, Dipesan, Perbaikan.
+- Di bawah nomor kamar: **nama penyewa** (atau tamu yang memesan) versi pendek (`shortTenantName`): kata pertama setelah
+  sapaan yang diketik di depan nama ("Pak Budi Santoso" → "Budi"; Pak/Bu/Kak/Bang/Mas/Mbak/Hj./dr. …), dua kata bila kata
+  pertama inisial atau dua huruf ("M. Rizki", "Ho Wei"); terlalu panjang → dipotong "…". Nama lengkap ada di label kotak
+  (pembaca layar) dan di lembar aksi. Kamar kosong tanpa nama.
 - **Aksi** kamar terisi = tautan ke halaman sewa yang membuka dialog yang sudah ada: `/sewa/:id?action=bayar|tagih|checkout`; semua aturan
   (jaminan, tagihan setelah checkout, peran staf) tetap dari dialog itu. Kamar Telat / jatuh tempo ≤ 7 hari juga mendapat tombol hijau
   **Kirim pengingat WhatsApp** (`wa.me` dengan teks `leaseReminderText`, sama dengan "Pengingat WhatsApp" di daftar sewa); tanpa HP
