@@ -100,6 +100,10 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     await expect(form.getByText('= Rp 1.500.000 / bulan')).toBeVisible()
     await form.getByLabel('Uang jaminan (deposit)').fill('1000000')
     await expect(form.getByRole('checkbox', { name: 'Deposit sudah diterima' })).toBeChecked()
+    // tapping the already selected kind again keeps what was typed
+    await form.getByRole('radio', { name: 'Tahunan' }).click()
+    await expect(form.getByLabel('Bonus bulan gratis')).toHaveValue('1')
+    await expect(form.getByLabel('Total bayar')).toHaveValue(/18\.000\.000/)
     const summary = form.getByTestId('quick-checkin-summary')
     await expect(summary).toContainText('13 bulan (12 dibayar + 1 bonus)')
     await expect(summary).toContainText('Check-out 11 Nov 2027')

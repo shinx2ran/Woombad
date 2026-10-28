@@ -87,6 +87,8 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const hasErrors = Object.keys(errors).length > 0
 
   const pickKind = (next: StayKind) => {
+    // re-tapping the selected kind (to close the keyboard, a mis-tap) keeps what was typed
+    if (next === kind) return
     setKind(next)
     setQuantity(defaultQuantity(next))
     setBonus(0)
