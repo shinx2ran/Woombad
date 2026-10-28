@@ -190,22 +190,25 @@ Riwayat perubahan** (pemilik/admin) dan tidak bisa dihapus.
 
 | Kapan | Apa |
 |---|---|
-| Otomatis, setiap Minggu malam | GitHub Actions **Weekly encrypted backup** menyimpan salinan terenkripsi seluruh data (90 hari). Lihat [Cadangan otomatis](#cadangan-otomatis). |
+| Otomatis, setiap malam | GitHub Actions **Daily encrypted backup** menyimpan salinan terenkripsi seluruh data: di *artifact* (90 hari) dan di branch `backups` repo ini (selamanya). Lihat [Cadangan otomatis](#cadangan-otomatis). |
 | Sebulan sekali | **Pengaturan → Data → Unduh cadangan lengkap (JSON)**, simpan sendiri di Google Drive atau laptop. Aplikasi mengingatkan setelah 30 hari. Foto tidak ikut dalam cadangan. |
 | Otomatis, 3× sehari | GitHub Actions **Keep database awake** memanggil `keepalive()`, yang memperbarui satu baris penanda (bukan data kos, tidak masuk Riwayat perubahan) agar proyek gratis tidak dijeda. Tidak perlu apa-apa. |
 | Bila GitHub mengirim email *"Keep database awake" failed* | Proyek kemungkinan dijeda. Buka dashboard Supabase → proyek Woombad → **Resume project**, tunggu beberapa menit. |
-| Bila GitHub mengirim email bahwa jadwal dimatikan | GitHub mematikan jadwal di repo publik setelah 60 hari tanpa commit. Buka repo → **Actions →** *Keep database awake* dan *Weekly encrypted backup* **→ Enable workflow**. |
-| Bila GitHub mengirim email *"Weekly encrypted backup" failed* | Biasanya proyek dijeda (lihat baris di atas) atau rahasia `BACKUP_DB_PASSWORD` belum diisi. |
+| Bila GitHub mengirim email bahwa jadwal dimatikan | GitHub mematikan jadwal di repo publik setelah 60 hari tanpa commit. Buka repo → **Actions →** *Keep database awake* dan *Daily encrypted backup* **→ Enable workflow**. |
+| Bila GitHub mengirim email *"Daily encrypted backup" failed* | Biasanya proyek dijeda (lihat baris di atas) atau rahasia `BACKUP_DB_PASSWORD` belum diisi. |
 | Bila aplikasi tidak bisa memuat data | Aplikasi menampilkan penyebabnya. Bila proyek dijeda: dashboard Supabase → proyek Woombad → **Resume project**, tunggu beberapa menit. |
 | Lupa kata sandi | Lihat [di bawah](#lupa-kata-sandi). |
 
 ### Cadangan otomatis
 
-Setiap Minggu pukul 21:07 WIB, GitHub Actions masuk ke database sebagai `woombad_backup`, sebuah akun yang
+Setiap malam pukul 21:07 WIB, GitHub Actions masuk ke database sebagai `woombad_backup`, sebuah akun yang
 **hanya** bisa menjalankan `export_backup()` (tidak bisa membaca tabel lain atau mengubah apa pun). Hasilnya dalam format
 yang sama dengan *Unduh cadangan lengkap*, dikompres, lalu **dienkripsi** dengan kunci publik `age` pemilik, dan
-disimpan sebagai *artifact* selama 90 hari (kira-kira 13 salinan terakhir). Repo ini publik, tetapi tanpa kunci rahasia
-pemilik berkas itu tidak bisa dibuka.
+disimpan di dua tempat: sebagai *artifact* selama 90 hari, dan sebagai berkas `cadangan/<tahun>/woombad-cadangan-<tanggal>.json.gz.age`
+di branch **`backups`** repo ini, yang disimpan git selamanya (satu berkas per malam, puluhan KB). Repo ini publik, tetapi tanpa
+kunci rahasia pemilik berkas itu tidak bisa dibuka. Catatan jujur: ini cadangan **harian**, jadi yang terhapus hari ini baru
+hilang dari cadangan bila belum dipulihkan sebelum pukul 21:07; perubahan di hari yang sama masih ada di
+**Pengaturan → Riwayat perubahan** (setiap penghapusan menyimpan isi barisnya).
 
 | Siapa | Apa |
 |---|---|
@@ -213,7 +216,8 @@ pemilik berkas itu tidak bisa dibuka.
 | Pemilik (sekali) | Repo → **Settings → Secrets and variables → Actions → New repository secret**: nama `BACKUP_DB_PASSWORD`, isi kata sandi dari operator. |
 | Operator | Kata sandi akun cadangan bisa diganti kapan saja: `alter role woombad_backup password '…';` lalu perbarui rahasianya. |
 
-Memulihkan (operator): buka **Actions → Weekly encrypted backup →** run yang diinginkan → unduh artifact, lalu
+Memulihkan (operator): ambil berkas dari branch `backups` (repo → ganti branch ke **backups** → `cadangan/<tahun>/`), atau dari
+**Actions → Daily encrypted backup →** run yang diinginkan → unduh artifact, lalu
 
 ```
 age -d -i kunci-rahasia.txt woombad-cadangan-YYYY-MM-DD.json.gz.age | gunzip > cadangan.json
