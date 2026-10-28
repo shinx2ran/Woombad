@@ -6,7 +6,7 @@ import { useTable } from '../../hooks/useTable'
 import { formatDateTime } from '../../lib/format'
 import type { AuditAction, AuditLogEntry } from '../../types/db'
 import { actorLabel, memberEmails, relativeTime, summarizeAuditEntry, type RefResolver } from './audit/auditSummary'
-import { restoreState, type RestorableTable, type RestoreState } from './audit/restore'
+import { PROPERTY_PARTIAL_NOTE, restoreState, type RestorableTable, type RestoreState } from './audit/restore'
 import { useRestoreDeleted } from './audit/useRestoreDeleted'
 
 // ---------------------------------------------------------------- Change history (SPEC 6.3, owner/admin)
@@ -81,8 +81,8 @@ function OnlineAuditCard() {
     if (!restoring?.old_data) return
     setRestoreBusy(true)
     try {
-      const { fileDropped } = await restore(restoring.table_name as RestorableTable, restoring.old_data)
-      toast.success(`${restoringSummary?.tableLabel ?? 'Data'} dipulihkan.${fileDropped ? ' Fotonya tidak ikut kembali.' : ''}`)
+      const { fileDropped, note } = await restore(restoring.table_name as RestorableTable, restoring.old_data)
+      toast.success(`${restoringSummary?.tableLabel ?? 'Data'} dipulihkan.${fileDropped ? ' Fotonya tidak ikut kembali.' : ''}${note ? ` ${note}` : ''}`)
       setRestoring(null)
       void log.refetch()
     } catch (err) {
@@ -153,8 +153,9 @@ function OnlineAuditCard() {
         title={`Pulihkan ${restoringSummary?.tableLabel.toLowerCase() ?? 'data'}?`}
         message={
           <>
-            {restoringSummary?.subject ? <strong>{restoringSummary.subject}</strong> : 'Data ini'} dikembalikan persis seperti sebelum dihapus, dengan nomor dan
-            tanggal yang sama. Foto (KTP, struk, logo) tidak ikut kembali.
+            {restoringSummary?.subject ? <strong>{restoringSummary.subject}</strong> : 'Data ini'} dikembalikan seperti sebelum dihapus, dengan nomor dan tanggal
+            yang sama. Foto (KTP, struk, logo) tidak ikut kembali.
+            {restoring?.table_name === 'properties' ? ` ${PROPERTY_PARTIAL_NOTE}` : ''}
           </>
         }
       />

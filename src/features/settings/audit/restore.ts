@@ -6,7 +6,9 @@
  */
 import type { AuditLogEntry, OrgInsert, OrgTableName } from '../../../types/db'
 
-export const RESTORABLE_TABLES = ['tenants', 'rooms', 'properties', 'addon_catalog', 'payments', 'invoices', 'expenses', 'lease_addons', 'waitlist'] as const
+// Not invoices: deleting one also pulls the lease's end_date back and frees its number for the next invoice, so a plain
+// re-insert would leave the lease shorter than its billing (or collide with the reused number). Re-issue with Tagih.
+export const RESTORABLE_TABLES = ['tenants', 'rooms', 'properties', 'addon_catalog', 'payments', 'expenses', 'lease_addons', 'waitlist'] as const
 export type RestorableTable = (typeof RESTORABLE_TABLES)[number]
 
 export function isRestorableTable(table: string): table is RestorableTable {
@@ -23,7 +25,6 @@ export const RESTORE_INVALIDATES: Record<RestorableTable, OrgTableName[]> = {
   properties: ['properties', 'rooms'],
   addon_catalog: ['addon_catalog'],
   payments: ['payments', 'invoices'],
-  invoices: ['invoices', 'payments', 'leases'],
   expenses: ['expenses'],
   lease_addons: ['lease_addons', 'leases'],
   waitlist: ['waitlist'],
@@ -31,9 +32,15 @@ export const RESTORE_INVALIDATES: Record<RestorableTable, OrgTableName[]> = {
 
 export const ALREADY_RESTORED_MESSAGE = 'Data ini sudah ada kembali (sudah dipulihkan).'
 export const REFERENCE_GONE_MESSAGE = 'Data yang dirujuk sudah tidak ada (sewa, tagihan, kamar, atau kos). Pulihkan itu dulu.'
+export const INVOICE_VOID_MESSAGE = 'Tagihan pembayaran ini sudah dibatalkan, jadi pembayarannya tidak bisa dikembalikan ke tagihan itu.'
+/** deleting a kos also removed its add-on catalogue and unlinked its tenants, expenses and waiting list (cascade / set null) */
+export const PROPERTY_PARTIAL_NOTE = 'Add-on katalog kos ini dan tautan penyewa, pengeluaran, dan daftar tunggu ke kos ini tidak ikut kembali; add-on bisa dipulihkan satu per satu di Riwayat perubahan.'
 
-/** The insert payload for a deleted row: its old id and values, minus what the server fills in, minus a lost file. */
-export function restorePayload<T extends RestorableTable>(table: T, row: object): { payload: OrgInsert<T>; fileDropped: boolean } {
+/**
+ * The insert payload for a deleted row: its old id and values, minus what the server fills in, minus a lost file
+ * (`keepFile`: the file is still in storage, e.g. a receipt shared by the other rows of a split expense).
+ */
+export function restorePayload<T extends RestorableTable>(table: T, row: object, opts: { keepFile?: boolean } = {}): { payload: OrgInsert<T>; fileDropped: boolean } {
   const copy: Record<string, unknown> = { ...(row as Record<string, unknown>) }
   delete copy.org_id
   delete copy.created_at
@@ -41,7 +48,7 @@ export function restorePayload<T extends RestorableTable>(table: T, row: object)
   delete copy.created_by
   let fileDropped = false
   const fileColumn = FILE_COLUMN[table]
-  if (fileColumn && copy[fileColumn]) {
+  if (fileColumn && copy[fileColumn] && !opts.keepFile) {
     copy[fileColumn] = null
     fileDropped = true
   }

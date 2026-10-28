@@ -28,6 +28,8 @@ describe('restorePayload', () => {
     expect(restorePayload('expenses', { id: 'E1', receipt_path: 'r.jpg' }).payload).toMatchObject({ receipt_path: null })
     expect(restorePayload('properties', { id: 'P1', logo_path: 'l.png' }).fileDropped).toBe(true)
     expect(restorePayload('tenants', { id: 'T2', ktp_image_path: null }).fileDropped).toBe(false)
+    // a receipt still used by the other rows of a split expense stays
+    expect(restorePayload('expenses', { id: 'E2', receipt_path: 'r.jpg' }, { keepFile: true })).toEqual({ payload: { id: 'E2', receipt_path: 'r.jpg' }, fileDropped: false })
   })
 })
 
@@ -48,6 +50,7 @@ describe('restoreState', () => {
     expect(restoreState(entry({ old_data: null }), [])).toBe('unsupported')
     expect(restoreState(entry({ table_name: 'organization_members' }), [])).toBe('unsupported')
     expect(restoreState(entry({ table_name: 'leases' }), [])).toBe('unsupported')
+    expect(restoreState(entry({ table_name: 'invoices' }), [])).toBe('unsupported')
     expect(isRestorableTable('payments')).toBe(true)
     expect(isRestorableTable('invitations')).toBe(false)
   })
