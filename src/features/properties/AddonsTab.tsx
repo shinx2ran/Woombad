@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Info, Package, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, LoadingState, useToast } from '../../components/ui'
+import { useRestoreDeleted } from '../settings/audit/useRestoreDeleted'
 import { useInvalidate, useRemove, useTable } from '../../hooks/useTable'
 import { formatRupiah } from '../../lib/format'
 import { ADDON_BILLING_LABEL, type AddonCatalogItem, type Property } from '../../types/db'
@@ -12,6 +13,7 @@ import { AddonFormModal } from './AddonFormModal'
  */
 export function AddonsTab({ property, isAdmin }: { property: Property; isAdmin: boolean }) {
   const toast = useToast()
+  const undo = useRestoreDeleted()
   const catalog = useTable('addon_catalog')
   const remove = useRemove('addon_catalog')
   const invalidate = useInvalidate()
@@ -35,7 +37,7 @@ export function AddonsTab({ property, isAdmin }: { property: Property; isAdmin: 
     if (!deleting) return
     try {
       await remove.mutateAsync(deleting.id)
-      toast.success(`Add-on "${deleting.name}" dihapus dari katalog.`)
+      undo.offerUndo('addon_catalog', deleting, `Add-on "${deleting.name}"`)
       setDeleting(null)
     } catch (err) {
       // refresh: an add-on already deleted on another device then disappears instead of failing on every retry

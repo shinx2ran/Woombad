@@ -20,6 +20,7 @@ import {
 } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate, useRemove, useRow, useTable } from '../../hooks/useTable'
+import { useRestoreDeleted } from '../settings/audit/useRestoreDeleted'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import { GENDER_LABEL, PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, type Lease, type Payment } from '../../types/db'
 import { TenantFormModal } from './TenantFormModal'
@@ -46,6 +47,7 @@ export function TenantDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const toast = useToast()
+  const undo = useRestoreDeleted()
   const { properties, role, repo } = useOrg()
   const tenant = useRow('tenants', id)
   const leases = useTable('leases')
@@ -118,7 +120,7 @@ export function TenantDetailPage() {
         }
       }
       if (photoKept) toast.error(`Penyewa ${t.full_name} dihapus, tetapi foto dokumen gagal dihapus dari penyimpanan.`)
-      else toast.success(`Penyewa ${t.full_name} dihapus.`)
+      else undo.offerUndo('tenants', t, `Penyewa ${t.full_name}`)
       navigate('/penyewa', { replace: true })
     } catch (err) {
       // refresh: a tenant already deleted on another device then shows as not found instead of failing again

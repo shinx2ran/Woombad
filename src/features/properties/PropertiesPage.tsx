@@ -14,6 +14,7 @@ import {
 } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { useRemove, useTable } from '../../hooks/useTable'
+import { useRestoreDeleted } from '../settings/audit/useRestoreDeleted'
 import { roomOccupancyByProperty, type OccupancySnapshot } from '../../domain/occupancy'
 import { todayISO } from '../../lib/format'
 import type { Property } from '../../types/db'
@@ -23,6 +24,7 @@ import { PropertyFormModal } from './PropertyFormModal'
 export function PropertiesPage() {
   const { properties, role, propertyFilterIds, selectedPropertyId, refreshProperties, repo } = useOrg()
   const toast = useToast()
+  const undo = useRestoreDeleted()
   const isAdmin = role === 'owner' || role === 'admin'
   const rooms = useTable('rooms')
   const leases = useTable('leases')
@@ -52,7 +54,7 @@ export function PropertiesPage() {
         await repo.removeFile('logos', deleting.logo_path).catch(() => toast.error('Logo kos gagal dihapus dari penyimpanan.'))
       }
       await refreshProperties()
-      toast.success(`Kos "${deleting.name}" dihapus.`)
+      undo.offerUndo('properties', deleting, `Kos "${deleting.name}"`, refreshProperties)
       setDeleting(null)
     } catch (err) {
       // refresh: a kos already deleted on another device then disappears instead of failing on every retry

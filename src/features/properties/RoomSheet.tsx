@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { AlertTriangle, Copy, ExternalLink, KeyRound, Pencil, Trash2, Wrench } from 'lucide-react'
 import { Button, ConfirmDialog, Modal, useToast } from '../../components/ui'
+import { useRestoreDeleted } from '../settings/audit/useRestoreDeleted'
 import { useInvalidate, useRemove, useUpdate } from '../../hooks/useTable'
 import { formatDate, formatRupiah } from '../../lib/format'
 import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL, type Room } from '../../types/db'
@@ -34,6 +35,7 @@ export function RoomSheet({
   isAdmin: boolean
 }) {
   const toast = useToast()
+  const undo = useRestoreDeleted()
   const navigate = useNavigate()
   const update = useUpdate('rooms')
   const remove = useRemove('rooms')
@@ -66,7 +68,7 @@ export function RoomSheet({
   const doDelete = async () => {
     try {
       await remove.mutateAsync(room.id)
-      toast.success(`Kamar ${room.name} dihapus.`)
+      undo.offerUndo('rooms', room, `Kamar ${room.name}`)
       setConfirmDelete(false)
       onClose()
     } catch (err) {

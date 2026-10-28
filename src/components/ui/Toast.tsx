@@ -3,16 +3,29 @@ import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
 import { clsx } from 'clsx'
 
 type ToastKind = 'success' | 'error' | 'info'
+
+/** An optional button on the toast ("Urungkan" after a delete); the toast closes when it is tapped. */
+export interface ToastAction {
+  label: string
+  onClick: () => void | Promise<void>
+}
+export interface ToastOptions {
+  action?: ToastAction
+  /** how long the toast stays (default 3.5 s, errors 6 s); a toast with an action gets 10 s */
+  durationMs?: number
+}
+
 interface Toast {
   id: number
   kind: ToastKind
   message: string
+  action?: ToastAction
 }
 
 interface ToastContextValue {
-  toast: (message: string, kind?: ToastKind) => void
-  success: (message: string) => void
-  error: (message: string) => void
+  toast: (message: string, kind?: ToastKind, options?: ToastOptions) => void
+  success: (message: string, options?: ToastOptions) => void
+  error: (message: string, options?: ToastOptions) => void
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null)
@@ -24,16 +37,17 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), [])
 
   const toast = useCallback(
-    (message: string, kind: ToastKind = 'info') => {
+    (message: string, kind: ToastKind = 'info', options?: ToastOptions) => {
       const id = ++counter.current
-      setToasts((t) => [...t, { id, kind, message }])
-      window.setTimeout(() => dismiss(id), kind === 'error' ? 6000 : 3500)
+      setToasts((t) => [...t, { id, kind, message, action: options?.action }])
+      const duration = options?.durationMs ?? (options?.action ? 10_000 : kind === 'error' ? 6000 : 3500)
+      window.setTimeout(() => dismiss(id), duration)
     },
     [dismiss],
   )
 
   const value = useMemo<ToastContextValue>(
-    () => ({ toast, success: (m) => toast(m, 'success'), error: (m) => toast(m, 'error') }),
+    () => ({ toast, success: (m, o) => toast(m, 'success', o), error: (m, o) => toast(m, 'error', o) }),
     [toast],
   )
 
@@ -58,6 +72,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             >
               <Icon className="mt-0.5 h-4 w-4 shrink-0" />
               <span className="flex-1">{t.message}</span>
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismiss(t.id)
+                    void t.action!.onClick()
+                  }}
+                  className="shrink-0 rounded px-1.5 py-0.5 font-semibold underline underline-offset-2 hover:bg-black/5"
+                >
+                  {t.action.label}
+                </button>
+              )}
               <button type="button" onClick={() => dismiss(t.id)} className="text-slate-400 hover:text-slate-600" aria-label="Tutup">
                 <X className="h-4 w-4" />
               </button>
