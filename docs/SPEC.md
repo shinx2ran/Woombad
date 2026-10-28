@@ -303,6 +303,19 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - UI: Pengaturan → **Riwayat perubahan** (owner/admin): 100 perubahan terakhir — kapan, siapa (email anggota), apa
   (tabel + aksi + ringkasan kolom yang berubah, mis. "Pembayaran Rp 1.500.000 → Rp 1.000.000"). Mode demo: kartu
   menjelaskan riwayat hanya tersedia di mode online.
+- **Pulihkan** (undo hapus, `src/features/settings/audit/restore.ts`, `useRestoreDeleted`): baris yang dihapus tersimpan utuh
+  di `old_data`; memulihkan = `repo.insert` baris itu lagi dengan id lama (tanpa `org_id/created_at/updated_at/created_by`),
+  lewat RLS, trigger dan cek FK yang sama seperti insert biasa; riwayat mencatatnya sebagai *insert*. Tabel yang didukung:
+  tenants, rooms, properties, addon_catalog, payments, expenses, lease_addons, waitlist. **Bukan invoices**: hapus tagihan juga
+  menarik `end_date` sewa dan nomornya dipakai tagihan berikutnya, jadi tagihan dibuat ulang lewat Tagih. Pembayaran sewa tidak
+  dikembalikan ke tagihan yang sudah dibatalkan. Struk pengeluaran split yang masih dipakai baris lain tetap dipertahankan.
+  Kos yang dipulihkan tidak membawa kembali add-on katalognya (cascade) maupun tautan penyewa/pengeluaran/daftar tunggu (set
+  null); pesan sukses menyebutkannya. Entri delete menampilkan
+  tombol **Pulihkan** (dialog konfirmasi), atau lencana **Dipulihkan** bila ada insert baris yang sama sesudahnya. Baris yang
+  sudah ada kembali → "sudah dipulihkan"; rujukan yang ikut hilang (FK) → "pulihkan itu dulu". Berkas (foto KTP, struk,
+  logo) sudah dihapus dari storage dan tidak kembali: kolom path dikosongkan dan pengguna diberi tahu.
+- **Urungkan** segera setelah hapus (kedua mode): toast "… dihapus." membawa tombol **Urungkan** selama 10 detik
+  (`ToastOptions.action`) di hapus kamar, penyewa, kos, add-on, dan pengeluaran; jalurnya sama (`offerUndo`).
 
 ### 6.3a Satu berkas skema
 - Belum ada database online, jadi **tidak ada migrasi 0003**: `supabase/schema.sql` adalah versi lengkap dan harus

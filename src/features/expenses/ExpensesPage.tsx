@@ -19,6 +19,7 @@ import {
   type Column,
 } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
+import { useRestoreDeleted } from '../settings/audit/useRestoreDeleted'
 import { useInvalidate, useTable } from '../../hooks/useTable'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
 import { comparableRanges, inRange, rangeForPreset, shiftRange, type DateRange } from '../../domain/period'
@@ -103,6 +104,7 @@ export function ExpensesPage() {
   const { role, repo, properties, selectedPropertyId, propertyFilterIds, financePropertyIds } = useOrg()
   const invalidate = useInvalidate()
   const toast = useToast()
+  const undo = useRestoreDeleted()
   const [searchParams, setSearchParams] = useSearchParams()
   // SPEC 6.2: staff record expenses but never edit or delete them (admin-only policies), so a denied write is
   // never attempted; the server still refuses it if the UI is bypassed.
@@ -196,7 +198,7 @@ export function ExpensesPage() {
       }
       await invalidate('expenses')
       if (fileWarning) toast.error('Pengeluaran dihapus, tetapi foto struk gagal dihapus dari penyimpanan.')
-      else toast.success('Pengeluaran dihapus.')
+      else undo.offerUndo('expenses', deleting, 'Pengeluaran')
       setDeleting(null)
       setSheet(null)
     } catch (err) {
