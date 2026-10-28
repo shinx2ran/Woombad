@@ -276,8 +276,9 @@ hanya menampilkan tanggal mulainya, "belum menginap"; bila penyewa sudah mengina
 bayar/perpanjang), biru "Terisi" bila masih aman, hijau "Kosong". Di bawah nomor kamar tertulis nama penyewanya (nama depan, tanpa sapaan seperti
 "Pak"/"Kak": "Pak Budi Santoso" → **Budi**). Ketuk kamar merah atau oranye untuk **Kirim pengingat WhatsApp** (pesan tagihan sudah terisi, tinggal tekan kirim). Ketuk kamar
 terisi untuk **Bayar**, **Perpanjang**, atau **Check-out** (membuka dialog
-yang sama seperti di halaman sewa). Ketuk kamar kosong untuk **Check-in cepat** tamu harian: isi nama, jumlah malam, dan total
-bayar; nomor HP boleh diisi nanti.
+yang sama seperti di halaman sewa). Ketuk kamar kosong untuk **Check-in cepat**: pilih **Harian / Mingguan / Bulanan / Tahunan**,
+isi nama, lamanya, dan total (terisi otomatis dari tarif kamar); lunas, DP, atau belum bayar; untuk bulanan/tahunan bisa isi
+**uang jaminan**, dan tahunan bisa diberi **bonus bulan gratis** (bayar 12, dapat 13). Nomor HP boleh diisi nanti.
 
 ### Rencana check-in & daftar tunggu
 

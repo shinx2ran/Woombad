@@ -411,11 +411,15 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   (jaminan, tagihan setelah checkout, peran staf) tetap dari dialog itu. Kamar Telat / jatuh tempo ≤ 7 hari juga mendapat tombol hijau
   **Kirim pengingat WhatsApp** (`wa.me` dengan teks `leaseReminderText`, sama dengan "Pengingat WhatsApp" di daftar sewa); tanpa HP
   penyewa, papan meminta HP diisi dulu.
-- **Check-in cepat** kamar kosong (`quickCheckIn.ts`): harian saja; nama (HP boleh kosong, "HP belum diisi" diingatkan di papan),
-  jumlah malam, total bayar (bawaan tarif harian × malam). Harga per malam = total ÷ malam dibulatkan; bila tidak pas, `baseAmount` =
-  total. Menulis baris yang sama dengan wizard Sewa baru (penyewa → sewa → `insertFromDraft` → pembayaran → status tagihan), tanpa
-  deposit/add-on (pakai Form lengkap). Nama yang sama dengan penyewa lama ditawarkan supaya data tidak dobel. Ketersediaan kamar dicek
-  dengan `roomAvailability`.
+- **Check-in cepat** kamar kosong (`quickCheckIn.ts`, `QuickCheckInModal`): **Harian / Mingguan / Bulanan / Tahunan** (tahunan =
+  bulanan × 12, dengan **bonus bulan gratis** opsional: "bayar 12 bulan, bonus 1" → sewa & tagihan 13 bulan, tagihan 13 × harga
+  dikurangi diskon 1 × harga, catatan tagihan "bonus 1 bulan", harga kontrak tetap); nama (HP boleh kosong, "HP belum diisi"
+  diingatkan di papan), jumlah periode, total (bawaan tarif kamar × jumlah). Harga per periode = total ÷ jumlah dibayar, dibulatkan;
+  bila tidak pas, `baseAmount` = total + diskon. Bayar: lunas (bawaan), **DP**, atau belum; bulanan/tahunan juga **uang jaminan**
+  (`leases.deposit_amount`, pembayaran `kind: 'deposit'` "Uang jaminan" bila sudah diterima, metode sama). Disimpan lewat
+  `useRencanaActions.bookStay` (cek kamar segar lalu `saveStayBooking`: penyewa → sewa → `insertFromDraft` → pembayaran → status
+  tagihan → pembayaran deposit); kamar ditahan untuk bulan bonus juga. Add-on tetap lewat Form lengkap. Nama yang sama dengan
+  penyewa lama ditawarkan supaya data tidak dobel. Ketersediaan kamar dicek dengan `roomAvailability` (`validateStayBooking`).
 
 ### 7.5 Ubah pembayaran & tagihan, dengan riwayat
 - **Ubah pembayaran** (owner/admin; RLS `payments` update hanya admin): tombol ✏️ di samping 🗑️ pada daftar Pembayaran di detail
