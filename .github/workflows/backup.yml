@@ -1,19 +1,20 @@
-name: Weekly encrypted backup
+name: Daily encrypted backup
 
-# Every Sunday night: export the whole database (public.export_backup(), the same format as
-# Pengaturan -> Data -> Unduh cadangan lengkap), compress it, encrypt it to the owner's age key and keep it
-# as a workflow artifact for 90 days. Only the holder of the private age key (kept by the owner, never on
-# GitHub) can open it, so the artifact is safe in a public repository.
+# Every night: export the whole database (public.export_backup(), the same format as
+# Pengaturan -> Data -> Unduh cadangan lengkap), compress it, encrypt it to the owner's age key and keep two
+# copies: a workflow artifact for 90 days, and a file in the `backups` branch of this repository, which git
+# keeps for good. Only the holder of the private age key (kept by the owner, never on GitHub) can open either,
+# so both are safe in a public repository.
 # It signs in as woombad_backup, a database login that can run export_backup() and nothing else.
 # Needs the repository secret BACKUP_DB_PASSWORD (README -> Cadangan otomatis).
 
 on:
   schedule:
-    - cron: '7 14 * * 0' # Sunday 21:07 WIB
+    - cron: '7 14 * * *' # 21:07 WIB every day
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # the `backups` branch only
 
 concurrency:
   group: backup
@@ -79,3 +80,29 @@ jobs:
           path: ${{ steps.export.outputs.name }}.json.gz.age
           retention-days: 90
           if-no-files-found: error
+      - name: Keep a copy in the backups branch (git history, never expires)
+        env:
+          FILE: ${{ steps.export.outputs.name }}.json.gz.age
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git clone -q --depth 1 --branch backups "$remote" backups 2>/dev/null; then
+            cd backups
+          else
+            # first run: an empty branch of its own, so master and the deploy stay untouched
+            mkdir backups && cd backups
+            git init -q -b backups
+            git remote add origin "$remote"
+            printf '# Cadangan terenkripsi Woombad\n\nSatu berkas per malam di `cadangan/<tahun>/`, dienkripsi dengan kunci publik age pemilik.\nCara membuka: README utama, bagian "Cadangan otomatis".\n' > README.md
+          fi
+          git config user.name 'woombad-backup'
+          git config user.email 'woombad-backup@users.noreply.github.com'
+          dir="cadangan/$(date -u +%Y)"
+          mkdir -p "$dir"
+          cp "../$FILE" "$dir/"
+          git add -A
+          if git diff --cached --quiet; then echo "Nothing new to commit"; exit 0; fi
+          git commit -q -m "Cadangan $(date -u +%Y-%m-%d)"
+          git push -q origin HEAD:backups
+          echo "Saved $dir/$FILE to the backups branch"
