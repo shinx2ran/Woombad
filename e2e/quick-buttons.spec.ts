@@ -84,6 +84,44 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     await expect(page.getByRole('dialog').getByRole('heading', { name: 'Checkout penyewa' })).toBeVisible()
   })
 
+  test('check-in cepat tahunan: 12 months paid + 1 bonus, Rp 18 jt, deposit 1 jt -> a 13-month paid lease', async ({ page }) => {
+    const vacant = tiles(page).and(page.locator('[data-tone="vacant"]')).first()
+    const roomName = (await vacant.getAttribute('data-room'))!
+    await vacant.click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Check-in cepat' }).click()
+    const form = page.getByRole('dialog')
+    await form.getByLabel('Nama penyewa').fill('Rina Setahun')
+    await form.getByRole('radio', { name: 'Tahunan' }).click()
+    await expect(form.getByLabel('Jumlah bulan dibayar')).toHaveValue('12')
+    const bonus = form.getByLabel('Bonus bulan gratis')
+    await bonus.click()
+    await page.keyboard.type('1')
+    await form.getByLabel('Total bayar').fill('18000000')
+    await expect(form.getByText('= Rp 1.500.000 / bulan')).toBeVisible()
+    await form.getByLabel('Uang jaminan (deposit)').fill('1000000')
+    await expect(form.getByRole('checkbox', { name: 'Deposit sudah diterima' })).toBeChecked()
+    // tapping the already selected kind again keeps what was typed
+    await form.getByRole('radio', { name: 'Tahunan' }).click()
+    await expect(form.getByLabel('Bonus bulan gratis')).toHaveValue('1')
+    await expect(form.getByLabel('Total bayar')).toHaveValue(/18\.000\.000/)
+    const summary = form.getByTestId('quick-checkin-summary')
+    await expect(summary).toContainText('13 bulan (12 dibayar + 1 bonus)')
+    await expect(summary).toContainText('Check-out 11 Nov 2027')
+    await expect(summary).toContainText('Lunas Rp 18.000.000')
+    await expect(summary).toContainText('Deposit Rp 1.000.000 diterima')
+
+    await form.getByRole('button', { name: 'Simpan check-in' }).click()
+    await page.waitForURL(/\/sewa\/[^/]+$/)
+    await expect(page.getByRole('heading', { name: `Kamar ${roomName}` })).toBeVisible()
+    // the phone layout: the desktop table is in the DOM but hidden, so pick the visible copy of each text
+    const shown = (text: string | RegExp) => page.getByText(text).locator('visible=true').first()
+    await expect(shown(/13 bulan/)).toBeVisible()
+    await expect(shown('Rp 18.000.000')).toBeVisible()
+    await expect(page.getByText('Lunas', { exact: true }).locator('visible=true').first()).toBeVisible()
+    await expect(shown('Uang jaminan')).toBeVisible()
+    await expect(shown('Rp 1.000.000')).toBeVisible()
+  })
+
   test('a room with rent owed opens the existing payment dialog', async ({ page }) => {
     // past due: a solid red tile captioned Telat
     const owing = tiles(page).and(page.locator('[data-tone="overdue"]')).first()

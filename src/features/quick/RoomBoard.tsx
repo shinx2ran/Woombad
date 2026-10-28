@@ -211,7 +211,17 @@ function RoomActionSheet({
             </>
           )}
           {tone === 'reserved' && lease && <p>Mulai {formatDate(lease.start_date)}</p>}
-          {tone === 'vacant' && <p>{room.price_daily ? `Tarif harian ${formatRupiah(room.price_daily)} / malam` : 'Belum ada tarif harian.'}</p>}
+          {tone === 'vacant' && (
+            <p>
+              {[
+                room.price_daily ? `harian ${formatRupiah(room.price_daily)}` : null,
+                room.price_weekly ? `mingguan ${formatRupiah(room.price_weekly)}` : null,
+                room.price_monthly ? `bulanan ${formatRupiah(room.price_monthly)}` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || 'Belum ada tarif.'}
+            </p>
+          )}
           {tone === 'maintenance' && !lease && <p>Kamar sedang perbaikan.</p>}
         </div>
 

@@ -42,12 +42,17 @@ export interface BookStayInput {
   waitlistId?: string | null
   /** the device's today (tests pin it) */
   today?: string
+  /** free periods on top of `quantity` (Check-in cepat tahunan: "bonus 1 bulan") */
+  bonusQuantity?: number
+  /** uang jaminan agreed; paidNow records it as received with `method` */
+  deposit?: { amount: number; paidNow: boolean } | null
 }
 
 export interface BookStayResult {
   lease: Lease
   invoice: Invoice
   payment: Payment | null
+  depositPayment: Payment | null
   /** the booking is saved but the daftar tunggu entry could not be marked (shown as a warning) */
   waitlistError: string | null
 }
@@ -74,7 +79,9 @@ export function useRencanaActions() {
 
     async function bookStay(input: BookStayInput): Promise<BookStayResult> {
       const today = input.today ?? todayISO()
-      const stay = plannedStay(input.startDate, input.periodType, input.quantity)
+      // the room is held for the paid and the bonus periods
+      const periods = input.quantity + (input.bonusQuantity ?? 0)
+      const stay = plannedStay(input.startDate, input.periodType, periods)
       if (!stay) throw new Error('Isi tanggal check-in dan jumlahnya.')
       try {
         // the daftar tunggu entry as stored now: another phone may have booked (or cancelled) this person meanwhile, in
@@ -87,7 +94,7 @@ export function useRencanaActions() {
         const room = await repo.get('rooms', input.room.id)
         if (!room) throw new Error('Kamar tidak ditemukan. Muat ulang lalu coba lagi.')
         if (room.status === 'maintenance') throw new Error(`Kamar ${room.name} sedang perbaikan.`)
-        const taken = await freshConflict(room, input.startDate, input.periodType, input.quantity, today)
+        const taken = await freshConflict(room, input.startDate, input.periodType, periods, today)
         if (taken) throw new Error(taken)
         let saved: Awaited<ReturnType<typeof saveStayBooking>>
         try {
@@ -104,13 +111,15 @@ export function useRencanaActions() {
               name: input.name,
               phone: input.phone,
               notes: input.notes,
+              bonusQuantity: input.bonusQuantity ?? 0,
+              deposit: input.deposit ?? null,
             },
             { repo, insertFromDraft: actions.insertFromDraft, canWriteInvoiceStatus: actions.canWriteInvoiceStatus, orgInvoices: input.orgInvoices, todayISO: today },
           )
         } catch (err) {
           // the database guard refused in the last moment (two phones at once): name the booking that won
           if (err instanceof QuickCheckInError && !err.lease && err.message === LEASE_OVERLAP_MESSAGE) {
-            const named = await freshConflict(room, input.startDate, input.periodType, input.quantity, today).catch(() => null)
+            const named = await freshConflict(room, input.startDate, input.periodType, periods, today).catch(() => null)
             throw new QuickCheckInError(named ?? err.message, err.createdTenant, null)
           }
           throw err
@@ -123,7 +132,7 @@ export function useRencanaActions() {
             waitlistError = err instanceof Error ? err.message : 'Daftar tunggu gagal diperbarui.'
           }
         }
-        return { lease: saved.lease, invoice: saved.invoice, payment: saved.payment, waitlistError }
+        return { lease: saved.lease, invoice: saved.invoice, payment: saved.payment, depositPayment: saved.depositPayment, waitlistError }
       } finally {
         // also after a refusal, so the planner shows the room as it is now
         await invalidate('leases', 'invoices', 'payments', 'tenants', 'waitlist')

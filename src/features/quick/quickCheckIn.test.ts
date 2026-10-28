@@ -6,14 +6,20 @@ import type { Lease, Room, Tenant } from '../../types/db'
 import { invoiceInsertFromDraft } from '../leases/leaseUtils'
 import {
   perNightText,
+  perPeriodText,
   planQuickCheckIn,
+  planStayBooking,
+  quantityText,
   QuickCheckInError,
   resolveTenantChoice,
   saveQuickCheckIn,
+  saveStayBooking,
   tenantsNamed,
   validateQuickCheckIn,
+  validateStayBooking,
   type QuickCheckInDeps,
   type QuickCheckInInput,
+  type StayBookingInput,
 } from './quickCheckIn'
 
 const TODAY = '2026-10-15'
@@ -164,5 +170,109 @@ describe('saveQuickCheckIn: the same rows as the Sewa baru wizard', () => {
     expect(qe.message).toBe('Nomor tagihan sudah dipakai')
     expect(qe.createdTenant?.full_name).toBe('Taufik Kusnadi')
     expect(qe.lease?.room_id).toBe('R4')
+  })
+})
+
+const MONTHLY_ROOM: Room = { ...ROOM, id: 'R13', name: 'A13', price_weekly: 850_000, price_monthly: 1_600_000 }
+const yearly: StayBookingInput = {
+  room: MONTHLY_ROOM,
+  periodType: 'monthly',
+  startDate: '2026-06-04',
+  quantity: 12,
+  total: 19_200_000,
+  paidAmount: 19_200_000,
+  method: 'transfer',
+  tenantId: null,
+  name: 'Kelvin',
+  phone: '',
+  notes: null,
+  bonusQuantity: 1,
+  deposit: { amount: 1_000_000, paidNow: true },
+}
+
+describe('planStayBooking with bonus periods (Check-in cepat tahunan)', () => {
+  it('12 months paid + 1 bonus from 4 Jun 2026: the stay covers 13 months, the invoice discounts one at the monthly price', () => {
+    const plan = planStayBooking('2026-06-04', 'monthly', 12, 19_200_000, 1)!
+    expect(plan).toMatchObject({ end: '2027-07-03', pricePerPeriod: 1_600_000, quantityTotal: 13, discountAmount: 1_600_000, baseAmount: undefined })
+    expect(perPeriodText(plan, 19_200_000, 'monthly')).toBe('= Rp 1.600.000 / bulan')
+    expect(quantityText(12, 1, 'monthly')).toBe('13 bulan (12 dibayar + 1 bonus)')
+    expect(quantityText(2, 0, 'daily')).toBe('2 malam')
+  })
+
+  it('an uneven total keeps the agreed total: base = total + discount', () => {
+    const plan = planStayBooking('2026-06-04', 'monthly', 12, 19_000_000, 1)!
+    expect(plan.pricePerPeriod).toBe(1_583_333)
+    expect(plan.discountAmount).toBe(1_583_333)
+    expect(plan.baseAmount).toBe(19_000_000 + 1_583_333)
+  })
+
+  it('no bonus is the old plan; a negative bonus is no plan', () => {
+    expect(planStayBooking('2026-10-15', 'weekly', 2, 1_700_000)).toMatchObject({ end: '2026-10-28', pricePerPeriod: 850_000, quantityTotal: 2, discountAmount: 0 })
+    expect(planStayBooking('2026-10-15', 'monthly', 12, 1, -1)).toBeNull()
+  })
+})
+
+describe('validateStayBooking', () => {
+  it('checks the money fields: DP within the total, no negative deposit or bonus', () => {
+    expect(validateStayBooking({ ...yearly, paidAmount: 20_000_000 }, []).paid).toBe('Tidak boleh lebih dari total (Rp 19.200.000).')
+    expect(validateStayBooking({ ...yearly, paidAmount: -1 }, []).paid).toBe('Tidak boleh negatif.')
+    expect(validateStayBooking({ ...yearly, deposit: { amount: -5, paidNow: true } }, []).deposit).toBe('Tidak boleh negatif.')
+    expect(validateStayBooking({ ...yearly, bonusQuantity: -1 }, []).bonus).toBe('Tidak boleh negatif.')
+    expect(validateStayBooking({ ...yearly, quantity: 0 }, []).quantity).toBe('Minimal 1 bulan.')
+    expect(validateStayBooking(yearly, [])).toEqual({})
+  })
+
+  it('refuses a room taken on the check-in day, naming the room', () => {
+    const taken: Lease = { id: 'L9', ...ts, property_id: 'P1', room_id: 'R13', tenant_id: 'T9', period_type: 'monthly', price_per_period: 1_600_000, deposit_amount: 0, start_date: '2026-05-10', end_date: '2026-06-09', status: 'active', checkout_date: null, notes: null, planned_checkout_date: null }
+    expect(validateStayBooking(yearly, [taken]).room).toBe('Kamar A13 terisi pada tanggal ini.')
+    // an active lease past its end keeps the room until its checkout is recorded (SPEC 7.4); once it is, the room is free
+    expect(validateStayBooking({ ...yearly, startDate: '2026-06-11' }, [taken]).room).toBe('Kamar A13 terisi pada tanggal ini.')
+    expect(validateStayBooking({ ...yearly, startDate: '2026-06-11' }, [{ ...taken, status: 'ended', checkout_date: '2026-06-10' }])).toEqual({})
+  })
+})
+
+describe('saveStayBooking: a year with a bonus month and a deposit, as the owner books A13', () => {
+  let repo: OrgRepo
+  let deps: QuickCheckInDeps
+
+  beforeEach(() => {
+    repo = bindOrg(new LocalRepo(emptyLocalDb()), 'org-1')
+    deps = {
+      repo,
+      insertFromDraft: async (input: InvoiceDraftInput, notes: string | null) => {
+        const draft = buildInvoiceDraft(input)
+        const invoice = await repo.insert('invoices', invoiceInsertFromDraft(input.lease, draft, notes))
+        return { invoice, draft }
+      },
+      canWriteInvoiceStatus: true,
+      orgInvoices: [],
+      todayISO: '2026-06-04',
+    }
+  })
+
+  it('lease 13 months at Rp 1.600.000 with a Rp 1.000.000 deposit; invoice 13 x 1.6M minus 1.6M = 19.2M, paid; deposit received', async () => {
+    const { lease, invoice, payment, depositPayment } = await saveStayBooking(yearly, deps)
+    expect(lease).toMatchObject({ room_id: 'R13', period_type: 'monthly', price_per_period: 1_600_000, deposit_amount: 1_000_000, start_date: '2026-06-04', end_date: '2027-07-03', status: 'active' })
+    expect(invoice).toMatchObject({ quantity: 13, base_amount: 20_800_000, discount_amount: 1_600_000, total_amount: 19_200_000, period_start: '2026-06-04', period_end: '2027-07-03', notes: 'bonus 1 bulan' })
+    expect(payment).toMatchObject({ invoice_id: invoice.id, amount: 19_200_000, kind: 'rent', method: 'transfer', notes: null })
+    expect(depositPayment).toMatchObject({ invoice_id: null, lease_id: lease.id, amount: 1_000_000, kind: 'deposit', method: 'transfer', notes: 'Uang jaminan' })
+    expect((await repo.list('invoices'))[0].status).toBe('paid')
+    expect(await repo.list('payments')).toHaveLength(2)
+  })
+
+  it('a DP on a monthly stay without deposit: partial invoice, the DP payment is marked, no deposit row', async () => {
+    const { invoice, payment, depositPayment } = await saveStayBooking({ ...yearly, quantity: 1, bonusQuantity: 0, total: 1_600_000, paidAmount: 500_000, deposit: null }, deps)
+    expect(invoice).toMatchObject({ quantity: 1, discount_amount: 0, total_amount: 1_600_000 })
+    expect(payment).toMatchObject({ amount: 500_000, notes: 'DP' })
+    expect(depositPayment).toBeNull()
+    expect((await repo.list('invoices'))[0].status).toBe('partial')
+    expect((await repo.list('leases'))[0].deposit_amount).toBe(0)
+  })
+
+  it('an agreed deposit not yet received: on the lease, no payment', async () => {
+    const { lease, depositPayment } = await saveStayBooking({ ...yearly, deposit: { amount: 1_000_000, paidNow: false } }, deps)
+    expect(lease.deposit_amount).toBe(1_000_000)
+    expect(depositPayment).toBeNull()
+    expect((await repo.list('payments')).map((p) => p.kind)).toEqual(['rent'])
   })
 })

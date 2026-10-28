@@ -1,36 +1,39 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { clsx } from 'clsx'
 import { AlertTriangle } from 'lucide-react'
 import { Button, CountInput, Input, LoadingState, Modal, MoneyInput, Select, useToast } from '../../components/ui'
-import { useOrg } from '../../hooks/useOrg'
-import { useInvalidate } from '../../hooks/useTable'
 import { formatCheckout, formatRupiah, formatStay, todayISO } from '../../lib/format'
-import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type PaymentMethod, type Room } from '../../types/db'
-import { useLeaseActions } from '../leases/useLeaseActions'
-import {
-  perNightText,
-  planQuickCheckIn,
-  QuickCheckInError,
-  resolveTenantChoice,
-  saveQuickCheckIn,
-  tenantsNamed,
-  validateQuickCheckIn,
-  type QuickCheckInInput,
-} from './quickCheckIn'
+import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_UNIT_LABEL, type PaymentMethod, type PeriodType, type Room } from '../../types/db'
+import { useRencanaActions } from '../rencana/useRencanaActions'
+import { perPeriodText, planStayBooking, QuickCheckInError, quantityText, resolveTenantChoice, tenantsNamed, validateStayBooking, type StayBookingInput } from './quickCheckIn'
 import { useBoardData } from './useBoardData'
 
 const CASH_METHODS = PAYMENT_METHODS.filter((m) => m !== 'deposit').map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))
 const NEW_TENANT = 'baru'
 
+/** What the owner picks: the lease's period type, with a year as 12 months (SPEC 7.4). */
+type StayKind = PeriodType | 'yearly'
+const STAY_KINDS: { kind: StayKind; label: string }[] = [
+  { kind: 'daily', label: 'Harian' },
+  { kind: 'weekly', label: 'Mingguan' },
+  { kind: 'monthly', label: 'Bulanan' },
+  { kind: 'yearly', label: 'Tahunan' },
+]
+const periodTypeOf = (kind: StayKind): PeriodType => (kind === 'yearly' ? 'monthly' : kind)
+const defaultQuantity = (kind: StayKind) => (kind === 'yearly' ? 12 : 1)
+const QUANTITY_LABEL: Record<StayKind, string> = { daily: 'Jumlah malam', weekly: 'Jumlah minggu', monthly: 'Jumlah bulan', yearly: 'Jumlah bulan dibayar' }
+const rateOf = (room: Room, kind: StayKind) => (kind === 'daily' ? room.price_daily : kind === 'weekly' ? room.price_weekly : room.price_monthly)
+
 /**
- * Check-in cepat for an empty room (SPEC 7.4): name, nights and the total paid; the rest follows from the room
- * (daily rate, today, paid in full). Weekly / monthly stays, deposits and add-ons use the full Sewa baru form.
+ * Check-in cepat for an empty room (SPEC 7.4): name, how long (nights / weeks / months, or a year = 12 months with
+ * optional bonus months) and the total; paid in full, a DP or nothing yet; an optional uang jaminan for monthly and
+ * yearly stays. Saved through the Rencana booking path (bookStay: a fresh room check, then the same rows as the Sewa
+ * baru wizard). Add-ons use the full form.
  */
 export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () => void }) {
-  const { repo } = useOrg()
   const data = useBoardData()
-  const actions = useLeaseActions()
-  const invalidate = useInvalidate()
+  const actions = useRencanaActions()
   const toast = useToast()
   const navigate = useNavigate()
   const today = todayISO()
@@ -39,44 +42,71 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const [phone, setPhone] = useState('')
   /** '' = automatic (the one same-name tenant, if any), NEW_TENANT, or a tenant id */
   const [tenantChoice, setTenantChoice] = useState('')
+  const [kind, setKind] = useState<StayKind>('daily')
   const [startDate, setStartDate] = useState(today)
-  const [nights, setNights] = useState(1)
-  /** an agreed total typed by the user; until then the total follows the room's daily rate x nights */
+  const [quantity, setQuantity] = useState(1)
+  const [bonus, setBonus] = useState(0)
+  /** an agreed total typed by the user; until then the total follows the room's rate x quantity */
   const [typedTotal, setTypedTotal] = useState<number | null>(null)
-  const [paid, setPaid] = useState(true)
+  const [paidFull, setPaidFull] = useState(true)
+  const [dp, setDp] = useState(0)
+  const [depositAmount, setDepositAmount] = useState(0)
+  const [depositNow, setDepositNow] = useState(true)
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const total = typedTotal ?? (room.price_daily ?? 0) * nights
+  const periodType = periodTypeOf(kind)
+  const unit = PERIOD_UNIT_LABEL[periodType]
+  const rate = rateOf(room, kind)
+  const total = typedTotal ?? (rate ?? 0) * quantity
+  const paidAmount = paidFull ? total : dp
+  const withDeposit = kind === 'monthly' || kind === 'yearly'
+  const deposit = withDeposit && depositAmount > 0 ? { amount: depositAmount, paidNow: depositNow } : null
   const sameName = useMemo(() => tenantsNamed(data.tenants, name), [data.tenants, name])
   const tenantId = resolveTenantChoice(sameName, tenantChoice, NEW_TENANT)
   const existing = tenantId ? data.tenantById.get(tenantId) ?? null : null
 
-  const input: QuickCheckInInput = { room, startDate, nights, total, paid, method, tenantId: existing?.id ?? null, name, phone }
-  const errors = validateQuickCheckIn(input, data.leases)
-  const plan = planQuickCheckIn(startDate, nights, total)
+  const input: StayBookingInput = {
+    room,
+    periodType,
+    startDate,
+    quantity,
+    total,
+    paidAmount,
+    method,
+    tenantId: existing?.id ?? null,
+    name,
+    phone,
+    notes: null,
+    bonusQuantity: kind === 'yearly' ? bonus : 0,
+    deposit,
+  }
+  const errors = validateStayBooking(input, data.leases)
+  const plan = planStayBooking(startDate, periodType, quantity, total, input.bonusQuantity)
   const hasErrors = Object.keys(errors).length > 0
+
+  const pickKind = (next: StayKind) => {
+    // re-tapping the selected kind (to close the keyboard, a mis-tap) keeps what was typed
+    if (next === kind) return
+    setKind(next)
+    setQuantity(defaultQuantity(next))
+    setBonus(0)
+    setTypedTotal(null)
+  }
 
   const submit = async () => {
     setTouched(true)
     if (hasErrors || !plan) return
     setSaving(true)
     try {
-      const { lease, invoice } = await saveQuickCheckIn(input, {
-        repo,
-        insertFromDraft: actions.insertFromDraft,
-        canWriteInvoiceStatus: actions.canWriteInvoiceStatus,
-        orgInvoices: data.invoices,
-        todayISO: today,
-      })
-      await invalidate('leases', 'invoices', 'payments', 'tenants')
+      const { lease, invoice } = await actions.bookStay({ ...input, orgInvoices: data.invoices, today })
       const noPhone = !existing && !phone.trim() ? ' HP penyewa belum diisi: lengkapi di halaman penyewa.' : ''
-      toast.success(`Check-in kamar ${room.name} tersimpan. Tagihan ${invoice.invoice_number}${paid ? ' lunas' : ' belum dibayar'}.${noPhone}`)
+      const paid = paidAmount <= 0 ? ' belum dibayar' : paidAmount >= invoice.total_amount ? ' lunas' : ` DP ${formatRupiah(paidAmount)}`
+      toast.success(`Check-in kamar ${room.name} tersimpan. Tagihan ${invoice.invoice_number}${paid}.${noPhone}`)
       onClose()
       navigate(`/sewa/${lease.id}`)
     } catch (err) {
-      await invalidate('leases', 'invoices', 'payments', 'tenants')
       const msg = err instanceof Error ? err.message : 'Gagal menyimpan check-in.'
       const friendly = /violates foreign key constraint/i.test(msg) ? 'Data yang dirujuk tidak ditemukan. Muat ulang lalu coba lagi.' : msg
       if (err instanceof QuickCheckInError && err.lease) {
@@ -94,6 +124,8 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
       setSaving(false)
     }
   }
+
+  const payText = paidAmount <= 0 ? `Belum bayar (${formatRupiah(total)})` : paidAmount >= total ? `Lunas ${formatRupiah(total)} · ${PAYMENT_METHOD_LABEL[method]}` : `DP ${formatRupiah(paidAmount)} · sisa ${formatRupiah(total - paidAmount)} · ${PAYMENT_METHOD_LABEL[method]}`
 
   return (
     <Modal
@@ -146,38 +178,75 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
               hint="Boleh dikosongkan; lengkapi nanti di halaman penyewa."
             />
           )}
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-slate-700">Jenis sewa</span>
+            <div role="radiogroup" aria-label="Jenis sewa" className="grid grid-cols-4 rounded-lg border border-slate-200 bg-white p-1 text-sm">
+              {STAY_KINDS.map((k) => (
+                <button
+                  key={k.kind}
+                  type="button"
+                  role="radio"
+                  aria-checked={k.kind === kind}
+                  onClick={() => pickKind(k.kind)}
+                  className={clsx('min-h-11 rounded-md px-1 py-2 font-medium transition-colors sm:min-h-0 sm:py-1.5', k.kind === kind ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-slate-100')}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
-            <CountInput label="Jumlah malam" value={nights} onChange={setNights} required error={touched ? errors.nights : undefined} />
+            <CountInput label={QUANTITY_LABEL[kind]} value={quantity} onChange={setQuantity} required error={touched ? errors.quantity : undefined} />
             <Input label="Tanggal check-in" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required error={touched ? errors.startDate : undefined} />
           </div>
+          {kind === 'yearly' && (
+            <CountInput label="Bonus bulan gratis" value={bonus} onChange={setBonus} min={0} max={12} error={touched ? errors.bonus : undefined} hint="Mis. bayar 12 bulan, bonus 1 bulan: sewa 13 bulan, tagihan tetap 12 bulan." />
+          )}
           <MoneyInput
             label="Total bayar"
             value={total}
             onChange={setTypedTotal}
             required
             error={touched ? errors.total : undefined}
-            hint={plan ? perNightText(plan, total) : room.price_daily ? `Tarif kamar ${formatRupiah(room.price_daily)} / malam` : 'Kamar ini belum punya tarif harian.'}
+            hint={plan ? perPeriodText(plan, total, periodType) : rate ? `Tarif kamar ${formatRupiah(rate)} / ${unit}` : `Kamar ini belum punya tarif ${kind === 'yearly' ? 'bulanan' : STAY_KINDS.find((k) => k.kind === kind)!.label.toLowerCase()}.`}
           />
           <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
+            <input type="checkbox" checked={paidFull} onChange={(e) => setPaidFull(e.target.checked)} />
             Sudah dibayar lunas
           </label>
-          {paid && <Select label="Metode" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} options={CASH_METHODS} />}
+          {!paidFull && <MoneyInput label="DP dibayar sekarang" value={dp} onChange={setDp} error={touched ? errors.paid : undefined} hint="0 bila belum bayar sama sekali." />}
+          {withDeposit && (
+            <>
+              <MoneyInput label="Uang jaminan (deposit)" value={depositAmount} onChange={setDepositAmount} error={touched ? errors.deposit : undefined} hint="0 bila tanpa deposit. Dikembalikan saat check-out." />
+              {depositAmount > 0 && (
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={depositNow} onChange={(e) => setDepositNow(e.target.checked)} />
+                  Deposit sudah diterima
+                </label>
+              )}
+            </>
+          )}
+          {(paidAmount > 0 || (deposit?.paidNow ?? false)) && <Select label="Metode" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} options={CASH_METHODS} />}
           {plan && (
             <div className="space-y-0.5 rounded-lg bg-slate-50 p-3 text-sm text-slate-700" data-testid="quick-checkin-summary">
               <p>
-                <span className="text-slate-500">Menginap</span> {formatStay(startDate, plan.end)} · {nights} malam
+                <span className="text-slate-500">Menginap</span> {formatStay(startDate, plan.end)} · {quantityText(quantity, input.bonusQuantity ?? 0, periodType)}
               </p>
               <p>
                 <span className="text-slate-500">Check-out</span> <strong>{formatCheckout(plan.end)}</strong>
               </p>
               <p>
-                <span className="text-slate-500">Bayar</span> {paid ? `Lunas ${formatRupiah(total)} · ${PAYMENT_METHOD_LABEL[method]}` : `Belum bayar (${formatRupiah(total)})`}
+                <span className="text-slate-500">Bayar</span> {payText}
               </p>
+              {deposit && (
+                <p>
+                  <span className="text-slate-500">Deposit</span> {formatRupiah(deposit.amount)} {deposit.paidNow ? `diterima · ${PAYMENT_METHOD_LABEL[method]}` : 'belum diterima'}
+                </p>
+              )}
               {existing && <p className="text-slate-500">Penyewa lama: {existing.full_name}{existing.phone ? ` · ${existing.phone}` : ' · tanpa HP'}</p>}
             </div>
           )}
-          <p className="text-xs text-slate-500">Mingguan, bulanan, deposit atau add-on: pakai Form lengkap.</p>
+          <p className="text-xs text-slate-500">Add-on (listrik, laundry, dll.): pakai Form lengkap.</p>
         </div>
       )}
     </Modal>

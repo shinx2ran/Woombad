@@ -1,12 +1,13 @@
 /**
- * Check-in cepat (SPEC 7.4): a walk-in guest on a daily rate in three fields (name, nights, total paid). It writes
- * the same rows in the same order as the Sewa baru wizard (NewLeasePage.save): tenant (if new) -> lease -> first
- * invoice through LeaseActions.insertFromDraft -> rent payment -> invoice status. The wizard itself is untouched;
+ * Check-in cepat (SPEC 7.4): a walk-in guest in a few fields (name, how long, the total). It writes the same rows in
+ * the same order as the Sewa baru wizard (NewLeasePage.save): tenant (if new) -> lease -> first invoice through
+ * LeaseActions.insertFromDraft -> rent payment -> invoice status -> deposit payment. The wizard itself is untouched;
  * this is a short path into the same building blocks, so the same database rules and numbering apply.
  *
- * The same path books a planned stay (Rencana check-in, SPEC 7.7): saveStayBooking takes any period type, any start
- * date (a future start is a booking, "Dipesan") and an optional DP; saveQuickCheckIn is that call for a daily stay paid
- * in full or not at all.
+ * saveStayBooking takes any period type (a year = 12 months), any start date (a future start is a booking,
+ * "Dipesan"), a DP or the full total, an agreed deposit (uang jaminan) and free bonus periods ("bayar 12 bulan, bonus
+ * 1 bulan": the lease and invoice cover 13 months, the invoice discounts the bonus). Rencana check-in (SPEC 7.7) books
+ * through it too; saveQuickCheckIn is that call for a daily stay paid in full or not at all.
  */
 import { deriveInvoiceStatus, type InvoiceDraftInput, type InvoiceDraft } from '../../domain/billing'
 import { periodBounds } from '../../domain/period'
@@ -48,22 +49,38 @@ export function planQuickCheckIn(startDate: string, nights: number, total: numbe
   return plan && { end: plan.end, pricePerNight: plan.pricePerPeriod, baseAmount: plan.baseAmount }
 }
 
+/** Bonus-free plan text helper: the lease/invoice summary line, '13 bulan (12 dibayar + 1 bonus)'. */
+export function quantityText(quantity: number, bonusQuantity: number, periodType: PeriodType): string {
+  const unit = PERIOD_UNIT_LABEL[periodType]
+  return bonusQuantity > 0 ? `${quantity + bonusQuantity} ${unit} (${quantity} dibayar + ${bonusQuantity} bonus)` : `${quantity} ${unit}`
+}
+
 export interface StayBookingPlan {
-  /** last night (stored lease.end_date / period_end, SPEC 7.3) */
+  /** last night (stored lease.end_date / period_end, SPEC 7.3), after the paid and the bonus periods */
   end: string
-  /** total / quantity, rounded to the rupiah: the lease's price per night / week / month */
+  /** total / paid quantity, rounded to the rupiah: the lease's price per night / week / month */
   pricePerPeriod: number
-  /** set when pricePerPeriod x quantity does not give the total back: the invoice keeps the agreed total */
+  /** paid + bonus periods: what the lease and the invoice cover */
+  quantityTotal: number
+  /** pricePerPeriod x bonus periods, taken off the invoice (0 without bonus) */
+  discountAmount: number
+  /** set when pricePerPeriod x quantity does not give the total back: the invoice keeps the agreed total (plus the discount) */
   baseAmount: number | undefined
 }
 
-/** Lease end, price per period and invoice base for `quantity` periods of `periodType` from `startDate` for `total`. */
-export function planStayBooking(startDate: string, periodType: PeriodType, quantity: number, total: number): StayBookingPlan | null {
-  if (!startDate || quantity < 1 || total <= 0) return null
+/**
+ * Lease end, price per period and invoice amounts for `quantity` paid periods of `periodType` from `startDate` for
+ * `total`, plus `bonusQuantity` free periods (SPEC 7.4: "12 bulan dibayar, bonus 1 bulan" covers 13 months, invoice
+ * 13 x price with 1 x price discounted, total unchanged).
+ */
+export function planStayBooking(startDate: string, periodType: PeriodType, quantity: number, total: number, bonusQuantity = 0): StayBookingPlan | null {
+  if (!startDate || quantity < 1 || total <= 0 || bonusQuantity < 0) return null
   try {
-    const { end } = periodBounds(startDate, periodType, 0, quantity)
+    const quantityTotal = quantity + bonusQuantity
+    const { end } = periodBounds(startDate, periodType, 0, quantityTotal)
     const pricePerPeriod = Math.round(total / quantity)
-    return { end, pricePerPeriod, baseAmount: pricePerPeriod * quantity === total ? undefined : total }
+    const discountAmount = pricePerPeriod * bonusQuantity
+    return { end, pricePerPeriod, quantityTotal, discountAmount, baseAmount: pricePerPeriod * quantity === total ? undefined : total + discountAmount }
   } catch {
     return null
   }
@@ -71,11 +88,11 @@ export function planStayBooking(startDate: string, periodType: PeriodType, quant
 
 /** '= Rp 180.000 / malam', or '≈ Rp 116.667 / malam (total tetap Rp 350.000)' when the total does not split evenly. */
 export function perNightText(plan: QuickCheckInPlan, total: number): string {
-  return perPeriodText({ end: plan.end, pricePerPeriod: plan.pricePerNight, baseAmount: plan.baseAmount }, total, 'daily')
+  return perPeriodText({ pricePerPeriod: plan.pricePerNight, baseAmount: plan.baseAmount }, total, 'daily')
 }
 
 /** '= Rp 600.000 / minggu', or '≈ … / minggu (total tetap Rp X)' when the total does not split evenly. */
-export function perPeriodText(plan: StayBookingPlan, total: number, periodType: PeriodType): string {
+export function perPeriodText(plan: Pick<StayBookingPlan, 'pricePerPeriod' | 'baseAmount'>, total: number, periodType: PeriodType): string {
   const unit = PERIOD_UNIT_LABEL[periodType]
   return plan.baseAmount === undefined
     ? `= ${formatRupiah(plan.pricePerPeriod)} / ${unit}`
@@ -85,16 +102,44 @@ export function perPeriodText(plan: StayBookingPlan, total: number, periodType: 
 export type QuickCheckInErrors = Partial<Record<'name' | 'phone' | 'startDate' | 'nights' | 'total' | 'room', string>>
 
 export function validateQuickCheckIn(input: QuickCheckInInput, leases: Lease[]): QuickCheckInErrors {
-  const errors: QuickCheckInErrors = {}
+  const { quantity, ...rest } = validateStayBooking(
+    {
+      room: input.room,
+      periodType: 'daily',
+      startDate: input.startDate,
+      quantity: input.nights,
+      total: input.total,
+      paidAmount: input.paid ? input.total : 0,
+      method: input.method,
+      tenantId: input.tenantId,
+      name: input.name,
+      phone: input.phone,
+      notes: null,
+    },
+    leases,
+  )
+  return quantity ? { ...rest, nights: quantity } : rest
+}
+
+export type StayBookingErrors = Partial<Record<'name' | 'phone' | 'startDate' | 'quantity' | 'bonus' | 'total' | 'paid' | 'deposit' | 'room', string>>
+
+/** The Check-in cepat form's errors (any period type): who, when, how long, the money, and whether the room is free. */
+export function validateStayBooking(input: StayBookingInput, leases: Lease[]): StayBookingErrors {
+  const errors: StayBookingErrors = {}
+  const unit = PERIOD_UNIT_LABEL[input.periodType]
   if (!input.tenantId) {
     const tenantErrors = validateTenantForm({ ...EMPTY_TENANT_FORM, full_name: input.name, phone: input.phone, property_id: input.room.property_id })
     if (tenantErrors.full_name) errors.name = tenantErrors.full_name
     if (tenantErrors.phone) errors.phone = tenantErrors.phone
   }
   if (!input.startDate) errors.startDate = 'Tanggal check-in wajib diisi.'
-  if (input.nights < 1) errors.nights = 'Minimal 1 malam.'
+  if (input.quantity < 1) errors.quantity = `Minimal 1 ${unit}.`
+  if ((input.bonusQuantity ?? 0) < 0) errors.bonus = 'Tidak boleh negatif.'
   if (input.total <= 0) errors.total = 'Isi total yang dibayar.'
-  const plan = planQuickCheckIn(input.startDate, input.nights, input.total)
+  if (input.paidAmount < 0) errors.paid = 'Tidak boleh negatif.'
+  else if (input.paidAmount > input.total) errors.paid = `Tidak boleh lebih dari total (${formatRupiah(input.total)}).`
+  if (input.deposit && input.deposit.amount < 0) errors.deposit = 'Tidak boleh negatif.'
+  const plan = planStayBooking(input.startDate, input.periodType, input.quantity, input.total, input.bonusQuantity ?? 0)
   if (plan) {
     const availability = roomAvailability(input.room, leases, input.startDate, plan.end)
     if (availability !== 'kosong') errors.room = `Kamar ${input.room.name} ${ROOM_AVAILABILITY_LABEL[availability].toLowerCase()} pada tanggal ini.`
@@ -161,16 +206,31 @@ export interface StayBookingInput {
   phone: string
   /** lease notes */
   notes: string | null
+  /** free periods on top of the paid `quantity` ("bonus 1 bulan"); the invoice discounts them */
+  bonusQuantity?: number
+  /** uang jaminan agreed for the lease; paidNow records it as received today with `method` */
+  deposit?: { amount: number; paidNow: boolean } | null
+}
+
+export interface StayBookingResult {
+  lease: Lease
+  invoice: Invoice
+  tenantId: string
+  payment: Payment | null
+  depositPayment: Payment | null
 }
 
 /**
- * Tenant (if new) -> lease (active, start = the check-in day) -> first invoice (insertFromDraft) -> rent payment for
- * `paidAmount` (marked 'DP' when below the total, as in the wizard) -> invoice status. Throws QuickCheckInError naming
- * what was already written.
+ * Tenant (if new) -> lease (active, start = the check-in day) -> first invoice (insertFromDraft; bonus periods as a
+ * discount, noted 'bonus N bulan') -> rent payment for `paidAmount` (marked 'DP' when below the total, as in the
+ * wizard) -> invoice status -> deposit payment ('Uang jaminan'). Throws QuickCheckInError naming what was already
+ * written.
  */
-export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckInDeps): Promise<{ lease: Lease; invoice: Invoice; tenantId: string; payment: Payment | null }> {
-  const plan = planStayBooking(input.startDate, input.periodType, input.quantity, input.total)
+export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckInDeps): Promise<StayBookingResult> {
+  const bonus = input.bonusQuantity ?? 0
+  const plan = planStayBooking(input.startDate, input.periodType, input.quantity, input.total, bonus)
   if (!plan) throw new Error(`Isi tanggal, jumlah ${PERIOD_UNIT_LABEL[input.periodType]}, dan total.`)
+  const depositAmount = input.deposit && input.deposit.amount > 0 ? input.deposit.amount : 0
   const { repo } = deps
   let createdTenant: Tenant | null = null
   let lease: Lease | null = null
@@ -186,7 +246,7 @@ export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckI
       tenant_id: tenantId,
       period_type: input.periodType,
       price_per_period: plan.pricePerPeriod,
-      deposit_amount: 0,
+      deposit_amount: depositAmount,
       start_date: input.startDate,
       end_date: plan.end,
       status: 'active',
@@ -194,8 +254,16 @@ export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckI
       notes: input.notes?.trim() || null,
     })
     const { invoice } = await deps.insertFromDraft(
-      { lease, addons: [], quantity: input.quantity, baseAmount: plan.baseAmount, existingInvoices: [], orgInvoices: deps.orgInvoices },
-      null,
+      {
+        lease,
+        addons: [],
+        quantity: plan.quantityTotal,
+        baseAmount: plan.baseAmount,
+        discountAmount: plan.discountAmount > 0 ? plan.discountAmount : undefined,
+        existingInvoices: [],
+        orgInvoices: deps.orgInvoices,
+      },
+      bonus > 0 ? `bonus ${bonus} ${PERIOD_UNIT_LABEL[input.periodType]}` : null,
     )
     let payment: Payment | null = null
     if (input.paidAmount > 0) {
@@ -213,7 +281,20 @@ export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckI
       const status = deriveInvoiceStatus(invoice.total_amount, amount, invoice.status)
       if (status !== invoice.status && deps.canWriteInvoiceStatus) await repo.update('invoices', invoice.id, { status })
     }
-    return { lease, invoice, tenantId, payment }
+    let depositPayment: Payment | null = null
+    if (depositAmount > 0 && input.deposit?.paidNow) {
+      depositPayment = await repo.insert('payments', {
+        property_id: input.room.property_id,
+        invoice_id: null,
+        lease_id: lease.id,
+        amount: depositAmount,
+        paid_at: deps.todayISO,
+        method: input.method,
+        kind: 'deposit',
+        notes: 'Uang jaminan',
+      })
+    }
+    return { lease, invoice, tenantId, payment, depositPayment }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Gagal menyimpan check-in.'
     throw new QuickCheckInError(msg, createdTenant, lease)

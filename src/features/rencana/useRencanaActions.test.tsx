@@ -118,6 +118,30 @@ describe('bookStay: a planned stay through the Check-in cepat path', () => {
     expect(roomDisplayState(room, await repo.list('leases'), new Map(), [], [], TODAY).kind).toBe('occupied')
   })
 
+  it('a year from today with a bonus month and a deposit (Check-in cepat tahunan): 13 months held, invoice discounted, deposit received', async () => {
+    const { lease, invoice, payment, depositPayment } = await actionsHook().bookStay(
+      booking({ startDate: TODAY, periodType: 'monthly', quantity: 12, bonusQuantity: 1, total: 18_000_000, paidAmount: 18_000_000, method: 'transfer', deposit: { amount: 1_000_000, paidNow: true } }),
+    )
+    expect(lease).toMatchObject({ period_type: 'monthly', price_per_period: 1_500_000, deposit_amount: 1_000_000, start_date: TODAY, end_date: '2027-11-30' })
+    expect(invoice).toMatchObject({ quantity: 13, base_amount: 19_500_000, discount_amount: 1_500_000, total_amount: 18_000_000, period_end: '2027-11-30', notes: 'bonus 1 bulan' })
+    expect(payment).toMatchObject({ amount: 18_000_000, kind: 'rent', notes: null })
+    expect(depositPayment).toMatchObject({ amount: 1_000_000, kind: 'deposit', invoice_id: null, lease_id: lease.id, method: 'transfer', notes: 'Uang jaminan' })
+    expect((await repo.get('invoices', invoice.id))!.status).toBe('paid')
+    // the bonus month is held too: a booking inside it is refused before anything is written
+    await expect(actionsHook().bookStay(booking({ startDate: '2027-11-15', quantity: 1 }))).rejects.toThrow(/Kamar A3 sudah tidak kosong/)
+    expect(await repo.list('leases')).toHaveLength(1)
+  })
+
+  it('a booking inside the bonus month of a year is refused as a conflict before writing', async () => {
+    await bookedBy('Budi', '2027-11-20', '2027-11-21')
+    await expect(
+      actionsHook().bookStay(booking({ startDate: TODAY, periodType: 'monthly', quantity: 12, bonusQuantity: 1, total: 18_000_000 })),
+    ).rejects.toThrow(/dipesan Budi/)
+    // without the bonus the same year ends 31 Okt 2027 and does not reach that booking
+    const { lease } = await actionsHook().bookStay(booking({ startDate: TODAY, periodType: 'monthly', quantity: 12, total: 18_000_000 }))
+    expect(lease.end_date).toBe('2027-10-31')
+  })
+
   it('an existing tenant is used instead of a new one', async () => {
     const t = await repo.insert('tenants', { property_id: 'P1', full_name: 'Rina Kartika', phone: '+6281234567811' } as never)
     const { lease } = await actionsHook().bookStay(booking({ tenantId: t.id }))
