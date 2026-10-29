@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { Modal } from './Modal'
 import { ToastProvider, useToast } from './Toast'
-import { cancelExitAnimations, holdExitAnimations } from './motion'
+import { cancelExitAnimations, pauseExitAnimations } from './motion'
 
 // jsdom has no Web Animations API: these tests lend it one whose animations finish when told to
 let finish: () => void = () => undefined
@@ -22,7 +22,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   cancelExitAnimations()
-  holdExitAnimations(0)
   delete (Element.prototype as { animate?: unknown }).animate
   delete (window as { matchMedia?: unknown }).matchMedia
 })
@@ -94,10 +93,16 @@ describe('dialog exit', () => {
     second.unmount()
 
     lendAnimate()
-    holdExitAnimations(1000)
-    render(<Harness />)
+    const resume = pauseExitAnimations()
+    const third = render(<Harness />)
     fireEvent.click(screen.getByText('tutup dari luar'))
     expect(copies()).toHaveLength(0)
+    third.unmount()
+    // once the new page is drawn, dialogs animate out again
+    resume()
+    render(<Harness />)
+    fireEvent.click(screen.getByText('tutup dari luar'))
+    expect(copies()).toHaveLength(1)
   })
 
   it('in a browser the copy sits in a closed shadow root with the page styles: text and role queries cannot find it', async () => {

@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useDirtyWhile } from '../../app/dirtyState'
 import { fitToVisibleArea, revealFocusedField } from './keyboardSafe'
-import { EASE_IOS, EASE_OUT_QUICK, EXIT_MS, copyForExit, type ExitCopy } from './motion'
+import { EASE_IOS, EASE_OUT_QUICK, EXIT_MS, copyForExit, prepareExitStyles, type ExitCopy } from './motion'
 
 export interface ModalProps {
   open: boolean
@@ -25,6 +25,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
   const overlayRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!open || !overlayRef.current) return
+    prepareExitStyles()
     return fitToVisibleArea(overlayRef.current)
   }, [open])
   useEffect(() => {

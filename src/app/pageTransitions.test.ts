@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, type DataRouter } from 'react-router'
-import { installPageTransitions, targetPathname } from './pageTransitions'
+import { installPageTransitions, previousPathname, seedHistoryKey, targetPathname, withoutBasename } from './pageTransitions'
 
 /** a transition whose promises reject the way a skipped one does */
 function fakeTransition(update?: unknown) {
@@ -25,15 +25,15 @@ function fakeWindow({ viewTransitions = true, reduceMotion = false } = {}) {
   return win
 }
 
-const routes = ['/dashboard', '/sewa', '/sewa/:id', '/rencana', '/penyewa'].map((path) => ({ path, element: null }))
+const routes = ['/', '/dashboard', '/sewa', '/sewa/:id', '/rencana', '/penyewa'].map((path) => ({ path, element: null }))
 
 let router: DataRouter
 let win: ReturnType<typeof fakeWindow>
 let navigate: ReturnType<typeof vi.spyOn>
 let uninstall: () => void
 
-function setup(opts?: Parameters<typeof fakeWindow>[0]) {
-  router = createMemoryRouter(routes, { initialEntries: ['/sewa'] })
+function setup(opts?: Parameters<typeof fakeWindow>[0] & { basename?: string; at?: string }) {
+  router = createMemoryRouter(routes, { initialEntries: [`${opts?.basename ?? ''}${opts?.at ?? '/sewa'}`], basename: opts?.basename })
   win = fakeWindow(opts)
   navigate = vi.spyOn(router, 'navigate')
   uninstall = installPageTransitions(router, win as unknown as Window)
@@ -63,7 +63,8 @@ describe('installPageTransitions', () => {
     await router.navigate('?date=2026-10-10', { replace: true, flushSync: true })
     expect(lastOptions()).toMatchObject({ preventScrollReset: true, flushSync: true })
     expect(lastOptions()?.viewTransition).toBeUndefined()
-    expect(motion()).toBe('none')
+    // the motion of the slide that brought us here stays (a page dropping its own ?action= while it opens)
+    expect(motion()).toBe('push')
     await router.navigate({ search: '?date=2026-10-11' })
     expect(lastOptions()?.viewTransition).toBeUndefined()
     await router.navigate('/rencana?date=2026-10-12')
@@ -120,11 +121,21 @@ describe('installPageTransitions', () => {
     const process = (globalThis as unknown as { process: { on: (e: string, f: () => void) => void; off: (e: string, f: () => void) => void } }).process
     process.on('unhandledRejection', unhandled)
     try {
-      await router.navigate('/sewa/a1')
       const start = win.document.startViewTransition as unknown as (cb: () => void) => ReturnType<typeof fakeTransition>
+      await router.navigate('?tab=2')
+      win.history.state = { idx: 2 }
+      await router.navigate('/sewa/a1')
       const pushed = start(() => undefined)
       expect(pushed.skipTransition).not.toHaveBeenCalled()
-      await router.navigate('?tab=2')
+      win.history.state = { idx: 1 }
+      await router.navigate(-1)
+      await vi.waitFor(() => expect(router.state.location.search).toBe('?tab=2'))
+      expect(motion()).toBe('pop')
+      // back again only drops ?tab=2: React Router replays a transition (the path has one recorded), which is skipped
+      win.history.state = { idx: 0 }
+      await router.navigate(-1)
+      await vi.waitFor(() => expect(router.state.location.search).toBe(''))
+      expect(motion()).toBe('none')
       const same = start(() => undefined)
       expect(same.skipTransition).toHaveBeenCalled()
       await new Promise((resolve) => setTimeout(resolve, 10))
@@ -132,6 +143,38 @@ describe('installPageTransitions', () => {
     } finally {
       process.off('unhandledRejection', unhandled)
     }
+  })
+
+  it('under the /Woombad base of GitHub Pages the motion and the same-page test read the paths without it', async () => {
+    uninstall()
+    setup({ basename: '/Woombad' })
+    expect(router.state.location.pathname).toBe('/Woombad/sewa')
+    await router.navigate('/sewa/a1')
+    expect(lastOptions()).toMatchObject({ viewTransition: true })
+    expect(motion()).toBe('push')
+    win.history.state = { idx: 1 }
+    await router.navigate('/dashboard')
+    expect(motion()).toBe('tab')
+    await router.navigate('/dashboard?x=1')
+    expect(lastOptions()?.viewTransition).toBeUndefined()
+    expect(lastOptions()).toMatchObject({ preventScrollReset: true })
+  })
+
+  it("the start-up redirect from '/' does not animate", async () => {
+    uninstall()
+    setup({ at: '/' })
+    await router.navigate('/dashboard', { replace: true })
+    expect(lastOptions()).toMatchObject({ viewTransition: false })
+  })
+
+  it('remembers the page before this one in history, for a link back to the list', async () => {
+    expect(previousPathname()).toBeNull()
+    win.history.state = { idx: 1 }
+    await router.navigate('/sewa/a1')
+    expect(previousPathname()).toBe('/sewa')
+    win.history.state = { idx: 2 }
+    await router.navigate('/penyewa')
+    expect(previousPathname()).toBe('/sewa/a1')
   })
 
   it('uninstalling restores the router and the document', () => {
@@ -154,5 +197,30 @@ describe('targetPathname', () => {
     expect(targetPathname('..', here)).toBe('/sewa')
     expect(targetPathname({ search: '?a=1' }, here)).toBe('/sewa/a1')
     expect(targetPathname({ pathname: '/penyewa/t1' }, here)).toBe('/penyewa/t1')
+  })
+})
+
+describe('withoutBasename', () => {
+  it('drops the base only when the path starts with it', () => {
+    expect(withoutBasename('/Woombad/sewa/a1', '/Woombad')).toBe('/sewa/a1')
+    expect(withoutBasename('/Woombad', '/Woombad')).toBe('/')
+    expect(withoutBasename('/Woombadx/sewa', '/Woombad')).toBe('/Woombadx/sewa')
+    expect(withoutBasename('/sewa', '/')).toBe('/sewa')
+  })
+})
+
+describe('seedHistoryKey', () => {
+  it('gives a freshly opened entry its own key and keeps an existing one', () => {
+    const replaced: unknown[] = []
+    const win = { history: { state: null as unknown, replaceState: (state: unknown) => replaced.push(state) } } as unknown as Window
+    seedHistoryKey(win)
+    expect(replaced).toHaveLength(1)
+    expect(typeof (replaced[0] as { key: unknown }).key).toBe('string')
+    const kept = { history: { state: { key: 'abc', idx: 3, usr: null }, replaceState: (state: unknown) => replaced.push(state) } } as unknown as Window
+    seedHistoryKey(kept)
+    expect(replaced).toHaveLength(1)
+    const partial = { history: { state: { idx: 0, usr: { from: '/sewa' } }, replaceState: (state: unknown) => replaced.push(state) } } as unknown as Window
+    seedHistoryKey(partial)
+    expect(replaced[1]).toMatchObject({ idx: 0, usr: { from: '/sewa' } })
   })
 })

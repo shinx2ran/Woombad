@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { BackLink } from '../../app/BackLink'
 import { clsx } from 'clsx'
 import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, DoorOpen, FilePlus2, LogOut, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
 import {
@@ -278,9 +279,9 @@ export function LeaseDetailPage() {
   return (
     <>
       <div className="mb-2">
-        <Link to="/sewa" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-brand-700">
+        <BackLink to="/sewa" className="inline-flex items-center gap-1 text-sm text-slate-600 hover:text-brand-700">
           <ArrowLeft className="h-4 w-4" /> Semua sewa
-        </Link>
+        </BackLink>
       </div>
       <PageHeader
         title={`Kamar ${room?.name ?? '?'}`}

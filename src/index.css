@@ -81,6 +81,15 @@ input[type="number"]::-webkit-inner-spin-button {
 .app-toasts {
   view-transition-name: app-toasts;
 }
+.app-update {
+  view-transition-name: app-update;
+}
+/* While a dialog is open (or its exit copy is on screen), the header, tabs and sidebar are under its dimming: then they
+   stay part of the page's snapshot, so a page change from or to an open dialog moves them dimmed with the page instead
+   of drawing them bright on top of it. */
+:root:has([aria-modal='true'], body > [data-exit-copy]) :is(.app-header, .app-tabbar, .app-sidebar) {
+  view-transition-name: none;
+}
 
 /* The header's frosted glass is not drawn in a transition's snapshot (Safari, Firefox): the page sliding under it
    would show through, so it is solid white while a transition runs. */
@@ -126,32 +135,44 @@ input[type="number"]::-webkit-inner-spin-button {
   :root[data-page-motion='pop']::view-transition-image-pair(root) {
     background: #000;
   }
-  /* the chrome never moves: its box is the same before and after (sidebar and header are sticky, tabs and toasts fixed) */
+  /* the chrome never moves: its box is the same before and after (sidebar and header are sticky, the rest fixed). On a
+     push or pop it shows the new page's state at once; one that only the old page had stays until the slide ends. */
   ::view-transition-group(app-header),
   ::view-transition-group(app-tabbar),
   ::view-transition-group(app-sidebar),
-  ::view-transition-group(app-toasts) {
+  ::view-transition-group(app-toasts),
+  ::view-transition-group(app-update) {
     animation: none;
   }
-  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-header),
-  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-tabbar),
-  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-sidebar),
-  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-toasts) {
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-header):not(:only-child),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-tabbar):not(:only-child),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-sidebar):not(:only-child),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-toasts):not(:only-child),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-update):not(:only-child) {
     display: none;
   }
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-header),
   :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-header),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-tabbar),
   :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-tabbar),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-sidebar),
   :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-sidebar),
-  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-toasts) {
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-toasts),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-toasts),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-update),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-update) {
     animation: none;
   }
 
-  /* tab: switching sections fades through quickly, no slide (iOS 18 tabs, Material bottom navigation) */
+  /* tab: switching sections dissolves quickly, no slide (iOS 18 tabs, Material bottom navigation): the new page fades
+     in over the old one, which stays as it is, so nothing dips to white in between */
   :root[data-page-motion='tab']::view-transition-old(root) {
-    animation: 100ms var(--ease-out-quick) both page-fade-out;
+    mix-blend-mode: normal;
+    animation: none;
   }
   :root[data-page-motion='tab']::view-transition-new(root) {
-    animation: 220ms var(--ease-in-soft) 40ms both page-fade-in;
+    mix-blend-mode: normal;
+    animation: 220ms var(--ease-in-soft) both page-fade-in;
   }
 
   /* none: the same page with other search params (normally no transition runs at all) */
@@ -212,11 +233,6 @@ input[type="number"]::-webkit-inner-spin-button {
   from {
     transform: translateX(-33%);
     opacity: 0.9;
-  }
-}
-@keyframes page-fade-out {
-  to {
-    opacity: 0;
   }
 }
 @keyframes page-fade-in {

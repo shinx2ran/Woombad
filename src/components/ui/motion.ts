@@ -21,11 +21,22 @@ export function canAnimate(win: Window = window): boolean {
 }
 
 const ghosts = new Set<HTMLElement>()
-let heldUntil = 0
+let pauses = 0
 
-/** Exit animations are skipped for a while (a page transition snapshots the closing dialog with the old page). */
-export function holdExitAnimations(ms: number): void {
-  heldUntil = performance.now() + ms
+/**
+ * No exit animations until the returned function is called: a page transition is drawing the new page, and a dialog
+ * the page change removes was part of the old page's snapshot. Lifts by itself after 2 s in case it is never called.
+ */
+export function pauseExitAnimations(): () => void {
+  pauses++
+  let done = false
+  const resume = () => {
+    if (done) return
+    done = true
+    pauses--
+  }
+  setTimeout(resume, 2000)
+  return resume
 }
 
 /** Remove every copy still animating away, at once (before a page transition takes its snapshot). */
@@ -47,7 +58,7 @@ export interface ExitCopy {
  * `animate` gets the copy and returns the animations to wait for; `layer` is its z-index.
  */
 export function copyForExit(original: HTMLElement | null, animate: (copy: HTMLElement) => Animation[], layer: number, win: Window = window): ExitCopy | null {
-  if (!original || !original.isConnected || !canAnimate(win) || performance.now() < heldUntil) return null
+  if (!original || !original.isConnected || !canAnimate(win) || pauses > 0) return null
   // a camera preview cannot be copied; it just disappears
   if (original.querySelector('video, iframe')) return null
   const copy = original.cloneNode(true) as HTMLElement
@@ -91,6 +102,14 @@ export function copyForExit(original: HTMLElement | null, animate: (copy: HTMLEl
 }
 
 let cachedStyles: { sources: CSSStyleSheet[]; sheet: CSSStyleSheet } | null = null
+
+/** Build the copies' stylesheet while the dialog is open and the phone idle, not in the frame its exit starts. */
+export function prepareExitStyles(win: Window = window): void {
+  if (!canAnimate(win)) return
+  const idle = (win as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback
+  if (idle) idle.call(win, () => pageStyles(win))
+  else win.setTimeout(() => pageStyles(win), 200)
+}
 
 /** The page's own CSS as one constructed sheet for the copy's shadow root (built once; rebuilt if the page's CSS changes). */
 function pageStyles(win: Window): CSSStyleSheet | null {
