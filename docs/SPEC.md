@@ -691,3 +691,52 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   skenario), `e2e/keluar.spec.ts` (360 px, Mode Demo, jam tetap 24 Okt 2026; membatalkan/memundurkan rencana Budi di atas pesanan yang
   dibuat karenanya ditolak, memajukannya diterima). `e2e/rencana.spec.ts` kini mengharapkan "Kosong mulai
   27 Okt (setelah Hendra Wijaya check-out)" alih-alih "Kosong sampai seterusnya" untuk kamar yang tamunya masih menginap.
+
+### 7.9 Transisi halaman & jendela
+- **Permintaan pemilik**: perpindahan halaman dan jendela semulus iOS/iPadOS (dan Android). Tanpa pustaka tambahan: View
+  Transitions API peramban (Safari 18+, Chrome 111+, Firefox 144+) untuk halaman, Web Animations untuk keluarnya jendela, CSS untuk
+  masuknya. Tanpa API atau dengan **Kurangi gerakan** (`prefers-reduced-motion: reduce`): semuanya langsung seperti sebelumnya.
+- **Gerak halaman** (`src/app/pageMotion.ts`, murni): kedalaman halaman = 1 untuk bagian menu (`dashboard`, `sewa`, `penyewa`,
+  `kos`, `pengeluaran`, `laporan`, `pengaturan`), lebih dalam untuk halaman yang dibuka darinya (`sewa/:id`, `sewa/baru`,
+  `penyewa/:id`, `kos/:id`; `rencana` dan `daftar-tunggu` dihitung 2). `push` = lebih dalam atau tautan silang (sewa → penyewa,
+  rencana → daftar tunggu); `pop` = kembali ke daftar bagiannya sendiri (`sewa/:id` → `sewa`) atau lebih dangkal; `tab` = antar
+  bagian menu (juga dari halaman detail ke bagian lain), dan login/daftar/`/` ↔ aplikasi; `none` = path sama (hanya search
+  params). Langkah riwayat mundur memutar kebalikan langkah yang menuju ke situ (push → pop), maju memutarnya ulang; arah dari
+  `history.state.idx`.
+- **Router** (`src/app/pageTransitions.ts`, `installPageTransitions(router)` di `routes.tsx`): membungkus `router.navigate`
+  (dipakai `<Link>`, `<NavLink>`, `useNavigate`, `<Navigate>`, `setSearchParams`) — path berubah → `viewTransition: true` (React
+  Router membungkus render halaman baru dalam `document.startViewTransition`); path sama → tanpa transisi (render sinkron tetap,
+  `flushSync` perencana tetap berlaku) dan `preventScrollReset: true`; pilihan eksplisit pemanggil menang. Pelanggan
+  `router.subscribe` menulis `html[data-page-motion]` sebelum transisi mulai; bila peramban sudah menganimasikan gestur kembali
+  (`popstate.hasUAVisualTransition`, Safari) → `none`. `document.startViewTransition` dibungkus: janji `ready` / `finished` /
+  `updateCallbackDone` dari transisi yang dilewati ditangkap (bukan galat), dan transisi `none` langsung `skipTransition()`.
+  Saat transisi halaman mulai, salinan jendela yang masih beranimasi dihapus dan animasi keluar ditahan 1 detik (jendela yang
+  tertutup karena halaman berganti ikut di snapshot halaman lama). Back/forward memakai pasangan yang direkam React Router.
+- **CSS** (`src/index.css`, bagian Motion): kurva `--ease-ios` `cubic-bezier(0.32, 0.72, 0, 1)` (Ionic iOS, Vaul); bila
+  `linear()` didukung, pegas tanpa pantulan yang diukur dari frame iOS (selisih < 1%). `push` 450 ms (iOS ±500 ms; selama
+  transisi halaman tidak bisa diketuk): halaman baru dari `translateX(100%)` dengan bayangan kiri tipis, halaman lama ke `-33%`
+  dan redup ±10% (opacity 0,9 di atas hitam); `pop` kebalikannya (halaman lama di atas); `tab` (fade through): lama memudar
+  100 ms, baru muncul 220 ms mulai 40 ms. Satu gaya untuk iPhone, iPad dan Android (transisi bawaan Android juga geser
+  horizontal; tab Material = fade through). Bilah atas
+  (`app-header`), menu bawah (`app-tabbar`), menu kiri (`app-sidebar`, kini `sticky`) dan toast (`app-toasts`) punya
+  `view-transition-name` sendiri: diam (grup tanpa animasi; pada push/pop gambarnya langsung yang baru). Bilah atas putih penuh
+  selama transisi (`:active-view-transition`; efek blur tidak ikut snapshot di Safari/Firefox). Jangan merender Modal/overlay
+  `fixed` di dalam keempat elemen itu (nama transisi = stacking context permanen).
+- **Gulir**: `<ScrollRestoration/>` di AppShell — halaman baru mulai dari atas, kembali memulihkan posisi (kunci `location.key`).
+- **Jendela** (`Modal.tsx`, `motion.ts`): masuk — lembar naik dari bawah 500 ms (HP), dialog memudar dari `translateY(8px)
+  scale(0.96)` 300 ms (≥ sm), latar gelap memudar dengan waktu & kurva yang sama; keluar — `ExitAnimation` (class component: `getSnapshotBeforeUpdate` saat `open` → false,
+  `componentWillUnmount` bila komponen pemegangnya hilang) menyalin DOM jendela sesaat sebelum React menghapusnya (`copyForExit`:
+  nilai isian, centang, canvas, posisi gulir; tanpa `id`/`for`/`name`/`data-testid`), memasang salinan di shadow root **tertutup**
+  (dengan CSS halaman sebagai constructed stylesheet) dalam host `aria-hidden` + `inert` + `pointer-events: none`, z-index 49
+  (di bawah jendela yang baru dibuka), menganimasikannya (lembar turun 400 ms `--ease-ios`, dialog memudar ke skala 0,98 180 ms
+  dipercepat; latar gelap ikut) lalu menghapusnya (paling
+  lambat 1 detik). Jendela aslinya hilang seketika: aplikasi tidak menunggu animasi; pembaca layar, ketukan, fokus, kueri DOM
+  aplikasi dan locator e2e tidak melihat salinan. Tanpa salinan: jendela berisi video/iframe (kamera), Kurangi gerakan, tanpa Web
+  Animations (jsdom), atau dalam masa tahan transisi halaman. Uji coba StrictMode (unmount percobaan) tidak memutar apa pun.
+- **Toast**: masuk turun dari atas 350 ms; ditutup/kedaluwarsa → salinan di posisinya memudar ke atas 200 ms (z-index 60).
+- **Uji**: `pageMotion.test.ts` (aturan gerak), `pageTransitions.test.ts` (opsi navigasi, path sama, pilihan eksplisit,
+  back/forward, gestur peramban, tanpa API / kurangi gerakan, pembungkus `startViewTransition`, uninstall), `motion.test.tsx`
+  (salinan jendela/toast, shadow root tertutup, tanpa salinan saat kurangi gerakan / tanpa API / ditahan, pembatalan),
+  `e2e/transitions.spec.ts` (Pixel 7 dengan gerak: tab/push/pop dan jumlah transisi, bilah tetap bernama, gulir ke atas & pulih,
+  tanggal Cek kamar tanpa transisi dan tanpa gulir, lembar naik/turun dan salinannya tak terlihat locator, ketukan cepat
+  beruntun, Kurangi gerakan). Seluruh e2e lain berjalan dengan gerak menyala.

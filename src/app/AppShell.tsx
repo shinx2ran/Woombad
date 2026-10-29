@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { NavLink, Outlet, ScrollRestoration, useLocation, useNavigate } from 'react-router'
 import { clsx } from 'clsx'
 import { LayoutDashboard, DoorOpen, Users, ReceiptText, Wallet, BarChart3, Settings, LogOut, FlaskConical } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -52,8 +52,11 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-slate-50">
-      {/* Sidebar (desktop) */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
+      {/* a new page starts at the top, going back returns to where the list was scrolled (search-only changes keep it) */}
+      <ScrollRestoration />
+      {/* Sidebar (desktop); the sidebar, top bar and bottom tabs stay still while a page slides (app-chrome, index.css) */}
+      {/* sticky: the menu stays in view while a long page scrolls (as on iPad), and stays put while a page slides */}
+      <aside className="app-sidebar sticky top-0 hidden h-dvh w-60 shrink-0 flex-col self-start overflow-y-auto border-r border-slate-200 bg-white md:flex">
         <div className="flex items-center gap-2 px-5 py-4">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-700 text-white font-bold">W</div>
           <div className="min-w-0">
@@ -88,7 +91,7 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
+        <header className="app-header sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 md:px-6">
             <div className="flex items-center gap-2 md:hidden">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-700 text-white text-sm font-bold">W</div>
@@ -128,7 +131,7 @@ export function AppShell() {
         </main>
 
         {/* Bottom tabs (mobile) */}
-        <nav className="fixed inset-x-0 bottom-0 z-30 grid border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden" style={{ gridTemplateColumns: `repeat(${mobileItems.length}, minmax(0, 1fr))` }}>
+        <nav className="app-tabbar fixed inset-x-0 bottom-0 z-30 grid border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden" style={{ gridTemplateColumns: `repeat(${mobileItems.length}, minmax(0, 1fr))` }}>
           {mobileItems.map((item) => (
             <NavLink
               key={item.to}

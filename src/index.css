@@ -48,3 +48,201 @@ input[type="number"]::-webkit-inner-spin-button {
   border-color: #e2e8f0 !important;
   font-size: 0.8rem;
 }
+
+/* ── Motion (SPEC 7.9) ─────────────────────────────────────────────────────────────────────────────────────────────
+   One iOS-like curve: a quick start and a long, soft settle. Everything here sits inside prefers-reduced-motion:
+   no-preference, so with "reduce motion" on pages and dialogs change at once, as before. */
+:root {
+  /* Ionic's / Vaul's iOS curve; where linear() exists, the no-bounce spring measured from iOS frames (within 1%) */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+  /* exits and fades (Material accelerate / decelerate) */
+  --ease-out-quick: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-soft: cubic-bezier(0, 0, 0.2, 1);
+  /* iOS pushes in about 500 ms; a little shorter, as the page cannot be tapped until it settles */
+  --page-ms: 450ms;
+  --sheet-ms: 500ms;
+}
+@supports (animation-timing-function: linear(0, 1)) {
+  :root {
+    --ease-ios: linear(0, 0.009 1.5%, 0.073 4.8%, 0.219 9.5%, 0.416 15.4%, 0.617 22.6%, 0.776 30.8%, 0.883 40%, 0.945 50.2%, 0.977 61.3%, 0.991 73.3%, 0.997 86.3%, 1);
+  }
+}
+
+/* The app chrome keeps its own snapshot during a page change, so it stays still while the page under it slides. */
+.app-header {
+  view-transition-name: app-header;
+}
+.app-tabbar {
+  view-transition-name: app-tabbar;
+}
+.app-sidebar {
+  view-transition-name: app-sidebar;
+}
+.app-toasts {
+  view-transition-name: app-toasts;
+}
+
+/* The header's frosted glass is not drawn in a transition's snapshot (Safari, Firefox): the page sliding under it
+   would show through, so it is solid white while a transition runs. */
+:root:active-view-transition .app-header {
+  background-color: #fff;
+}
+
+/* A dialog's exit is played on a copy of it (motion.ts): its CSS entrance must not play again on the copy. */
+[data-exit-copy],
+[data-exit-copy] * {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Pages (pageTransitions.ts writes html[data-page-motion]). push: the new page slides in from the right over the old
+     one, which drifts a third to the left and dims about 10% (over black); pop: the reverse. The chrome swaps without a
+     crossfade. */
+  :root[data-page-motion='push']::view-transition-old(root),
+  :root[data-page-motion='push']::view-transition-new(root),
+  :root[data-page-motion='pop']::view-transition-old(root),
+  :root[data-page-motion='pop']::view-transition-new(root) {
+    mix-blend-mode: normal;
+    animation-duration: var(--page-ms);
+    animation-timing-function: var(--ease-ios);
+    animation-fill-mode: both;
+  }
+  :root[data-page-motion='push']::view-transition-old(root) {
+    animation-name: page-out-left;
+  }
+  :root[data-page-motion='push']::view-transition-new(root) {
+    animation-name: page-in-right;
+    box-shadow: -8px 0 24px rgb(0 0 0 / 0.1);
+  }
+  :root[data-page-motion='pop']::view-transition-old(root) {
+    z-index: 1;
+    animation-name: page-out-right;
+    box-shadow: -8px 0 24px rgb(0 0 0 / 0.1);
+  }
+  :root[data-page-motion='pop']::view-transition-new(root) {
+    animation-name: page-in-left;
+  }
+  :root[data-page-motion='push']::view-transition-image-pair(root),
+  :root[data-page-motion='pop']::view-transition-image-pair(root) {
+    background: #000;
+  }
+  /* the chrome never moves: its box is the same before and after (sidebar and header are sticky, tabs and toasts fixed) */
+  ::view-transition-group(app-header),
+  ::view-transition-group(app-tabbar),
+  ::view-transition-group(app-sidebar),
+  ::view-transition-group(app-toasts) {
+    animation: none;
+  }
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-header),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-tabbar),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-sidebar),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-old(app-toasts) {
+    display: none;
+  }
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-header),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-tabbar),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-sidebar),
+  :is(:root[data-page-motion='push'], :root[data-page-motion='pop'])::view-transition-new(app-toasts) {
+    animation: none;
+  }
+
+  /* tab: switching sections fades through quickly, no slide (iOS 18 tabs, Material bottom navigation) */
+  :root[data-page-motion='tab']::view-transition-old(root) {
+    animation: 100ms var(--ease-out-quick) both page-fade-out;
+  }
+  :root[data-page-motion='tab']::view-transition-new(root) {
+    animation: 220ms var(--ease-in-soft) 40ms both page-fade-in;
+  }
+
+  /* none: the same page with other search params (normally no transition runs at all) */
+  :root[data-page-motion='none']::view-transition-group(*),
+  :root[data-page-motion='none']::view-transition-old(*),
+  :root[data-page-motion='none']::view-transition-new(*) {
+    animation: none;
+  }
+
+  /* Dialogs (Modal.tsx): a sheet rises from the bottom on phones, a dialog fades in and grows a little from the sm
+     breakpoint; the dimming fades in on the same timing. Their exit is animated in Modal.tsx. */
+  .modal-backdrop {
+    animation: var(--sheet-ms) var(--ease-ios) both fade-in;
+  }
+  .modal-panel {
+    animation: var(--sheet-ms) var(--ease-ios) backwards sheet-in;
+  }
+  @media (min-width: 640px) {
+    .modal-backdrop {
+      animation-duration: 300ms;
+    }
+    .modal-panel {
+      animation: 300ms var(--ease-ios) backwards dialog-in;
+    }
+  }
+
+  /* Toasts drop in from the top. */
+  .toast-item {
+    animation: 350ms var(--ease-ios) backwards toast-in;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+@keyframes page-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes page-out-left {
+  to {
+    transform: translateX(-33%);
+    opacity: 0.9;
+  }
+}
+@keyframes page-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes page-in-left {
+  from {
+    transform: translateX(-33%);
+    opacity: 0.9;
+  }
+}
+@keyframes page-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}

@@ -15,6 +15,7 @@ import { reportsRoutes } from '../features/reports/routes'
 import { settingsRoutes } from '../features/settings/routes'
 import { NotFoundPage } from './NotFoundPage'
 import { RouteErrorPage } from './RouteErrorPage'
+import { installPageTransitions } from './pageTransitions'
 
 /**
  * Route table. Each feature exports its own `RouteObject[]` from `src/features/<name>/routes.tsx`
@@ -57,3 +58,6 @@ const basename = import.meta.env.BASE_URL.replace(/\/$/, '')
 
 // The pathless root gives every route one error screen; AppErrorBoundary (main.tsx) covers the providers.
 export const router = createBrowserRouter([{ errorElement: <RouteErrorPage />, children: routes }], { basename })
+
+// pages slide / fade when they change (SPEC 7.9)
+installPageTransitions(router)
