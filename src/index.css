@@ -55,12 +55,18 @@ input[type="number"]::-webkit-inner-spin-button {
 :root {
   /* Ionic's / Vaul's iOS curve; where linear() exists, the no-bounce spring measured from iOS frames (within 1%) */
   --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
-  /* exits and fades (Material accelerate / decelerate) */
-  --ease-out-quick: cubic-bezier(0.4, 0, 1, 1);
+  /* fades in (Material decelerate) */
   --ease-in-soft: cubic-bezier(0, 0, 0.2, 1);
   /* iOS pushes in about 500 ms; a little shorter, as the page cannot be tapped until it settles */
   --page-ms: 450ms;
   --sheet-ms: 500ms;
+  /* how far a page slides: the whole width on phones; beside the sidebar, the width of the content column */
+  --page-slide: 100%;
+}
+@media (min-width: 768px) {
+  :root {
+    --page-slide: calc(100% - 15rem);
+  }
 }
 @supports (animation-timing-function: linear(0, 1)) {
   :root {
@@ -134,6 +140,16 @@ input[type="number"]::-webkit-inner-spin-button {
   :root[data-page-motion='push']::view-transition-image-pair(root),
   :root[data-page-motion='pop']::view-transition-image-pair(root) {
     background: #000;
+  }
+  /* beside the sidebar (md and up, w-60 = 15rem) only the content column slides, as in an iPad split view: the
+     snapshot's strip under the sidebar is empty and would slide across the page as a blank band */
+  @media (min-width: 768px) {
+    :root[data-page-motion='push']::view-transition-old(root),
+    :root[data-page-motion='push']::view-transition-new(root),
+    :root[data-page-motion='pop']::view-transition-old(root),
+    :root[data-page-motion='pop']::view-transition-new(root) {
+      clip-path: inset(0 0 0 15rem);
+    }
   }
   /* the chrome never moves: its box is the same before and after (sidebar and header are sticky, the rest fixed). On a
      push or pop it shows the new page's state at once; one that only the old page had stays until the slide ends. */
@@ -215,7 +231,7 @@ input[type="number"]::-webkit-inner-spin-button {
 
 @keyframes page-in-right {
   from {
-    transform: translateX(100%);
+    transform: translateX(var(--page-slide));
   }
 }
 @keyframes page-out-left {
@@ -226,7 +242,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 @keyframes page-out-right {
   to {
-    transform: translateX(100%);
+    transform: translateX(var(--page-slide));
   }
 }
 @keyframes page-in-left {

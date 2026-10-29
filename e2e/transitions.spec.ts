@@ -2,8 +2,9 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
 
-/** Mid-animation phone screenshots for a human look (test-results is git-ignored). */
+/** Mid-animation phone screenshots for a human look (test-results is git-ignored), one folder per project. */
 const SHOTS = process.env.TRANSITION_SHOTS ?? join(process.cwd(), 'test-results', 'transitions')
+const shotsDir = () => join(SHOTS, test.info().project.name)
 
 // Paths are relative ('login', not '/login'): the pages-motion project runs this spec under the live site's /Woombad/.
 async function loginDemo(page: Page) {
@@ -12,24 +13,41 @@ async function loginDemo(page: Page) {
   await page.waitForURL(/\/dashboard$/)
 }
 
-/** counts the view transitions the app starts (React Router calls document.startViewTransition) and those still running */
+/**
+ * Counts the view transitions the app starts (React Router calls document.startViewTransition), those still running,
+ * and every dialog exit copy ever put on the page.
+ */
 async function countTransitions(page: Page) {
   await page.addInitScript(() => {
-    const w = window as unknown as { __transitions: number; __running: number }
+    const w = window as unknown as { __transitions: number; __running: number; __copies: number }
     w.__transitions = 0
     w.__running = 0
+    w.__copies = 0
     const start = document.startViewTransition?.bind(document)
     if (start) {
       document.startViewTransition = ((arg: Parameters<typeof start>[0]) => {
         w.__transitions++
         w.__running++
         const transition = start(arg)
-        void transition.finished.finally(() => w.__running--)
+        // a transition skipped by the next tap rejects `ready`, and its other promises may never settle
+        let ended = false
+        const end = () => {
+          if (ended) return
+          ended = true
+          w.__running--
+        }
+        transition.ready.catch(end)
+        void transition.finished.finally(end)
         return transition
       }) as typeof document.startViewTransition
     }
+    new MutationObserver((records) => {
+      for (const r of records) for (const n of r.addedNodes) if (n instanceof HTMLElement && n.hasAttribute('data-exit-copy')) w.__copies++
+    }).observe(document, { childList: true, subtree: true })
   })
 }
+/** how many exit copies the page has shown so far (with countTransitions) */
+const copiesShown = (page: Page) => page.evaluate(() => (window as unknown as { __copies: number }).__copies)
 const transitions = (page: Page) => page.evaluate(() => (window as unknown as { __transitions: number }).__transitions)
 const motion = (page: Page) => page.evaluate(() => document.documentElement.dataset.pageMotion)
 const scrollY = (page: Page) => page.evaluate(() => window.scrollY)
@@ -51,7 +69,7 @@ test.use({ timezoneId: 'Asia/Jakarta' })
 test.describe('Transisi halaman & jendela (SPEC 7.9)', () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-10-23T10:00:00+07:00'))
-    mkdirSync(SHOTS, { recursive: true })
+    mkdirSync(shotsDir(), { recursive: true })
   })
 
   test('a lease slides in from the list and back out; the tabs crossfade; the bar and tabs stay put', async ({ page, context }) => {
@@ -73,7 +91,7 @@ test.describe('Transisi halaman & jendela (SPEC 7.9)', () => {
     await page.waitForURL(/\/sewa\/[^/]+$/)
     expect(await motion(page)).toBe('push')
     await page.waitForTimeout(1200)
-    await page.screenshot({ path: join(SHOTS, 'push-halfway.png') })
+    await page.screenshot({ path: join(shotsDir(), 'push-halfway.png') })
     // the chrome has its own snapshot, so it is not part of the sliding page
     const named = await page.evaluate(() => ['.app-header', '.app-tabbar'].map((s) => getComputedStyle(document.querySelector(s)!).viewTransitionName))
     expect(named).toEqual(['app-header', 'app-tabbar'])
@@ -143,6 +161,7 @@ test.describe('Transisi halaman & jendela (SPEC 7.9)', () => {
   })
 
   test('a sheet rises and slides away; its copy is never found by text, role or label and leaves no trace', async ({ page, context }) => {
+    await countTransitions(page)
     await loginDemo(page)
     await page.goto('pengeluaran')
     await page.getByRole('button', { name: 'Catat pengeluaran' }).click()
@@ -155,17 +174,24 @@ test.describe('Transisi halaman & jendela (SPEC 7.9)', () => {
     await cdp.send('Animation.enable')
     await cdp.send('Animation.setPlaybackRate', { playbackRate: 0.5 })
     await dialog.getByRole('button', { name: 'Tutup' }).click()
-    // the dialog is gone at once; its picture slides away on top, invisible to locators
-    await expect(page.getByRole('dialog')).toHaveCount(0)
+    // the dialog is gone at once; its picture slides away on top: while it is there (read once, not retried) no
+    // text, role or label locator finds it, and a tap on the button under it reaches the button
     await expect(exitCopies(page)).toHaveCount(1)
-    await expect(page.getByText('Template cepat')).toHaveCount(0)
-    await expect(page.getByLabel('Deskripsi')).toHaveCount(0)
-    await page.screenshot({ path: join(SHOTS, 'sheet-closing.png') })
-    // taps go through the copy to the page while it is still there
-    await page.getByRole('button', { name: 'Catat pengeluaran' }).click()
-    await expect(page.getByRole('dialog')).toBeVisible()
+    expect(await page.getByRole('dialog').count()).toBe(0)
+    expect(await page.getByText('Template cepat').count()).toBe(0)
+    expect(await page.getByLabel('Deskripsi').count()).toBe(0)
+    const tapReachesButton = await page.evaluate(() => {
+      const button = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Catat pengeluaran'))!
+      const r = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+      return hit === button || button.contains(hit)
+    })
+    expect(tapReachesButton).toBe(true)
+    expect(await exitCopies(page).count()).toBe(1)
+    await page.screenshot({ path: join(shotsDir(), 'sheet-closing.png') })
     await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 })
     await expect(exitCopies(page)).toHaveCount(0)
+    expect(await copiesShown(page)).toBe(1)
   })
 
   test('a link inside an open sheet: the sheet leaves with the old page, the new page has the chrome on top again', async ({ page }) => {
@@ -181,7 +207,8 @@ test.describe('Transisi halaman & jendela (SPEC 7.9)', () => {
     expect(await motion(page)).toBe('push')
     await settled(page, () => expect(page.getByRole('link', { name: 'Semua sewa' })).toBeVisible())
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(exitCopies(page)).toHaveCount(0)
+    // it went in the old page's snapshot: no separate exit copy at any point
+    expect(await copiesShown(page)).toBe(0)
     expect(await page.evaluate(() => getComputedStyle(document.querySelector('.app-header')!).viewTransitionName)).toBe('app-header')
   })
 
@@ -214,6 +241,7 @@ test.describe('Kurangi gerakan (SPEC 7.9)', () => {
     await page.getByRole('button', { name: 'Catat pengeluaran' }).click()
     expect(await page.getByRole('dialog').locator('.modal-panel').evaluate((el) => getComputedStyle(el).animationName)).toBe('none')
     await page.getByRole('dialog').getByRole('button', { name: 'Tutup' }).click()
-    await expect(exitCopies(page)).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    expect(await copiesShown(page)).toBe(0)
   })
 })

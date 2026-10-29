@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, type DataRouter } from 'react-router'
-import { installPageTransitions, previousPathname, seedHistoryKey, targetPathname, withoutBasename } from './pageTransitions'
+import { REDRAW_CHECK_MS, UPDATE_LIMIT_MS, installPageTransitions, previousPathname, reportRenderedLocation, seedHistoryKey, targetPathname, withoutBasename } from './pageTransitions'
 
-/** a transition whose promises reject the way a skipped one does */
+/** updates held back by a transition that has not run its callback yet (see deferUpdates) */
+let heldUpdates: Array<() => unknown> = []
+let deferUpdates = false
+
+/** a transition whose promises reject the way a skipped one does; like a browser it runs the update (even if skipped) */
 function fakeTransition(update?: unknown) {
   const skipped = () => Promise.reject(new DOMException('Transition was skipped', 'AbortError'))
+  if (typeof update === 'function') {
+    if (deferUpdates) heldUpdates.push(update as () => unknown)
+    else void (update as () => unknown)()
+  }
   return { update, ready: skipped(), updateCallbackDone: Promise.resolve(), finished: Promise.resolve(), skipTransition: vi.fn() }
 }
 
@@ -37,12 +45,20 @@ function setup(opts?: Parameters<typeof fakeWindow>[0] & { basename?: string; at
   win = fakeWindow(opts)
   navigate = vi.spyOn(router, 'navigate')
   uninstall = installPageTransitions(router, win as unknown as Window)
+  // what RouterProvider does with a change that asks for a transition
+  router.subscribe((_state, { viewTransitionOpts }) => {
+    if (viewTransitionOpts) win.document.startViewTransition?.(() => undefined)
+  })
 }
 const motion = () => win.document.documentElement.dataset.pageMotion
 /** what the router itself was asked for */
 const lastOptions = () => navigate.mock.calls.at(-1)?.[1] as Record<string, unknown> | undefined
 
-beforeEach(() => setup())
+beforeEach(() => {
+  deferUpdates = false
+  heldUpdates = []
+  setup()
+})
 afterEach(() => {
   uninstall()
   router.dispose()
@@ -51,7 +67,8 @@ afterEach(() => {
 describe('installPageTransitions', () => {
   it('a link to another page asks for a view transition and marks the motion', async () => {
     await router.navigate('/sewa/a1')
-    expect(lastOptions()).toMatchObject({ viewTransition: true })
+    // drawn inside its own transition at once (flushSync), not queued for a later render
+    expect(lastOptions()).toMatchObject({ viewTransition: true, flushSync: true })
     expect(motion()).toBe('push')
     win.history.state = { idx: 1 }
     await router.navigate('/penyewa')
@@ -175,6 +192,76 @@ describe('installPageTransitions', () => {
     win.history.state = { idx: 2 }
     await router.navigate('/penyewa')
     expect(previousPathname()).toBe('/sewa/a1')
+  })
+
+  it('a same-page change right after a page change not drawn yet joins its transition (a guard after the logout)', async () => {
+    deferUpdates = true
+    await router.navigate('/dashboard')
+    expect(motion()).toBe('tab')
+    // React Router has the new page but has not drawn it: the guard's redirect to the same page, with its state
+    await router.navigate('/dashboard', { replace: true, state: { from: '/sewa' } })
+    expect(lastOptions()).toMatchObject({ viewTransition: true, replace: true, preventScrollReset: true })
+    expect(motion()).toBe('tab')
+    // once drawn, a same-page change is plain again
+    for (const update of heldUpdates) await update()
+    await router.navigate('?x=1')
+    expect(lastOptions()?.viewTransition).toBeUndefined()
+  })
+
+  it("React Router's update that never finishes (quick taps) is cut off, so the transition ends and the last page is drawn", async () => {
+    vi.useFakeTimers()
+    try {
+      deferUpdates = true
+      await router.navigate('/dashboard')
+      heldUpdates = []
+      // React Router's update, waiting for a render that never comes
+      win.document.startViewTransition?.((() => new Promise(() => undefined)) as never)
+      const update = heldUpdates[0]
+      let done = false
+      void Promise.resolve(update()).then(() => (done = true))
+      // React Router's own wait, left hanging
+      await vi.advanceTimersByTimeAsync(UPDATE_LIMIT_MS - 1)
+      expect(done).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(done).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('after a transition, a drawn page behind the router (quick back steps) is drawn again from the router', async () => {
+    vi.useFakeTimers()
+    const revalidate = vi.spyOn(router, 'revalidate').mockResolvedValue(undefined)
+    try {
+      await router.navigate('/sewa/a1')
+      // the app shell drew the right page: nothing to do
+      reportRenderedLocation(router.state.location.key)
+      win.document.startViewTransition?.(() => undefined)
+      await vi.advanceTimersByTimeAsync(REDRAW_CHECK_MS)
+      expect(revalidate).not.toHaveBeenCalled()
+      // it still shows an older page
+      reportRenderedLocation('older')
+      win.document.startViewTransition?.(() => undefined)
+      await vi.advanceTimersByTimeAsync(REDRAW_CHECK_MS)
+      expect(revalidate).toHaveBeenCalledTimes(1)
+      // outside the app shell (login) there is nothing to compare
+      reportRenderedLocation(null)
+      win.document.startViewTransition?.(() => undefined)
+      await vi.advanceTimersByTimeAsync(REDRAW_CHECK_MS)
+      expect(revalidate).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+      reportRenderedLocation(null)
+    }
+  })
+
+  it('links that open a dialog as the page arrives change the page at once', async () => {
+    await router.navigate('/sewa/a1?action=bayar')
+    expect(lastOptions()).toMatchObject({ viewTransition: false })
+    await router.navigate({ pathname: '/penyewa', search: '?new=1' })
+    expect(lastOptions()).toMatchObject({ viewTransition: false })
+    await router.navigate('/rencana?mulai=2026-10-27')
+    expect(lastOptions()).toMatchObject({ viewTransition: true })
   })
 
   it('uninstalling restores the router and the document', () => {

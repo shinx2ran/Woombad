@@ -4,6 +4,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** Phone screenshots for a human look; KELUAR_SHOTS picks another folder (test-results is git-ignored). */
 const SHOTS = process.env.KELUAR_SHOTS ?? join(process.cwd(), 'test-results', 'keluar')
+/** the phone project's screenshots in SHOTS, the motion project's (frames mid-animation) beside them */
+const shotsDir = () => (test.info().project.name === 'phone' ? SHOTS : join(SHOTS, test.info().project.name))
 
 async function loginDemo(page: Page) {
   await page.goto('/login')
@@ -30,7 +32,7 @@ test.describe('Rencana keluar & "Bisa kosong" (SPEC 7.8)', () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-10-24T10:00:00+07:00'))
     await page.setViewportSize({ width: 360, height: 780 })
-    mkdirSync(SHOTS, { recursive: true })
+    mkdirSync(shotsDir(), { recursive: true })
   })
 
   test('1 night on 24 Des: free rooms say when they empty, monthly rooms are "Bisa kosong"; Tandai akan keluar frees one and Pesan books it', async ({ page }) => {
@@ -50,7 +52,7 @@ test.describe('Rencana keluar & "Bisa kosong" (SPEC 7.8)', () => {
       el.scrollIntoView({ block: 'start' })
       window.scrollBy(0, -112)
     })
-    await page.screenshot({ path: join(SHOTS, 'board-sheet.png') })
+    await page.screenshot({ path: join(shotsDir(), 'board-sheet.png') })
     await page.keyboard.press('Escape')
 
     await page.goto('/rencana?jenis=harian&mulai=2026-12-24&jumlah=1')
@@ -83,9 +85,9 @@ test.describe('Rencana keluar & "Bisa kosong" (SPEC 7.8)', () => {
     expect(await noSideScroll(page)).toBe(true)
 
     await scrollUnderHeader(page, /Kosong untuk seluruh tanggal/)
-    await page.screenshot({ path: join(SHOTS, 'planner-free.png') })
+    await page.screenshot({ path: join(shotsDir(), 'planner-free.png') })
     await scrollUnderHeader(page, /Bisa kosong/)
-    await page.screenshot({ path: join(SHOTS, 'planner-bisa-kosong.png') })
+    await page.screenshot({ path: join(shotsDir(), 'planner-bisa-kosong.png') })
 
     // Budi says he leaves at the end of his paid month: the sheet starts on his check-out day
     await a1.getByRole('button', { name: 'Tandai Budi Santoso akan keluar' }).click()
@@ -95,7 +97,7 @@ test.describe('Rencana keluar & "Bisa kosong" (SPEC 7.8)', () => {
     await expect(sheet).toContainText('Ditagih s/d (check-out)21 Nov 2026')
     await expect(sheet).toContainText('Rencana keluar sekarangBelum ada')
     expect(await noSideScroll(page)).toBe(true)
-    await page.screenshot({ path: join(SHOTS, 'rencana-keluar-sheet.png') })
+    await page.screenshot({ path: join(shotsDir(), 'rencana-keluar-sheet.png') })
     await sheet.getByRole('button', { name: 'Simpan' }).click()
     await expect(page.getByText('Rencana keluar Budi Santoso dicatat: check-out 21 Nov 2026.')).toBeVisible()
 
@@ -128,7 +130,7 @@ test.describe('Rencana keluar & "Bisa kosong" (SPEC 7.8)', () => {
     await expect(page.getByText('Rencana keluar', { exact: true })).toBeVisible()
     expect(await noSideScroll(page)).toBe(true)
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.screenshot({ path: join(SHOTS, 'lease-akan-keluar.png') })
+    await page.screenshot({ path: join(shotsDir(), 'lease-akan-keluar.png') })
 
     await page.getByRole('button', { name: 'Buat tagihan berikutnya' }).first().click()
     await expect(page.getByRole('dialog').getByTestId('planned-checkout-warning')).toContainText('Penyewa berencana keluar 21 Nov 2026.')
@@ -148,7 +150,7 @@ test.describe('Rencana keluar & "Bisa kosong" (SPEC 7.8)', () => {
     await expect(page.getByText('Rencana keluar tidak bisa dibatalkan: kamar A1 sudah dipesan Tamu Natal mulai 24 Des 2026. Pindahkan atau batalkan pesanan itu dulu.')).toBeVisible()
     await expect(plan.getByRole('heading', { name: 'Rencana keluar · Kamar A1' })).toBeVisible()
     expect(await noSideScroll(page)).toBe(true)
-    await page.screenshot({ path: join(SHOTS, 'rencana-keluar-ditolak.png') })
+    await page.screenshot({ path: join(shotsDir(), 'rencana-keluar-ditolak.png') })
     await plan.getByLabel(/Tanggal keluar/).fill('2026-12-30')
     await plan.getByRole('button', { name: 'Simpan' }).click()
     await expect(page.getByText('Kamar A1 sudah dipesan Tamu Natal mulai 24 Des 2026, jadi tanggal keluar paling lambat 24 Des 2026.', { exact: false })).toBeVisible()

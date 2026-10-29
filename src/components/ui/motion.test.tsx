@@ -78,6 +78,24 @@ describe('dialog exit', () => {
     expect(copies()).toHaveLength(1)
   })
 
+  it('a tap on the dimming while the sheet is still rising (a double tap) does not close it', () => {
+    let rising = true
+    HTMLElement.prototype.getAnimations = function (this: HTMLElement) {
+      return this.classList.contains('modal-panel') && rising ? [{ playState: 'running' } as Animation] : []
+    }
+    try {
+      render(<Harness />)
+      const backdrop = document.querySelector('.modal-backdrop')!
+      fireEvent.click(backdrop)
+      expect(screen.getByRole('dialog')).toBeTruthy()
+      rising = false
+      fireEvent.click(backdrop)
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      delete (HTMLElement.prototype as { getAnimations?: unknown }).getAnimations
+    }
+  })
+
   it('no copy with reduce motion on, without the Web Animations API, or while a page transition is starting', async () => {
     reduceMotion = true
     const first = render(<Harness />)

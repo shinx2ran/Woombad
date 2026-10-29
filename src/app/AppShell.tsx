@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { NavLink, Outlet, ScrollRestoration, useLocation, useNavigate } from 'react-router'
 import { clsx } from 'clsx'
 import { LayoutDashboard, DoorOpen, Users, ReceiptText, Wallet, BarChart3, Settings, LogOut, FlaskConical } from 'lucide-react'
@@ -8,6 +8,7 @@ import { PropertySwitcher } from './PropertySwitcher'
 import { BackupReminderBanner } from './BackupReminderBanner'
 import { appUpdater } from './appUpdate'
 import { forgetOtherPages } from './dirtyState'
+import { reportRenderedLocation } from './pageTransitions'
 
 export interface NavItem {
   to: string
@@ -36,7 +37,12 @@ export function AppShell() {
   const { auth, session } = useAuth()
   const { org, role, isLocalMode } = useOrg()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const { pathname, key } = useLocation()
+  // the page drawn, checked against the router's after each page transition (pageTransitions.ts)
+  useLayoutEffect(() => {
+    reportRenderedLocation(key)
+    return () => reportRenderedLocation(null)
+  }, [key])
   // a new version that waited for unsaved work is applied on the next page change
   useEffect(() => {
     forgetOtherPages()

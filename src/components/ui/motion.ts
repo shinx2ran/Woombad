@@ -4,9 +4,12 @@
  * (jsdom in unit tests), nothing animates and everything appears and disappears at once, as before.
  */
 
-/** iOS-like curve: fast start, long soft settle (sheets, dialogs, page pushes); the CSS twin is --ease-ios in index.css */
+/**
+ * iOS-like curve: fast start, long soft settle (a sheet sliding away). The CSS --ease-ios in index.css starts from the
+ * same curve but is the measured linear() spring where browsers support linear() (the entrances, page slides).
+ */
 export const EASE_IOS = 'cubic-bezier(0.32, 0.72, 0, 1)'
-/** a quick accelerating exit (a dialog fading away), --ease-out-quick in index.css */
+/** a quick accelerating exit (a dialog fading away; Material accelerate) */
 export const EASE_OUT_QUICK = 'cubic-bezier(0.4, 0, 1, 1)'
 /** how long a closing sheet / dialog / toast takes to leave (a sheet's curve has it 90% gone in under half of it) */
 export const EXIT_MS = { sheet: 400, dialog: 180, toast: 200 }

@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { Component, useEffect, useRef, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import { X } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useDirtyWhile } from '../../app/dirtyState'
@@ -41,6 +41,13 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
   }, [open, onClose])
 
   const widths = { sm: 'sm:max-w-sm', md: 'sm:max-w-lg', lg: 'sm:max-w-2xl' }
+  // while the sheet is still rising the dimming already covers the screen: the second tap of a double tap on the
+  // button that opened it would land there and close it again (iOS ignores taps on a sheet that is still presenting)
+  const onBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    const panel = event.currentTarget.nextElementSibling
+    if (panel?.getAnimations?.().some((a) => a.playState === 'running')) return
+    onClose()
+  }
   return (
     <ExitAnimation show={open} nodeRef={overlayRef}>
       {open && (
@@ -48,7 +55,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
         <div ref={overlayRef} className="group fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
           {/* fixed, not absolute: still dims the whole page while the overlay is pinned above the keyboard;
               touch-pinch-zoom here and on the title and button rows: a drag there must not pan the page under the keyboard */}
-          <div className="modal-backdrop fixed inset-0 touch-pinch-zoom bg-slate-900/40" onClick={onClose} />
+          <div className="modal-backdrop fixed inset-0 touch-pinch-zoom bg-slate-900/40" onClick={onBackdropClick} />
           <div
             className={clsx(
               'modal-panel relative flex max-h-[92%] w-full flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl',
@@ -92,8 +99,11 @@ function animateDialogExit(copy: HTMLElement): Animation[] {
   const panel = copy.querySelector<HTMLElement>('.modal-panel')
   if (backdrop) animations.push(backdrop.animate([{ opacity: 1 }, { opacity: 0 }], timing))
   if (panel) {
+    // a sheet closed while the keyboard was up was pinned above it (keyboardSafe): it slides all the way past the
+    // bottom of the screen, not just its own height, or it would stay in view once the keyboard drops
+    const below = Math.max(0, document.documentElement.clientHeight - panel.getBoundingClientRect().bottom)
     const frames = sheet
-      ? [{ transform: 'translateY(0)' }, { transform: 'translateY(100%)' }]
+      ? [{ transform: 'translateY(0)' }, { transform: `translateY(calc(100% + ${Math.round(below)}px))` }]
       : [
           { opacity: 1, transform: 'scale(1)' },
           { opacity: 0, transform: 'scale(0.98)' },
