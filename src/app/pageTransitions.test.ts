@@ -5,6 +5,8 @@ import { REDRAW_CHECK_MS, UPDATE_LIMIT_MS, installPageTransitions, previousPathn
 /** updates held back by a transition that has not run its callback yet (see deferUpdates) */
 let heldUpdates: Array<() => unknown> = []
 let deferUpdates = false
+/** the next transitions never finish (a slide still running) */
+let neverFinish = false
 
 /** a transition whose promises reject the way a skipped one does; like a browser it runs the update (even if skipped) */
 function fakeTransition(update?: unknown) {
@@ -13,7 +15,8 @@ function fakeTransition(update?: unknown) {
     if (deferUpdates) heldUpdates.push(update as () => unknown)
     else void (update as () => unknown)()
   }
-  return { update, ready: skipped(), updateCallbackDone: Promise.resolve(), finished: Promise.resolve(), skipTransition: vi.fn() }
+  const finished = neverFinish ? new Promise<void>(() => undefined) : Promise.resolve()
+  return { update, ready: skipped(), updateCallbackDone: Promise.resolve(), finished, skipTransition: vi.fn() }
 }
 
 /** just what pageTransitions reads from a window */
@@ -56,6 +59,7 @@ const lastOptions = () => navigate.mock.calls.at(-1)?.[1] as Record<string, unkn
 
 beforeEach(() => {
   deferUpdates = false
+  neverFinish = false
   heldUpdates = []
   setup()
 })
@@ -239,16 +243,34 @@ describe('installPageTransitions', () => {
       win.document.startViewTransition?.(() => undefined)
       await vi.advanceTimersByTimeAsync(REDRAW_CHECK_MS)
       expect(revalidate).not.toHaveBeenCalled()
-      // it still shows an older page
+      // it shows an older page for a moment (a back step React is about to draw): not yet
       reportRenderedLocation('older')
       win.document.startViewTransition?.(() => undefined)
       await vi.advanceTimersByTimeAsync(REDRAW_CHECK_MS)
+      expect(revalidate).not.toHaveBeenCalled()
+      reportRenderedLocation(router.state.location.key)
+      await vi.advanceTimersByTimeAsync(REDRAW_CHECK_MS)
+      expect(revalidate).not.toHaveBeenCalled()
+      // it still shows the older page at the next check: drawn again
+      reportRenderedLocation('older')
+      win.document.startViewTransition?.(() => undefined)
+      await vi.advanceTimersByTimeAsync(2 * REDRAW_CHECK_MS)
       expect(revalidate).toHaveBeenCalledTimes(1)
+      // not while another transition runs (its end checks again)
+      reportRenderedLocation(router.state.location.key)
+      await vi.advanceTimersByTimeAsync(4 * REDRAW_CHECK_MS)
+      revalidate.mockClear()
+      neverFinish = true
+      win.document.startViewTransition?.(() => undefined)
+      neverFinish = false
+      reportRenderedLocation('older')
+      win.document.startViewTransition?.(() => undefined)
+      await vi.advanceTimersByTimeAsync(4 * REDRAW_CHECK_MS)
+      expect(revalidate).not.toHaveBeenCalled()
       // outside the app shell (login) there is nothing to compare
       reportRenderedLocation(null)
-      win.document.startViewTransition?.(() => undefined)
-      await vi.advanceTimersByTimeAsync(REDRAW_CHECK_MS)
-      expect(revalidate).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(4 * REDRAW_CHECK_MS)
+      expect(revalidate).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
       reportRenderedLocation(null)

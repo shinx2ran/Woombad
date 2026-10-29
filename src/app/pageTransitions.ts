@@ -109,6 +109,14 @@ export function installPageTransitions(router: DataRouter, win: Window = window)
   let pending = false
 
   const navigate = router.navigate
+  /**
+   * A replace navigation given flushSync here is started a microtask later: guards' <Navigate> redirects call it from a
+   * React effect, where React cannot flush (and says so in development); `pending` is read now, at call time.
+   */
+  const go = (to: To | null, opts: RouterNavigateOptions | undefined, added: RouterNavigateOptions) => {
+    if (added.flushSync && opts?.flushSync === undefined && opts?.replace === true) return Promise.resolve().then(() => navigate(to, { ...opts, ...added }))
+    return navigate(to, { ...opts, ...added })
+  }
   const animated: typeof router.navigate = (to: To | number | null, opts?: RouterNavigateOptions) => {
     if (typeof to === 'number') return navigate(to)
     const current = router.state.location
@@ -119,15 +127,16 @@ export function installPageTransitions(router: DataRouter, win: Window = window)
       // Right after a page change that is not drawn yet (a guard's <Navigate> after the logout's own navigate), it
       // must go through the transition too, or the older change would be drawn over it.
       const extra = pending && opts?.viewTransition === undefined ? { viewTransition: true, flushSync: opts?.flushSync ?? true } : {}
-      return navigate(to, { ...opts, ...extra, preventScrollReset: opts?.preventScrollReset ?? true })
+      return go(to, opts, { ...extra, preventScrollReset: opts?.preventScrollReset ?? true })
     }
     // the '/' redirect at start-up (and to the login): nothing on screen yet to animate from
     const animate = here !== '/' && !OPENS_ON_ARRIVAL.test(searchOf(to)) && canAnimatePages(win)
     const viewTransition = opts?.viewTransition ?? animate
     // flushSync: each page change draws its own page inside its own transition, at once. Without it React Router
     // queues the change and waits for a later render; quick taps then interleave its queue and can draw an older page
-    // over the newest one (React Router 8.4), leaving the screen behind the URL.
-    return navigate(to, { ...opts, viewTransition, ...(viewTransition && opts?.flushSync === undefined ? { flushSync: true } : {}) })
+    // over the newest one (React Router 8.4), leaving the screen behind the URL. (React Router drops it on the first
+    // visit to a lazy page, which takes the queued path: the check after each transition below covers that.)
+    return go(to, opts, { viewTransition, ...(viewTransition && opts?.flushSync === undefined ? { flushSync: true } : {}) })
   }
   router.navigate = animated
 
@@ -161,6 +170,8 @@ export function installPageTransitions(router: DataRouter, win: Window = window)
   // Otherwise the old page has just been captured, dialogs included (one closing on screen is in the picture as it
   // was): its exit copies go, and dialogs the page change removes play no exit, until the new page is drawn.
   const start = doc.startViewTransition
+  // transitions started and not yet finished
+  let running = 0
   if (typeof start === 'function') {
     doc.startViewTransition = ((arg?: Parameters<typeof start>[0]) => {
       const skip = doc.documentElement.dataset.pageMotion === 'none'
@@ -179,21 +190,37 @@ export function installPageTransitions(router: DataRouter, win: Window = window)
           }
         : arg
       const transition = start.call(doc, wrapped)
+      running++
       transition.ready.catch(() => undefined)
       transition.updateCallbackDone.catch(() => undefined)
-      transition.finished.catch(() => undefined).finally(() => setTimeout(redrawIfBehind, REDRAW_CHECK_MS))
+      transition.finished
+        .catch(() => undefined)
+        .finally(() => {
+          running--
+          setTimeout(redrawIfBehind, REDRAW_CHECK_MS)
+        })
       if (skip) transition.skipTransition()
       return transition
     }) as typeof start
   }
 
-  // Back/forward steps go through React Router's queued path (they cannot use flushSync). If quick steps still left the
-  // drawn page behind the router's (see above), React Router is asked to draw its current state again: revalidate()
-  // notifies RouterProvider without a transition and without touching history (the app has no loaders).
-  const redrawIfBehind = () => {
-    if (renderedKey === null || renderedKey === router.state.location.key) return
-    if (router.state.navigation.state !== 'idle') return
-    void router.revalidate()
+  // Back/forward steps and first visits to lazy pages go through React Router's queued path. If quick steps still left
+  // the drawn page behind the router's (see above), React Router is asked to draw its current state again: revalidate()
+  // notifies RouterProvider without a transition and without touching history (the app has no loaders). Only when the
+  // lag lasts: a page change on its way (a later transition running, or a back step React is about to draw) shows the
+  // same mismatch for a moment, and revalidating then would lose that step's scroll restore.
+  const redrawIfBehind = (seen?: string) => {
+    if (running > 0) return // that transition's own end checks again
+    const key = router.state.location.key
+    if (renderedKey === null || renderedKey === key || router.state.navigation.state !== 'idle') return
+    if (seen !== key) {
+      setTimeout(() => redrawIfBehind(key), REDRAW_CHECK_MS)
+      return
+    }
+    void router.revalidate().then(() => {
+      // drawn without its transition: a new page starts at the top, as it would have
+      if (router.state.historyAction !== 'POP') win.scrollTo?.(0, 0)
+    })
   }
 
   const unsubscribe = router.subscribe((state, { viewTransitionOpts }) => {

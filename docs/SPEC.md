@@ -710,14 +710,16 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   `viewTransition: true` + `flushSync: true` (React Router menggambar halaman baru langsung di dalam
   `document.startViewTransition` miliknya sendiri; tanpa `flushSync` ia mengantrekan perubahan untuk render berikutnya, dan
   ketukan cepat beruntun dapat membuat antrean React Router 8.4 menggambar halaman lama di atas yang terbaru — layar tertinggal
-  dari URL; uji stres 80 putaran: 1–2 kali sebelum, 0 sesudah), kecuali dari `/`
+  dari URL; uji stres: 1–2 dari 80 putaran sebelum, 0 dari 250 sesudah; React Router membuang `flushSync` pada kunjungan
+  pertama ke halaman lazy, yang tetap lewat antrean — ditutup pengaman di bawah), kecuali dari `/`
   (pengalihan saat aplikasi dibuka: belum ada yang bisa digeser) dan kecuali tautan yang membuka jendela saat halaman tiba
   (`?action=` di sewa, `?new=1` di Penyewa/Pengeluaran, `?isi=hp`, `?impor=demo`) atau kamera (`?scan=1`): halaman langsung
   berganti seperti dulu lalu jendelanya naik (dalam geseran ia terbuka di bawah bilah yang diam, yang menutupi bagian bawahnya);
   path sama → tanpa transisi (render sinkron tetap, `flushSync` perencana tetap berlaku) dan `preventScrollReset: true`, kecuali
   tepat setelah perubahan halaman yang belum digambar (mis. `<Navigate>` penjaga sesudah navigate logout/login sendiri): ia ikut
   transisi itu, supaya perubahan lama tidak tergambar menimpanya (lokasi yang tampil = URL = state router); pilihan eksplisit
-  pemanggil menang. Pelanggan `router.subscribe`
+  pemanggil menang. Navigasi `replace` yang diberi `flushSync` di sini dijalankan satu microtask kemudian: `<Navigate>` penjaga
+  memanggilnya dari effect React, tempat React tidak bisa flush (di mode pengembangan ia mencatat galat). Pelanggan `router.subscribe`
   menulis `html[data-page-motion]` **hanya** untuk perubahan yang menjalankan transisi (halaman yang menghapus parameternya
   sendiri saat dibuka, `?action=` / `?new=1`, tidak mengubah geseran yang sedang berjalan menjadi `none`); bila peramban sudah
   menganimasikan gestur kembali (`popstate.hasUAVisualTransition`, Safari) → `none`, dan animasi keluar dijeda sampai halaman
@@ -728,9 +730,11 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   dan animasi keluar dijeda (`pauseExitAnimations`) sampai halaman baru selesai digambar — jendela yang tertutup karena halaman
   berganti, atau ditutup lalu langsung pindah halaman setelah **Simpan**, ikut bergeser bersama halaman lama. Back/forward
   memakai pasangan yang direkam React Router; langkah ini tetap lewat antrean React Router (tidak bisa `flushSync`), jadi
-  sebagai pengaman: 150 ms setelah setiap transisi berakhir, bila halaman yang digambar AppShell (`reportRenderedLocation`)
-  bukan lokasi router dan tidak ada navigasi berjalan, `router.revalidate()` membuat RouterProvider menggambar keadaan router
-  sekarang (tanpa transisi, tanpa mengubah riwayat; aplikasi tidak memakai loader). Callback React Router yang menunggu render
+  sebagai pengaman: 150 ms setelah setiap transisi berakhir, bila tidak ada transisi lain berjalan, halaman yang digambar
+  AppShell (`reportRenderedLocation`) bukan lokasi router, tidak ada navigasi berjalan, **dan** keadaan itu masih sama pada
+  pemeriksaan 150 ms berikutnya (langkah mundur yang sebentar lagi digambar tampak sama sesaat; menggambar ulang saat itu
+  menghilangkan pemulihan gulirnya), `router.revalidate()` membuat RouterProvider menggambar keadaan router sekarang (tanpa
+  transisi, tanpa mengubah riwayat; aplikasi tidak memakai loader); halaman baru (bukan langkah riwayat) lalu digulir ke atas. Callback React Router yang menunggu render
   dibatasi 1 detik (`UPDATE_LIMIT_MS`): layar tidak membeku sampai batas 4 detik peramban.
 - **Riwayat & gulir**: `<ScrollRestoration/>` di AppShell — halaman baru mulai dari atas, kembali memulihkan posisi (kunci
   `location.key`). `seedHistoryKey()` sebelum `createBrowserRouter`: dokumen yang baru dibuka (muat ulang, tautan langsung,
