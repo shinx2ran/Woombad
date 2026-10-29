@@ -4,6 +4,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** Phone screenshots for a human look; RENCANA_SHOTS picks another folder (test-results is git-ignored). */
 const SHOTS = process.env.RENCANA_SHOTS ?? join(process.cwd(), 'test-results', 'rencana')
+/** the phone project's screenshots in SHOTS, the motion project's (frames mid-animation) beside them */
+const shotsDir = () => (test.info().project.name === 'phone' ? SHOTS : join(SHOTS, test.info().project.name))
 
 async function loginDemo(page: Page) {
   await page.goto('/login')
@@ -23,7 +25,7 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-10-23T10:00:00+07:00'))
     await page.setViewportSize({ width: 360, height: 780 })
-    mkdirSync(SHOTS, { recursive: true })
+    mkdirSync(shotsDir(), { recursive: true })
   })
 
   test('Harian: free rooms best fit first, Pesan books the room (Dipesan), the same dates are then refused', async ({ page }) => {
@@ -32,7 +34,7 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     await expect(card).toHaveText(/Daftar tunggu: 2 orang · 1 ada kamar cocok/)
     expect(await noSideScroll(page)).toBe(true)
     await card.scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(SHOTS, 'dashboard-card.png') })
+    await page.screenshot({ path: join(shotsDir(), 'dashboard-card.png') })
 
     await page.getByRole('link', { name: 'Cek kamar kosong' }).click()
     await page.waitForURL(/\/rencana/)
@@ -56,7 +58,7 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     await expect(a3.getByRole('img')).toHaveAttribute('aria-label', /^Ketersediaan 14 hari mulai 27 Okt: 27 Okt – 9 Nov kosong$/)
     expect(await noSideScroll(page)).toBe(true)
     await page.getByRole('heading', { name: /Kosong untuk seluruh tanggal/ }).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(SHOTS, 'planner-harian.png') })
+    await page.screenshot({ path: join(shotsDir(), 'planner-harian.png') })
 
     await a3.getByRole('button', { name: 'Pesan kamar A3' }).click()
     const sheet = page.getByRole('dialog')
@@ -71,7 +73,7 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     await expect(sheet.getByText(/Batalkan sewa/)).toBeVisible()
     expect(await noSideScroll(page)).toBe(true)
     await sheet.getByTestId('booking-summary').scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(SHOTS, 'booking-sheet.png') })
+    await page.screenshot({ path: join(shotsDir(), 'booking-sheet.png') })
     await sheet.getByRole('button', { name: 'Simpan pesanan' }).click()
 
     await page.waitForURL(/\/sewa\/[^/]+$/)
@@ -109,7 +111,7 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     await expect(rina.getByTestId('waitlist-match')).toHaveText('Kamar cocok: A3 (Rp 200.000)')
     await expect(rina).toContainText('Mulai 25 Okt 2026 · 2 malam (check-out 27 Okt 2026) · maks. Rp 110.000 / malam')
     expect(await noSideScroll(page)).toBe(true)
-    await page.screenshot({ path: join(SHOTS, 'waitlist.png') })
+    await page.screenshot({ path: join(shotsDir(), 'waitlist.png') })
 
     const kabari = rina.getByRole('link', { name: 'Kabari' })
     const href = (await kabari.getAttribute('href')) ?? ''
@@ -128,7 +130,7 @@ test.describe('Rencana check-in & daftar tunggu (SPEC 7.7)', () => {
     await expect(page.getByTestId('free-room')).toHaveCount(0)
     expect(await noSideScroll(page)).toBe(true)
     await page.getByTestId('planner-scope').evaluate((el) => el.scrollIntoView({ block: 'center' }))
-    await page.screenshot({ path: join(SHOTS, 'planner-waitlist-kos.png') })
+    await page.screenshot({ path: join(shotsDir(), 'planner-waitlist-kos.png') })
 
     // nothing free within budget: the planner offers the daftar tunggu, prefilled with the dates
     await page.goto('/rencana?jenis=harian&mulai=2026-10-30&jumlah=3&maks=50000')

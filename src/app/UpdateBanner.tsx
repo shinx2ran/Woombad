@@ -11,7 +11,7 @@ export function UpdateBanner({ updater = appUpdater }: { updater?: AppUpdater })
   const pending = useSyncExternalStore(updater.subscribe, updater.isPending, () => false)
   if (!pending) return null
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[55] flex justify-center px-4 sm:top-auto sm:bottom-4 sm:justify-start sm:px-6">
+    <div className="app-update pointer-events-none fixed inset-x-0 top-[max(0.75rem,env(safe-area-inset-top))] z-[55] flex justify-center px-4 sm:top-auto sm:bottom-4 sm:justify-start sm:px-6">
       <div role="status" className="pointer-events-auto flex items-center gap-3 rounded-full bg-slate-900 py-1.5 pr-1.5 pl-4 text-sm text-white shadow-lg">
         <span>Versi baru siap</span>
         <button

@@ -341,6 +341,18 @@ Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik
 - **Logo kos**: **Kos → Ubah kos → Logo kos → Pilih logo** (PNG transparan paling bagus; hanya tersimpan di mode online).
   Logo tampil di gambar tagihan dan di halaman kos.
 
+### Transisi halaman & jendela
+
+- Membuka sewa, penyewa, kos, Cek kamar, atau Sewa Baru: halaman baru **bergeser masuk dari kanan** di atas halaman sebelumnya
+  (seperti iPhone/iPad); **kembali** (tombol/gestur kembali HP, atau tautan kembali ke daftar) menggesernya keluar ke kanan.
+  Pindah menu bawah / menu kiri: **memudar** cepat. Bilah atas, menu bawah, dan menu kiri tetap diam.
+- Halaman baru selalu mulai dari **atas**; kembali ke daftar mengembalikan posisi gulir tadi. Mengganti tanggal/filter di
+  halaman yang sama (Cek kamar, Laporan) tidak menggeser halaman.
+- Jendela (lembar isian, konfirmasi) **naik dari bawah** di HP dan **muncul memudar** di iPad/laptop; saat ditutup ia turun /
+  memudar.
+- Butuh Safari 18 (iOS/iPadOS 18) atau Chrome/Edge terbaru; versi lebih lama berganti halaman langsung seperti sebelumnya. Bila
+  **Kurangi gerakan** (iPhone: Pengaturan → Aksesibilitas → Gerakan; Android: Hapus animasi) menyala, semua berganti langsung.
+
 ## Menguji skema database secara lokal (opsional)
 
 `supabase/tests/run.sh` memasang `schema.sql` ke PostgreSQL lokal dengan tiruan objek Supabase dan menjalankan

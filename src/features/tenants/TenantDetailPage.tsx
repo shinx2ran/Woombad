@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { BackLink } from '../../app/BackLink'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, ExternalLink, MessageCircle, Pencil, Plus, Trash2, UserX } from 'lucide-react'
 import {
@@ -183,9 +184,9 @@ export function TenantDetailPage() {
 
   return (
     <>
-      <Link to="/penyewa" className="mb-2 inline-flex items-center gap-1 text-sm text-slate-600 hover:text-brand-700">
+      <BackLink to="/penyewa" className="mb-2 inline-flex items-center gap-1 text-sm text-slate-600 hover:text-brand-700">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Semua penyewa
-      </Link>
+      </BackLink>
       <PageHeader
         title={t.full_name}
         subtitle={

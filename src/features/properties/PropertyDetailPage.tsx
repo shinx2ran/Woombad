@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
+import { BackLink } from '../../app/BackLink'
 import { clsx } from 'clsx'
 import { ArrowLeft, Building2, MapPin, Pencil, Wallet } from 'lucide-react'
 import { Button, EmptyState, PageHeader } from '../../components/ui'
@@ -50,9 +51,9 @@ export function PropertyDetailPage() {
 
   return (
     <>
-      <Link to="/kos" className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-800">
+      <BackLink to="/kos" className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-800">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Semua kos
-      </Link>
+      </BackLink>
       {/* the kos logo (SPEC 7.2) sits beside the title block */}
       <div className="flex items-start gap-3">
         {logoUrl && <img src={logoUrl} alt="Logo kos" className="mt-0.5 h-10 w-10 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-0.5" />}

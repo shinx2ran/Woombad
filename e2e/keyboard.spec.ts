@@ -37,6 +37,8 @@ async function openAddRoom(page: Page) {
   await page.locator('a[href^="/kos/"]').first().click()
   await page.getByRole('button', { name: 'Tambah Kamar' }).first().click()
   await expect(page.getByRole('dialog')).toBeVisible()
+  // the sheet rises for half a second (SPEC 7.9): measure where it settles
+  await page.getByRole('dialog').evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)))
 }
 
 /** Share of the element the user can see: clipped by every scrolling box up to the dialog and by the keyboard. */

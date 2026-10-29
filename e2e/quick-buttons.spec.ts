@@ -4,6 +4,9 @@ async function loginDemo(page: Page) {
   await page.goto('/login')
   await page.getByRole('button', { name: 'Masuk ke Mode Demo' }).click()
   await page.waitForURL(/\/dashboard$/)
+  // the URL changes before a page transition draws the dashboard (SPEC 7.9), and Mode Demo's sample data is made
+  // with the date of that first draw: a test that moves the clock next must not get there first
+  await expect(page.getByTestId('room-board')).toBeVisible()
 }
 
 const tiles = (page: Page) => page.getByTestId('board-tile')

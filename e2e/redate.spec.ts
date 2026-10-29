@@ -4,6 +4,8 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** Phone screenshots for a human look; REDATE_SHOTS picks another folder (test-results is git-ignored). */
 const SHOTS = process.env.REDATE_SHOTS ?? join(process.cwd(), 'test-results', 'redate')
+/** the phone project's screenshots in SHOTS, the motion project's (frames mid-animation) beside them */
+const shotsDir = () => (test.info().project.name === 'phone' ? SHOTS : join(SHOTS, test.info().project.name))
 
 async function loginDemo(page: Page) {
   await page.goto('/login')
@@ -21,7 +23,7 @@ test.describe('Ubah tanggal mulai sewa (SPEC 7.6)', () => {
     // monthly through 19 Nov (6 invoices). Siti (A2) paid five of them; the October bill (due 20 Okt) is open.
     await page.clock.setFixedTime(new Date('2026-10-23T10:00:00+07:00'))
     await page.setViewportSize({ width: 360, height: 780 })
-    mkdirSync(SHOTS, { recursive: true })
+    mkdirSync(shotsDir(), { recursive: true })
     await loginDemo(page)
     await page.goto('/sewa')
     await page.locator('[data-testid="lease-row"][data-room="A2"]').getByRole('link').click()
@@ -65,9 +67,9 @@ test.describe('Ubah tanggal mulai sewa (SPEC 7.6)', () => {
     expect(await noSideScroll(page)).toBe(true)
     // the 360 x 780 phone view: the summary of the change, then the invoice list
     await summary.scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(SHOTS, 'redate-dialog.png') })
+    await page.screenshot({ path: join(shotsDir(), 'redate-dialog.png') })
     await rows.nth(3).scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(SHOTS, 'redate-dialog-invoices.png') })
+    await page.screenshot({ path: join(shotsDir(), 'redate-dialog-invoices.png') })
 
     await save.click()
     await expect(page.getByText('Tanggal mulai diubah ke 6 Mei 2026; 6 tagihan ikut digeser.')).toBeVisible()
@@ -81,9 +83,9 @@ test.describe('Ubah tanggal mulai sewa (SPEC 7.6)', () => {
     await expect(page.getByText('Terlambat', { exact: true }).first()).toBeVisible()
     expect(await noSideScroll(page)).toBe(true)
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.screenshot({ path: join(SHOTS, 'redate-lease-page.png') })
+    await page.screenshot({ path: join(shotsDir(), 'redate-lease-page.png') })
     await page.getByText('6 Okt – 6 Nov 2026 · 1 bulan').scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(SHOTS, 'redate-lease-invoices.png') })
+    await page.screenshot({ path: join(shotsDir(), 'redate-lease-invoices.png') })
 
     // "Tagih": the next invoice continues on the new grid, from 6 Nov
     await page.getByRole('button', { name: 'Buat tagihan berikutnya' }).first().click()

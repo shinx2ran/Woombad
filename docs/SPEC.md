@@ -691,3 +691,96 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   skenario), `e2e/keluar.spec.ts` (360 px, Mode Demo, jam tetap 24 Okt 2026; membatalkan/memundurkan rencana Budi di atas pesanan yang
   dibuat karenanya ditolak, memajukannya diterima). `e2e/rencana.spec.ts` kini mengharapkan "Kosong mulai
   27 Okt (setelah Hendra Wijaya check-out)" alih-alih "Kosong sampai seterusnya" untuk kamar yang tamunya masih menginap.
+
+### 7.9 Transisi halaman & jendela
+- **Permintaan pemilik**: perpindahan halaman dan jendela semulus iOS/iPadOS (dan Android). Tanpa pustaka tambahan: View
+  Transitions API peramban (Safari 18+, Chrome 111+, Firefox 144+) untuk halaman, Web Animations untuk keluarnya jendela, CSS untuk
+  masuknya. Tanpa API atau dengan **Kurangi gerakan** (`prefers-reduced-motion: reduce`): semuanya langsung seperti sebelumnya.
+  Satu gaya (iOS) untuk iPhone, iPad dan Android: transisi bawaan Android juga geser horizontal, tab Material = fade through.
+- **Gerak halaman** (`src/app/pageMotion.ts`, murni): kedalaman halaman = 1 untuk bagian menu (`dashboard`, `sewa`, `penyewa`,
+  `kos`, `pengeluaran`, `laporan`, `pengaturan`), lebih dalam untuk halaman yang dibuka darinya (`sewa/:id`, `sewa/baru`,
+  `penyewa/:id`, `kos/:id`; `rencana` dan `daftar-tunggu` dihitung 2). `push` = lebih dalam atau tautan silang (sewa → penyewa,
+  rencana → daftar tunggu); `pop` = kembali ke daftar bagiannya sendiri (`sewa/:id` → `sewa`) atau lebih dangkal; `tab` = antar
+  bagian menu (juga dari halaman detail ke bagian lain), dan login/daftar ↔ aplikasi; `none` = path sama (hanya search params).
+  Langkah riwayat mundur memutar kebalikan langkah yang menuju ke situ (push → pop), maju memutarnya ulang; arah dari
+  `history.state.idx`.
+- **Router** (`src/app/pageTransitions.ts`, `installPageTransitions(router)` di `routes.tsx`): path dibaca **tanpa basename**
+  (`withoutBasename`; GitHub Pages menyajikan aplikasi di `/Woombad/` dan state router menyimpan awalan itu). Membungkus
+  `router.navigate` (dipakai `<Link>`, `<NavLink>`, `useNavigate`, `<Navigate>`, `setSearchParams`): path berubah →
+  `viewTransition: true` + `flushSync: true` (React Router menggambar halaman baru langsung di dalam
+  `document.startViewTransition` miliknya sendiri; tanpa `flushSync` ia mengantrekan perubahan untuk render berikutnya, dan
+  ketukan cepat beruntun dapat membuat antrean React Router 8.4 menggambar halaman lama di atas yang terbaru — layar tertinggal
+  dari URL; uji stres: 1–2 dari 80 putaran sebelum, 0 dari 250 sesudah; React Router membuang `flushSync` pada kunjungan
+  pertama ke halaman lazy, yang tetap lewat antrean — ditutup pengaman di bawah), kecuali dari `/`
+  (pengalihan saat aplikasi dibuka: belum ada yang bisa digeser) dan kecuali tautan yang membuka jendela saat halaman tiba
+  (`?action=` di sewa, `?new=1` di Penyewa/Pengeluaran, `?isi=hp`, `?impor=demo`) atau kamera (`?scan=1`): halaman langsung
+  berganti seperti dulu lalu jendelanya naik (dalam geseran ia terbuka di bawah bilah yang diam, yang menutupi bagian bawahnya);
+  path sama → tanpa transisi (render sinkron tetap, `flushSync` perencana tetap berlaku) dan `preventScrollReset: true`, kecuali
+  tepat setelah perubahan halaman yang belum digambar (mis. `<Navigate>` penjaga sesudah navigate logout/login sendiri): ia ikut
+  transisi itu, supaya perubahan lama tidak tergambar menimpanya (lokasi yang tampil = URL = state router); pilihan eksplisit
+  pemanggil menang. Navigasi `replace` yang diberi `flushSync` di sini dijalankan satu microtask kemudian: `<Navigate>` penjaga
+  memanggilnya dari effect React, tempat React tidak bisa flush (di mode pengembangan ia mencatat galat). Pelanggan `router.subscribe`
+  menulis `html[data-page-motion]` **hanya** untuk perubahan yang menjalankan transisi (halaman yang menghapus parameternya
+  sendiri saat dibuka, `?action=` / `?new=1`, tidak mengubah geseran yang sedang berjalan menjadi `none`); bila peramban sudah
+  menganimasikan gestur kembali (`popstate.hasUAVisualTransition`, Safari) → `none`, dan animasi keluar dijeda sampai halaman
+  yang dibukanya tergambar (peramban sudah menggeser halaman lama beserta jendelanya). `document.startViewTransition` dibungkus:
+  janji `ready` / `finished` / `updateCallbackDone` dari transisi yang dilewati ditangkap (bukan galat); transisi `none`
+  (mis. React Router memutar ulang transisi untuk langkah mundur yang hanya mengubah search params) langsung `skipTransition()`;
+  selain itu, di awal callback (snapshot halaman lama sudah diambil, termasuk jendela yang sedang tertutup) salinan jendela dihapus
+  dan animasi keluar dijeda (`pauseExitAnimations`) sampai halaman baru selesai digambar — jendela yang tertutup karena halaman
+  berganti, atau ditutup lalu langsung pindah halaman setelah **Simpan**, ikut bergeser bersama halaman lama. Back/forward
+  memakai pasangan yang direkam React Router; langkah ini tetap lewat antrean React Router (tidak bisa `flushSync`), jadi
+  sebagai pengaman: 150 ms setelah setiap transisi berakhir, bila tidak ada transisi lain berjalan, halaman yang digambar
+  AppShell (`reportRenderedLocation`) bukan lokasi router, tidak ada navigasi berjalan, **dan** keadaan itu masih sama pada
+  pemeriksaan 150 ms berikutnya (langkah mundur yang sebentar lagi digambar tampak sama sesaat; menggambar ulang saat itu
+  menghilangkan pemulihan gulirnya), `router.revalidate()` membuat RouterProvider menggambar keadaan router sekarang (tanpa
+  transisi, tanpa mengubah riwayat; aplikasi tidak memakai loader); halaman baru (bukan langkah riwayat) lalu digulir ke atas. Callback React Router yang menunggu render
+  dibatasi 1 detik (`UPDATE_LIMIT_MS`): layar tidak membeku sampai batas 4 detik peramban.
+- **Riwayat & gulir**: `<ScrollRestoration/>` di AppShell — halaman baru mulai dari atas, kembali memulihkan posisi (kunci
+  `location.key`). `seedHistoryKey()` sebelum `createBrowserRouter`: dokumen yang baru dibuka (muat ulang, tautan langsung,
+  aplikasi terpasang) mendapat kunci riwayat sendiri, bukan `'default'` bersama, sehingga tidak mewarisi posisi gulir halaman
+  lain. `previousPathname()` (path entri riwayat sebelumnya yang dilihat tab ini) dipakai `BackLink` (`src/app/BackLink.tsx`):
+  **← Semua sewa / Semua penyewa / Semua kos** kembali di riwayat (`navigate(-1)`: halaman tergeser keluar, daftar kembali ke posisi
+  gulirnya, riwayat tidak bertambah) bila entri sebelumnya adalah daftar itu; bila tidak, membuka daftar seperti biasa.
+- **CSS** (`src/index.css`, bagian Motion): kurva `--ease-ios` `cubic-bezier(0.32, 0.72, 0, 1)` (Ionic iOS, Vaul); bila
+  `linear()` didukung, pegas tanpa pantulan yang diukur dari frame iOS (selisih < 1%). `push` 450 ms (iOS ±500 ms; selama
+  transisi halaman tidak bisa diketuk): halaman baru dari `translateX(100%)` dengan bayangan kiri tipis, halaman lama ke `-33%`
+  dan redup ±10% (opacity 0,9 di atas hitam); `pop` kebalikannya (halaman lama di atas); mulai md (ada menu kiri, `w-60` = 15rem) kedua snapshot dipotong
+  (`clip-path: inset(0 0 0 15rem)`) dan digeser selebar kolom isi (`--page-slide: calc(100% - 15rem)`), seperti split view iPad
+  (tanpa itu bagian snapshot di bawah menu kiri ikut bergeser sebagai pita kosong); `tab`: halaman baru memudar masuk 220 ms
+  di atas halaman lama yang diam (tanpa kedip putih). Bilah atas (`app-header`), menu bawah (`app-tabbar`), menu kiri
+  (`app-sidebar`, kini `sticky` setinggi layar), toast (`app-toasts`) dan banner "Versi baru siap" (`app-update`) punya
+  `view-transition-name` sendiri: diam (grup tanpa animasi; pada push/pop langsung keadaan baru, yang hanya ada di halaman lama
+  bertahan sampai geseran selesai). Selama jendela terbuka atau salinannya tampil (`:root:has([aria-modal='true'],
+  body > [data-exit-copy])`) bilah atas, menu bawah dan menu kiri tanpa nama: mereka ikut snapshot halaman (redup di bawah
+  latar jendela), tidak tergambar terang di atasnya. Bilah atas putih penuh selama transisi (`:active-view-transition`; efek blur
+  tidak ikut snapshot di Safari/Firefox). Jangan merender Modal/overlay `fixed` di dalam elemen bernama itu (nama transisi =
+  stacking context permanen).
+- **Jendela** (`Modal.tsx`, `motion.ts`): masuk — lembar naik dari bawah 500 ms (HP), dialog memudar dari `translateY(8px)
+  scale(0.96)` 300 ms (≥ sm), latar gelap memudar dengan waktu & kurva yang sama; keluar — `ExitAnimation` (class component:
+  `getSnapshotBeforeUpdate` saat `open` → false, `componentWillUnmount` bila komponen pemegangnya hilang) menyalin DOM jendela
+  sesaat sebelum React menghapusnya (`copyForExit`: nilai isian, centang, canvas, posisi gulir; tanpa `id`/`for`/`name`/
+  `data-testid`), memasang salinan di shadow root **tertutup** (dengan CSS halaman sebagai constructed stylesheet, disiapkan saat
+  jendela terbuka dan HP senggang: `prepareExitStyles`) dalam host `aria-hidden` + `inert` + `pointer-events: none`, z-index 49
+  (di bawah jendela yang baru dibuka), menganimasikannya (lembar turun 400 ms `EASE_IOS` = `cubic-bezier(0.32, 0.72, 0, 1)` sampai
+  melewati bawah layar — juga lembar yang ditutup saat keyboard terbuka, yang dipasang di atas keyboard; dialog memudar ke skala
+  0,98 180 ms dipercepat; latar gelap ikut) lalu menghapusnya (paling lambat 1 detik). Selama lembar masih naik, ketukan pada latar
+  gelap diabaikan (ketukan kedua dari ketuk-ganda tombol pembukanya tidak langsung menutupnya); Esc dan X tetap langsung. Jendela aslinya hilang seketika: aplikasi tidak
+  menunggu animasi; pembaca layar, ketukan, fokus, kueri DOM aplikasi dan locator e2e tidak melihat salinan. Tanpa salinan:
+  jendela berisi video/iframe (kamera), Kurangi gerakan, tanpa Web Animations (jsdom), atau selama halaman baru digambar. Uji coba
+  StrictMode (unmount percobaan) tidak memutar apa pun. Kolom yang langsung fokus (autoFocus) tetap: lembar tetap naik.
+- **Toast**: masuk turun dari atas 350 ms; ditutup/kedaluwarsa → salinan di posisinya memudar ke atas 200 ms (z-index 60).
+- **Uji**: `pageMotion.test.ts` (aturan gerak), `pageTransitions.test.ts` (opsi navigasi, path sama, pilihan eksplisit,
+  back/forward, gestur peramban, tanpa API / kurangi gerakan, pembungkus `startViewTransition` termasuk transisi `none` yang
+  diputar ulang React Router, basename `/Woombad`, pengalihan dari `/`, riwayat untuk BackLink, `seedHistoryKey`, uninstall),
+  `pageTransitions.exit.test.tsx` (kembali dengan lembar terbuka: geseran kita dan gestur Safari, tanpa salinan di atas halaman
+  baru), `motion.test.tsx` (salinan jendela/toast, shadow root tertutup, tanpa salinan saat kurangi gerakan / tanpa API / dijeda,
+  pembatalan, ketukan latar gelap selama lembar naik). Playwright punya tiga proyek: `phone` (seluruh suite dengan Kurangi gerakan: langkah dan tangkapan layar tepat),
+  `phone-motion` (gerak menyala: `transitions`, `quick-buttons`, `redate`, `rencana`, `keluar`, `undo-delete`) dan `pages-motion`
+  (`transitions.spec.ts` pada build ber-basename `/Woombad/` di port 4174, `dist-sub`). Tangkapan layar proyek `phone` di folder
+  biasa, proyek gerak di subfolder bernama proyeknya (bingkai di tengah animasi tidak menimpa yang tepat). `e2e/transitions.spec.ts`: tab/push/pop dan
+  jumlah transisi, bilah tetap bernama, halaman baru di atas, kembali & **Semua sewa** memulihkan gulir tanpa menambah riwayat,
+  dokumen baru tidak mewarisi gulir, tanggal Cek kamar tanpa transisi dan tanpa gulir, lembar naik/turun dan salinannya tak
+  terlihat locator selama ia ada (dibaca sekali, tidak diulang) dan ketukan menembusnya, tautan di dalam lembar terbuka tanpa salinan
+  sama sekali (penghitung `MutationObserver`), ketukan cepat beruntun (transisi yang dilewati dihitung selesai saat `ready`
+  ditolak), Kurangi gerakan.
