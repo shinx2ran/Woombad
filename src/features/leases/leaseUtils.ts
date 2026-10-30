@@ -21,6 +21,7 @@ import {
 } from '../../domain/billing'
 import { reminderText } from '../../domain/messages'
 import { addDaysISO, daysBetween, periodEnd, periodsToCover } from '../../domain/period'
+import { plateMatches } from '../../domain/plate'
 import { compareRoomNames, isCancelledWithoutStay, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 
@@ -276,12 +277,15 @@ export function compareFinishedLeases(a: LeaseListItem, b: LeaseListItem, oldest
   return (a.room?.name ?? '').localeCompare(b.room?.name ?? '', undefined, { numeric: true })
 }
 
-/** Case-insensitive match on tenant name, room name or kos name. Empty query matches everything. */
+/**
+ * Case-insensitive match on tenant name, room name or kos name, or a vehicle plate typed with or without spaces (SPEC 7.11,
+ * plateMatches). Empty query matches everything.
+ */
 export function matchesLeaseSearch(item: LeaseListItem, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
   const hay = [item.tenant?.full_name, item.room?.name, item.propertyName].filter(Boolean).join(' ').toLowerCase()
-  return hay.includes(q)
+  return hay.includes(q) || plateMatches(item.lease.vehicle_plate, q)
 }
 
 // ---------- invoice timeline ----------
@@ -467,6 +471,8 @@ export function coverUntilCheckoutHint(info: CoverUntilCheckout, unit: string, c
 // ---------- Rencana keluar (SPEC 7.8) ----------
 
 export const PLANNED_CHECKOUT_INACTIVE_MESSAGE = 'Sewa ini sudah selesai atau dibatalkan, jadi rencana keluarnya tidak bisa diubah.'
+/** SPEC 7.11: a stay that ended keeps its vehicle plate as history */
+export const VEHICLE_PLATE_INACTIVE_MESSAGE = 'Sewa ini sudah selesai atau dibatalkan, jadi no. kendaraannya tidak bisa diubah.'
 
 /**
  * The day the Rencana keluar sheet starts with: the plan already recorded, else the check-out day of the billed period

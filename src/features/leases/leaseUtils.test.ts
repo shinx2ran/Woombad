@@ -426,6 +426,15 @@ describe('list helpers', () => {
     expect(matchesLeaseSearch(it1, '')).toBe(true)
   })
 
+  it('also finds a vehicle plate, typed with or without spaces (SPEC 7.11)', () => {
+    const it1 = item('ok', '2026-05-01', 'B1', 'Siti Rahayu')
+    const withPlate = { ...it1, lease: { ...it1.lease, vehicle_plate: 'KB 1442 GZ' } }
+    expect(matchesLeaseSearch(withPlate, 'kb1442')).toBe(true)
+    expect(matchesLeaseSearch(withPlate, '1442 GZ')).toBe(true)
+    expect(matchesLeaseSearch(withPlate, 'kb 9')).toBe(false)
+    expect(matchesLeaseSearch(it1, 'kb1442')).toBe(false)
+  })
+
   it('appends the move note', () => {
     expect(appendMoveNote(null, 'A1', 'B2', '2026-03-05')).toBe('Pindah dari A1 ke B2 pada 2026-03-05')
     expect(appendMoveNote('Tamu proyek', 'A1', 'B2', '2026-03-05')).toBe('Tamu proyek\nPindah dari A1 ke B2 pada 2026-03-05')

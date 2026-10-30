@@ -11,6 +11,7 @@
  */
 import { deriveInvoiceStatus, type InvoiceDraftInput, type InvoiceDraft } from '../../domain/billing'
 import { periodBounds } from '../../domain/period'
+import { plateColumn } from '../../domain/plate'
 import type { OrgRepo } from '../../lib/repo/types'
 import { formatRupiah } from '../../lib/format'
 import type { Invoice, Lease, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
@@ -206,6 +207,8 @@ export interface StayBookingInput {
   phone: string
   /** lease notes */
   notes: string | null
+  /** optional: the tenant's vehicle plate(s) as typed; saved as normalizePlate writes them (SPEC 7.11) */
+  vehiclePlate?: string | null
   /** free periods on top of the paid `quantity` ("bonus 1 bulan"); the invoice discounts them */
   bonusQuantity?: number
   /** uang jaminan agreed for the lease; paidNow records it as received today with `method` */
@@ -251,6 +254,7 @@ export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckI
       end_date: plan.end,
       status: 'active',
       checkout_date: null,
+      ...plateColumn(input.vehiclePlate),
       notes: input.notes?.trim() || null,
     })
     const { invoice } = await deps.insertFromDraft(

@@ -275,4 +275,23 @@ describe('saveStayBooking: a year with a bonus month and a deposit, as the owner
     expect(depositPayment).toBeNull()
     expect((await repo.list('payments')).map((p) => p.kind)).toEqual(['rent'])
   })
+
+  it('a vehicle plate typed any way is saved on the lease the way plates are written (SPEC 7.11)', async () => {
+    const { lease } = await saveStayBooking({ ...yearly, vehiclePlate: 'kb.1442.gz / b1251sga' }, deps)
+    expect(lease.vehicle_plate).toBe('KB 1442 GZ, B 1251 SGA')
+    expect((await repo.get('leases', lease.id))?.vehicle_plate).toBe('KB 1442 GZ, B 1251 SGA')
+  })
+
+  it('without a plate the column is not sent at all (a server without it still saves the check-in)', async () => {
+    const inserted: Record<string, unknown>[] = []
+    const insert = repo.insert.bind(repo)
+    repo.insert = (async (table: string, row: Record<string, unknown>) => {
+      if (table === 'leases') inserted.push(row)
+      return insert(table as never, row as never)
+    }) as typeof repo.insert
+    const { lease } = await saveStayBooking({ ...yearly, vehiclePlate: '  .  ' }, deps)
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).not.toHaveProperty('vehicle_plate')
+    expect(lease.vehicle_plate ?? null).toBeNull()
+  })
 })

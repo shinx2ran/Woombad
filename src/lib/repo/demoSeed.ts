@@ -112,7 +112,7 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
     monthsPaid: number,
     deposit: number,
     addons: { name: string; amount: number }[] = [],
-    { start = defaultStart, periods = 6, leaving = false }: { start?: Date; periods?: number; leaving?: boolean } = {},
+    { start = defaultStart, periods = 6, leaving = false, plate }: { start?: Date; periods?: number; leaving?: boolean; plate?: string } = {},
   ) => {
     const leaseId = newId()
     const end = addDays(addMonths(start, periods), -1)
@@ -131,6 +131,8 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
       checkout_date: null,
       // Rencana keluar (SPEC 7.8): the tenant said he leaves on the check-out day of his paid period
       ...(leaving ? { planned_checkout_date: toDateISO(addDays(end, 1)) } : {}),
+      // Nomor kendaraan (SPEC 7.11)
+      ...(plate ? { vehicle_plate: plate } : {}),
       notes: null,
       ...ts,
     }
@@ -178,13 +180,13 @@ export function buildDemoDb(today: Date = new Date()): LocalDb {
     }
   }
 
-  monthlyLeaseFor(roomsA[0], tenants[0], 6, 1_200_000, [{ name: 'Parkir motor', amount: 50_000 }])
+  monthlyLeaseFor(roomsA[0], tenants[0], 6, 1_200_000, [{ name: 'Parkir motor', amount: 50_000 }], { plate: 'KB 1234 AB' })
   monthlyLeaseFor(roomsA[1], tenants[1], 5, 1_200_000)
   monthlyLeaseFor(roomsA[3], tenants[2], 5, 0, [{ name: 'Kasur tambahan', amount: 150_000 }])
   // Dewi moved in three weeks later than the others; she paid five months, through the night before today + 3 weeks,
   // and told the owner she will not extend (Rencana keluar, SPEC 7.8)
   monthlyLeaseFor(roomsA[4], tenants[3], 6, 1_500_000, [], { start: addDays(subMonths(today, 5), 21), periods: 5, leaving: true })
-  monthlyLeaseFor(roomsB[0], tenants[4], 6, 1_800_000, [{ name: 'Laundry', amount: 100_000 }])
+  monthlyLeaseFor(roomsB[0], tenants[4], 6, 1_800_000, [{ name: 'Laundry', amount: 100_000 }], { plate: 'B 9012 XYZ, KB 5678 CD' })
   monthlyLeaseFor(roomsB[2], tenants[5], 4, 2_000_000)
 
   // A short daily stay in Kos Anggrek 102 (paid in full), ending in 3 days.

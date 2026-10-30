@@ -283,7 +283,16 @@ bayar/perpanjang), biru "Terisi" bila masih aman, hijau "Kosong". Di bawah nomor
 terisi untuk **Bayar**, **Perpanjang**, atau **Check-out** (membuka dialog
 yang sama seperti di halaman sewa). Ketuk kamar kosong untuk **Check-in cepat**: pilih **Harian / Mingguan / Bulanan / Tahunan**,
 isi nama, lamanya, dan total (terisi otomatis dari tarif kamar); lunas, DP, atau belum bayar; untuk bulanan/tahunan bisa isi
-**uang jaminan**, dan tahunan bisa diberi **bonus bulan gratis** (bayar 12, dapat 13). Nomor HP boleh diisi nanti.
+**uang jaminan**, dan tahunan bisa diberi **bonus bulan gratis** (bayar 12, dapat 13). Nomor HP dan nomor kendaraan boleh diisi nanti.
+
+### Nomor kendaraan (plat)
+
+Isi **No. kendaraan** saat Check-in cepat atau Sewa baru (tidak wajib), atau nanti di halaman sewa: kartu **Info sewa** → ikon
+pensil di baris No. kendaraan. Ketik sesukanya ("kb.1442.gz", "KB1442GZ"): aplikasi menulisnya rapi seperti plat, **KB 1442 GZ**.
+Lebih dari satu kendaraan: pisahkan dengan koma. Plat tampil kecil di kotak kamar pada **Papan kamar** (satu baris per kendaraan, paling banyak dua;
+lebih dari itu "+1") dan lengkap saat kotak diketuk. Ubah juga lewat **Lainnya → No. kendaraan**; untuk menghapusnya, kosongkan isiannya lalu Simpan.
+Ada motor tak dikenal di parkiran? Ketik platnya di kotak cari **Sewa** ("kb1442" cukup, minimal 4 huruf/angka) untuk tahu siapa pemiliknya; platnya tampil di
+baris hasil.
 
 ### Rencana check-in & daftar tunggu
 
@@ -363,7 +372,7 @@ menyala, logo tampil diam dan hilang begitu aplikasi siap.
 
 `supabase/tests/run.sh` memasang `schema.sql` ke PostgreSQL lokal dengan tiruan objek Supabase dan menjalankan
 pengujian fungsional (pendaftaran, kode undangan, RLS, pembatasan staf, trigger tagihan, penjaga pesanan dobel, daftar tunggu,
-rencana keluar).
+rencana keluar, nomor kendaraan).
 Lihat komentar di dalam skrip.
 
 ## Install ke HP

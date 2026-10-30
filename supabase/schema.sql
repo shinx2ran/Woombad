@@ -464,6 +464,8 @@ create table if not exists public.leases (
   checkout_date date,
   -- Rencana keluar (SPEC 7.8): the check-out day the tenant said he will leave; null = no plan
   planned_checkout_date date,
+  -- Nomor kendaraan (SPEC 7.11): the tenant's licence plate(s) for this stay, e.g. 'KB 1442 GZ'; null = none
+  vehicle_plate text,
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -486,6 +488,10 @@ begin
       check (planned_checkout_date is null or planned_checkout_date > start_date);
   end if;
 end $$;
+-- Nomor kendaraan (SPEC 7.11, added after 7.10; the create above is a no-op on an existing installation): the plate(s)
+-- of the tenant's vehicle(s) for this stay, written 'KB 1442 GZ' by the app. Front-desk work like the plan above: every
+-- member may set or clear it (leases_terms_guard does not look at it). Added without dropping anything.
+alter table public.leases add column if not exists vehicle_plate text;
 
 create table if not exists public.lease_addons (
   id uuid primary key default gen_random_uuid(),

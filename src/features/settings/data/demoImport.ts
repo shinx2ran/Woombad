@@ -195,6 +195,8 @@ const COLUMNS: { [T in ImportTable]: { [K in DataColumns<T>]: Col } } = {
     checkout_date: date,
     // Rencana keluar (SPEC 7.8); missing in older backups -> null
     planned_checkout_date: date,
+    // Nomor kendaraan (SPEC 7.11); missing in older backups -> null
+    vehicle_plate: text,
     notes: text,
   },
   lease_addons: {

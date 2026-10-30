@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { clsx } from 'clsx'
-import { AlertTriangle, CalendarClock, FilePlus2, MessageCircle, MoreHorizontal, User, Wallet } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Car, FilePlus2, MessageCircle, MoreHorizontal, User, Wallet } from 'lucide-react'
 import { Badge, LeaseStatusBadge, MoneyInput, Input } from '../../components/ui'
 import type { DepositBalance } from '../../domain/billing'
 import { plannedCheckoutOf } from '../../domain/occupancy'
@@ -283,6 +283,7 @@ export function LeaseRow({
   onInvoice,
   onReminder,
   extraItems = [],
+  plate = null,
 }: {
   item: LeaseListItem
   today: string
@@ -294,6 +295,8 @@ export function LeaseRow({
   onReminder: () => void
   /** extra menu items, placed after 'Tagihan berikutnya' */
   extraItems?: MenuItem[]
+  /** the vehicle plate(s) the list search found this lease by (SPEC 7.11), shown under the row; null otherwise */
+  plate?: string | null
 }) {
   const navigate = useNavigate()
   const { lease, summary, room, tenant, propertyName } = item
@@ -344,6 +347,12 @@ export function LeaseRow({
               )}
             >
               <span className="truncate">{plannedBadge.text}</span>
+            </span>
+          )}
+          {plate && (
+            <span data-testid="lease-plate" className="mt-0.5 inline-flex max-w-full items-center gap-1 rounded bg-slate-100 px-1.5 text-[11px] font-medium leading-4 text-slate-700">
+              <Car className="h-3 w-3 shrink-0" aria-hidden />
+              <span className="truncate">{plate}</span>
             </span>
           )}
         </span>

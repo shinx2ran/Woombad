@@ -110,6 +110,15 @@ describe('bookStay: a planned stay through the Check-in cepat path', () => {
     expect(invalidate).toHaveBeenCalledWith('leases', 'invoices', 'payments', 'tenants', 'waitlist')
   })
 
+  it('Check-in cepat with a vehicle plate: bookStay passes it on to the lease, written as plates are (SPEC 7.11)', async () => {
+    const { lease } = await actionsHook().bookStay(booking({ startDate: TODAY, vehiclePlate: 'kb1442gz' }))
+    expect(lease.vehicle_plate).toBe('KB 1442 GZ')
+    expect((await repo.get('leases', lease.id))!.vehicle_plate).toBe('KB 1442 GZ')
+    // a later stay without one: no plate
+    const later = await actionsHook().bookStay(booking({ startDate: '2026-11-20' }))
+    expect(later.lease.vehicle_plate ?? null).toBeNull()
+  })
+
   it('today, paid in full: the same rows as Check-in cepat, and the room is occupied', async () => {
     const { lease, invoice, payment } = await actionsHook().bookStay(booking({ startDate: TODAY, paidAmount: 200_000 }))
     expect(lease).toMatchObject({ start_date: TODAY, end_date: '2026-11-02', price_per_period: 100_000, period_type: 'daily' })

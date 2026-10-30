@@ -8,6 +8,7 @@ import type { Invoice, PaymentMethod, Property, Room, Tenant, WaitlistEntry } fr
 import { PAYMENT_METHOD_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { EMPTY_TENANT_FORM, validateTenantForm } from '../tenants/tenantUtils'
 import { perPeriodText, planStayBooking, QuickCheckInError, resolveTenantChoice, tenantsNamed } from '../quick/quickCheckIn'
+import { PlateInput } from '../leases/PlateInput'
 import { rateText, type PlannedStay } from './availability'
 import { useRencanaActions } from './useRencanaActions'
 
@@ -30,7 +31,7 @@ export interface BookingSheetProps {
 
 /**
  * "Pesan" on a free room (SPEC 7.7): who (with the same existing-tenant matching as Check-in cepat), the total (from the
- * room's rate, editable), an optional DP and a note. Saved through the Check-in cepat path (useRencanaActions.bookStay),
+ * room's rate, editable), an optional DP and a note (a check-in for today also the optional vehicle plate). Saved through the Check-in cepat path (useRencanaActions.bookStay),
  * after a fresh check of the room. A check-in for today is a Check-in cepat; a later day books the room ("Dipesan").
  */
 export function BookingSheet({ room, property, stay, rate, entry, tenants, tenantById, orgInvoices, onClose }: BookingSheetProps) {
@@ -49,6 +50,8 @@ export function BookingSheet({ room, property, stay, rate, entry, tenants, tenan
   const [dp, setDp] = useState(0)
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [notes, setNotes] = useState(entry?.notes ?? '')
+  /** optional, check-in today only (SPEC 7.11): a later guest's vehicle is filled in on the lease page when he comes */
+  const [plate, setPlate] = useState('')
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -88,6 +91,7 @@ export function BookingSheet({ room, property, stay, rate, entry, tenants, tenan
         name,
         phone,
         notes: notes.trim() || null,
+        vehiclePlate: isToday ? plate : null,
         orgInvoices,
         waitlistId: entry?.id ?? null,
         today,
@@ -224,6 +228,7 @@ export function BookingSheet({ room, property, stay, rate, entry, tenants, tenan
             </div>
           </div>
         )}
+        {isToday && <PlateInput value={plate} onChange={setPlate} />}
         <Textarea label="Catatan (opsional)" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
 
         <p className="flex items-start gap-1.5 text-xs text-slate-500">
