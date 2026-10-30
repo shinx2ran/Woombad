@@ -8,6 +8,8 @@ interface SplashLog {
   goneAt?: number
   /** the page title the app had drawn under it when it began to fade */
   h1AtOut?: string
+  /** how long its own animation had run then (from its first frame) */
+  animAtOut?: number
 }
 
 /** records when the "EG Kost" splash leaves and what the app shows under it then */
@@ -23,6 +25,8 @@ async function watchSplash(page: Page) {
         if (w.__splash.outAt === undefined && (el.classList.contains('bs-out') || !el.isConnected)) {
           w.__splash.outAt = performance.now()
           w.__splash.h1AtOut = document.querySelector('#root h1')?.textContent ?? ''
+          const beat = el.getAnimations({ subtree: true }).find((a) => (a as CSSAnimation).animationName === 'bs-halo')
+          if (typeof beat?.currentTime === 'number') w.__splash.animAtOut = beat.currentTime
         }
         if (w.__splash.goneAt === undefined && !el.isConnected) w.__splash.goneAt = performance.now()
       }
@@ -58,8 +62,8 @@ test.describe('Layar pembuka EG Kost (SPEC 7.10)', () => {
       await expect.poll(async () => (await splashLog(page)).goneAt).toBeDefined()
       const log = await splashLog(page)
       expect(log.themeAtStart).toBe('#0b0a08')
-      // the letters drew themselves and beat once before it went (BOOT_MIN_MS)
-      expect(log.outAt!).toBeGreaterThanOrEqual(1190)
+      // the letters drew themselves, filled and beat once before it went (BOOT_MIN_MS from its own first frame)
+      expect(log.animAtOut!).toBeGreaterThanOrEqual(1140)
       // and it faded out
       expect(log.goneAt! - log.outAt!).toBeGreaterThan(300)
       expect(await theme(page)).toBe('#0f766e')

@@ -791,25 +791,29 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Tampilan** (`index.html`, HTML + CSS + SVG di dalam halaman, tanpa skrip aplikasi, jadi tampil sejak bingkai pertama):
   latar gelap hangat (`#0b0a08`, gradasi radial); empat titik (oranye tua, amber, kuning, peach) berputar mengelilingi tengah lalu
   bertemu (0–0,95 s, seperti titik warna boot Pixel); tulisan "EG Kost" (sistem font, EG tebal 800, Kost 600) tergambar
-  garis demi garis (`stroke-dashoffset`, 0,3–1,2 s), lalu terisi; isi dan garisnya satu cahaya oranye–kuning yang terus bergeser
-  (gradien `userSpaceOnUse`, `animateTransform` 3 s); cahaya di belakangnya (salinan tulisan yang di-blur + halo radial) berdenyut
-  "lub-dub, istirahat" tiap 1,8 s mulai 1 s; garis cahaya di bawah tulisan memanjang dari tengah (0,95 s) dan ikut berdenyut;
+  garis demi garis (`stroke-dashoffset`, 0,25–1,0 s; `text-rendering: geometricPrecision`, karena WebKit tanpa itu memperkecil
+  pola garis teks SVG menurut skala layar), lalu terisi (0,65–1,05 s); isi dan garisnya satu cahaya oranye–kuning yang terus
+  bergeser (gradien `userSpaceOnUse`, `animateTransform` 3 s); cahaya di belakangnya (salinan tulisan yang di-blur + halo radial)
+  berdenyut "lub-dub, istirahat" tiap 1,8 s mulai 0,9 s; garis cahaya di bawah tulisan memanjang dari tengah (0,85 s) dan ikut
+  berdenyut;
   "Menyiapkan aplikasi…" kecil muncul di bawah setelah 2,5 s (hanya terlihat bila pemuatan lama). **Kurangi gerakan**: logo
   jadi, cahaya tetap, tanpa titik, garis, denyut, atau kilau yang bergerak. Seluruh layar `aria-hidden` (teks loading aplikasi
   dengan `role="status"` ada di bawahnya).
 - **Kapan hilang** (`src/app/bootSplash.ts`, `BootSplash.tsx`): layar loading memegangnya (`BootSplashHold` di
-  `FullPageLoading` saat masih spinner — penjaga login/aplikasi dan `OrgProvider` — dan di `hydrateFallbackElement` AppShell:
-  tautan langsung ke halaman lazy yang kodenya masih dimuat); `BootSplashReady` di akar menjalankan pemeriksaan setelah render
-  pertama (login, halaman error, `/gabung`: langsung tidak dipegang). Saat tak ada lagi yang memegang: pada start pertama tunggu
-  sampai `BOOT_MIN_MS` = 1,2 s sejak bingkai pertama (tulisan selesai tergambar dan denyut pertama), lalu memudar 0,45 s
-  (ketukan langsung sampai ke aplikasi) dan dihapus; dengan Kurangi gerakan langsung dihapus tanpa menunggu. Layar error server
-  (3 s / 20 s) melepas pegangan, jadi tidak tertutup. Layar loading berikutnya (sesudah login) memunculkannya lagi hanya bila
-  berlangsung > 400 ms (salinan bersih, memudar masuk), tanpa waktu minimum.
+  `FullPageLoading` saat masih spinner — penjaga login/aplikasi, `OrgProvider`, dan kini juga `/reset-sandi` serta `/gabung`
+  selama sesi dimuat (sebelumnya halaman kosong) — dan di `hydrateFallbackElement` AppShell: tautan langsung ke halaman lazy
+  yang kodenya masih dimuat); `BootSplashReady` di akar menjalankan pemeriksaan setelah render pertama (login, halaman error:
+  langsung tidak dipegang). Saat tak ada lagi yang memegang: pada start pertama tunggu sampai `BOOT_MIN_MS` = 1,15 s sejak
+  bingkai pertama layar itu sendiri (`currentTime` animasi halo `bs-halo` yang berulang — jam animasi yang sudah selesai berhenti di akhirnya; tanpa Web Animations: sejak awal halaman) — tulisan sudah
+  tergambar dan terisi, denyut pertama — lalu memudar 0,45 s (ketukan langsung sampai ke aplikasi) dan dihapus; dengan Kurangi
+  gerakan langsung dihapus tanpa menunggu. Layar error server (3 s / 20 s) melepas pegangan, jadi tidak tertutup. Layar loading
+  berikutnya (sesudah login) memunculkannya lagi hanya bila berlangsung > 400 ms (salinan bersih, tanpa waktu minimum); ia
+  memudar masuk dengan transisi opacity yang sama dengan saat keluar, jadi bila dilepas di tengah ia berbalik dengan mulus.
 - **Warna bilah status**: `meta theme-color` di `index.html` = `#0b0a08` selama layar pembuka; kembali `#0f766e` saat ia
   hilang (dan gelap lagi bila muncul kembali). Manifest PWA `background_color` = `#0b0a08`, jadi layar pembuka bawaan Android
   (ikon di atas warna latar) menyambung gelap ke layar ini.
-- **Uji**: `bootSplash.test.ts` (waktu minimum, start lambat tanpa tambahan, Kurangi gerakan, beberapa pegangan, StrictMode,
+- **Uji**: `bootSplash.test.ts` (waktu minimum dihitung dari bingkai pertama layar, start lambat tanpa tambahan, Kurangi gerakan, beberapa pegangan, StrictMode,
   pegangan saat memudar, muncul lagi hanya untuk loading yang lama, halaman tanpa layar pembuka), `e2e/splash.spec.ts` (tampil
-  "EG Kost" dan bilah status gelap, hilang ≥ 1,2 s dengan memudar dan bilah status teal kembali; tautan langsung ke halaman lazy
+  "EG Kost" dan bilah status gelap, hilang ≥ 1,15 s animasinya dengan memudar dan bilah status teal kembali; tautan langsung ke halaman lazy
   yang kodenya lambat — tanpa service worker — tetap tertutup sampai halaman itu tergambar; Kurangi gerakan: hilang tanpa memudar).
 

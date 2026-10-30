@@ -42,6 +42,17 @@ describe('boot splash', () => {
     expect(splash()).toBeNull()
   })
 
+  it("the minimum counts from the splash's own first frame, not from the start of the page", async () => {
+    // the page started 400 ms before the splash's animations did (a slow first paint)
+    now = 1000
+    splash()!.getAnimations = (() => [{ animationName: 'bs-halo', currentTime: 600 }]) as unknown as typeof Element.prototype.getAnimations
+    bootSplashReady()
+    await wait(BOOT_MIN_MS - 600 - 1)
+    expect(splash()!.classList.contains('bs-out')).toBe(false)
+    await wait(1)
+    expect(splash()!.classList.contains('bs-out')).toBe(true)
+  })
+
   it('an app that took longer than that to start loses no time', async () => {
     now = BOOT_MIN_MS + 500
     bootSplashReady()
@@ -113,7 +124,8 @@ describe('boot splash', () => {
     const slow = holdBootSplash()
     await wait(RESHOW_DELAY_MS)
     expect(splash()).not.toBeNull()
-    expect(splash()!.classList.contains('bs-in')).toBe(true)
+    // fading in with the transition it fades out with (so a hide mid-way turns it round smoothly)
+    expect(splash()!.classList.contains('bs-out')).toBe(false)
     expect(splash()!.textContent).toBe('EG Kost')
     expect(theme()).toBe(SPLASH_THEME)
     slow()

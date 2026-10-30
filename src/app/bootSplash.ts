@@ -16,8 +16,8 @@ const SPLASH_ID = 'boot-splash'
 /** index.html's theme-color while the splash shows, and the app's own */
 export const SPLASH_THEME = '#0b0a08'
 export const APP_THEME = '#0f766e'
-/** at the first start the logo has this long from the first frame: the letters drawn and the first heartbeat */
-export const BOOT_MIN_MS = 1200
+/** at the first start the logo has this long from its first frame: the letters drawn and filled, the first heartbeat */
+export const BOOT_MIN_MS = 1150
 /** a later loading screen shows the splash only when it lasts longer than this */
 export const RESHOW_DELAY_MS = 400
 /** how long the fade-out takes (index.html: transition: opacity 0.45s) */
@@ -58,9 +58,12 @@ export function holdBootSplash(win: Window = window): () => void {
     reshowTimer = setTimeout(() => {
       reshowTimer = undefined
       if (holds > 0 && !splash(doc) && template) {
+        // fades in with the same opacity transition it fades out with, so a hide during the fade-in turns it round
         const again = template.cloneNode(true) as HTMLElement
-        again.classList.add('bs-in')
+        again.classList.add('bs-out')
         doc.body.prepend(again)
+        void again.offsetWidth
+        again.classList.remove('bs-out')
         setThemeColor(doc, SPLASH_THEME)
       }
     }, RESHOW_DELAY_MS)
@@ -82,10 +85,20 @@ export function bootSplashReady(win: Window = window): void {
   if (holds === 0) scheduleHide(win)
 }
 
+/**
+ * How long the splash's animation has run: from its first frame (the time since the page started, without the API).
+ * Read from the halo's heartbeat, which repeats for ever: a finished animation's clock stops at its end.
+ */
+function splashAge(el: HTMLElement, win: Window): number {
+  const beat = el.getAnimations?.({ subtree: true }).find((a) => (a as CSSAnimation).animationName === 'bs-halo')
+  const time = beat?.currentTime
+  return typeof time === 'number' ? time : win.performance.now()
+}
+
 function scheduleHide(win: Window): void {
   const el = splash(win.document)
   if (!el || el.classList.contains('bs-out')) return
-  const wait = shownBefore || reducedMotion(win) ? 0 : Math.max(0, BOOT_MIN_MS - win.performance.now())
+  const wait = shownBefore || reducedMotion(win) ? 0 : Math.max(0, BOOT_MIN_MS - splashAge(el, win))
   clearTimeout(hideTimer)
   hideTimer = setTimeout(() => {
     if (holds === 0) hide(win)
@@ -98,7 +111,7 @@ function hide(win: Window): void {
   if (!el || el.classList.contains('bs-out')) return
   if (!template) {
     template = el.cloneNode(true) as HTMLElement
-    template.classList.remove('bs-in', 'bs-out')
+    template.classList.remove('bs-out')
   }
   shownBefore = true
   el.classList.add('bs-out')

@@ -36,9 +36,6 @@
         opacity: 0;
         pointer-events: none;
       }
-      #boot-splash.bs-in {
-        animation: bs-appear 0.3s ease-out both;
-      }
       #boot-splash .bs-logo {
         position: relative;
         width: min(78vw, 330px);
@@ -46,6 +43,8 @@
         overflow: visible;
       }
       #boot-splash text {
+        /* WebKit otherwise shrinks the dash pattern of SVG text by the screen's scale: the drawing would show as dashes */
+        text-rendering: geometricPrecision;
         font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         font-size: 66px;
         letter-spacing: 1px;
@@ -65,13 +64,13 @@
         stroke-dasharray: 420;
         stroke-dashoffset: 420;
         animation:
-          bs-draw 0.9s cubic-bezier(0.32, 0.72, 0, 1) 0.3s forwards,
-          bs-fill 0.45s ease-out 0.8s forwards;
+          bs-draw 0.75s cubic-bezier(0.32, 0.72, 0, 1) 0.25s forwards,
+          bs-fill 0.4s ease-out 0.65s forwards;
       }
       #boot-splash .bs-glow {
         fill: #fb923c;
         opacity: 0;
-        animation: bs-beat 1.8s ease-in-out 1s infinite;
+        animation: bs-beat 1.8s ease-in-out 0.9s infinite;
       }
       #boot-splash .bs-halo {
         position: absolute;
@@ -80,7 +79,7 @@
         border-radius: 50%;
         background: radial-gradient(closest-side, rgba(251, 146, 60, 0.32), rgba(251, 146, 60, 0.08) 60%, rgba(251, 146, 60, 0));
         opacity: 0;
-        animation: bs-halo 1.8s ease-in-out 1s infinite;
+        animation: bs-halo 1.8s ease-in-out 0.9s infinite;
       }
       #boot-splash .bs-line {
         width: min(42vw, 160px);
@@ -92,8 +91,8 @@
         transform: scaleX(0);
         opacity: 0;
         animation:
-          bs-line-in 0.6s cubic-bezier(0.32, 0.72, 0, 1) 0.95s forwards,
-          bs-line-beat 1.8s ease-in-out 1.55s infinite;
+          bs-line-in 0.6s cubic-bezier(0.32, 0.72, 0, 1) 0.85s forwards,
+          bs-line-beat 1.8s ease-in-out 1.45s infinite;
       }
       #boot-splash .bs-dots {
         position: absolute;

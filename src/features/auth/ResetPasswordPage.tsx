@@ -4,6 +4,7 @@ import { Button, Input } from '../../components/ui'
 import { useAuth } from '../../hooks/useAuth'
 import { AuthLayout } from './LoginPage'
 import { errorMessage } from './networkError'
+import { FullPageLoading } from '../../app/AuthGate'
 
 /**
  * Landing page for the Supabase recovery link (redirectTo). The link signs the user in with a
@@ -35,7 +36,8 @@ export function ResetPasswordPage() {
     }
   }
 
-  if (loading) return null
+  // the boot splash stays meanwhile, with the way out of a server that does not answer (SPEC 7.10)
+  if (loading) return <FullPageLoading />
 
   if (!session) {
     return (
