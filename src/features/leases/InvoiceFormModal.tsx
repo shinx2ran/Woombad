@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
-import { Button, CountInput, Input, Modal, MoneyInput, Textarea, useToast } from '../../components/ui'
-import type { Invoice, Lease, LeaseAddon, Payment, PeriodType, Room } from '../../types/db'
-import { PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { buildInvoiceDraft, nextPeriodBounds, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
-import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO } from '../../lib/format'
+import { Button, CountInput, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
+import type { Expense, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
+import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
+import { buildInvoiceDraft, depositBalance, nextPeriodBounds, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
+import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 import { plannedCheckoutOf } from '../../domain/occupancy'
 import {
   checkoutInputError,
@@ -27,6 +27,8 @@ import {
 import { PeriodTypePicker, PriceField, Row } from './components'
 import type { LeaseActions } from './useLeaseActions'
 import { RecordHistory } from '../settings/audit/RecordHistory'
+
+const DEPOSIT_METHODS = PAYMENT_METHODS.filter((m) => m !== 'deposit').map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))
 
 interface ExtraFieldsProps {
   parts: ExtraBreakdown
@@ -95,6 +97,9 @@ export interface NextInvoiceModalProps {
   leaseInvoices: Invoice[]
   /** every invoice of the org (numbering) */
   orgInvoices: Invoice[]
+  /** the org's payments and expenses: how much deposit this lease already received (SPEC 7.12) */
+  payments?: Payment[]
+  expenses?: Expense[]
   actions: LeaseActions
   onCreated?: (invoice: Invoice) => void
 }
@@ -105,9 +110,10 @@ export interface NextInvoiceModalProps {
  * (SPEC 5.4). Switching the type prefills the room's standard rate for that type; 'Jadikan jenis/harga tetap
  * sewa ini' copies type and price to the lease (default on when the type changed). The custom pro-rata price
  * follows the chosen end date until the user edits it. Every end date typed here is a CHECK-OUT day: the period
- * ends the night before (lastNightISO), and computed ends are shown as check-out days (SPEC 7.3).
+ * ends the night before (lastNightISO), and computed ends are shown as check-out days (SPEC 7.3). Switching into a
+ * weekly or monthly period asks for the uang jaminan a daily stay usually went without (SPEC 7.12).
  */
-export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvoices, orgInvoices, actions, onCreated }: NextInvoiceModalProps) {
+export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvoices, orgInvoices, payments = [], expenses = [], actions, onCreated }: NextInvoiceModalProps) {
   const toast = useToast()
   const [periodType, setPeriodType] = useState<PeriodType>(lease.period_type)
   const [price, setPrice] = useState(lease.price_per_period)
@@ -125,6 +131,10 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const [parts, setParts] = useState<ExtraBreakdown>({})
   const [discount, setDiscount] = useState(0)
   const [text, setText] = useState('')
+  /** SPEC 7.12: the agreed deposit after a switch into weekly/monthly, and whether what is still owed is paid now */
+  const [depositAmount, setDepositAmount] = useState(lease.deposit_amount)
+  const [depositNow, setDepositNow] = useState(true)
+  const [depositMethod, setDepositMethod] = useState<PaymentMethod>('cash')
   const [saving, setSaving] = useState(false)
   const [touched, setTouched] = useState(false)
 
@@ -153,6 +163,9 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     setParts({})
     setDiscount(0)
     setText('')
+    setDepositAmount(lease.deposit_amount)
+    setDepositNow(true)
+    setDepositMethod('cash')
     setTouched(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -179,6 +192,13 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const permanentBlocked = staffBlocked || (typeChanged && !actions.canWriteInvoiceStatus && invoicesToPinType(lease, leaseInvoices, periodType).length > 0)
   const permanent = !permanentBlocked && (permanentOverride ?? defaultMakePermanent(lease, periodType))
   const makePermanent = changesTerms && permanent
+
+  // SPEC 7.12: a daily stay often has no deposit; extending it as weekly or monthly asks for one (a lease term: owner/admin)
+  const askDeposit = typeChanged && periodType !== 'daily'
+  const setsDeposit = askDeposit && actions.canEditLeaseTerms
+  const depositReceived = useMemo(() => depositBalance(lease, payments, expenses).received, [lease, payments, expenses])
+  const depositDue = setsDeposit ? Math.max(0, depositAmount - depositReceived) : 0
+  const depositError = setsDeposit && depositAmount < 0 ? 'Tidak boleh negatif.' : undefined
 
   // A permanent type switch converts the per-period add-ons to the new unit (editable), so later invoices stay consistent.
   const perPeriodAddons = useMemo(() => addons.filter((a) => a.billing === 'per_period'), [addons])
@@ -253,7 +273,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const dateError = customError ?? untilError
   const submit = async () => {
     setTouched(true)
-    if (!preview.draft || priceError || dateError) return
+    if (!preview.draft || priceError || dateError || depositError) return
     setSaving(true)
     try {
       const invoice = await actions.issueInvoice({
@@ -270,11 +290,28 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         extraAmount,
         discountAmount: discount,
         notes: composeInvoiceNotes(parts, text),
+        depositAmount: setsDeposit ? depositAmount : undefined,
         existingInvoices: leaseInvoices,
         orgInvoices,
       })
       const terms = makePermanent ? ` Sewa kini ${PERIOD_TYPE_LABEL[periodType]} ${formatRupiah(price)} / ${unit}.` : ''
-      toast.success(`Tagihan ${invoice.invoice_number} dibuat. Sewa diperpanjang, check-out ${formatCheckout(invoice.period_end)}.${terms}`)
+      let deposit = ''
+      if (setsDeposit && depositAmount !== lease.deposit_amount) deposit = ` Deposit ${formatRupiah(depositAmount)}${depositDue > 0 && !depositNow ? ' belum diterima' : ''}.`
+      if (depositDue > 0 && depositNow) {
+        try {
+          await actions.recordDeposit(lease, depositDue, depositMethod, todayISO(), 'Uang jaminan')
+          deposit = ` Deposit ${formatRupiah(depositAmount)}, diterima ${formatRupiah(depositDue)} (${PAYMENT_METHOD_LABEL[depositMethod]}).`
+        } catch (err) {
+          // the invoice and the lease are saved: say what is missing and where to finish it
+          toast.error(
+            `Tagihan ${invoice.invoice_number} dibuat, tetapi deposit yang diterima gagal dicatat: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'} Catat lewat Lainnya → Catat deposit diterima.`,
+          )
+          onCreated?.(invoice)
+          onClose()
+          return
+        }
+      }
+      toast.success(`Tagihan ${invoice.invoice_number} dibuat. Sewa diperpanjang, check-out ${formatCheckout(invoice.period_end)}.${terms}${deposit}`)
       onCreated?.(invoice)
       onClose()
     } catch (err) {
@@ -348,6 +385,40 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
               </span>
             </span>
           </label>
+        )}
+        {askDeposit && (
+          <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3" data-testid="extension-deposit">
+            {setsDeposit ? (
+              <>
+                <MoneyInput
+                  label="Uang jaminan (deposit)"
+                  value={depositAmount}
+                  onChange={setDepositAmount}
+                  error={depositError}
+                  hint={`Disepakati untuk sewa ${PERIOD_TYPE_LABEL[periodType].toLowerCase()}; dikembalikan saat check-out.${depositReceived > 0 ? ` Sudah diterima ${formatRupiah(depositReceived)}.` : ''}`}
+                />
+                {depositAmount <= 0 && (
+                  <p className="flex items-start gap-1.5 text-xs text-amber-800" data-testid="extension-deposit-missing">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Belum ada deposit. Harian biasanya tanpa deposit, tetapi sewa {PERIOD_TYPE_LABEL[periodType].toLowerCase()} sebaiknya memakai deposit.
+                  </p>
+                )}
+                {depositDue > 0 && (
+                  <>
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={depositNow} onChange={(e) => setDepositNow(e.target.checked)} />
+                      Deposit {formatRupiah(depositDue)} sudah diterima
+                    </label>
+                    {depositNow && <Select label="Metode deposit" value={depositMethod} onChange={(e) => setDepositMethod(e.target.value as PaymentMethod)} options={DEPOSIT_METHODS} />}
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Deposit untuk sewa {PERIOD_TYPE_LABEL[periodType].toLowerCase()}: hanya pemilik/admin yang dapat mengisinya.
+              </p>
+            )}
+          </div>
         )}
         {rescaleAddons && (
           <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3" data-testid="addon-rescale">

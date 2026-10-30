@@ -573,6 +573,8 @@ export function LeaseDetailPage() {
         addons={addons}
         leaseInvoices={leaseInvoices}
         orgInvoices={data.invoices}
+        payments={data.payments}
+        expenses={data.expenses}
         actions={actions}
         onCreated={setShareInvoice}
       />
