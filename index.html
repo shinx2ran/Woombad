@@ -5,14 +5,307 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f766e" />
+    <!-- the boot splash's colour while it shows; the app sets its teal back when it takes the splash away -->
+    <meta name="theme-color" content="#0b0a08" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Woombad" />
     <meta name="description" content="Woombad - aplikasi manajemen kos: penyewa, tagihan, pembayaran, pengeluaran, dan laporan keuangan." />
     <title>Woombad</title>
+    <!--
+      Boot splash (SPEC 7.10): "EG Kost" while the app starts, like a phone's logo while it boots. Plain HTML and CSS
+      here, so it shows from the very first frame, before any script; src/app/bootSplash.ts takes it away once the app
+      has something to show. Four dots circle in and meet in the middle, the letters draw themselves and fill with an
+      orange-to-yellow light that keeps moving, and the glow beats like a heart (lub-dub, rest), as a signature lamp does.
+    -->
+    <style>
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(ellipse at 50% 46%, #1f1409 0%, #120c06 38%, #0b0a08 70%);
+        transition: opacity 0.45s ease;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #boot-splash.bs-out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #boot-splash.bs-in {
+        animation: bs-appear 0.3s ease-out both;
+      }
+      #boot-splash .bs-logo {
+        position: relative;
+        width: min(78vw, 330px);
+        height: auto;
+        overflow: visible;
+      }
+      #boot-splash text {
+        font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-size: 66px;
+        letter-spacing: 1px;
+      }
+      #boot-splash .bs-eg {
+        font-weight: 800;
+      }
+      #boot-splash .bs-kost {
+        font-weight: 600;
+      }
+      #boot-splash .bs-text {
+        fill: url(#bs-light);
+        fill-opacity: 0;
+        stroke: url(#bs-light);
+        stroke-width: 1.4px;
+        stroke-linejoin: round;
+        stroke-dasharray: 420;
+        stroke-dashoffset: 420;
+        animation:
+          bs-draw 0.9s cubic-bezier(0.32, 0.72, 0, 1) 0.3s forwards,
+          bs-fill 0.45s ease-out 0.8s forwards;
+      }
+      #boot-splash .bs-glow {
+        fill: #fb923c;
+        opacity: 0;
+        animation: bs-beat 1.8s ease-in-out 1s infinite;
+      }
+      #boot-splash .bs-halo {
+        position: absolute;
+        width: min(92vw, 400px);
+        aspect-ratio: 2 / 1;
+        border-radius: 50%;
+        background: radial-gradient(closest-side, rgba(251, 146, 60, 0.32), rgba(251, 146, 60, 0.08) 60%, rgba(251, 146, 60, 0));
+        opacity: 0;
+        animation: bs-halo 1.8s ease-in-out 1s infinite;
+      }
+      #boot-splash .bs-line {
+        width: min(42vw, 160px);
+        height: 3px;
+        margin-top: 4px;
+        border-radius: 3px;
+        background: linear-gradient(90deg, rgba(251, 146, 60, 0), #fb923c 25%, #fde047 50%, #fb923c 75%, rgba(251, 146, 60, 0));
+        box-shadow: 0 0 12px rgba(251, 146, 60, 0.6);
+        transform: scaleX(0);
+        opacity: 0;
+        animation:
+          bs-line-in 0.6s cubic-bezier(0.32, 0.72, 0, 1) 0.95s forwards,
+          bs-line-beat 1.8s ease-in-out 1.55s infinite;
+      }
+      #boot-splash .bs-dots {
+        position: absolute;
+        width: 0;
+        height: 0;
+      }
+      #boot-splash .bs-dots i {
+        position: absolute;
+        left: -6px;
+        top: -6px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        opacity: 0;
+        box-shadow: 0 0 10px currentColor;
+        animation: bs-dot 0.8s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+      }
+      #boot-splash .bs-dots i:nth-child(1) {
+        --a: 0deg;
+        color: #ea580c;
+        background: #ea580c;
+      }
+      #boot-splash .bs-dots i:nth-child(2) {
+        --a: 90deg;
+        color: #f59e0b;
+        background: #f59e0b;
+        animation-delay: 0.05s;
+      }
+      #boot-splash .bs-dots i:nth-child(3) {
+        --a: 180deg;
+        color: #facc15;
+        background: #facc15;
+        animation-delay: 0.1s;
+      }
+      #boot-splash .bs-dots i:nth-child(4) {
+        --a: 270deg;
+        color: #fdba74;
+        background: #fdba74;
+        animation-delay: 0.15s;
+      }
+      #boot-splash .bs-caption {
+        position: absolute;
+        bottom: calc(32px + env(safe-area-inset-bottom));
+        margin: 0;
+        font: 13px ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        color: rgba(253, 230, 138, 0.55);
+        opacity: 0;
+        animation: bs-appear 0.6s ease 2.5s forwards;
+      }
+      @keyframes bs-dot {
+        0% {
+          opacity: 0;
+          transform: rotate(var(--a)) translateX(72px) scale(0.4);
+        }
+        25% {
+          opacity: 1;
+          transform: rotate(calc(var(--a) + 90deg)) translateX(58px) scale(1);
+        }
+        70% {
+          opacity: 1;
+          transform: rotate(calc(var(--a) + 250deg)) translateX(20px) scale(0.9);
+        }
+        100% {
+          opacity: 0;
+          transform: rotate(calc(var(--a) + 360deg)) translateX(0) scale(0.2);
+        }
+      }
+      @keyframes bs-draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      @keyframes bs-fill {
+        to {
+          fill-opacity: 1;
+        }
+      }
+      /* lub-dub, rest: a quick bright beat, a smaller second one, then the lamp dims down until the next */
+      @keyframes bs-beat {
+        0% {
+          opacity: 0.25;
+        }
+        12% {
+          opacity: 0.95;
+        }
+        24% {
+          opacity: 0.45;
+        }
+        36% {
+          opacity: 0.8;
+        }
+        60%,
+        100% {
+          opacity: 0.25;
+        }
+      }
+      @keyframes bs-halo {
+        0% {
+          opacity: 0.35;
+          transform: scale(0.96);
+        }
+        12% {
+          opacity: 1;
+          transform: scale(1.04);
+        }
+        24% {
+          opacity: 0.55;
+          transform: scale(0.99);
+        }
+        36% {
+          opacity: 0.85;
+          transform: scale(1.02);
+        }
+        60%,
+        100% {
+          opacity: 0.35;
+          transform: scale(0.96);
+        }
+      }
+      @keyframes bs-line-in {
+        to {
+          transform: scaleX(1);
+          opacity: 1;
+        }
+      }
+      @keyframes bs-line-beat {
+        0% {
+          opacity: 0.55;
+        }
+        12% {
+          opacity: 1;
+        }
+        24% {
+          opacity: 0.7;
+        }
+        36% {
+          opacity: 0.95;
+        }
+        60%,
+        100% {
+          opacity: 0.55;
+        }
+      }
+      @keyframes bs-appear {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      /* "reduce motion": the finished logo with a steady glow, nothing moves */
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash,
+        #boot-splash * {
+          animation: none !important;
+          transition: none !important;
+        }
+        #boot-splash .bs-text {
+          fill-opacity: 1;
+          stroke-dashoffset: 0;
+        }
+        #boot-splash .bs-glow {
+          opacity: 0.5;
+        }
+        #boot-splash .bs-halo {
+          opacity: 0.6;
+        }
+        #boot-splash .bs-line {
+          transform: none;
+          opacity: 1;
+        }
+        #boot-splash .bs-dots {
+          display: none;
+        }
+        #boot-splash .bs-caption {
+          opacity: 1;
+        }
+      }
+    </style>
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased">
+    <!-- decorative: the app's own loading text (role="status") is under it for screen readers -->
+    <div id="boot-splash" aria-hidden="true">
+      <div class="bs-halo"></div>
+      <div class="bs-dots"><i></i><i></i><i></i><i></i></div>
+      <svg class="bs-logo" viewBox="0 0 300 100" focusable="false">
+        <defs>
+          <!-- one light across the whole word (user space: "EG" and "Kost" share it), sliding along -->
+          <linearGradient id="bs-light" gradientUnits="userSpaceOnUse" x1="20" y1="0" x2="280" y2="0" spreadMethod="reflect">
+            <stop offset="0" stop-color="#f97316" />
+            <stop offset="0.5" stop-color="#fde047" />
+            <stop offset="1" stop-color="#fb923c" />
+            <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="520 0" dur="3s" repeatCount="indefinite" />
+          </linearGradient>
+          <filter id="bs-blur" x="-20%" y="-60%" width="140%" height="220%">
+            <feGaussianBlur stdDeviation="7" />
+          </filter>
+        </defs>
+        <text class="bs-glow" x="150" y="70" text-anchor="middle" filter="url(#bs-blur)"><tspan class="bs-eg">EG</tspan> <tspan class="bs-kost">Kost</tspan></text>
+        <text class="bs-text" x="150" y="70" text-anchor="middle"><tspan class="bs-eg">EG</tspan> <tspan class="bs-kost">Kost</tspan></text>
+      </svg>
+      <div class="bs-line"></div>
+      <p class="bs-caption">Menyiapkan aplikasi…</p>
+    </div>
+    <script>
+      // "reduce motion": the light in the letters stops moving too (the CSS above stops everything else)
+      if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        var sweep = document.querySelector('#boot-splash animateTransform')
+        if (sweep) sweep.remove()
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

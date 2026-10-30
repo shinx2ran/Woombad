@@ -353,6 +353,12 @@ Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik
 - Butuh Safari 18 (iOS/iPadOS 18) atau Chrome/Edge terbaru; versi lebih lama berganti halaman langsung seperti sebelumnya. Bila
   **Kurangi gerakan** (iPhone: Pengaturan → Aksesibilitas → Gerakan; Android: Hapus animasi) menyala, semua berganti langsung.
 
+### Layar pembuka
+
+Saat aplikasi dibuka, tulisan **EG Kost** tergambar dan menyala oranye–kuning di layar gelap, berdenyut seperti detak jantung,
+sampai aplikasi siap (paling sedikit ±1 detik saat pertama dibuka, supaya animasinya selesai). Dengan **Kurangi gerakan**
+menyala, logo tampil diam dan hilang begitu aplikasi siap.
+
 ## Menguji skema database secara lokal (opsional)
 
 `supabase/tests/run.sh` memasang `schema.sql` ke PostgreSQL lokal dengan tiruan objek Supabase dan menjalankan

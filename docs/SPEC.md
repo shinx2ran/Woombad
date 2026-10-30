@@ -784,3 +784,32 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   terlihat locator selama ia ada (dibaca sekali, tidak diulang) dan ketukan menembusnya, tautan di dalam lembar terbuka tanpa salinan
   sama sekali (penghitung `MutationObserver`), ketukan cepat beruntun (transisi yang dilewati dihitung selesai saat `ready`
   ditolak), Kurangi gerakan.
+
+### 7.10 Layar pembuka "EG Kost"
+- **Permintaan pemilik**: ganti "Menyiapkan aplikasi…" dengan animasi pembuka seperti logo G saat Pixel menyala, berupa tulisan
+  **EG Kost** yang bergerak dan bercahaya oranye–kuning, meredup-terang seperti detak jantung lampu signature Mazda.
+- **Tampilan** (`index.html`, HTML + CSS + SVG di dalam halaman, tanpa skrip aplikasi, jadi tampil sejak bingkai pertama):
+  latar gelap hangat (`#0b0a08`, gradasi radial); empat titik (oranye tua, amber, kuning, peach) berputar mengelilingi tengah lalu
+  bertemu (0–0,95 s, seperti titik warna boot Pixel); tulisan "EG Kost" (sistem font, EG tebal 800, Kost 600) tergambar
+  garis demi garis (`stroke-dashoffset`, 0,3–1,2 s), lalu terisi; isi dan garisnya satu cahaya oranye–kuning yang terus bergeser
+  (gradien `userSpaceOnUse`, `animateTransform` 3 s); cahaya di belakangnya (salinan tulisan yang di-blur + halo radial) berdenyut
+  "lub-dub, istirahat" tiap 1,8 s mulai 1 s; garis cahaya di bawah tulisan memanjang dari tengah (0,95 s) dan ikut berdenyut;
+  "Menyiapkan aplikasi…" kecil muncul di bawah setelah 2,5 s (hanya terlihat bila pemuatan lama). **Kurangi gerakan**: logo
+  jadi, cahaya tetap, tanpa titik, garis, denyut, atau kilau yang bergerak. Seluruh layar `aria-hidden` (teks loading aplikasi
+  dengan `role="status"` ada di bawahnya).
+- **Kapan hilang** (`src/app/bootSplash.ts`, `BootSplash.tsx`): layar loading memegangnya (`BootSplashHold` di
+  `FullPageLoading` saat masih spinner — penjaga login/aplikasi dan `OrgProvider` — dan di `hydrateFallbackElement` AppShell:
+  tautan langsung ke halaman lazy yang kodenya masih dimuat); `BootSplashReady` di akar menjalankan pemeriksaan setelah render
+  pertama (login, halaman error, `/gabung`: langsung tidak dipegang). Saat tak ada lagi yang memegang: pada start pertama tunggu
+  sampai `BOOT_MIN_MS` = 1,2 s sejak bingkai pertama (tulisan selesai tergambar dan denyut pertama), lalu memudar 0,45 s
+  (ketukan langsung sampai ke aplikasi) dan dihapus; dengan Kurangi gerakan langsung dihapus tanpa menunggu. Layar error server
+  (3 s / 20 s) melepas pegangan, jadi tidak tertutup. Layar loading berikutnya (sesudah login) memunculkannya lagi hanya bila
+  berlangsung > 400 ms (salinan bersih, memudar masuk), tanpa waktu minimum.
+- **Warna bilah status**: `meta theme-color` di `index.html` = `#0b0a08` selama layar pembuka; kembali `#0f766e` saat ia
+  hilang (dan gelap lagi bila muncul kembali). Manifest PWA `background_color` = `#0b0a08`, jadi layar pembuka bawaan Android
+  (ikon di atas warna latar) menyambung gelap ke layar ini.
+- **Uji**: `bootSplash.test.ts` (waktu minimum, start lambat tanpa tambahan, Kurangi gerakan, beberapa pegangan, StrictMode,
+  pegangan saat memudar, muncul lagi hanya untuk loading yang lama, halaman tanpa layar pembuka), `e2e/splash.spec.ts` (tampil
+  "EG Kost" dan bilah status gelap, hilang ≥ 1,2 s dengan memudar dan bilah status teal kembali; tautan langsung ke halaman lazy
+  yang kodenya lambat — tanpa service worker — tetap tertutup sampai halaman itu tergambar; Kurangi gerakan: hilang tanpa memudar).
+
