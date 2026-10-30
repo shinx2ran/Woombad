@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/Woombad/favicon.svg" />
+    <link rel="apple-touch-icon" href="/Woombad/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- the boot splash's colour while it shows; the app sets its teal back when it takes the splash away -->
+    <meta name="theme-color" content="#0b0a08" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Woombad" />
+    <meta name="description" content="Woombad - aplikasi manajemen kos: penyewa, tagihan, pembayaran, pengeluaran, dan laporan keuangan." />
+    <title>Woombad</title>
+    <!--
+      Boot splash (SPEC 7.10): "EG Kost" while the app starts, like a phone's logo while it boots. Plain HTML and CSS
+      here, so it shows from the very first frame, before any script; src/app/bootSplash.ts takes it away once the app
+      has something to show. Four dots circle in and meet in the middle, the letters draw themselves and fill with an
+      orange-to-yellow light that keeps moving, and the glow beats like a heart (lub-dub, rest), as a signature lamp does.
+    -->
+    <style>#boot-splash{z-index:2147483000;-webkit-user-select:none;user-select:none;background:radial-gradient(at 50% 46%,#1f1409 0%,#120c06 38%,#0b0a08 70%);flex-direction:column;justify-content:center;align-items:center;transition:opacity .45s;display:flex;position:fixed;inset:0}#boot-splash.bs-out{opacity:0;pointer-events:none}#boot-splash .bs-logo{width:min(78vw,330px);height:auto;position:relative;overflow:visible}#boot-splash text{text-rendering:geometricprecision;letter-spacing:1px;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;font-size:66px}#boot-splash .bs-eg{font-weight:800}#boot-splash .bs-kost{font-weight:600}#boot-splash .bs-text{fill:url(#bs-light);fill-opacity:0;stroke:url(#bs-light);stroke-width:1.4px;stroke-linejoin:round;stroke-dasharray:420;stroke-dashoffset:420px;animation:.75s cubic-bezier(.32,.72,0,1) .25s forwards bs-draw,.4s ease-out .65s forwards bs-fill}#boot-splash .bs-glow{fill:#fb923c;opacity:0;animation:1.8s ease-in-out .9s infinite bs-beat}#boot-splash .bs-halo{aspect-ratio:2;opacity:0;background:radial-gradient(closest-side,#fb923c52,#fb923c14 60%,#fb923c00);border-radius:50%;width:min(92vw,400px);animation:1.8s ease-in-out .9s infinite bs-halo;position:absolute}#boot-splash .bs-line{opacity:0;background:linear-gradient(90deg,#fb923c00,#fb923c 25%,#fde047 50%,#fb923c 75%,#fb923c00);border-radius:3px;width:min(42vw,160px);height:3px;margin-top:4px;animation:.6s cubic-bezier(.32,.72,0,1) .85s forwards bs-line-in,1.8s ease-in-out 1.45s infinite bs-line-beat;transform:scaleX(0);box-shadow:0 0 12px #fb923c99}#boot-splash .bs-dots{width:0;height:0;position:absolute}#boot-splash .bs-dots i{opacity:0;border-radius:50%;width:12px;height:12px;animation:.8s cubic-bezier(.32,.72,0,1) forwards bs-dot;position:absolute;top:-6px;left:-6px;box-shadow:0 0 10px}#boot-splash .bs-dots i:first-child{--a:0deg;color:#ea580c;background:#ea580c}#boot-splash .bs-dots i:nth-child(2){--a:90deg;color:#f59e0b;background:#f59e0b;animation-delay:50ms}#boot-splash .bs-dots i:nth-child(3){--a:180deg;color:#facc15;background:#facc15;animation-delay:.1s}#boot-splash .bs-dots i:nth-child(4){--a:270deg;color:#fdba74;background:#fdba74;animation-delay:.15s}#boot-splash .bs-caption{bottom:calc(32px + env(safe-area-inset-bottom));color:#fde68a8c;opacity:0;margin:0;font:13px ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;animation:.6s 3.5s forwards bs-appear;position:absolute}@keyframes bs-dot{0%{opacity:0;transform:rotate(var(--a)) translateX(72px) scale(.4)}25%{opacity:1;transform:rotate(calc(var(--a) + 90deg)) translateX(58px) scale(1)}70%{opacity:1;transform:rotate(calc(var(--a) + 250deg)) translateX(20px) scale(.9)}to{opacity:0;transform:rotate(calc(var(--a) + 360deg)) translateX(0) scale(.2)}}@keyframes bs-draw{to{stroke-dashoffset:0}}@keyframes bs-fill{to{fill-opacity:1}}@keyframes bs-beat{0%{opacity:.25}12%{opacity:.95}24%{opacity:.45}36%{opacity:.8}60%,to{opacity:.25}}@keyframes bs-halo{0%{opacity:.35;transform:scale(.96)}12%{opacity:1;transform:scale(1.04)}24%{opacity:.55;transform:scale(.99)}36%{opacity:.85;transform:scale(1.02)}60%,to{opacity:.35;transform:scale(.96)}}@keyframes bs-line-in{to{opacity:1;transform:scaleX(1)}}@keyframes bs-line-beat{0%{opacity:.55}12%{opacity:1}24%{opacity:.7}36%{opacity:.95}60%,to{opacity:.55}}@keyframes bs-appear{0%{opacity:0}to{opacity:1}}@media (prefers-reduced-motion:reduce){#boot-splash,#boot-splash *{transition:none!important;animation:none!important}#boot-splash .bs-text{fill-opacity:1;stroke-dashoffset:0}#boot-splash .bs-glow{opacity:.5}#boot-splash .bs-halo{opacity:.6}#boot-splash .bs-line{opacity:1;transform:none}#boot-splash .bs-dots{display:none}#boot-splash .bs-caption{opacity:1}}</style>
+    <script type="module" crossorigin src="/Woombad/assets/index-DZXtBpvQ.js"></script>
+    <link rel="modulepreload" crossorigin href="/Woombad/assets/rolldown-runtime-C0FnF6B9.js">
+    <link rel="modulepreload" crossorigin href="/Woombad/assets/deviceData-CxNqQ_Pq.js">
+    <link rel="modulepreload" crossorigin href="/Woombad/assets/useTable-Bma0d2XK.js">
+    <link rel="modulepreload" crossorigin href="/Woombad/assets/billing-BCXU2MWy.js">
+    <link rel="modulepreload" crossorigin href="/Woombad/assets/messages-r-oqR9H2.js">
+    <link rel="stylesheet" crossorigin href="/Woombad/assets/index-D6HmV8T2.css">
+  <link rel="manifest" href="/Woombad/manifest.webmanifest"></head>
+  <body class="bg-slate-50 text-slate-900 antialiased">
+    <!-- decorative: the app's own loading text (role="status") is under it for screen readers -->
+    <div id="boot-splash" aria-hidden="true">
+      <div class="bs-halo"></div>
+      <div class="bs-dots"><i></i><i></i><i></i><i></i></div>
+      <svg class="bs-logo" viewBox="0 0 300 100" focusable="false">
+        <defs>
+          <!-- one light across the whole word (user space: "EG" and "Kost" share it), sliding along -->
+          <linearGradient id="bs-light" gradientUnits="userSpaceOnUse" x1="20" y1="0" x2="280" y2="0" spreadMethod="reflect">
+            <stop offset="0" stop-color="#f97316" />
+            <stop offset="0.5" stop-color="#fde047" />
+            <stop offset="1" stop-color="#fb923c" />
+            <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="520 0" dur="3s" repeatCount="indefinite" />
+          </linearGradient>
+          <filter id="bs-blur" x="-20%" y="-60%" width="140%" height="220%">
+            <feGaussianBlur stdDeviation="7" />
+          </filter>
+        </defs>
+        <text class="bs-glow" x="150" y="70" text-anchor="middle" filter="url(#bs-blur)"><tspan class="bs-eg">EG</tspan> <tspan class="bs-kost">Kost</tspan></text>
+        <text class="bs-text" x="150" y="70" text-anchor="middle"><tspan class="bs-eg">EG</tspan> <tspan class="bs-kost">Kost</tspan></text>
+      </svg>
+      <div class="bs-line"></div>
+      <p class="bs-caption">Menyiapkan aplikasi…</p>
+    </div>
+    <script>
+      // "reduce motion": the light in the letters stops moving too (the CSS above stops everything else)
+      if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        var sweep = document.querySelector('#boot-splash animateTransform')
+        if (sweep) sweep.remove()
+      }
+    </script>
+    <div id="root"></div>
+  </body>
+</html>

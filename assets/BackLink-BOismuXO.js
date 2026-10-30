@@ -1,0 +1,1 @@
+import{Bt as e,_t as t,st as n}from"./useTable-Bma0d2XK.js";import{wi as r}from"./index-DZXtBpvQ.js";var i=e();function a({to:e,className:a,children:o}){let s=t();return(0,i.jsx)(n,{to:e,className:a,onClick:t=>{t.button!==0||t.metaKey||t.ctrlKey||t.shiftKey||t.altKey||r()===e&&(t.preventDefault(),s(-1))},children:o})}export{a as t};
