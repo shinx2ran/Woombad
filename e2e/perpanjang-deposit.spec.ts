@@ -40,6 +40,7 @@ test.describe('Perpanjang harian → mingguan: deposit (SPEC 7.12)', () => {
 
     await expect(page.getByText(/Sewa kini Mingguan .* Deposit Rp 200\.000, diterima Rp 200\.000 \(Transfer\)\./)).toBeVisible()
     // the fresh bill opens in the share sheet: close it, the lease page is underneath
+    await expect(page.getByRole('dialog').getByRole('heading', { name: /Kirim tagihan/ })).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.getByRole('dialog')).toHaveCount(0)
     // Deposit dipegang: received by transfer, nothing returned or used

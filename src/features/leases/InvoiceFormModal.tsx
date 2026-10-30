@@ -133,7 +133,9 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const [text, setText] = useState('')
   /** SPEC 7.12: the agreed deposit after a switch into weekly/monthly, and whether what is still owed is paid now */
   const [depositAmount, setDepositAmount] = useState(lease.deposit_amount)
-  const [depositNow, setDepositNow] = useState(true)
+  /** "sudah diterima": ticked by default only once the deposit was typed here, never for an old unpaid one (null = default) */
+  const [depositNowChoice, setDepositNowChoice] = useState<boolean | null>(null)
+  const [depositTyped, setDepositTyped] = useState(false)
   const [depositMethod, setDepositMethod] = useState<PaymentMethod>('cash')
   const [saving, setSaving] = useState(false)
   const [touched, setTouched] = useState(false)
@@ -164,7 +166,8 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     setDiscount(0)
     setText('')
     setDepositAmount(lease.deposit_amount)
-    setDepositNow(true)
+    setDepositNowChoice(null)
+    setDepositTyped(false)
     setDepositMethod('cash')
     setTouched(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,6 +202,9 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const depositReceived = useMemo(() => depositBalance(lease, payments, expenses).received, [lease, payments, expenses])
   const depositDue = setsDeposit ? Math.max(0, depositAmount - depositReceived) : 0
   const depositError = setsDeposit && depositAmount < 0 ? 'Tidak boleh negatif.' : undefined
+  const depositNow = depositNowChoice ?? depositTyped
+  // part of the deposit came in earlier: what is (or is not yet) received now is the rest
+  const rest = depositReceived > 0 ? 'sisa ' : ''
 
   // A permanent type switch converts the per-period add-ons to the new unit (editable), so later invoices stay consistent.
   const perPeriodAddons = useMemo(() => addons.filter((a) => a.billing === 'per_period'), [addons])
@@ -296,11 +302,13 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
       })
       const terms = makePermanent ? ` Sewa kini ${PERIOD_TYPE_LABEL[periodType]} ${formatRupiah(price)} / ${unit}.` : ''
       let deposit = ''
-      if (setsDeposit && depositAmount !== lease.deposit_amount) deposit = ` Deposit ${formatRupiah(depositAmount)}${depositDue > 0 && !depositNow ? ' belum diterima' : ''}.`
+      if (setsDeposit && depositAmount !== lease.deposit_amount) {
+        deposit = ` Deposit ${formatRupiah(depositAmount)}${depositDue > 0 && !depositNow ? (depositReceived > 0 ? `, sisa ${formatRupiah(depositDue)} belum diterima` : ' belum diterima') : ''}.`
+      }
       if (depositDue > 0 && depositNow) {
         try {
           await actions.recordDeposit(lease, depositDue, depositMethod, todayISO(), 'Uang jaminan')
-          deposit = ` Deposit ${formatRupiah(depositAmount)}, diterima ${formatRupiah(depositDue)} (${PAYMENT_METHOD_LABEL[depositMethod]}).`
+          deposit = ` Deposit ${formatRupiah(depositAmount)}, ${rest}diterima ${formatRupiah(depositDue)} (${PAYMENT_METHOD_LABEL[depositMethod]}).`
         } catch (err) {
           // the invoice and the lease are saved: say what is missing and where to finish it
           toast.error(
@@ -393,21 +401,24 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
                 <MoneyInput
                   label="Uang jaminan (deposit)"
                   value={depositAmount}
-                  onChange={setDepositAmount}
+                  onChange={(v) => {
+                    setDepositTyped(true)
+                    setDepositAmount(v)
+                  }}
                   error={depositError}
                   hint={`Disepakati untuk sewa ${PERIOD_TYPE_LABEL[periodType].toLowerCase()}; dikembalikan saat check-out.${depositReceived > 0 ? ` Sudah diterima ${formatRupiah(depositReceived)}.` : ''}`}
                 />
                 {depositAmount <= 0 && (
                   <p className="flex items-start gap-1.5 text-xs text-amber-800" data-testid="extension-deposit-missing">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                    Belum ada deposit. Harian biasanya tanpa deposit, tetapi sewa {PERIOD_TYPE_LABEL[periodType].toLowerCase()} sebaiknya memakai deposit.
+                    Belum ada deposit. {lease.period_type === 'daily' ? 'Harian biasanya tanpa deposit, tetapi sewa' : 'Sewa'} {PERIOD_TYPE_LABEL[periodType].toLowerCase()} sebaiknya memakai deposit.
                   </p>
                 )}
                 {depositDue > 0 && (
                   <>
                     <label className="flex items-center gap-2 text-sm text-slate-700">
-                      <input type="checkbox" checked={depositNow} onChange={(e) => setDepositNow(e.target.checked)} />
-                      Deposit {formatRupiah(depositDue)} sudah diterima
+                      <input type="checkbox" checked={depositNow} onChange={(e) => setDepositNowChoice(e.target.checked)} />
+                      {depositReceived > 0 ? 'Sisa deposit' : 'Deposit'} {formatRupiah(depositDue)} sudah diterima
                     </label>
                     {depositNow && <Select label="Metode deposit" value={depositMethod} onChange={(e) => setDepositMethod(e.target.value as PaymentMethod)} options={DEPOSIT_METHODS} />}
                   </>

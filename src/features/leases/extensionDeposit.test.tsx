@@ -157,6 +157,13 @@ describe('Buat tagihan berikutnya: deposit when a stay switches to weekly or mon
     expect(await repo.list('payments')).toEqual([])
   })
 
+  it('a weekly stay without deposit going monthly: the warning does not speak of a daily stay', async () => {
+    await repo.update('leases', 'L1', { period_type: 'weekly', price_per_period: 1_000_000 })
+    await openSheet()
+    fireEvent.click(screen.getByRole('radio', { name: 'Bulanan' }))
+    expect(screen.getByTestId('extension-deposit-missing').textContent).toBe('Belum ada deposit. Sewa bulanan sebaiknya memakai deposit.')
+  })
+
   it('a deposit partly received before: only what is still owed is received now', async () => {
     await repo.update('leases', 'L1', { period_type: 'weekly', price_per_period: 1_000_000, deposit_amount: 100_000 })
     const paid = await repo.insert('payments', { property_id: 'P1', invoice_id: null, lease_id: 'L1', amount: 100_000, paid_at: '2026-10-29', method: 'cash', kind: 'deposit', notes: 'Uang jaminan' } as never)
@@ -166,12 +173,56 @@ describe('Buat tagihan berikutnya: deposit when a stay switches to weekly or mon
     expect(deposit).toHaveProperty('value', '100.000')
     expect(screen.getByText(/Sudah diterima Rp 100\.000\./)).toBeTruthy()
     fireEvent.change(deposit, { target: { value: '300000' } })
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Deposit Rp 200.000 sudah diterima' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Deposit Rp 200.000 sudah diterima' }))
+    // the rest, named as the rest
+    expect(screen.getByRole('checkbox', { name: 'Sisa deposit Rp 200.000 sudah diterima' })).toHaveProperty('checked', true)
     fireEvent.click(screen.getByRole('button', { name: 'Buat tagihan' }))
     await waitFor(() => expect(onClose).toHaveBeenCalled())
     expect((await stored()).deposit_amount).toBe(300_000)
-    expect((await repo.list('payments')).filter((p) => p.kind === 'deposit').map((p) => p.amount).sort()).toEqual([100_000, 200_000])
+    expect((await repo.list('payments')).filter((p) => p.kind === 'deposit').map((p) => [p.amount, p.paid_at]).sort()).toEqual([[100_000, '2026-10-29'], [200_000, '2026-10-29']])
+    expect(screen.getByText(/Deposit Rp 300\.000, sisa diterima Rp 200\.000 \(Tunai\)\./)).toBeTruthy()
+  })
+
+  it('the rest not paid yet: the toast names the rest, not the whole deposit', async () => {
+    await repo.update('leases', 'L1', { period_type: 'weekly', price_per_period: 1_000_000, deposit_amount: 100_000 })
+    const paid = await repo.insert('payments', { property_id: 'P1', invoice_id: null, lease_id: 'L1', amount: 100_000, paid_at: '2026-10-29', method: 'cash', kind: 'deposit', notes: 'Uang jaminan' } as never)
+    const onClose = await openSheet(vi.fn(), [paid])
+    fireEvent.click(screen.getByRole('radio', { name: 'Bulanan' }))
+    fireEvent.change(screen.getByLabelText('Uang jaminan (deposit)'), { target: { value: '300000' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Sisa deposit Rp 200.000 sudah diterima' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Buat tagihan' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(screen.getByText(/Deposit Rp 300\.000, sisa Rp 200\.000 belum diterima\./)).toBeTruthy()
+    expect((await repo.list('payments')).filter((p) => p.kind === 'deposit')).toHaveLength(1)
+  })
+
+  it('an old deposit agreed but never paid is not ticked as received unless typed here', async () => {
+    await repo.update('leases', 'L1', { deposit_amount: 300_000 })
+    await openSheet()
+    fireEvent.click(screen.getByRole('radio', { name: 'Mingguan' }))
+    expect(screen.getByRole('checkbox', { name: 'Deposit Rp 300.000 sudah diterima' })).toHaveProperty('checked', false)
+    expect(screen.queryByLabelText('Metode deposit')).toBeNull()
+    // a deposit is agreed: no warning
+    expect(screen.queryByTestId('extension-deposit-missing')).toBeNull()
+  })
+
+  it('the deposit payment failing after the invoice: both saved stay, the message says where to finish', async () => {
+    const onClose = vi.fn()
+    const leaseInvoices = await repo.list('invoices')
+    const real = actions()
+    const failing = { ...real, recordDeposit: vi.fn(async () => { throw new Error('Tidak dapat terhubung ke server.') }) }
+    render(
+      <ToastProvider>
+        <NextInvoiceModal open onClose={onClose} lease={await stored()} room={room} addons={[]} leaseInvoices={leaseInvoices} orgInvoices={leaseInvoices} payments={[]} expenses={[]} actions={failing} />
+      </ToastProvider>,
+    )
+    fireEvent.click(screen.getByRole('radio', { name: 'Mingguan' }))
+    fireEvent.change(screen.getByLabelText('Uang jaminan (deposit)'), { target: { value: '200000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Buat tagihan' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(screen.getByText(/deposit yang diterima gagal dicatat: Tidak dapat terhubung ke server\. Catat lewat Lainnya → Catat deposit diterima\./)).toBeTruthy()
+    expect(await stored()).toMatchObject({ period_type: 'weekly', deposit_amount: 200_000 })
+    expect(await repo.list('invoices')).toHaveLength(2)
+    expect(await repo.list('payments')).toEqual([])
   })
 
   it('staff: the sheet says only an owner/admin sets the deposit, and the action refuses a new deposit before writing', async () => {
