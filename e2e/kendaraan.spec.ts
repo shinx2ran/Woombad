@@ -165,8 +165,14 @@ test.describe('Nomor kendaraan (SPEC 7.11)', () => {
 
   test('the lease list finds a tenant by plate, typed without spaces', async ({ page }) => {
     await page.goto('/sewa')
-    await page.getByRole('searchbox', { name: 'Cari sewa' }).or(page.getByLabel('Cari sewa')).first().fill('kb1234')
+    await page.getByLabel('Cari sewa').fill('kb1234')
     await expect(page.getByText('Budi Santoso').locator('visible=true').first()).toBeVisible()
     await expect(page.getByText('Siti Rahayu').locator('visible=true')).toHaveCount(0)
+    // the row says why it was found
+    await expect(page.getByTestId('lease-plate')).toHaveText('KB 1234 AB')
+    // a name search shows no plate
+    await page.getByLabel('Cari sewa').fill('budi')
+    await expect(page.getByText('Budi Santoso').locator('visible=true').first()).toBeVisible()
+    await expect(page.getByTestId('lease-plate')).toHaveCount(0)
   })
 })

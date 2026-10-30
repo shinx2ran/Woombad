@@ -76,7 +76,7 @@ export const PLANNED_CHECKOUT_BEFORE_START_MESSAGE = 'Rencana keluar harus sesud
  * re-run (or before PostgREST reloaded its schema). Check-in cepat and Sewa baru send the column only with a plate, so
  * saving without one still works on such a server.
  */
-export const VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE = 'No. kendaraan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya, atau simpan dulu tanpa no. kendaraan.'
+export const VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE = 'No. kendaraan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya; check-in tanpa no. kendaraan tetap bisa disimpan.'
 
 /** New dates of one invoice in a lease start correction. */
 export interface RedateInvoiceDates {

@@ -289,9 +289,10 @@ isi nama, lamanya, dan total (terisi otomatis dari tarif kamar); lunas, DP, atau
 
 Isi **No. kendaraan** saat Check-in cepat atau Sewa baru (tidak wajib), atau nanti di halaman sewa: kartu **Info sewa** → ikon
 pensil di baris No. kendaraan. Ketik sesukanya ("kb.1442.gz", "KB1442GZ"): aplikasi menulisnya rapi seperti plat, **KB 1442 GZ**.
-Lebih dari satu kendaraan: pisahkan dengan koma. Plat tampil kecil di kotak kamar pada **Papan kamar** (satu baris per kendaraan)
-dan lengkap saat kotak diketuk. Ubah juga lewat **Lainnya → No. kendaraan**; untuk menghapusnya, kosongkan isiannya lalu Simpan.
-Ada motor tak dikenal di parkiran? Ketik platnya di kotak cari **Sewa** ("kb1442" cukup) untuk tahu siapa pemiliknya.
+Lebih dari satu kendaraan: pisahkan dengan koma. Plat tampil kecil di kotak kamar pada **Papan kamar** (satu baris per kendaraan, paling banyak dua;
+lebih dari itu "+1") dan lengkap saat kotak diketuk. Ubah juga lewat **Lainnya → No. kendaraan**; untuk menghapusnya, kosongkan isiannya lalu Simpan.
+Ada motor tak dikenal di parkiran? Ketik platnya di kotak cari **Sewa** ("kb1442" cukup, minimal 4 huruf/angka) untuk tahu siapa pemiliknya; platnya tampil di
+baris hasil.
 
 ### Rencana check-in & daftar tunggu
 

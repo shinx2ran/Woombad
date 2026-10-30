@@ -6,6 +6,7 @@ import { Button, Card, EmptyState, ErrorState, LoadingState, PageHeader, useToas
 import { useOrg } from '../../hooks/useOrg'
 import type { Invoice, Lease } from '../../types/db'
 import { summarizeLeaseBilling } from '../../domain/billing'
+import { plateMatches } from '../../domain/plate'
 import { todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
@@ -209,6 +210,8 @@ export function LeasesPage() {
                 onPay={() => setModal({ kind: 'pay', lease: item.lease })}
                 onInvoice={() => setModal({ kind: 'invoice', lease: item.lease })}
                 onReminder={() => openReminder(item)}
+                // found by its plate (SPEC 7.11): show it, so the hit explains itself
+                plate={search && plateMatches(item.lease.vehicle_plate, search) ? item.lease.vehicle_plate : null}
                 extraItems={[
                   {
                     label: 'Kirim tagihan',

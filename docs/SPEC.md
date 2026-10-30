@@ -850,7 +850,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   ±49 px) muat utuh di kotak 52 px pada HP 360 px. Label kotak untuk pembaca layar ditambah ", kendaraan …". Lembar aksi kamar
   menampilkan semua plat dengan ikon mobil di bawah nama penyewa.
 - **Cari di daftar Sewa**: kotak cari juga menemukan plat, diketik dengan atau tanpa spasi ("kb1442", "1442 gz"; `plateMatches`:
-  per plat, huruf/angka saja, minimal 4 karakter supaya cari kamar "B1"/"A10" tidak memunculkan plat).
+  per plat, huruf/angka saja, minimal 4 karakter supaya cari kamar "B1"/"A10" tidak memunculkan plat); baris yang ditemukan lewat
+  platnya menampilkan plat itu (`LeaseRow` `plate`, `data-testid="lease-plate"`), supaya jelas kenapa ia muncul.
 - **Uji**: `plate.test.ts`, `quickCheckIn.test.ts` (plat dinormalkan; tanpa plat kolom tidak dikirim), `useRencanaActions.test.tsx`
   (bookStay meneruskan plat), `vehiclePlate.test.tsx` (setVehiclePlate termasuk staf, lembar isian), `leaseUtils.test.ts` (cari
   plat), `vehiclePlate.data.test.ts` (seed, Mode Demo, impor, riwayat, pesan galat), DB `supabase/tests/29-kendaraan.sql`
