@@ -15,6 +15,7 @@ import { reportsRoutes } from '../features/reports/routes'
 import { settingsRoutes } from '../features/settings/routes'
 import { NotFoundPage } from './NotFoundPage'
 import { RouteErrorPage } from './RouteErrorPage'
+import { BootSplashHold } from './BootSplash'
 import { installPageTransitions, seedHistoryKey } from './pageTransitions'
 
 /**
@@ -35,7 +36,13 @@ const routes: RouteObject[] = [
     children: [
       {
         element: <AppShell />,
-        hydrateFallbackElement: <LoadingState />,
+        // a deep link to a page still loading its code at start-up: the boot splash stays meanwhile (SPEC 7.10)
+        hydrateFallbackElement: (
+          <>
+            <BootSplashHold />
+            <LoadingState />
+          </>
+        ),
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
           ...dashboardRoutes,

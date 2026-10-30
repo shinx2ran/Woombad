@@ -8,6 +8,7 @@ import { serverProblemText, useServerStatus } from '../components/serverStatus'
 import { NETWORK_ERROR_MESSAGE } from '../features/auth/networkError'
 import { hasStoredSession } from '../lib/supabase'
 import { safeReturnPath } from '../lib/redirect'
+import { BootSplashHold } from './BootSplash'
 
 /** a failed request during start-up is retried; give it this long before showing the error screen */
 export const SERVER_PROBLEM_DELAY_MS = 3000
@@ -39,6 +40,8 @@ export function FullPageLoading() {
   if ((waited && server !== 'ok') || slow) return <ServerErrorScreen />
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50">
+      {/* the "EG Kost" boot splash stays on top while this is up (SPEC 7.10) */}
+      <BootSplashHold />
       <LoadingState label="Menyiapkan aplikasi…" />
     </div>
   )

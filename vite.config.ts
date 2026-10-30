@@ -47,7 +47,8 @@ export default defineConfig({
         description: 'Aplikasi manajemen kos: penyewa, tagihan, pembayaran, pengeluaran, dan laporan keuangan.',
         lang: 'id',
         theme_color: '#0f766e',
-        background_color: '#f8fafc',
+        // the phone's own launch screen in the boot splash's colour, so the start runs dark to the app (SPEC 7.10)
+        background_color: '#0b0a08',
         display: 'standalone',
         start_url: base,
         scope: base,
