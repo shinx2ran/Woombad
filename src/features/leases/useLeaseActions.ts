@@ -88,6 +88,11 @@ export interface IssueInvoiceInput {
   extraAmount?: number
   discountAmount?: number
   notes: string | null
+  /**
+   * SPEC 7.12: the agreed deposit (uang jaminan) after this extension, when it switches a daily stay to weekly or
+   * monthly; written to the lease with the extension's other changes (owner/admin only, a lease term)
+   */
+  depositAmount?: number
   /** invoices of this lease */
   existingInvoices: Invoice[]
   /** every invoice of the org (numbering) */
@@ -151,6 +156,7 @@ export function useLeaseActions() {
     const canEditLeaseTerms = isAdmin
     const STAFF_INVOICE_ERROR = 'Hanya pemilik/admin yang dapat mengubah tagihan.'
     const STAFF_TERMS_ERROR = 'Hanya pemilik/admin yang dapat mengubah harga atau jenis sewa.'
+    const STAFF_DEPOSIT_ERROR = 'Hanya pemilik/admin yang dapat mengubah deposit yang disepakati.'
 
     async function syncInvoiceStatus(invoiceId: string): Promise<void> {
       const inv = await repo.get('invoices', invoiceId)
@@ -255,6 +261,10 @@ export function useLeaseActions() {
         const price = input.pricePerPeriod ?? input.lease.price_per_period
         if (type !== input.lease.period_type || price !== input.lease.price_per_period) throw new Error(STAFF_TERMS_ERROR)
       }
+      const depositChange = input.depositAmount !== undefined && input.depositAmount !== input.lease.deposit_amount
+      if (depositChange && (!Number.isInteger(input.depositAmount) || input.depositAmount! < 0)) throw new Error('Deposit tidak boleh negatif.')
+      // the agreed deposit is a lease term like the price: the database refuses it from staff (leases_terms_guard)
+      if (depositChange && !canEditLeaseTerms) throw new Error(STAFF_DEPOSIT_ERROR)
       const typeSwitch = (input.makePermanent ?? false) && input.periodType !== undefined && input.periodType !== input.lease.period_type
       if (typeSwitch && !canWriteInvoiceStatus && invoicesToPinType(input.lease, input.existingInvoices, input.periodType).length > 0) {
         throw new Error('Hanya pemilik/admin yang dapat mengganti jenis sewa secara tetap (tagihan lama perlu ditandai jenisnya).')
@@ -282,8 +292,9 @@ export function useLeaseActions() {
         input.notes,
       )
       // end_date follows the new invoice (SPEC 2b.10); a type/price switch made permanent updates the lease
-      // terms and leaves a note (SPEC 5.2).
-      const patch = extensionLeasePatch(input.lease, draft, input.makePermanent ?? false)
+      // terms and leaves a note (SPEC 5.2); a new agreed deposit goes in the same write (SPEC 7.12).
+      const extension = extensionLeasePatch(input.lease, draft, input.makePermanent ?? false)
+      const patch = depositChange ? { ...extension, deposit_amount: input.depositAmount } : extension
       if (patch) {
         try {
           if (patch.period_type !== undefined && patch.period_type !== input.lease.period_type) {

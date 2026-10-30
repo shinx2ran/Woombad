@@ -189,6 +189,7 @@ Layar Utama), tombol keluar, versi aplikasi.
 - Dashboard **Perlu perhatian**: toggle kecil **Tanggal | Kamar** untuk urutan di dalam tiap grup.
 
 ### 5.2 Perpanjangan dengan jenis periode berbeda (harian → mingguan/bulanan)
+- Deposit saat beralih ke mingguan/bulanan: lihat 7.12.
 - `invoices.period_type` (baru, nullable) menyimpan jenis periode tagihan itu; `null` = jenis sewa saat itu.
   Label satuan tagihan memakai `invoice.period_type ?? lease.period_type`.
 - `InvoiceDraftInput` mendapat override `periodType?: PeriodType` dan `pricePerPeriod?: number`; `InvoiceDraft`
@@ -860,3 +861,30 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   (struktur, semua anggota boleh, RLS, riwayat, cadangan), `e2e/kendaraan.spec.ts` (juga dengan gerak; papan 360 px: plat utuh,
   label, lembar; Check-in cepat dengan & tanpa plat; isi/ubah/kosongkan di halaman sewa dan lewat Lainnya; Sewa baru menyimpan
   plat; cari plat di daftar Sewa; tanpa error konsol).
+
+### 7.12 Deposit saat perpanjangan harian → mingguan/bulanan
+- **Permintaan pemilik**: tamu harian biasanya tanpa deposit, tetapi saat diperpanjang menjadi mingguan atau bulanan harus ada
+  deposit; dialog Perpanjang belum menanyakannya (kasus nyata: D1, harian 29 Okt lalu mingguan Rp 1.000.000 mulai 30 Okt, deposit
+  Rp 0 → diisi Rp 200.000 lewat SQL operator, belum dicatat diterima).
+- **Buat tagihan berikutnya** (`NextInvoiceModal`): bila **Jenis periode** diganti ke Mingguan atau Bulanan (dari jenis lain),
+  muncul kotak **Uang jaminan (deposit)** (`data-testid="extension-deposit"`), terisi deposit yang disepakati sekarang (biasanya
+  Rp 0), dengan keterangan "Sudah diterima Rp X" bila ada. Bila 0: peringatan kuning "Belum ada deposit. Harian biasanya tanpa
+  deposit, tetapi sewa mingguan sebaiknya memakai deposit." (dari jenis lain: "Belum ada deposit. Sewa bulanan sebaiknya memakai
+  deposit."; tidak memblokir: pemilik boleh membebaskan deposit). Bila deposit melebihi yang sudah diterima: kotak centang
+  **Deposit Rp <selisih> sudah diterima** ("Sisa deposit …" bila sebagian sudah diterima) + **Metode deposit**
+  (Tunai/Transfer/QRIS/Lainnya). Tercentang otomatis hanya setelah jumlah deposit diketik di dialog ini; deposit lama yang belum
+  dibayar tidak pernah dicatat diterima tanpa dicentang. Tetap harian:
+  tidak ditanya. Staf: hanya keterangan "hanya pemilik/admin yang dapat mengisinya" (deposit disepakati adalah syarat sewa,
+  `leases_terms_guard`).
+- **Simpan**: `issueInvoice({ …, depositAmount })` menulis `deposit_amount` dalam update sewa yang sama dengan perpanjangan (jenis,
+  harga, check-out; menolak staf dengan "Hanya pemilik/admin yang dapat mengubah deposit yang disepakati." sebelum menulis apa
+  pun; tidak berubah bila sama). Lalu, bila dicentang, `recordDeposit` mencatat selisihnya sebagai pembayaran `kind: 'deposit'`
+  "Uang jaminan" hari ini dengan metode itu. Gagal di langkah itu: tagihan dan sewa tetap tersimpan, pesan menunjuk **Lainnya →
+  Catat deposit diterima**. Toast: "… Sewa kini Mingguan Rp 1.000.000 / minggu. Deposit Rp 200.000, diterima Rp 200.000
+  (Transfer)." atau "Deposit Rp 200.000 belum diterima."; bila sebagian sudah diterima sebelumnya: "… sisa diterima Rp X" / "… sisa
+  Rp X belum diterima".
+- **Uji**: `extensionDeposit.test.tsx` (tidak ditanya saat tetap harian; peringatan saat 0; D1: sewa, tagihan, dan pembayaran
+  deposit dalam sekali simpan; belum diterima; 0 tetap tersimpan; deposit sebagian sudah diterima → hanya sisanya, dengan kata
+  "sisa"; deposit lama belum dibayar tidak tercentang; peringatan mingguan → bulanan; pencatatan deposit gagal → tagihan & sewa
+  tetap, pesan menunjuk Catat deposit diterima; staf ditolak sebelum menulis; deposit sama tidak mengubah apa pun), `e2e/perpanjang-deposit.spec.ts` (Hendra 102 harian → mingguan dengan
+  deposit Rp 200.000 transfer di HP 360 px).

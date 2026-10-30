@@ -249,6 +249,8 @@ export function LeasesPage() {
             addons={modalAddons}
             leaseInvoices={modalInvoices}
             orgInvoices={data.invoices}
+            payments={data.payments}
+            expenses={data.expenses}
             actions={actions}
             onCreated={(invoice) => setShare({ invoice, lease: modalLease })}
           />
