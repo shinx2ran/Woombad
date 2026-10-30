@@ -49,6 +49,7 @@ import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAdd
 import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
 import { RedateLeaseModal } from './RedateLeaseModal'
 import { PlannedCheckoutModal } from './PlannedCheckoutModal'
+import { PlateList } from './PlateInput'
 import { VehiclePlateModal } from './VehiclePlateModal'
 
 type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon' | 'redate' | 'keluar' | 'plate'
@@ -382,7 +383,7 @@ export function LeaseDetailPage() {
                 value={
                   <span className="inline-flex items-center gap-1">
                     <span data-testid="lease-vehicle-plate" className={lease.vehicle_plate ? 'font-medium' : 'text-slate-400'}>
-                      {lease.vehicle_plate || 'Belum diisi'}
+                      {lease.vehicle_plate ? <PlateList value={lease.vehicle_plate} /> : 'Belum diisi'}
                     </span>
                     {isActive && (
                       <button

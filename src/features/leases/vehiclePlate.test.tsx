@@ -5,6 +5,7 @@ import { ToastProvider } from '../../components/ui'
 import type { Lease, MemberRole } from '../../types/db'
 import { LocalRepo, emptyLocalDb } from '../../lib/repo/localRepo'
 import { bindOrg, type OrgRepo } from '../../lib/repo/types'
+import { VEHICLE_PLATE_INACTIVE_MESSAGE } from './leaseUtils'
 
 // SPEC 7.11 Nomor kendaraan through useLeaseActions (LocalRepo = Mode Demo), and the sheet on the lease page.
 const state: { repo: OrgRepo | null; role: MemberRole } = { repo: null, role: 'owner' }
@@ -78,6 +79,14 @@ describe('setVehiclePlate (useLeaseActions)', () => {
     expect((await stored()).vehicle_plate).toBe('KB 1604 GR')
     await actions().setVehiclePlate(await stored(), null)
     expect((await stored()).vehicle_plate).toBeNull()
+  })
+
+  it('a stay checked out on another device meanwhile keeps its plate as history', async () => {
+    await repo.update('leases', 'L1', { vehicle_plate: 'KB 1442 GZ' })
+    await repo.update('leases', 'L1', { status: 'ended', checkout_date: '2026-10-30' })
+    await expect(actions().setVehiclePlate(lease, 'B 1 A')).rejects.toThrow(VEHICLE_PLATE_INACTIVE_MESSAGE)
+    expect((await stored()).vehicle_plate).toBe('KB 1442 GZ')
+    expect(invalidate).toHaveBeenCalledWith('leases')
   })
 
   it('a refused write still refreshes the screen with what is stored', async () => {

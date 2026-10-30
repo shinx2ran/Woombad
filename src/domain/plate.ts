@@ -18,10 +18,28 @@ function normalizeOne(part: string): string {
     .trim()
 }
 
+/** one written plate: region letters, up to four digits, up to three letters; then an optional "DAN" ("and") and a space */
+const PLATE_IN_RUN = /([A-Z]{1,2} \d{1,4}(?: [A-Z]{1,3})?)(?: DAN)?(?: |$)/y
+
+/**
+ * Several whole plates typed one after the other without a comma ("KB1442GZ B1251SGA", "KB 1442 GZ dan B 1251 SGA") are
+ * several plates; anything else stays as typed.
+ */
+function splitRun(part: string): string[] {
+  const plates: string[] = []
+  PLATE_IN_RUN.lastIndex = 0
+  while (PLATE_IN_RUN.lastIndex < part.length) {
+    const m = PLATE_IN_RUN.exec(part)
+    if (!m) return [part]
+    plates.push(m[1])
+  }
+  return plates.length > 1 ? plates : [part]
+}
+
 /** What was typed, written as plates are written, each plate once; null when nothing is left (an empty field clears it). */
 export function normalizePlate(input: string | null | undefined): string | null {
   if (!input) return null
-  const plates = [...new Set(input.split(/[,;/\n]+/).map(normalizeOne).filter(Boolean))]
+  const plates = [...new Set(input.split(/[,;/\n&+]+/).map(normalizeOne).filter(Boolean).flatMap(splitRun))]
   return plates.length > 0 ? plates.join(', ') : null
 }
 

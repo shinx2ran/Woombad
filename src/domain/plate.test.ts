@@ -17,6 +17,18 @@ describe('normalizePlate', () => {
     expect(normalizePlate('KB 1442 GZ\nB 1251 SGA')).toBe('KB 1442 GZ, B 1251 SGA')
   })
 
+  it('whole plates typed one after another, or with "dan" / "&", are several plates', () => {
+    expect(normalizePlate('KB1442GZ B1251SGA')).toBe('KB 1442 GZ, B 1251 SGA')
+    expect(normalizePlate('KB 1442 GZ dan B 1251 SGA')).toBe('KB 1442 GZ, B 1251 SGA')
+    expect(normalizePlate('KB 1442 GZ & B 1251 SGA')).toBe('KB 1442 GZ, B 1251 SGA')
+    expect(normalizePlate('KB 1442 GZ + b 1251 sga')).toBe('KB 1442 GZ, B 1251 SGA')
+    // one plate whose letters read "DAN" stays one plate
+    expect(normalizePlate('B 1234 DAN')).toBe('B 1234 DAN')
+    // what does not read as whole plates stays as typed
+    expect(normalizePlate('B 1234 KB 5678 X')).toBe('B 1234 KB 5678 X')
+    expect(normalizePlate('Honda Beat KB 1442 GZ')).toBe('HONDA BEAT KB 1442 GZ')
+  })
+
   it('a plate typed twice is kept once', () => {
     expect(normalizePlate('KB 1442 GZ, kb1442gz')).toBe('KB 1442 GZ')
     expect(normalizePlate('B 1 A, KB 2 B, b.1.a')).toBe('B 1 A, KB 2 B')

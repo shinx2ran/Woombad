@@ -1,5 +1,6 @@
+import { Fragment } from 'react'
 import { Input, type InputProps } from '../../components/ui'
-import { PLATE_MAX_LENGTH, normalizePlate } from '../../domain/plate'
+import { PLATE_MAX_LENGTH, normalizePlate, splitPlates } from '../../domain/plate'
 
 type PlateInputProps = Omit<InputProps, 'value' | 'onChange' | 'onBlur'> & { value: string; onChange: (value: string) => void }
 
@@ -24,5 +25,23 @@ export function PlateInput({ value, onChange, ...rest }: PlateInputProps) {
       onChange={(e) => onChange(e.target.value)}
       onBlur={() => onChange(normalizePlate(value) ?? '')}
     />
+  )
+}
+
+/** Stored plates as text that wraps only between plates, never inside one ("KB 1829" / "GN"). */
+export function PlateList({ value }: { value: string }) {
+  const plates = splitPlates(value)
+  return (
+    <>
+      {plates.map((plate, i) => (
+        <Fragment key={i}>
+          {i > 0 && ' '}
+          <span className="whitespace-nowrap">
+            {plate}
+            {i < plates.length - 1 && ','}
+          </span>
+        </Fragment>
+      ))}
+    </>
   )
 }

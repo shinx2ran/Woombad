@@ -832,8 +832,9 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   Demo: Budi (1 plat) dan Rizky (2 plat).
 - **Penulisan** (`src/domain/plate.ts`, `normalizePlate`): apa pun yang diketik disimpan seperti plat ditulis — huruf besar, titik
   dan strip jadi spasi, spasi di antara huruf dan angka, spasi ganda dirapatkan ("KB.1442.Gz." → "KB 1442 GZ", "b1251sga" →
-  "B 1251 SGA"); beberapa kendaraan dipisah koma (juga `;`, `/`, baris baru) dan disimpan "KB 1442 GZ, B 1251 SGA", plat yang sama
-  sekali saja; kosong → `null`. Database tidak menormalkan: SQL langsung harus menulis bentuk yang sama.
+  "B 1251 SGA"); beberapa kendaraan dipisah koma (juga `;`, `/`, `&`, `+`, baris baru, atau plat utuh berurutan dengan spasi/"dan":
+  "KB1442GZ B1251SGA") dan disimpan "KB 1442 GZ, B 1251 SGA", plat yang sama sekali saja; yang tidak terbaca sebagai plat utuh
+  disimpan seperti diketik; kosong → `null`. Database tidak menormalkan: SQL langsung harus menulis bentuk yang sama.
 - **Isian** (`PlateInput`, sama di mana-mana): label "No. kendaraan (plat)", contoh "mis. KB 1442 GZ", petunjuk "Boleh
   dikosongkan. Lebih dari satu kendaraan: pisahkan dengan koma.", keyboard huruf besar (`autoCapitalize="characters"`), tanpa
   koreksi ejaan, maks. 60 karakter; saat keluar dari isian teksnya langsung ditulis ulang seperti yang akan disimpan. Ada di
@@ -844,7 +845,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Halaman sewa**, kartu **Info sewa**: baris **No. kendaraan** (plat atau "Belum diisi"; sewa yang sudah selesai hanya bila ada,
   sebagai riwayat) dengan tombol pensil (sewa aktif), juga **Lainnya → No. kendaraan** → lembar `VehiclePlateModal` (isi/ubah;
   kosongkan untuk menghapus; Simpan nonaktif bila hasilnya sama dengan yang tersimpan) → `useLeaseActions.setVehiclePlate(lease,
-  plat | null)`, menulis hanya kolom itu, semua peran.
+  plat | null)`: membaca ulang sewa dan menolak sewa yang sudah selesai/dibatalkan di HP lain (`VEHICLE_PLATE_INACTIVE_MESSAGE`),
+  menulis hanya kolom itu, semua peran. Plat ditampilkan tanpa terpotong di tengah (`PlateList`: putus baris hanya di antara plat).
 - **Papan kamar**: plat di bawah status kotak, satu baris per kendaraan (paling banyak dua, lalu "+N"), 9 px rapat
   (`tracking-tighter`, warna penuh supaya kontras di kotak merah); kotak tanpa padding samping supaya plat terlebar ("KB 1829 GN",
   ±49 px) muat utuh di kotak 52 px pada HP 360 px. Label kotak untuk pembaca layar ditambah ", kendaraan …". Lembar aksi kamar

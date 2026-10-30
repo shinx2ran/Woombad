@@ -10,6 +10,7 @@ import type { Room } from '../../types/db'
 import { leaseReminderText, plannedCheckoutBadge } from '../leases/leaseUtils'
 import { paidThroughText } from '../properties/roomUtils'
 import { BOARD_TONES, BOARD_TONE_META, boardStatusText, buildBoard, countTones, leaseActionLink, type BoardTile, type BoardTone } from './boardModel'
+import { PlateList } from '../leases/PlateInput'
 import { QuickCheckInModal } from './QuickCheckInModal'
 import { useBoardData } from './useBoardData'
 import { plannerSearch } from '../rencana/rencanaParams'
@@ -208,7 +209,7 @@ function RoomActionSheet({
               <Car className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
               <span>
                 <span className="sr-only">No. kendaraan </span>
-                {lease.vehicle_plate}
+                <PlateList value={lease.vehicle_plate} />
               </span>
             </p>
           )}

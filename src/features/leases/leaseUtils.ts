@@ -471,6 +471,8 @@ export function coverUntilCheckoutHint(info: CoverUntilCheckout, unit: string, c
 // ---------- Rencana keluar (SPEC 7.8) ----------
 
 export const PLANNED_CHECKOUT_INACTIVE_MESSAGE = 'Sewa ini sudah selesai atau dibatalkan, jadi rencana keluarnya tidak bisa diubah.'
+/** SPEC 7.11: a stay that ended keeps its vehicle plate as history */
+export const VEHICLE_PLATE_INACTIVE_MESSAGE = 'Sewa ini sudah selesai atau dibatalkan, jadi no. kendaraannya tidak bisa diubah.'
 
 /**
  * The day the Rencana keluar sheet starts with: the plan already recorded, else the check-out day of the billed period
