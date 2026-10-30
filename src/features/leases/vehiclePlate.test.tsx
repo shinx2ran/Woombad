@@ -81,6 +81,15 @@ describe('setVehiclePlate (useLeaseActions)', () => {
     expect((await stored()).vehicle_plate).toBeNull()
   })
 
+  it('Pindah kamar keeps the plate: the same lease moves to the other room', async () => {
+    const r1 = await repo.insert('rooms', { id: 'R1', property_id: 'P1', name: 'A1', floor: null, price_daily: null, price_weekly: null, price_monthly: 1_500_000, status: 'active', notes: null } as never)
+    const r2 = await repo.insert('rooms', { id: 'R2', property_id: 'P1', name: 'A2', floor: null, price_daily: null, price_weekly: null, price_monthly: 1_500_000, status: 'active', notes: null } as never)
+    await actions().setVehiclePlate(lease, 'KB 1442 GZ')
+    await actions().moveRoom(await stored(), r1, r2, null, '2026-10-30')
+    expect(await stored()).toMatchObject({ room_id: 'R2', status: 'active', vehicle_plate: 'KB 1442 GZ' })
+    expect(await repo.list('leases')).toHaveLength(1)
+  })
+
   it('a stay checked out on another device meanwhile keeps its plate as history', async () => {
     await repo.update('leases', 'L1', { vehicle_plate: 'KB 1442 GZ' })
     await repo.update('leases', 'L1', { status: 'ended', checkout_date: '2026-10-30' })

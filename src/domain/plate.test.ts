@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizePlate, plateMatches, splitPlates } from './plate'
+import { normalizePlate, plateColumn, plateMatches, splitPlates } from './plate'
 
 describe('normalizePlate', () => {
   it('writes a plate the way plates are written, however it was typed', () => {
@@ -46,6 +46,11 @@ describe('normalizePlate', () => {
     expect(plateMatches(v, '144')).toBe(false)
     expect(plateMatches(v, 'kb 9999')).toBe(false)
     expect(plateMatches(null, 'kb1442')).toBe(false)
+  })
+
+  it('plateColumn: a new lease row carries the column only with a plate', () => {
+    expect(plateColumn('kb 8297 gt')).toEqual({ vehicle_plate: 'KB 8297 GT' })
+    for (const empty of ['', '  .  ', null, undefined]) expect(plateColumn(empty)).toEqual({})
   })
 
   it('splitPlates gives one plate per vehicle', () => {

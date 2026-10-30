@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 
 async function loginDemo(page: Page) {
   await page.goto('/login')
@@ -11,6 +11,13 @@ async function loginDemo(page: Page) {
 const tiles = (page: Page) => page.getByTestId('board-tile')
 const tileOf = (page: Page, tenant: string) => page.locator(`[data-testid="board-tile"][aria-label*="(${tenant})"]`)
 const fitsPage = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+
+/** a drawn tile (not one still loading) without a plate line and without a vehicle in its label */
+async function expectNoPlate(tile: Locator) {
+  await expect(tile).toBeVisible()
+  await expect(tile).not.toHaveAttribute('aria-label', /kendaraan/)
+  await expect(tile.getByTestId('board-tile-plate')).toHaveCount(0)
+}
 
 /** no plate on the board is cut (an ellipsis would hide its letters), and the page is not wider than the phone */
 async function expectPlatesWhole(page: Page) {
@@ -25,7 +32,7 @@ test.describe('Nomor kendaraan (SPEC 7.11)', () => {
   let errors: string[] = []
 
   test.beforeEach(async ({ page }) => {
-    // a React error in a sheet (e.g. two tile lines with one key) fails the test even when the screen looks right
+    // an error thrown in a page or sheet (or logged by the app) fails the test even when the screen looks right
     errors = []
     page.on('pageerror', (e) => errors.push(e.message))
     page.on('console', (m) => {
@@ -49,9 +56,8 @@ test.describe('Nomor kendaraan (SPEC 7.11)', () => {
     await expect(tileOf(page, 'Rizky Maulana').getByTestId('board-tile-plate')).toHaveText(['B 9012 XYZ', 'KB 5678 CD'])
     // every plate fits its tile uncut, and nothing widens the page
     await expectPlatesWhole(page)
-    // a tenant without a vehicle has no plate line
-    await expect(tileOf(page, 'Siti Rahayu').getByTestId('board-tile-plate')).toHaveCount(0)
-    await expect(tiles(page).and(page.locator('[data-tone="vacant"]')).first().getByTestId('board-tile-plate')).toHaveCount(0)
+    // a tenant without a vehicle has no plate line, and her label names none
+    await expectNoPlate(tileOf(page, 'Siti Rahayu'))
 
     await tileOf(page, 'Rizky Maulana').click()
     await expect(page.getByRole('dialog').getByTestId('board-vehicle-plate')).toHaveText('No. kendaraan B 9012 XYZ, KB 5678 CD')
@@ -101,7 +107,9 @@ test.describe('Nomor kendaraan (SPEC 7.11)', () => {
     await page.waitForURL(/\/sewa\/[^/]+$/)
     await expect(page.getByTestId('lease-vehicle-plate')).toHaveText('Belum diisi')
     await page.goto('/dashboard')
-    await expect(page.locator(`[data-testid="board-tile"][data-room="${roomName}"]`).getByTestId('board-tile-plate')).toHaveCount(0)
+    const tile = page.locator(`[data-testid="board-tile"][data-room="${roomName}"]`)
+    await expect(tile).toHaveAttribute('aria-label', /\(Tanpa Motor\)/)
+    await expectNoPlate(tile)
   })
 
   test('the lease page fills in, changes and clears the plate; the board follows', async ({ page }) => {
@@ -118,15 +126,19 @@ test.describe('Nomor kendaraan (SPEC 7.11)', () => {
     await expect(input).toBeFocused()
     // nothing changed yet: nothing to save
     await expect(sheet.getByRole('button', { name: 'Simpan' })).toBeDisabled()
-    // the widest plates of the owner's list, two vehicles
-    await input.fill('b 1251 sga / kb1829gn')
+    // the widest plates of the owner's list, and a third vehicle typed after a space
+    await input.fill('b 1251 sga / kb1829gn kb1442gz')
     await sheet.getByRole('button', { name: 'Simpan' }).click()
-    await expect(page.getByText('No. kendaraan Siti Rahayu: B 1251 SGA, KB 1829 GN.')).toBeVisible()
-    await expect(shown).toHaveText('B 1251 SGA, KB 1829 GN')
+    await expect(page.getByText('No. kendaraan Siti Rahayu: B 1251 SGA, KB 1829 GN, KB 1442 GZ.')).toBeVisible()
+    await expect(shown).toHaveText('B 1251 SGA, KB 1829 GN, KB 1442 GZ')
 
     await page.goto('/dashboard')
-    await expect(tileOf(page, 'Siti Rahayu').getByTestId('board-tile-plate')).toHaveText(['B 1251 SGA', 'KB 1829 GN'])
+    const siti = tileOf(page, 'Siti Rahayu')
+    // two plate lines at most, then how many more; the sheet has them all
+    await expect(siti.getByTestId('board-tile-plate')).toHaveText(['B 1251 SGA', 'KB 1829 GN', '+1'])
     await expectPlatesWhole(page)
+    await siti.click()
+    await expect(page.getByRole('dialog').getByTestId('board-vehicle-plate')).toHaveText('No. kendaraan B 1251 SGA, KB 1829 GN, KB 1442 GZ')
     await page.goBack()
     await page.waitForURL(/\/sewa\/[^/]+$/)
 
@@ -134,13 +146,39 @@ test.describe('Nomor kendaraan (SPEC 7.11)', () => {
     await page.getByRole('button', { name: 'Aksi sewa' }).click()
     await page.getByRole('menuitem', { name: /No\. kendaraan/ }).click()
     const again = page.getByRole('dialog')
-    await expect(again.getByLabel('No. kendaraan (plat)')).toHaveValue('B 1251 SGA, KB 1829 GN')
+    await expect(again.getByLabel('No. kendaraan (plat)')).toHaveValue('B 1251 SGA, KB 1829 GN, KB 1442 GZ')
     await again.getByLabel('No. kendaraan (plat)').fill('')
     await again.getByRole('button', { name: 'Simpan' }).click()
     await expect(page.getByText('No. kendaraan Siti Rahayu dikosongkan.')).toBeVisible()
     await expect(shown).toHaveText('Belum diisi')
+    // cleared for good: after a fresh start of the app too
     await page.goto('/dashboard')
-    await expect(tileOf(page, 'Siti Rahayu').getByTestId('board-tile-plate')).toHaveCount(0)
+    await expectNoPlate(tileOf(page, 'Siti Rahayu'))
+  })
+
+  test('Cek kamar: a check-in today takes the plate too; a booking for a later day does not ask for it', async ({ page }) => {
+    await page.goto('/rencana')
+    await expect(page.getByRole('heading', { name: 'Cek kamar & pesan' })).toBeVisible()
+    await page.getByLabel('Check-in').fill('2026-11-05')
+    await page.getByTestId('free-room').first().getByRole('button', { name: /^Pesan kamar / }).click()
+    const later = page.getByRole('dialog')
+    await expect(later.getByRole('heading', { name: /^Pesan · Kamar / })).toBeVisible()
+    await expect(later.getByLabel('No. kendaraan (plat)')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    await page.getByLabel('Check-in').fill('2026-10-30')
+    const room = page.getByTestId('free-room').first()
+    const roomName = (await room.getAttribute('data-room'))!
+    await room.getByRole('button', { name: `Pesan kamar ${roomName}` }).click()
+    const today = page.getByRole('dialog')
+    await expect(today.getByRole('heading', { name: `Check-in · Kamar ${roomName}` })).toBeVisible()
+    await today.getByLabel('Nama penyewa').fill('Rudi Hartono')
+    await today.getByLabel('No. kendaraan (plat)').fill('kb1442gz')
+    await today.getByRole('button', { name: 'Simpan check-in' }).click()
+    await page.waitForURL(/\/sewa\/[^/]+$/)
+    await expect(page.getByRole('heading', { name: `Kamar ${roomName}` })).toBeVisible()
+    await expect(page.getByTestId('lease-vehicle-plate')).toHaveText('KB 1442 GZ')
   })
 
   test('Sewa baru has the same optional field; the plate is saved with the lease', async ({ page }) => {

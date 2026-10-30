@@ -9,7 +9,7 @@ import type { AddonBilling, Lease, LeaseAddon, PaymentMethod, PeriodType, Tenant
 import { ADDON_BILLINGS, ADDON_BILLING_LABEL, ID_TYPES, ID_TYPE_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { computeAddonsAmount, deriveInvoiceStatus } from '../../domain/billing'
 import { periodBounds } from '../../domain/period'
-import { normalizePlate } from '../../domain/plate'
+import { plateColumn } from '../../domain/plate'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import { DocumentScanner } from '../scanner/DocumentScanner'
 import type { ScanPrefill } from '../scanner/types'
@@ -271,7 +271,6 @@ export function NewLeasePage() {
     }
     if (!isNewTenant && !tenant) return
     setSaving(true)
-    const vehiclePlate = normalizePlate(plate)
     let lease: Lease | null = null
     let createdTenant: Tenant | null = null
     try {
@@ -299,8 +298,7 @@ export function NewLeasePage() {
         end_date: periodPreview.end,
         status: 'active',
         checkout_date: null,
-        // only sent when there is one
-        ...(vehiclePlate ? { vehicle_plate: vehiclePlate } : {}),
+        ...plateColumn(plate),
         notes: notes.trim() || null,
       })
       let leaseAddons: LeaseAddon[] = []

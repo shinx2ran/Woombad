@@ -43,6 +43,15 @@ export function normalizePlate(input: string | null | undefined): string | null 
   return plates.length > 0 ? plates.join(', ') : null
 }
 
+/**
+ * The plate of a new lease row: the column is sent only when there is a plate, so a check-in without one also saves on
+ * a server whose database does not have the column yet.
+ */
+export function plateColumn(typed: string | null | undefined): { vehicle_plate?: string } {
+  const plate = normalizePlate(typed)
+  return plate ? { vehicle_plate: plate } : {}
+}
+
 /** A stored value as its plates, one per vehicle (the room board writes each on its own line); [] for none. */
 export function splitPlates(value: string | null | undefined): string[] {
   return value ? value.split(',').map((p) => p.trim()).filter(Boolean) : []
