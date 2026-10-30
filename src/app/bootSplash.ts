@@ -16,8 +16,11 @@ const SPLASH_ID = 'boot-splash'
 /** index.html's theme-color while the splash shows, and the app's own */
 export const SPLASH_THEME = '#0b0a08'
 export const APP_THEME = '#0f766e'
-/** at the first start the logo has this long from its first frame: the letters drawn and filled, the first heartbeat */
-export const BOOT_MIN_MS = 1150
+/**
+ * At the first start the logo has this long from its first frame: the letters drawn and filled (1.05 s), then a whole
+ * heartbeat (lub-dub from 0.9 s, the lamp dimmed again by 2.0 s), and it starts to fade while dim, before the next beat.
+ */
+export const BOOT_MIN_MS = 2650
 /** a later loading screen shows the splash only when it lasts longer than this */
 export const RESHOW_DELAY_MS = 400
 /** how long the fade-out takes (index.html: transition: opacity 0.45s) */

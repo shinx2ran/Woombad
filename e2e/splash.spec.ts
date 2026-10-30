@@ -62,8 +62,8 @@ test.describe('Layar pembuka EG Kost (SPEC 7.10)', () => {
       await expect.poll(async () => (await splashLog(page)).goneAt).toBeDefined()
       const log = await splashLog(page)
       expect(log.themeAtStart).toBe('#0b0a08')
-      // the letters drew themselves, filled and beat once before it went (BOOT_MIN_MS from its own first frame)
-      expect(log.animAtOut!).toBeGreaterThanOrEqual(1140)
+      // the letters drew themselves, filled and beat a whole heartbeat before it went (BOOT_MIN_MS from its own first frame)
+      expect(log.animAtOut!).toBeGreaterThanOrEqual(2640)
       // and it faded out
       expect(log.goneAt! - log.outAt!).toBeGreaterThan(300)
       expect(await theme(page)).toBe('#0f766e')

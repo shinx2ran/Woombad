@@ -356,7 +356,7 @@ Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik
 ### Layar pembuka
 
 Saat aplikasi dibuka, tulisan **EG Kost** tergambar dan menyala oranye–kuning di layar gelap, berdenyut seperti detak jantung,
-sampai aplikasi siap (paling sedikit ±1,2 detik saat pertama dibuka, supaya animasinya selesai). Dengan **Kurangi gerakan**
+sampai aplikasi siap (paling sedikit ±2,7 detik saat pertama dibuka: tulisan tergambar lalu satu denyut penuh). Dengan **Kurangi gerakan**
 menyala, logo tampil diam dan hilang begitu aplikasi siap.
 
 ## Menguji skema database secara lokal (opsional)
