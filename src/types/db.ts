@@ -208,6 +208,12 @@ export interface Lease extends TimestampedRow {
    * existed (backups, Mode Demo data, fixtures) do not carry it: missing reads as null.
    */
   planned_checkout_date?: string | null
+  /**
+   * Nomor kendaraan (SPEC 7.11): the tenant's licence plate(s) for this stay, written "KB 1442 GZ" (several apart by
+   * a comma, normalizePlate); null = none. Not a lease term: every member may set or clear it. Optional for the same
+   * reason as planned_checkout_date: missing reads as null.
+   */
+  vehicle_plate?: string | null
   notes: string | null
 }
 

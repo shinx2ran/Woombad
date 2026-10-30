@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test'
 const preinstalled = ['/opt/pw-browsers/chromium', '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => existsSync(p))
 
 /** specs that also run with page and dialog motion on (SPEC 7.9): the transitions, and the flows richest in sheets and navigation */
-const MOTION_SPECS = /(transitions|quick-buttons|redate|rencana|keluar|undo-delete)\.spec\.ts/
+const MOTION_SPECS = /(transitions|quick-buttons|redate|rencana|keluar|kendaraan|undo-delete)\.spec\.ts/
 
 export default defineConfig({
   testDir: './e2e',

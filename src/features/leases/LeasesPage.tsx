@@ -157,7 +157,7 @@ export function LeasesPage() {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari penyewa atau kamar…"
+            placeholder="Cari penyewa, kamar, atau plat…"
             aria-label="Cari sewa"
             className="h-10 w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
           />

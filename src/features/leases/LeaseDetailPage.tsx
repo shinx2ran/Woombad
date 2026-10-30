@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { BackLink } from '../../app/BackLink'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, DoorOpen, FilePlus2, LogOut, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, Car, DoorOpen, FilePlus2, LogOut, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -49,8 +49,9 @@ import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAdd
 import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
 import { RedateLeaseModal } from './RedateLeaseModal'
 import { PlannedCheckoutModal } from './PlannedCheckoutModal'
+import { VehiclePlateModal } from './VehiclePlateModal'
 
-type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon' | 'redate' | 'keluar'
+type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon' | 'redate' | 'keluar' | 'plate'
 type Confirm =
   | { kind: 'void-invoice'; invoice: Invoice }
   | { kind: 'delete-invoice'; invoice: Invoice }
@@ -196,6 +197,13 @@ export function LeaseDetailPage() {
         onClick: () => setModal('keluar'),
       })
     }
+    // SPEC 7.11: front-desk work too; the same sheet as the pencil in Info sewa
+    menuItems.push({
+      label: 'No. kendaraan',
+      hint: lease.vehicle_plate ? `${lease.vehicle_plate} · ubah atau kosongkan` : 'Catat plat motor/mobil penyewa',
+      icon: <Car className="h-4 w-4" />,
+      onClick: () => setModal('plate'),
+    })
     if (deposit.shortfall > 0 || deposit.agreed > 0) {
       menuItems.push({ label: 'Catat deposit diterima', icon: <PiggyBank className="h-4 w-4" />, onClick: () => setModal('deposit') })
     }
@@ -367,6 +375,29 @@ export function LeaseDetailPage() {
             {planned && <Row label="Rencana keluar" value={formatDate(planned)} />}
             <Row label="Deposit disepakati" value={formatRupiah(lease.deposit_amount)} />
             <Row label="Penyewa" value={tenant?.phone ?? '-'} />
+            {/* SPEC 7.11: shown on the room board too; changed while the stay is active, an ended stay keeps it as history */}
+            {(isActive || lease.vehicle_plate) && (
+              <Row
+                label="No. kendaraan"
+                value={
+                  <span className="inline-flex items-center gap-1">
+                    <span data-testid="lease-vehicle-plate" className={lease.vehicle_plate ? 'font-medium' : 'text-slate-400'}>
+                      {lease.vehicle_plate || 'Belum diisi'}
+                    </span>
+                    {isActive && (
+                      <button
+                        type="button"
+                        onClick={() => setModal('plate')}
+                        aria-label={lease.vehicle_plate ? 'Ubah no. kendaraan' : 'Isi no. kendaraan'}
+                        className="-my-1.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-brand-700 hover:bg-brand-50"
+                      >
+                        <Pencil className="h-4 w-4" aria-hidden />
+                      </button>
+                    )}
+                  </span>
+                }
+              />
+            )}
             {lease.notes && <p className="whitespace-pre-wrap border-t border-slate-100 pt-2 text-xs text-slate-600">{lease.notes}</p>}
           </CardBody>
         </Card>
@@ -573,6 +604,9 @@ export function LeaseDetailPage() {
       <AddonModal open={modal === 'addon'} onClose={() => setModal(null)} lease={lease} catalog={data.addonCatalog} actions={actions} />
       {modal === 'keluar' && isActive && (
         <PlannedCheckoutModal lease={lease} tenantName={tenant?.full_name ?? 'Penyewa'} roomName={room?.name ?? '?'} actions={actions} onClose={() => setModal(null)} />
+      )}
+      {modal === 'plate' && isActive && (
+        <VehiclePlateModal lease={lease} tenantName={tenant?.full_name ?? 'Penyewa'} roomName={room?.name ?? '?'} actions={actions} onClose={() => setModal(null)} />
       )}
       {modal === 'redate' && isActive && isAdmin && (
         <RedateLeaseModal

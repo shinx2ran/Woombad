@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router'
 import { clsx } from 'clsx'
 import { AlertTriangle } from 'lucide-react'
 import { Button, CountInput, Input, LoadingState, Modal, MoneyInput, Select, useToast } from '../../components/ui'
+import { normalizePlate } from '../../domain/plate'
 import { formatCheckout, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_UNIT_LABEL, type PaymentMethod, type PeriodType, type Room } from '../../types/db'
+import { PlateInput } from '../leases/PlateInput'
 import { useRencanaActions } from '../rencana/useRencanaActions'
 import { perPeriodText, planStayBooking, QuickCheckInError, quantityText, resolveTenantChoice, tenantsNamed, validateStayBooking, type StayBookingInput } from './quickCheckIn'
 import { useBoardData } from './useBoardData'
@@ -28,7 +30,7 @@ const rateOf = (room: Room, kind: StayKind) => (kind === 'daily' ? room.price_da
 /**
  * Check-in cepat for an empty room (SPEC 7.4): name, how long (nights / weeks / months, or a year = 12 months with
  * optional bonus months) and the total; paid in full, a DP or nothing yet; an optional uang jaminan for monthly and
- * yearly stays. Saved through the Rencana booking path (bookStay: a fresh room check, then the same rows as the Sewa
+ * yearly stays; an optional vehicle plate (SPEC 7.11). Saved through the Rencana booking path (bookStay: a fresh room check, then the same rows as the Sewa
  * baru wizard). Add-ons use the full form.
  */
 export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () => void }) {
@@ -40,6 +42,8 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
 
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  /** optional, SPEC 7.11 */
+  const [plate, setPlate] = useState('')
   /** '' = automatic (the one same-name tenant, if any), NEW_TENANT, or a tenant id */
   const [tenantChoice, setTenantChoice] = useState('')
   const [kind, setKind] = useState<StayKind>('daily')
@@ -79,6 +83,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
     name,
     phone,
     notes: null,
+    vehiclePlate: plate,
     bonusQuantity: kind === 'yearly' ? bonus : 0,
     deposit,
   }
@@ -178,6 +183,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
               hint="Boleh dikosongkan; lengkapi nanti di halaman penyewa."
             />
           )}
+          <PlateInput value={plate} onChange={setPlate} />
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium text-slate-700">Jenis sewa</span>
             <div role="radiogroup" aria-label="Jenis sewa" className="grid grid-cols-4 rounded-lg border border-slate-200 bg-white p-1 text-sm">
@@ -241,6 +247,11 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
               {deposit && (
                 <p>
                   <span className="text-slate-500">Deposit</span> {formatRupiah(deposit.amount)} {deposit.paidNow ? `diterima · ${PAYMENT_METHOD_LABEL[method]}` : 'belum diterima'}
+                </p>
+              )}
+              {normalizePlate(plate) && (
+                <p>
+                  <span className="text-slate-500">Kendaraan</span> {normalizePlate(plate)}
                 </p>
               )}
               {existing && <p className="text-slate-500">Penyewa lama: {existing.full_name}{existing.phone ? ` · ${existing.phone}` : ' · tanpa HP'}</p>}

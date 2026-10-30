@@ -9,6 +9,7 @@ import type { AddonBilling, Lease, LeaseAddon, PaymentMethod, PeriodType, Tenant
 import { ADDON_BILLINGS, ADDON_BILLING_LABEL, ID_TYPES, ID_TYPE_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { computeAddonsAmount, deriveInvoiceStatus } from '../../domain/billing'
 import { periodBounds } from '../../domain/period'
+import { normalizePlate } from '../../domain/plate'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import { DocumentScanner } from '../scanner/DocumentScanner'
 import type { ScanPrefill } from '../scanner/types'
@@ -25,6 +26,7 @@ import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
 import { matchesTenantQuery, roomAvailability, roomPriceFor, ROOM_AVAILABILITY_LABEL, type RoomAvailability } from './leaseUtils'
 import { PeriodTypePicker, PriceField, Row } from './components'
+import { PlateInput } from './PlateInput'
 import { PAY_MODE_LABEL, scannedExtraFields, validatePayment, type PayMode } from './newLeaseUtils'
 
 interface DraftAddon {
@@ -125,6 +127,8 @@ export function NewLeasePage() {
   const [depositAmount, setDepositAmount] = useState(0)
   const [depositMethod, setDepositMethod] = useState<PaymentMethod>('cash')
   const [notes, setNotes] = useState('')
+  /** optional, SPEC 7.11 */
+  const [plate, setPlate] = useState('')
   const [saving, setSaving] = useState(false)
   const [touched, setTouched] = useState(false)
 
@@ -267,6 +271,7 @@ export function NewLeasePage() {
     }
     if (!isNewTenant && !tenant) return
     setSaving(true)
+    const vehiclePlate = normalizePlate(plate)
     let lease: Lease | null = null
     let createdTenant: Tenant | null = null
     try {
@@ -294,6 +299,8 @@ export function NewLeasePage() {
         end_date: periodPreview.end,
         status: 'active',
         checkout_date: null,
+        // only sent when there is one
+        ...(vehiclePlate ? { vehicle_plate: vehiclePlate } : {}),
         notes: notes.trim() || null,
       })
       let leaseAddons: LeaseAddon[] = []
@@ -804,6 +811,7 @@ export function NewLeasePage() {
                 {payMode !== 'lunas' && payMode !== 'dp' && <Input label="Tanggal diterima" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />}
               </div>
             )}
+            <PlateInput value={plate} onChange={setPlate} />
             <Textarea label="Catatan sewa" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="opsional" />
 
             {touched && hasErrors && (

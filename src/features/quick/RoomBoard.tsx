@@ -1,9 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { clsx } from 'clsx'
-import { AlertTriangle, CalendarPlus, CalendarSearch, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Wallet, Zap } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, CalendarSearch, Car, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Wallet, Zap } from 'lucide-react'
 import { Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
+import { splitPlates } from '../../domain/plate'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
 import type { Room } from '../../types/db'
 import { leaseReminderText, plannedCheckoutBadge } from '../leases/leaseUtils'
@@ -104,9 +105,9 @@ export function RoomBoard() {
                   data-testid="board-tile"
                   data-room={t.room.name}
                   data-tone={t.tone}
-                  aria-label={`Kamar ${t.room.name}${t.tenant ? ` (${t.tenant.full_name})` : ''}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}`}
+                  aria-label={`Kamar ${t.room.name}${t.tenant ? ` (${t.tenant.full_name})` : ''}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}${t.lease?.vehicle_plate ? `, kendaraan ${t.lease.vehicle_plate}` : ''}`}
                   onClick={() => setOpenRoomId(t.room.id)}
-                  className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-center', TILE_CLASS[t.tone])}
+                  className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0 py-1 text-center', TILE_CLASS[t.tone])}
                 >
                   {/* up to two lines, so 'Kamar 12' and 'Kamar 13' stay apart on a 360 px phone */}
                   <span className="line-clamp-2 max-w-full break-words text-sm font-semibold tabular-nums" data-testid="board-tile-name">
@@ -125,6 +126,13 @@ export function RoomBoard() {
                   ) : (
                     <span className={clsx('max-w-full truncate text-[10px] leading-tight', t.tone === 'overdue' && 'font-bold uppercase tracking-wide', t.tone === 'today' && 'font-bold')}>{t.caption}</span>
                   )}
+                  {/* SPEC 7.11: the tenant's plate(s), small, under the status, one per line (two at most, then "+N"): "KB 1829
+                      GN" is 49 px at 9 px type, the tile 52 px wide inside on a 360 px phone; the sheet shows them all */}
+                  {tilePlates(t.lease?.vehicle_plate).map((line, i) => (
+                    <span key={i} className="max-w-full truncate text-[9px] leading-tight tracking-tighter" data-testid="board-tile-plate">
+                      {line}
+                    </span>
+                  ))}
                 </button>
               ))}
             </div>
@@ -146,6 +154,12 @@ export function RoomBoard() {
       {checkInRoom && <QuickCheckInModal room={checkInRoom} onClose={() => setCheckInRoom(null)} />}
     </Card>
   )
+}
+
+/** the plate lines of a tile: two plates at most, a third line "+N" for more */
+function tilePlates(value: string | null | undefined): string[] {
+  const plates = splitPlates(value)
+  return plates.length > 2 ? [...plates.slice(0, 2), `+${plates.length - 2}`] : plates
 }
 
 const ACTION_BASE = 'inline-flex h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium'
@@ -189,6 +203,15 @@ function RoomActionSheet({
             {BOARD_TONE_META[tone].legend}
           </p>
           {tenant && <p className="text-base font-semibold text-slate-900">{tenant.full_name}</p>}
+          {lease?.vehicle_plate && (
+            <p className="flex items-start gap-1.5 font-medium text-slate-900" data-testid="board-vehicle-plate">
+              <Car className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+              <span>
+                <span className="sr-only">No. kendaraan </span>
+                {lease.vehicle_plate}
+              </span>
+            </p>
+          )}
           {tenant && !tenant.phone && (
             <Link to={`/penyewa/${tenant.id}?isi=hp`} className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline">
               <AlertTriangle className="h-3.5 w-3.5" aria-hidden /> HP belum diisi: lengkapi

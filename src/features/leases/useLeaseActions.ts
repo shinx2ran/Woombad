@@ -17,6 +17,7 @@ import {
 } from '../../domain/billing'
 import { formatCheckout, formatDate, formatRupiah, todayISO } from '../../lib/format'
 import { guardedNights, overlappingLease } from '../../domain/occupancy'
+import { normalizePlate } from '../../domain/plate'
 import {
   LEASE_DATA_CHANGED_MESSAGE,
   PLANNED_CHECKOUT_INACTIVE_MESSAGE,
@@ -640,6 +641,19 @@ export function useLeaseActions() {
     }
 
     /**
+     * SPEC 7.11 Nomor kendaraan: set the tenant's plate(s) on this lease as typed (stored as normalizePlate writes them),
+     * or clear them ('' / null). Front-desk work, so staff may do it; not a lease term (leases_terms_guard ignores it).
+     */
+    async function setVehiclePlate(lease: Lease, plate: string | null): Promise<Lease> {
+      try {
+        return await repo.update('leases', lease.id, { vehicle_plate: normalizePlate(plate) })
+      } finally {
+        // also after a refusal, so the screen shows what is stored now
+        await invalidate('leases')
+      }
+    }
+
+    /**
      * SPEC 7.8 Rencana keluar: record the CHECK-OUT day the tenant said he will leave (`checkoutDay`), or clear the plan
      * (null). Front-desk work, so staff may do it; it is not a lease term: billing, end_date, the room and the price stay
      * as they are, and the checkout itself is still recorded when he leaves. The lease is read fresh first: one that was
@@ -731,6 +745,7 @@ export function useLeaseActions() {
       addAddon,
       removeAddon,
       updateLeaseNotes,
+      setVehiclePlate,
       setPlannedCheckout,
       redateLease,
     }

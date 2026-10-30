@@ -152,6 +152,8 @@ const COLUMN_LABEL: Record<string, string> = {
   ktp_image_path: 'Foto KTP',
   receipt_path: 'Foto struk',
   logo_path: 'Logo kos',
+  // SPEC 7.11
+  vehicle_plate: 'No. kendaraan',
   notes: 'Catatan',
 }
 

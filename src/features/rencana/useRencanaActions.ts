@@ -36,6 +36,8 @@ export interface BookStayInput {
   name: string
   phone: string
   notes: string | null
+  /** optional: the tenant's vehicle plate(s) as typed; saveStayBooking writes them normalised (SPEC 7.11) */
+  vehiclePlate?: string | null
   /** every invoice of the org (numbering) */
   orgInvoices: Invoice[]
   /** the daftar tunggu entry this booking is for: it becomes 'booked' with the new lease */
@@ -111,6 +113,7 @@ export function useRencanaActions() {
               name: input.name,
               phone: input.phone,
               notes: input.notes,
+              vehiclePlate: input.vehiclePlate ?? null,
               bonusQuantity: input.bonusQuantity ?? 0,
               deposit: input.deposit ?? null,
             },

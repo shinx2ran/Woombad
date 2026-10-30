@@ -35,7 +35,7 @@ Prinsip:
 | rooms | Kamar | harga default harian/mingguan/bulanan; `status` hanya `active`/`maintenance`; hunian diturunkan dari leases |
 | addon_catalog | Katalog add-on | contoh: kasur tambahan, parkir, laundry; `property_id` null = semua kos |
 | tenants | Penyewa | data KTP (NIK, nama, TTL, alamat, …) + **telepon diisi manual (KTP tidak memuat nomor HP)** |
-| leases | Sewa / kontrak | `period_type`, `price_per_period`, `deposit_amount`, `start_date`, `end_date`, `status`, `checkout_date`, `planned_checkout_date` (Rencana keluar, 7.8) |
+| leases | Sewa / kontrak | `period_type`, `price_per_period`, `deposit_amount`, `start_date`, `end_date`, `status`, `checkout_date`, `planned_checkout_date` (Rencana keluar, 7.8), `vehicle_plate` (No. kendaraan, 7.11) |
 | lease_addons | Add-on per sewa | `per_period` (dikali jumlah periode) atau `one_time` (hanya di tagihan pertama) |
 | invoices | Tagihan | mencakup `quantity` periode dari `period_start` s/d `period_end` (inklusif); `total = base + addons + extra - discount` |
 | payments | Pembayaran | `kind`: `rent` (lawan tagihan, = pendapatan), `deposit` (uang jaminan, bukan pendapatan), `other`; `method` termasuk `deposit` = **potong jaminan** |
@@ -215,7 +215,7 @@ Layar Utama), tombol keluar, versi aplikasi.
 - Wizard **Sewa baru** diurutkan ulang untuk check-in: (1) **Penyewa** dengan tombol besar **Scan KTP / Paspor** (dan
   pilih penyewa lama), (2) Kos & kamar, (3) **Jenis sewa** sebagai tiga tombol besar Harian/Mingguan/Bulanan dengan tarif
   kamar, jumlah periode, **Harga disepakati** (lihat 5.4), (4) Add-on (tertutup default), (5) **Pembayaran**: Lunas / DP /
-  Belum bayar + deposit, lalu simpan. `?scan=1` langsung membuka pemindai (dashboard: tombol cepat **Check-in**).
+  Belum bayar + deposit, No. kendaraan opsional (7.11), catatan, lalu simpan. `?scan=1` langsung membuka pemindai (dashboard: tombol cepat **Check-in**).
 
 ### 5.4 Harga bisa dinegosiasi
 - Tarif kamar = **harga standar**; sewa menyimpan **harga disepakati** (`price_per_period`). Semua form harga dapat diubah
@@ -427,7 +427,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Check-in cepat** kamar kosong (`quickCheckIn.ts`, `QuickCheckInModal`): **Harian / Mingguan / Bulanan / Tahunan** (tahunan =
   bulanan × 12, dengan **bonus bulan gratis** opsional: "bayar 12 bulan, bonus 1" → sewa & tagihan 13 bulan, tagihan 13 × harga
   dikurangi diskon 1 × harga, catatan tagihan "bonus 1 bulan", harga kontrak tetap); nama (HP boleh kosong, "HP belum diisi"
-  diingatkan di papan), jumlah periode, total (bawaan tarif kamar × jumlah). Harga per periode = total ÷ jumlah dibayar, dibulatkan;
+  diingatkan di papan), **No. kendaraan** opsional (7.11), jumlah periode, total (bawaan tarif kamar × jumlah). Harga per periode = total ÷ jumlah dibayar, dibulatkan;
   bila tidak pas, `baseAmount` = total + diskon. Bayar: lunas (bawaan), **DP**, atau belum; bulanan/tahunan juga **uang jaminan**
   (`leases.deposit_amount`, pembayaran `kind: 'deposit'` "Uang jaminan" bila sudah diterima, metode sama). Disimpan lewat
   `useRencanaActions.bookStay` (cek kamar segar lalu `saveStayBooking`: penyewa → sewa → `insertFromDraft` → pembayaran → status
@@ -554,7 +554,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
     malam yang dipilih bergaris; hari Rencana keluar juga "hari check-out") dengan teks pengganti untuk pembaca layar (`stripText`).
 - **Pesan** → lembar `BookingSheet`: nama penyewa dengan pencocokan penyewa lama seperti Check-in cepat (`tenantsNamed` +
   `resolveTenantChoice`), HP opsional ("HP belum diisi" diingatkan), total (terisi dari tarif, bisa diubah; per malam/minggu/bulan
-  tampil), DP opsional (jumlah + Tunai/Transfer/QRIS; sama dengan total = lunas), catatan. Simpan lewat **jalur yang sama dengan
+  tampil), DP opsional (jumlah + Tunai/Transfer/QRIS; sama dengan total = lunas), catatan; untuk check-in hari ini juga No.
+  kendaraan opsional (7.11; tamu tanggal nanti mengisinya di halaman sewa saat datang). Simpan lewat **jalur yang sama dengan
   Check-in cepat**: `saveQuickCheckIn` diperumum menjadi `saveStayBooking` (semua jenis periode, tanggal mulai kapan saja, DP
   bertanda 'DP' seperti wizard): penyewa (bila baru) → sewa `active` (`start_date` = check-in) → tagihan pertama lewat
   `insertFromDraft` → pembayaran → status tagihan. Check-in hari ini = Check-in cepat; tanggal nanti = **Dipesan** di papan kamar,
@@ -776,7 +777,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   `pageTransitions.exit.test.tsx` (kembali dengan lembar terbuka: geseran kita dan gestur Safari, tanpa salinan di atas halaman
   baru), `motion.test.tsx` (salinan jendela/toast, shadow root tertutup, tanpa salinan saat kurangi gerakan / tanpa API / dijeda,
   pembatalan, ketukan latar gelap selama lembar naik). Playwright punya tiga proyek: `phone` (seluruh suite dengan Kurangi gerakan: langkah dan tangkapan layar tepat),
-  `phone-motion` (gerak menyala: `transitions`, `quick-buttons`, `redate`, `rencana`, `keluar`, `undo-delete`) dan `pages-motion`
+  `phone-motion` (gerak menyala: `transitions`, `quick-buttons`, `redate`, `rencana`, `keluar`, `kendaraan`, `undo-delete`) dan `pages-motion`
   (`transitions.spec.ts` pada build ber-basename `/Woombad/` di port 4174, `dist-sub`). Tangkapan layar proyek `phone` di folder
   biasa, proyek gerak di subfolder bernama proyeknya (bingkai di tengah animasi tidak menimpa yang tepat). `e2e/transitions.spec.ts`: tab/push/pop dan
   jumlah transisi, bilah tetap bernama, halaman baru di atas, kembali & **Semua sewa** memulihkan gulir tanpa menambah riwayat,
@@ -818,3 +819,41 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   "EG Kost" dan bilah status gelap, hilang ≥ 2,65 s animasinya dengan memudar dan bilah status teal kembali; tautan langsung ke halaman lazy
   yang kodenya lambat — tanpa service worker — tetap tertutup sampai halaman itu tergambar; Kurangi gerakan: hilang tanpa memudar).
 
+### 7.11 Nomor kendaraan (plat)
+- **Permintaan pemilik**: nomor polisi kendaraan penyewa di keterangan sewa, tampil di papan kamar; isian opsional di Check-in
+  cepat. Data awal: 12 plat dari pemilik untuk 12 sewa aktif (C1, B3, B2, A10, D10, D5, D06, D09, A13, A11, A3, A7).
+- **Data**: kolom `public.leases.vehicle_plate text` (nullable, tanpa bawaan, tanpa constraint). Di sewa, bukan di penyewa:
+  Pindah kamar memperbarui sewa yang sama, jadi platnya ikut; menginap berikutnya mulai kosong. Bukan syarat sewa: semua anggota
+  (termasuk staf) boleh mengisi/mengubah/mengosongkannya, `leases_terms_guard` dan `leases_overlap_guard` tidak memeriksanya, RLS
+  sama dengan kolom sewa lain. Skema hanya bertambah (`alter table … add column if not exists`, tanpa DROP). Ikut
+  `export_backup`, cadangan JSON, impor Mode Demo (kolom `text`; cadangan lama = `null`), Riwayat perubahan ("No. kendaraan: – →
+  KB 1442 GZ"), `LocalRepo` (bawaan `null` untuk baris lama), `translateDbError` (kolom belum ada di server, PGRST204/42703 →
+  `VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE`, menyebut No. kendaraan). Tipe: `Lease.vehicle_plate?: string | null`. Data contoh Mode
+  Demo: Budi (1 plat) dan Rizky (2 plat).
+- **Penulisan** (`src/domain/plate.ts`, `normalizePlate`): apa pun yang diketik disimpan seperti plat ditulis — huruf besar, titik
+  dan strip jadi spasi, spasi di antara huruf dan angka, spasi ganda dirapatkan ("KB.1442.Gz." → "KB 1442 GZ", "b1251sga" →
+  "B 1251 SGA"); beberapa kendaraan dipisah koma (juga `;`, `/`, baris baru) dan disimpan "KB 1442 GZ, B 1251 SGA", plat yang sama
+  sekali saja; kosong → `null`. Database tidak menormalkan: SQL langsung harus menulis bentuk yang sama.
+- **Isian** (`PlateInput`, sama di mana-mana): label "No. kendaraan (plat)", contoh "mis. KB 1442 GZ", petunjuk "Boleh
+  dikosongkan. Lebih dari satu kendaraan: pisahkan dengan koma.", keyboard huruf besar (`autoCapitalize="characters"`), tanpa
+  koreksi ejaan, maks. 60 karakter; saat keluar dari isian teksnya langsung ditulis ulang seperti yang akan disimpan. Ada di
+  **Check-in cepat** (setelah Nomor HP; ringkasan menulis "Kendaraan KB 1442 GZ"), **BookingSheet** untuk check-in hari ini, dan
+  wizard **Sewa baru** (di atas Catatan sewa). Penyimpanan baru mengirim kolom ini **hanya bila ada plat**
+  (`...(plate ? { vehicle_plate } : {})`), jadi check-in tanpa plat tetap jalan di server yang kolomnya belum ada.
+  `useRencanaActions.bookStay` meneruskan `vehiclePlate` ke `saveStayBooking`.
+- **Halaman sewa**, kartu **Info sewa**: baris **No. kendaraan** (plat atau "Belum diisi"; sewa yang sudah selesai hanya bila ada,
+  sebagai riwayat) dengan tombol pensil (sewa aktif), juga **Lainnya → No. kendaraan** → lembar `VehiclePlateModal` (isi/ubah;
+  kosongkan untuk menghapus; Simpan nonaktif bila hasilnya sama dengan yang tersimpan) → `useLeaseActions.setVehiclePlate(lease,
+  plat | null)`, menulis hanya kolom itu, semua peran.
+- **Papan kamar**: plat di bawah status kotak, satu baris per kendaraan (paling banyak dua, lalu "+N"), 9 px rapat
+  (`tracking-tighter`, warna penuh supaya kontras di kotak merah); kotak tanpa padding samping supaya plat terlebar ("KB 1829 GN",
+  ±49 px) muat utuh di kotak 52 px pada HP 360 px. Label kotak untuk pembaca layar ditambah ", kendaraan …". Lembar aksi kamar
+  menampilkan semua plat dengan ikon mobil di bawah nama penyewa.
+- **Cari di daftar Sewa**: kotak cari juga menemukan plat, diketik dengan atau tanpa spasi ("kb1442", "1442 gz"; `plateMatches`:
+  per plat, huruf/angka saja, minimal 4 karakter supaya cari kamar "B1"/"A10" tidak memunculkan plat).
+- **Uji**: `plate.test.ts`, `quickCheckIn.test.ts` (plat dinormalkan; tanpa plat kolom tidak dikirim), `useRencanaActions.test.tsx`
+  (bookStay meneruskan plat), `vehiclePlate.test.tsx` (setVehiclePlate termasuk staf, lembar isian), `leaseUtils.test.ts` (cari
+  plat), `vehiclePlate.data.test.ts` (seed, Mode Demo, impor, riwayat, pesan galat), DB `supabase/tests/29-kendaraan.sql`
+  (struktur, semua anggota boleh, RLS, riwayat, cadangan), `e2e/kendaraan.spec.ts` (juga dengan gerak; papan 360 px: plat utuh,
+  label, lembar; Check-in cepat dengan & tanpa plat; isi/ubah/kosongkan di halaman sewa dan lewat Lainnya; Sewa baru menyimpan
+  plat; cari plat di daftar Sewa; tanpa error konsol).

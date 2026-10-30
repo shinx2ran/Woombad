@@ -8,6 +8,7 @@ import {
   NotMemberError,
   PLANNED_CHECKOUT_BEFORE_START_MESSAGE,
   REDATE_NOT_DEPLOYED_MESSAGE,
+  VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE,
   StaleWriteError,
   UPDATE_DENIED_MESSAGE,
   formatCode,
@@ -39,6 +40,8 @@ export function translateDbError(error: string | DbError): string {
   // went out before schema.sql was re-run)
   if (/leases_planned_checkout_check/.test(message)) return PLANNED_CHECKOUT_BEFORE_START_MESSAGE
   if (/planned_checkout_date/.test(message) && (code === 'PGRST204' || /schema cache|does not exist/i.test(message))) return REDATE_NOT_DEPLOYED_MESSAGE
+  // Nomor kendaraan (SPEC 7.11): the column is not on the server yet (PGRST204 from PostgREST, 42703 from Postgres)
+  if (/vehicle_plate/.test(message) && (code === 'PGRST204' || /schema cache|does not exist/i.test(message))) return VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE
   if (/Failed to fetch|Load failed|NetworkError|network/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
   if (/Signups not allowed|signup.*disabled/i.test(message)) return 'Pendaftaran akun baru sedang ditutup. Minta pemilik kos membuatkan akun.'
   return message

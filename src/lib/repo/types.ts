@@ -71,6 +71,13 @@ export const REDATE_NOT_DEPLOYED_MESSAGE = 'Fitur ini belum aktif di server. Min
  */
 export const PLANNED_CHECKOUT_BEFORE_START_MESSAGE = 'Rencana keluar harus sesudah tanggal mulai sewa. Ubah atau batalkan rencana keluar dulu.'
 
+/**
+ * Nomor kendaraan (SPEC 7.11): PGRST204 / 42703 naming leases.vehicle_plate, i.e. the app went out before schema.sql was
+ * re-run (or before PostgREST reloaded its schema). Check-in cepat and Sewa baru send the column only with a plate, so
+ * saving without one still works on such a server.
+ */
+export const VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE = 'No. kendaraan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya, atau simpan dulu tanpa no. kendaraan.'
+
 /** New dates of one invoice in a lease start correction. */
 export interface RedateInvoiceDates {
   id: string

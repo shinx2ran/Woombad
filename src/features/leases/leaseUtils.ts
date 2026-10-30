@@ -21,6 +21,7 @@ import {
 } from '../../domain/billing'
 import { reminderText } from '../../domain/messages'
 import { addDaysISO, daysBetween, periodEnd, periodsToCover } from '../../domain/period'
+import { plateMatches } from '../../domain/plate'
 import { compareRoomNames, isCancelledWithoutStay, isLeaseActiveOn, isLeaseReservedOn, leaseOverlaps } from '../../domain/occupancy'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 
@@ -276,12 +277,15 @@ export function compareFinishedLeases(a: LeaseListItem, b: LeaseListItem, oldest
   return (a.room?.name ?? '').localeCompare(b.room?.name ?? '', undefined, { numeric: true })
 }
 
-/** Case-insensitive match on tenant name, room name or kos name. Empty query matches everything. */
+/**
+ * Case-insensitive match on tenant name, room name or kos name, or a vehicle plate typed with or without spaces (SPEC 7.11,
+ * plateMatches). Empty query matches everything.
+ */
 export function matchesLeaseSearch(item: LeaseListItem, query: string): boolean {
   const q = query.trim().toLowerCase()
   if (!q) return true
   const hay = [item.tenant?.full_name, item.room?.name, item.propertyName].filter(Boolean).join(' ').toLowerCase()
-  return hay.includes(q)
+  return hay.includes(q) || plateMatches(item.lease.vehicle_plate, q)
 }
 
 // ---------- invoice timeline ----------
