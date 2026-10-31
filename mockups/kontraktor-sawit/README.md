@@ -1,0 +1,14 @@
+# Mockup: KSM Pemilik (aplikasi pemilik kontraktor kebun sawit)
+
+Contoh tampilan (mockup) untuk mengukur minat pemilik perusahaan kontraktor perkebunan sawit sebelum aplikasi sungguhan
+dibangun. Semua nama dan angka fiktif. Tidak berhubungan dengan aplikasi Woombad di folder utama; hanya menumpang repositori.
+
+- `index.html` — seluruh mockup dalam satu berkas (HTML + CSS + JS, tanpa library). Buka langsung di browser, atau hosting
+  statis apa pun; di HP: "Tambahkan ke layar utama".
+- `PANDUAN-DEMO.md` — alur demo 10 menit, jawaban atas keberatan, tanda tertarik/tidak, perbandingan jujur dengan alat lain.
+- `manifest.webmanifest`, `sw.js`, `icon-*.png` — agar versi yang di-hosting bisa dipasang dan dibuka tanpa sinyal.
+
+Mengubah nama pemilik: cari `"owner_name"` di `index.html`. Mengubah tanggal demo: `"demo_date"` (semua label "kemarin",
+"4 hari", "16 hari lagi" dihitung dari tanggal itu, bukan dari jam HP).
+
+Uji otomatis: `npx playwright test e2e/kontraktor-mockup.spec.ts` dari folder utama repositori.
