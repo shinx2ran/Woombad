@@ -82,11 +82,11 @@ h1, h2, h3 { text-wrap: balance; }
   background: var(--surface); border-bottom: 1px solid var(--border);
   padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); }
 .hdr .ttl { flex: 1; min-width: 0; font-weight: 700; font-size: 1.06rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 8px; }
-.hdr .ttl small { display: block; font-weight: 500; font-size: .72rem; color: var(--muted); line-height: 1.2; }
+.hdr .ttl small { display: block; font-weight: 500; font-size: .72rem; color: var(--muted); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ibtn { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; position: relative; color: var(--text); }
 .ibtn:active { background: var(--surface-2); }
 .ibtn svg { width: 24px; height: 24px; }
-.badge { position: absolute; top: 6px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--danger); color: #fff; font-size: .68rem; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+.badge { position: absolute; top: 6px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--danger); color: var(--accent-ink); font-size: .68rem; font-weight: 700; display: grid; place-items: center; line-height: 1; }
 .av { width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: .85rem; display: grid; place-items: center; flex: none; }
 .av.s { width: 28px; height: 28px; font-size: .72rem; background: var(--accent-soft); color: var(--accent); }
 .view { padding-top: 12px; padding-bottom: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
@@ -94,7 +94,7 @@ h1, h2, h3 { text-wrap: balance; }
 .stack > * { min-width: 0; }
 .sub { color: var(--muted); font-size: .82rem; }
 .meta { color: var(--muted); font-size: .76rem; line-height: 1.4; }
-.tiny { color: var(--faint); font-size: .7rem; line-height: 1.35; }
+.tiny { color: var(--muted); font-size: .8rem; line-height: 1.35; }
 .strong { font-weight: 650; }
 .right { text-align: right; }
 .danger-t { color: var(--danger); } .warn-t { color: var(--warn); } .ok-t { color: var(--accent); } .info-t { color: var(--info); } .ai-t { color: var(--ai); }
@@ -102,6 +102,7 @@ h1, h2, h3 { text-wrap: balance; }
 
 /* ── cards, rows, chips ────────────────────────────────── */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; min-width: 0; }
+.card[id] { scroll-margin-top: calc(68px + env(safe-area-inset-top, 0px)); }
 .card.tap { cursor: pointer; } .card.tap:active { background: var(--surface-2); }
 .card.summary { background: var(--summary); border-color: var(--summary-border); }
 .card.danger { border-color: var(--danger); } .card.warn { border-color: var(--warn); }
@@ -142,9 +143,12 @@ h1, h2, h3 { text-wrap: balance; }
 .btns > .btn { flex: 1; }
 .link { color: var(--accent); font-weight: 650; font-size: .88rem; display: inline-flex; align-items: center; gap: 4px; min-height: 40px; }
 .num { text-decoration: underline dotted; text-decoration-color: var(--faint); text-underline-offset: 4px; cursor: pointer; }
+.num, button.chip { position: relative; }
+.num::after, button.chip::after { content: ""; position: absolute; left: -4px; right: -4px; top: -10px; bottom: -10px; }
 .big { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; font-variant-numeric: normal; }
 .mid { font-size: 1.3rem; font-weight: 700; line-height: 1.2; font-variant-numeric: normal; }
-.kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: .88rem; }
+.kv { display: grid; grid-template-columns: fit-content(55%) minmax(0, 1fr); gap: 4px 12px; font-size: .88rem; }
+@media (max-width: 340px) { .kv { grid-template-columns: minmax(0, 1fr); } .kv dd { text-align: left; } }
 .kv dt { color: var(--muted); } .kv dd { margin: 0; text-align: right; font-weight: 600; }
 .tbl { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .tbl th { text-align: left; font-weight: 600; color: var(--muted); padding: 6px 4px; border-bottom: 1px solid var(--border); font-size: .74rem; }
@@ -158,9 +162,10 @@ h1, h2, h3 { text-wrap: balance; }
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; min-height: 96px; display: flex; flex-direction: column; justify-content: center; gap: 4px; cursor: pointer; min-width: 0; }
 .tile:active { background: var(--surface-2); }
 .tile.span { grid-column: 1 / -1; }
-.tile .big { font-size: 1.65rem; }
+.tile .big { font-size: clamp(1.3rem, 7vw, 1.65rem); white-space: nowrap; }
 .tile.danger .big { color: var(--danger); } .tile.warn .big { color: var(--warn); }
-.cols3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 340px) { .cols3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .cols3 .mid { font-size: 1.05rem; }
 
 /* three-tone progress */
@@ -252,29 +257,33 @@ h1, h2, h3 { text-wrap: balance; }
   background: var(--surface); border-radius: 22px 22px 0 0; z-index: 41; display: flex; flex-direction: column; box-shadow: var(--shadow);
   padding-bottom: env(safe-area-inset-bottom, 0px); }
 .sheet .handle { height: 28px; display: grid; place-items: center; cursor: pointer; flex: none; }
+.backdrop, .sheet .handle, .sheet .sh { touch-action: none; }
+@media (max-width: 340px) { .hdr .ttl { font-size: .95rem; } }
 .sheet .handle i { width: 40px; height: 5px; border-radius: 3px; background: var(--border); }
 .sheet .sh { display: flex; align-items: center; gap: 8px; padding: 0 16px 10px; flex: none; }
 .sheet .sh h2 { flex: 1; font-size: 1.05rem; font-weight: 700; min-width: 0; }
-.sheet .sb { overflow-y: auto; overflow-x: hidden; padding: 0 max(16px, env(safe-area-inset-left, 0px)) 16px max(16px, env(safe-area-inset-right, 0px)); overscroll-behavior: contain; min-height: 0; }
+.sheet .sb { overflow-y: auto; overflow-x: hidden; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px)); overscroll-behavior: contain; min-height: 0; }
 .sheet .sb > .stack { padding-bottom: 8px; }
 @media (prefers-reduced-motion: no-preference) {
   .sheet { animation: up .22s var(--ease); } .backdrop { animation: fade .2s ease; }
   @keyframes up { from { transform: translate(-50%, 24px); opacity: .6; } to { transform: translate(-50%, 0); opacity: 1; } }
   @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-  .view { animation: in .2s var(--ease); }
+  .view.enter { animation: in .2s var(--ease); }
+  .sheet.still, .backdrop.still { animation: none; }
   @keyframes in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
 }
-.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(112px + env(safe-area-inset-bottom, 0px)); z-index: 60; max-width: min(92vw, 400px);
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(176px + env(safe-area-inset-bottom, 0px)); z-index: 60; max-width: min(92vw, 400px);
   background: var(--text); color: var(--bg); padding: 12px 16px; border-radius: 12px; font-size: .88rem; font-weight: 600; box-shadow: var(--shadow); text-align: center; }
 .toast.ok { background: var(--accent); color: var(--accent-ink); }
 .fab { position: fixed; z-index: 25; bottom: calc(112px + env(safe-area-inset-bottom, 0px)); left: 50%; margin-left: calc(min(100vw, 430px) / 2 - 16px - env(safe-area-inset-right, 0px)); transform: translateX(-100%);
-  min-height: 48px; padding: 0 16px 0 12px; border-radius: 24px; background: var(--ai); color: #fff; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; box-shadow: var(--shadow); font-size: .9rem; }
+  min-height: 48px; padding: 0 16px 0 12px; border-radius: 24px; background: var(--ai); color: var(--accent-ink); font-weight: 700; display: inline-flex; align-items: center; gap: 8px; box-shadow: var(--shadow); font-size: .9rem; }
 .fab svg { width: 22px; height: 22px; }
 .tabbar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; z-index: 30; background: var(--surface); border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
 .strip { font-size: .7rem; color: var(--faint); text-align: center; padding: 3px 8px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .tabs { display: flex; height: 64px; }
-.tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: .74rem; font-weight: 600; color: var(--muted); }
+.tabs button { flex: 1; min-width: 0; padding: 0 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: .74rem; font-weight: 600; color: var(--muted); }
+@media (max-width: 340px) { .tabs button { font-size: .66rem; } }
 .tabs button svg { width: 24px; height: 24px; }
 .tabs button.sel { color: var(--accent); }
 
@@ -397,13 +406,13 @@ const DATA = {
   {
    "id": "toni",
    "name": "Pak Toni",
-   "role": "Mandor Batu Ampar",
+   "role": "Mandor Batu Tilam",
    "initial": "T"
   },
   {
    "id": "rasyid",
    "name": "Pak Rasyid",
-   "role": "Mandor Rantau Panjang",
+   "role": "Mandor Rantau Payung",
    "initial": "Ry"
   },
   {
@@ -463,7 +472,7 @@ const DATA = {
    "contacts": [
     {
      "name": "Pak Hendra",
-     "role": "Asisten Sipil Afd. III"
+     "role": "Asisten Sipil"
     },
     {
      "name": "Pak Bambang",
@@ -497,11 +506,11 @@ const DATA = {
   {
    "id": "MSJ",
    "name": "PT Mitra Sawit Jaya",
-   "estate": "Kebun Batu Ampar",
+   "estate": "Kebun Batu Tilam",
    "contacts": [
     {
      "name": "Pak Yusuf",
-     "role": "Askep Afd. II"
+     "role": "Askep"
     },
     {
      "name": "Bu Lina",
@@ -512,7 +521,7 @@ const DATA = {
   {
    "id": "THP",
    "name": "PT Tunas Hijau Plantation",
-   "estate": "Kebun Rantau Panjang",
+   "estate": "Kebun Rantau Payung",
    "contacts": [
     {
      "name": "Pak Rizal",
@@ -530,12 +539,12 @@ const DATA = {
    "location": "Kebun Bukit Tiga, Afd. III, Blok F7–F12",
    "short_name": "Bukit Tiga",
    "mandor_id": "ujang",
-   "client_supervisor": "Pak Hendra (Asisten Sipil Afd. III)",
+   "client_supervisor": "Pak Hendra (Asisten Sipil)",
    "period_start": "2026-09-01",
    "period_end": "2026-11-30",
    "days_left": 30,
    "status": "active",
-   "status_label": "Sesuai jadwal (+3 hari)",
+   "status_label": "Sesuai jadwal · 3 hari lebih cepat",
    "status_tone": "ok",
    "contract_value": 2450000000,
    "budget": 1780000000,
@@ -550,7 +559,7 @@ const DATA = {
    "rain_days_oct": 3,
    "last_opname": {
     "date": "2026-10-28",
-    "approved_by": "Pak Hendra (Asisten Sipil Afd. III)"
+    "approved_by": "Pak Hendra (Asisten Sipil)"
    },
    "items": [
     {
@@ -569,7 +578,7 @@ const DATA = {
      "alt_label": "4,0 dari 6,0 km"
     },
     {
-     "name": "Mobilisasi–demobilisasi",
+     "name": "Mobilisasi–demobilisasi (dibayar penuh saat alat masuk)",
      "unit": "ls",
      "volume": 1,
      "unit_price": 145000000,
@@ -588,7 +597,7 @@ const DATA = {
      "status": "paid",
      "bapp_no": "012/BAPP/SPN-BT/IX/2026",
      "bapp_signed": "2026-09-12",
-     "invoice_no": "INV-2026-0128",
+     "invoice_no": "INV-2026-0135",
      "invoice_date": "2026-09-14",
      "due_date": "2026-10-14",
      "paid_date": "2026-10-03",
@@ -706,7 +715,7 @@ const DATA = {
      "realisasi": 1950
     },
     {
-     "name": "Mobilisasi–demobilisasi (termasuk long-arm)",
+     "name": "Mobilisasi–demobilisasi, termasuk long-arm (dibayar penuh saat alat masuk)",
      "unit": "ls",
      "volume": 1,
      "unit_price": 120000000,
@@ -725,7 +734,7 @@ const DATA = {
      "status": "paid",
      "bapp_no": "003/BAPP/ALM-SD/IX/2026",
      "bapp_signed": "2026-09-22",
-     "invoice_no": "INV-2026-0137",
+     "invoice_no": "INV-2026-0140",
      "invoice_date": "2026-09-23",
      "due_date": "2026-10-23",
      "paid_date": "2026-10-14",
@@ -799,10 +808,10 @@ const DATA = {
    "spk_no": "038/MSJ-BA/VIII/2026",
    "title": "Cuci parit kolektor & pembuatan pasar pikul",
    "client_id": "MSJ",
-   "location": "Kebun Batu Ampar, Afd. II, Blok C12–C20",
-   "short_name": "Batu Ampar",
+   "location": "Kebun Batu Tilam, Afd. II, Blok C12–C20",
+   "short_name": "Batu Tilam",
    "mandor_id": "toni",
-   "client_supervisor": "Pak Yusuf (Askep Afd. II)",
+   "client_supervisor": "Pak Yusuf (Askep)",
    "period_start": "2026-08-15",
    "period_end": "2026-10-29",
    "days_left": -2,
@@ -816,7 +825,7 @@ const DATA = {
    "rain_note": "6 hari hujan tercatat di laporan mandor Okt → dasar klaim perpanjangan waktu 6 hari",
    "last_opname": {
     "date": "2026-10-24",
-    "approved_by": "Pak Yusuf (Askep Afd. II)"
+    "approved_by": "Pak Yusuf (Askep)"
    },
    "items": [
     {
@@ -848,7 +857,7 @@ const DATA = {
      "amount": 192000000,
      "condition": "fisik ≥ 40%",
      "status": "paid",
-     "bapp_no": "021/BAPP/MSJ-BA/IX/2026",
+     "bapp_no": "014/BAPP/MSJ-BA/IX/2026",
      "bapp_signed": "2026-09-04",
      "invoice_no": "INV-2026-0131",
      "invoice_date": "2026-09-05",
@@ -871,7 +880,7 @@ const DATA = {
      "opname_date": "2026-10-24",
      "draft_by": "wati",
      "draft_at": "2026-10-26T09:12",
-     "waiting_on": "Pak Yusuf (Askep Afd. II)",
+     "waiting_on": "Pak Yusuf (Askep)",
      "days_in_stage": 5,
      "pic": "wati",
      "next_step": "TTD Askep → TTD Manajer Kebun → invoice"
@@ -907,10 +916,10 @@ const DATA = {
   {
    "id": "SPK-055",
    "spk_no": "055/THP-RP/IX/2026",
-   "title": "Jembatan beton CR–MR Blok F7 + 6 titi panen",
+   "title": "Jembatan beton CR–MR Blok F7 + 6 gorong-gorong",
    "client_id": "THP",
-   "location": "Kebun Rantau Panjang, Afd. IV",
-   "short_name": "Rantau Panjang",
+   "location": "Kebun Rantau Payung, Afd. IV",
+   "short_name": "Rantau Payung",
    "mandor_id": "rasyid",
    "client_supervisor": "Pak Rizal (Asisten Afd. IV)",
    "period_start": "2026-09-15",
@@ -937,7 +946,7 @@ const DATA = {
      "alt_label": "bobot 35,3%: galian, cerucuk, abutment kiri selesai"
     },
     {
-     "name": "Titi panen beton (bentang 2 m)",
+     "name": "Gorong-gorong box culvert beton 1×1 m, 5 m' per unit (persilangan CR)",
      "unit": "unit",
      "volume": 6,
      "unit_price": 25000000,
@@ -1017,14 +1026,14 @@ const DATA = {
    "spk_no": "029/MSJ-BA/V/2026",
    "title": "Titi panen beton 41 unit Blok B",
    "client_id": "MSJ",
-   "location": "Kebun Batu Ampar, Afd. I, Blok B3–B9",
+   "location": "Kebun Batu Tilam, Afd. I, Blok B3–B9",
    "short_name": "Titi panen Blok B",
    "status": "completed",
    "completed_date": "2026-08-28",
    "contract_value": 410000000,
    "items": [
     {
-     "name": "Titi panen beton",
+     "name": "Titi panen beton bertulang bentang 4 m, lebar 1,2 m (cor di tempat, termasuk abutment)",
      "unit": "unit",
      "volume": 41,
      "unit_price": 10000000,
@@ -1054,7 +1063,7 @@ const DATA = {
      "days_overdue": 9,
      "invoice_age_days": 39,
      "pic": "sari",
-     "contact": "Bu Lina (KTU Kebun Batu Ampar)",
+     "contact": "Bu Lina (KTU Kebun Batu Tilam)",
      "last_reminder": "2026-10-26 oleh Sari (WA)",
      "client_reason": "menunggu transfer kantor pusat MSJ"
     }
@@ -1226,14 +1235,14 @@ const DATA = {
   "items": [
    {
     "key": "SPK-038:T2",
-    "project": "Batu Ampar",
+    "project": "Batu Tilam",
     "label": "T2 · 40% · Cuci parit & pasar pikul",
     "amount": 192000000,
     "stage": "ttd_kebun",
     "days_in_stage": 5,
     "tone": "warn",
     "pic": "wati",
-    "needs": "TTD Pak Yusuf (Askep Afd. II)",
+    "needs": "TTD Pak Yusuf (Askep)",
     "attachments": 4
    },
    {
@@ -1257,19 +1266,19 @@ const DATA = {
     "days_in_stage": 14,
     "tone": "ok",
     "pic": "sari",
-    "needs": "Jatuh tempo 16 Nov (16 hari lagi)",
+    "needs": "pembayaran SPN · jatuh tempo 16 Nov (16 hari lagi)",
     "attachments": 5
    },
    {
     "key": "SPK-029:T2",
     "project": "Titi panen Blok B",
-    "label": "T2 · 50% · Titi panen 41 unit",
+    "label": "T2 · 50% · 41 unit · proyek selesai 28 Agu",
     "amount": 205000000,
     "stage": "overdue",
     "days_in_stage": 9,
     "tone": "danger",
     "pic": "sari",
-    "needs": "Konfirmasi Bu Lina (KTU Batu Ampar)",
+    "needs": "Konfirmasi Bu Lina (KTU Batu Tilam)",
     "attachments": 4
    },
    {
@@ -1285,7 +1294,7 @@ const DATA = {
    },
    {
     "key": "SPK-055:T1",
-    "project": "Rantau Panjang",
+    "project": "Rantau Payung",
     "label": "T1 · 30%",
     "amount": 267000000,
     "stage": "syarat",
@@ -1345,7 +1354,7 @@ const DATA = {
    {
     "supplier": "CV Batu Merah Quarry",
     "amount": 28500000,
-    "for": "laterit 10 rit",
+    "for": "laterit 60 rit",
     "due": "2026-11-04"
    },
    {
@@ -1369,12 +1378,12 @@ const DATA = {
    "date": "2026-11-25"
   },
   {
-   "label": "Cicilan leasing EX-07 & DT-05",
+   "label": "Cicilan leasing EX-03, EX-07, EX-08 & DT-05",
    "amount": 96000000,
    "date": "2026-11-10"
   },
   {
-   "label": "Hutang supplier",
+   "label": "Utang pemasok",
    "amount": 186400000,
    "date": "2026-11-20"
   },
@@ -1514,7 +1523,7 @@ const DATA = {
     "source": "dari foto nota (contoh baca nota AI)"
    },
    {
-    "label": "Upah borongan minggu ke-4, 24 pekerja pasar pikul Batu Ampar",
+    "label": "Upah borongan minggu ke-4, 24 pekerja pasar pikul Batu Tilam",
     "amount": 18600000,
     "by": "sari",
     "time": "07:30",
@@ -1578,7 +1587,7 @@ const DATA = {
    },
    "last_service": {
     "at": 11000,
-    "date": "2026-10-02",
+    "date": "2026-09-22",
     "by": "budi"
    },
    "oct_cost": {
@@ -1624,6 +1633,7 @@ const DATA = {
    "id": "EX-03",
    "type": "Excavator 20 ton",
    "year": 2019,
+   "leasing": true,
    "meter": "HM",
    "meter_value": 8420,
    "status": "operating",
@@ -1660,7 +1670,7 @@ const DATA = {
    "meter_value": 5310,
    "status": "operating",
    "project_id": "SPK-038",
-   "location": "Batu Ampar, Blok C18",
+   "location": "Batu Tilam, Blok C18",
    "operator": "Firman",
    "oct_hm": 176,
    "oct_fuel_l": 2130,
@@ -1693,7 +1703,7 @@ const DATA = {
    "status": "standby",
    "status_note": "menunggu cor abutment kanan",
    "project_id": "SPK-055",
-   "location": "Rantau Panjang, Blok F7",
+   "location": "Rantau Payung, Blok F7",
    "operator": "Rudi",
    "oct_hm": 108,
    "oct_fuel_l": 1242,
@@ -1776,28 +1786,13 @@ const DATA = {
    },
    "last_service": {
     "at": 7890,
-    "date": "2026-08-12",
+    "date": "2026-10-01",
     "by": "budi"
    },
    "flags": [
     "Solar 28,6 L/HM, 38% di atas rata-rata excavator 20 ton (20,8)"
    ],
-   "fuel_14d_l_per_hm": [
-    20.9,
-    21.4,
-    20.6,
-    21,
-    22.8,
-    24.1,
-    25.9,
-    26.4,
-    27.8,
-    28.1,
-    28.9,
-    29.4,
-    28.2,
-    29
-   ],
+   "fuel_14d_l_per_hm": [26, 26.6, 27.1, 27.7, 28.2, 28.6, 28.9, 29.2, 29.5, 29.8, 30.1, 30.3, 29.6, 29],
    "oct_cost": {
     "solar": 85680000,
     "sparepart": 2900000,
@@ -1810,6 +1805,7 @@ const DATA = {
    "id": "EX-08",
    "type": "Excavator 20 ton",
    "year": 2019,
+   "leasing": true,
    "meter": "HM",
    "meter_value": 6920,
    "status": "broken",
@@ -1833,7 +1829,7 @@ const DATA = {
    },
    "last_service": {
     "at": 6750,
-    "date": "2026-10-03",
+    "date": "2026-09-24",
     "by": "budi"
    },
    "pending_po": "PO-2026-0187",
@@ -1852,7 +1848,7 @@ const DATA = {
     "HP-2025-11023",
     "BT-SET-2026-09-02"
    ],
-   "previous_project": "Rantau Panjang (Mei–Agu 2026)"
+   "previous_project": "Sungai Dua, timbunan Afd. I (Jun–Jul 2026)"
   },
   {
    "id": "DT-01",
@@ -1875,7 +1871,7 @@ const DATA = {
     "label": "Ganti oli 5.000 km",
     "at": 185000,
     "remaining": 700,
-    "note": "±5 hari"
+    "note": "±10 hari"
    }
   },
   {
@@ -1922,7 +1918,7 @@ const DATA = {
     "label": "Ganti oli 5.000 km",
     "at": 191000,
     "remaining": 320,
-    "note": "±3 hari"
+    "note": "±4 hari"
    }
   },
   {
@@ -2028,7 +2024,7 @@ const DATA = {
    "status": "standby",
    "status_note": "menunggu oprit jembatan",
    "project_id": "SPK-055",
-   "location": "Rantau Panjang",
+   "location": "Rantau Payung",
    "operator": "Wahyu",
    "oct_hm": 18,
    "oct_fuel_l": 150,
@@ -2109,11 +2105,11 @@ const DATA = {
   "fleet_avg_l_per_hm": 20.8,
   "excess_pct": 38,
   "expected_l": 4451,
-  "excess_l": 1669,
+  "excess_l": 1670,
   "excess_rp": 23366000,
   "oct_fuel_rp": 85680000,
   "operator": "Amran",
-  "last_service": "12 Agu 2026 (HM 7.890)",
+  "last_service": "1 Okt 2026 (HM 7.890)",
   "suggestion": "Cek injektor & selang; cocokkan bon solar Rina dengan laporan harian Pak Samsul.",
   "comparison_units": [
    "EX-01",
@@ -2153,7 +2149,7 @@ const DATA = {
     "name": "Solar tangki kantor",
     "qty": 6400,
     "unit": "L",
-    "note": "cukup ±4 hari (pemakaian ±1.300 L/hari)",
+    "note": "cukup ±5 hari (pemakaian ±1.300 L/hari)",
     "tone": "warn"
    },
    {
@@ -2189,7 +2185,7 @@ const DATA = {
     "qty_physical": 13,
     "variance": -1,
     "unit": "pcs",
-    "note": "hitung fisik Rina 30 Okt · selisih 1 ⚠",
+    "note": "hitung fisik Rina 30 Okt",
     "tone": "warn"
    },
    {
@@ -2199,7 +2195,7 @@ const DATA = {
     "tone": "ok"
    },
    {
-    "name": "Ban 7.50-16",
+    "name": "Ban 10.00-20 (dump truck)",
     "qty": 4,
     "unit": "pcs",
     "tone": "ok"
@@ -2596,7 +2592,7 @@ const DATA = {
    "pemadatan_m": 150,
    "rit_total": 34
   },
-  "productivity_note": "Timbunan 420 m3 / 15,5 HM excavator = 27 m3/HM (target 25)",
+  "productivity_note": "Timbunan 420 m3 / 15,5 jam excavator = 27 m3/jam (target 25)",
   "photos": [
    {
     "label": "Titik 0+400"
@@ -2611,7 +2607,7 @@ const DATA = {
   "notes": "Pengawas kebun minta laterit mulai dari sisi barat Senin.",
   "changes": [
    {
-    "field": "Timbunan (m3)",
+    "field": "Timbunan",
     "old": 240,
     "new": 420,
     "by": "wati",
@@ -2643,14 +2639,14 @@ const DATA = {
    },
    {
     "mandor_id": "rasyid",
-    "project": "Rantau Panjang",
+    "project": "Rantau Payung",
     "status": "received",
     "time": "16:55",
     "photos": 2
    },
    {
     "mandor_id": "toni",
-    "project": "Batu Ampar",
+    "project": "Batu Tilam",
     "status": "missing",
     "note": "belum diterima · terakhir online 30 Okt 06:10",
     "status_after_sync": "received",
@@ -2662,7 +2658,7 @@ const DATA = {
   "mandor_id": "toni",
   "project_id": "SPK-038",
   "date_label": "Jumat, 30 Okt 2026",
-  "location": "Batu Ampar, Afd. II, Blok C18–C19",
+  "location": "Batu Tilam, Afd. II, Blok C18–C19",
   "weather": "Hujan pagi 2 jam · cerah siang",
   "units": [
    {
@@ -2785,7 +2781,7 @@ const DATA = {
   {
    "at": "2026-10-31T07:50",
    "by": "wati",
-   "action": "MENGUBAH",
+   "action": "mengoreksi",
    "object": "Laporan harian Bukit Tiga 30 Okt · Timbunan 240 → 420 m3",
    "device": "Laptop kantor",
    "reason": "salah ketik dari lapangan (foto patok 420)",
@@ -2834,7 +2830,7 @@ const DATA = {
    "at": "2026-10-30T16:55",
    "by": "rasyid",
    "action": "laporan harian",
-   "object": "Rantau Panjang 30 Okt · 2 foto",
+   "object": "Rantau Payung 30 Okt · 2 foto",
    "device": "HP Android"
   },
   {
@@ -2854,7 +2850,7 @@ const DATA = {
   {
    "at": "2026-10-29T14:21",
    "by": "sari",
-   "action": "pembayaran supplier",
+   "action": "pembayaran pemasok",
    "object": "CV Sumber Alat Berat · Rp 38.500.000 (filter & oli Sep)",
    "device": "Laptop kantor",
    "note": "disetujui Pak Rahmat 29 Okt 14:10 dari HP · bukti transfer"
@@ -2902,35 +2898,35 @@ const DATA = {
    "person_id": "wati",
    "inputs_month": 212,
    "corrections": 5,
-   "note": "Admin Kantor · laporan & BAPP",
+   "note": "laporan & BAPP",
    "tone": "ok"
   },
   {
    "person_id": "sari",
    "inputs_month": 148,
    "corrections": 1,
-   "note": "Admin Keuangan · kas & invoice",
+   "note": "kas & invoice",
    "tone": "ok"
   },
   {
    "person_id": "dedi",
    "inputs_month": 14,
    "corrections": 0,
-   "note": "Purchasing · 14 PO · Rp 312 jt",
+   "note": "nilai PO Okt Rp 312 jt",
    "tone": "ok"
   },
   {
    "person_id": "rina",
    "inputs_month": 86,
    "corrections": 1,
-   "note": "Gudang · 86 masuk/keluar · 1 hitung fisik",
+   "note": "1 hitung fisik (30 Okt)",
    "tone": "ok"
   },
   {
    "person_id": "budi",
    "inputs_month": 19,
    "corrections": 0,
-   "note": "Mekanik · 19 work order · 1 bon belum ditutup",
+   "note": "1 bon belum ditutup (aki EX-06)",
    "tone": "warn"
   },
   {
@@ -2939,7 +2935,7 @@ const DATA = {
    "corrections": 0,
    "avg_time": "16:50",
    "late": 0,
-   "note": "Mandor Bukit Tiga · 26 laporan",
+   "note": "",
    "tone": "ok"
   },
   {
@@ -2948,7 +2944,7 @@ const DATA = {
    "corrections": 3,
    "avg_time": "18:40",
    "late": 4,
-   "note": "Mandor Sungai Dua · 25 laporan · 4 kali terlambat",
+   "note": "",
    "tone": "warn"
   },
   {
@@ -2957,7 +2953,7 @@ const DATA = {
    "corrections": 2,
    "avg_time": "17:10",
    "late": 2,
-   "note": "Mandor Batu Ampar · 24 laporan · 1 belum diterima",
+   "note": "laporan 30 Okt belum diterima",
    "tone": "warn"
   },
   {
@@ -2966,7 +2962,7 @@ const DATA = {
    "corrections": 0,
    "avg_time": "16:40",
    "late": 0,
-   "note": "Mandor Rantau Panjang · 26 laporan",
+   "note": "",
    "tone": "ok"
   }
  ],
@@ -2980,8 +2976,8 @@ const DATA = {
  "data_card": "Data disimpan di database milik perusahaan (bukan di HP siapa pun), dicadangkan setiap malam, dan bisa diekspor ke Excel kapan saja.",
  "next_step_card": "Kalau Bapak tertarik: 1 SPK · 1 mandor · 1 admin · 2 minggu uji coba · spreadsheet tetap jalan.",
  "ai": {
-  "summary_before": "Empat proyek berjalan, tiga sesuai jadwal; Batu Ampar terlambat 2 hari karena hujan. Bukit Tiga sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 Sungai Dua Rp 412,5 juta tinggal tanda tangan Bapak. Tiga dari empat mandor sudah melapor kemarin; Pak Toni (Batu Ampar) belum. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
-  "summary_after_sync": "Empat proyek berjalan, tiga sesuai jadwal; Batu Ampar terlambat 2 hari karena hujan, kini 93,5%. Bukit Tiga sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 Sungai Dua Rp 412,5 juta tinggal tanda tangan Bapak. Semua empat mandor sudah melapor. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
+  "summary_before": "Empat proyek berjalan, tiga sesuai jadwal; Batu Tilam terlambat 2 hari karena hujan. Bukit Tiga sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 Sungai Dua Rp 412,5 juta tinggal tanda tangan Bapak. Tiga dari empat mandor sudah melapor kemarin; Pak Toni (Batu Tilam) belum. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
+  "summary_after_sync": "Empat proyek berjalan, tiga sesuai jadwal; Batu Tilam terlambat 2 hari karena hujan, kini 93,5%. Bukit Tiga sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 Sungai Dua Rp 412,5 juta tinggal tanda tangan Bapak. Semua empat mandor sudah melapor. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
   "summary_schedule_note": "Di aplikasi asli, ringkasan ini dibuat otomatis setiap pukul 06.00 dari laporan mandor dan admin.",
   "anomalies": [
    {
@@ -3017,7 +3013,7 @@ const DATA = {
   "qa": [
    {
     "q": "Berapa solar EX-07 bulan ini?",
-    "a": "Oktober: 6.120 liter (Rp 85,7 jt) untuk 214 jam kerja = 28,6 L/jam. Excavator 20 ton lain rata-rata 20,8 L/jam. Lebih boros 38%: ±1.670 liter atau ±Rp 23,4 jt. Operator: Amran. Servis terakhir 12 Agu (HM 7.890). Saran: cek injektor dan selang, lalu cocokkan bon solar Rina dengan laporan harian Pak Samsul.",
+    "a": "Oktober: 6.120 liter (Rp 85,7 jt) untuk 214 jam kerja = 28,6 L/jam. Excavator 20 ton lain rata-rata 20,8 L/jam. Lebih boros 38%: ±1.670 liter atau ±Rp 23,4 jt. Operator: Amran. Servis terakhir 1 Okt (HM 7.890). Saran: cek injektor dan selang, lalu cocokkan bon solar Rina dengan laporan harian Pak Samsul.",
     "sources": [
      "Bon solar Okt (24 bon)",
      "Laporan harian Sungai Dua",
@@ -3027,7 +3023,7 @@ const DATA = {
    },
    {
     "q": "Siapa yang belum bayar?",
-    "a": "PT Mitra Sawit Jaya Rp 205.000.000, lewat jatuh tempo 9 hari (INV-2026-0139, titi panen Blok B; kontak Bu Lina, KTU Kebun Batu Ampar; alasan terakhir: menunggu transfer kantor pusat). PT Sinar Perkebunan Nusantara Rp 612.500.000 jatuh tempo 16 Nov. Sari sudah mengirim pengingat 26 Okt.",
+    "a": "PT Mitra Sawit Jaya Rp 205.000.000, lewat jatuh tempo 9 hari (INV-2026-0139, titi panen Blok B; kontak Bu Lina, KTU Kebun Batu Tilam; alasan terakhir: menunggu transfer kantor pusat). PT Sinar Perkebunan Nusantara Rp 612.500.000 jatuh tempo 16 Nov. Sari sudah mengirim pengingat 26 Okt.",
     "sources": [
      "Piutang",
      "INV-2026-0139",
@@ -3058,30 +3054,16 @@ const DATA = {
   "free_text_reply": "Dalam contoh ini hanya 4 pertanyaan yang dijawab. Versi sebenarnya menjawab dari data perusahaan Bapak."
  },
  "wa_templates": {
-  "summary": "Ringkasan KSM, Sabtu 31 Okt 2026:\n• 4 proyek berjalan, Batu Ampar terlambat 2 hari (hujan)\n• Bukit Tiga 72%, Rp 539 jt belum ditagih\n• BAPP T2 Sungai Dua Rp 412,5 jt menunggu TTD\n• Piutang Rp 817,5 jt, MSJ Rp 205 jt lewat 9 hari\n• EX-08 rusak (PO final drive), EX-07 solar boros",
-  "remind_wati_bapp": "Wat, BAPP T2 Batu Ampar Rp 192 jt sudah 5 hari di meja Pak Yusuf (Askep Afd. II). Tolong follow up hari ini dan foto bukti TTD-nya ya. Terima kasih.",
-  "remind_sari_overdue": "Sar, invoice INV-2026-0139 PT Mitra Sawit Jaya Rp 205 jt sudah lewat jatuh tempo 9 hari. Tolong hubungi Bu Lina (KTU Batu Ampar) hari ini dan catat hasilnya di aplikasi.",
+  "summary": "Ringkasan KSM, Sabtu 31 Okt 2026:\n• 4 proyek berjalan, Batu Tilam terlambat 2 hari (hujan)\n• Bukit Tiga 72%, Rp 539 jt belum ditagih\n• BAPP T2 Sungai Dua Rp 412,5 jt menunggu TTD\n• Piutang Rp 817,5 jt, MSJ Rp 205 jt lewat 9 hari\n• EX-08 rusak (PO final drive), EX-07 solar boros",
+  "remind_wati_bapp": "Wat, BAPP T2 Batu Tilam Rp 192 jt sudah 5 hari di meja Pak Yusuf (Askep). Tolong follow up hari ini dan foto bukti TTD-nya ya. Terima kasih.",
+  "remind_sari_overdue": "Sar, invoice INV-2026-0139 PT Mitra Sawit Jaya Rp 205 jt sudah lewat jatuh tempo 9 hari. Tolong hubungi Bu Lina (KTU Batu Tilam) hari ini dan catat hasilnya di aplikasi.",
   "ask_budi_aki": "Bud, 2 aki N150 (AK-2026-7781/7782) keluar gudang 27 Okt untuk EX-06 tapi belum tercatat terpasang. Sudah dipasang? Tolong foto dan catat HM-nya hari ini ya.",
   "project_recap_bt": "Rekap Bukit Tiga, 31 Okt: fisik 72% (timbunan 8.200/11.000 m3, laterit 4,0/6,0 km), tagihan 50%, Rp 539 jt belum ditagih. T2 Rp 612,5 jt jatuh tempo 16 Nov. EX-08 rusak sejak 27 Okt, PO final drive disetujui."
  },
  "spreadsheet_overlay": {
   "file": "PROGRESS OKT 2026.xlsx",
-  "columns": [
-   "No",
-   "Pekerjaan",
-   "Volume",
-   "Realisasi",
-   "%",
-   "Ket."
-  ],
-  "row": [
-   "1",
-   "Timbunan & laterit Bukit Tiga",
-   "2.450.000.000",
-   "1.764.000.000",
-   "72%",
-   ""
-  ],
+  "columns": ["Pekerjaan", "Realisasi (Rp)", "%"],
+  "row": ["Bukit Tiga", "1.764.000.000", "72%"],
   "comment": "Diubah oleh: ? · Kapan: ? · Dari mana: ? · Foto: ? · Versi sebelumnya: ?",
   "bullets": [
    "Siapa pun yang pegang file bisa mengubah sel ini.",
@@ -3115,13 +3097,13 @@ function fmtDec(n, d = 1) { const f = Math.pow(10, d); const r = Math.round(Math
 function trimDec(s) { return s.replace(/,0+$/, '').replace(/(,\d*?)0+$/, '$1'); }
 function fmtRp(n, opts = {}) {
   const neg = n < 0; const a = Math.abs(n); let s;
-  if (a >= 1e9) s = fmtDec(a / 1e9, 2) + ' M';
-  else if (a >= 1e6) s = trimDec(fmtDec(a / 1e6, 1)) + ' jt';
+  if (a >= 1e9) s = fmtDec(a / 1e9, 2) + '\u00a0M';
+  else if (a >= 1e6) s = trimDec(fmtDec(a / 1e6, 1)) + '\u00a0jt';
   else s = fmtInt(a);
-  if (opts.words) s = s.replace(' M', ' miliar').replace(' jt', ' juta');
-  return (neg ? '−' : (opts.sign && n > 0 ? '+' : '')) + 'Rp ' + s;
+  if (opts.words) s = s.replace('\u00a0M', '\u00a0miliar').replace('\u00a0jt', '\u00a0juta');
+  return (neg ? '−' : (opts.sign && n > 0 ? '+' : '')) + 'Rp\u00a0' + s;
 }
-const fmtRpFull = (n) => (n < 0 ? '−' : '') + 'Rp ' + fmtInt(Math.abs(n));
+const fmtRpFull = (n) => (n < 0 ? '−' : '') + 'Rp\u00a0' + fmtInt(Math.abs(n));
 const fmtJt = (n) => trimDec(fmtDec(n / 1e6, 1)); // 612,5
 function fmtPct(p, d = 1) { return trimDec(fmtDec(p, d)) + '%'; }
 const fmtL = (n) => fmtInt(n) + ' L';
@@ -3165,12 +3147,14 @@ const activeProjects = () => DATA.projects.filter((p) => p.status === 'active');
 const completedProjects = () => DATA.projects.filter((p) => p.status === 'completed');
 function totals() { const a = activeProjects(); const sum = (f) => a.reduce((s, p) => s + f(p), 0); return { contract: sum((p) => p.contract_value), physical: sum(projPhysical), billed: sum(projBilled), paid: sum(projPaid), unbilled: sum(projUnbilled) }; }
 function receivables() { const rows = []; for (const p of DATA.projects) for (const t of p.termin) if (t.status === 'invoiced' || t.status === 'overdue') rows.push({ p, t }); return rows; }
+function ageBucket(rows, lo, hi) { return rows.filter((r) => { const d = daysAgo(r.t.invoice_date); return d >= lo && d <= hi; }).reduce((s, r) => s + r.t.amount, 0); }
 function receivablesTotal() { return receivables().reduce((s, r) => s + r.t.amount, 0); }
 function overdueTotal() { return receivables().filter((r) => r.t.status === 'overdue').reduce((s, r) => s + r.t.amount, 0); }
 function pendingApprovals() { return DATA.approvals.filter((a) => !STATE.approvals[a.id]); }
 function decidedApprovals() { return DATA.approvals.filter((a) => STATE.approvals[a.id]); }
 function unreadCount() { if (STATE.notifRead) return 0; return DATA.notifications.filter((n) => !(n.link.startsWith('approval:') && STATE.approvals[n.link.slice(9)])).length; }
 function eqCounts() { const c = { operating: 0, standby: 0, service: 0, broken: 0 }; for (const e of DATA.equipment) c[e.status]++; return c; }
+function fuelYesterday() { return DATA.equipment.reduce((s, e) => s + ((e.yesterday && e.yesterday.fuel_l) || 0), 0); }
 function fleetFuelL() { return DATA.equipment.reduce((s, e) => s + (e.oct_fuel_l || 0), 0); }
 function octOutTotal() { return DATA.cash.oct_out_categories.reduce((s, c) => s + c.amount, 0); }
 function octInTotal() { return DATA.cash.oct_in_rows.reduce((s, r) => s + r.amount, 0); }
@@ -3190,7 +3174,7 @@ function daysTone(d) { return d > 14 ? 'danger' : d >= 7 ? 'warn' : 'ok'; }
 
 // ── Jejak angka: catatan asal angka-angka utama ───────────────────────────────────────────────────────────────────
 const TRACE = {
-  'pct-SPK-047': () => ({ value: fmtPct(projPct(project('SPK-047'))), label: `${fmtRpFull(projPhysical(project('SPK-047')))} dari ${fmtRpFull(2450000000)} · Bukit Tiga`, from: '52 laporan harian Pak Ujang + 4 opname bersama', last: '+420 m3 timbunan, +180 m laterit · 30 Okt 16:42 · Pak Ujang (Mandor)', device: 'HP Android · GPS Afd. III (±12 m)', photos: ['Titik 0+400', 'Titik 1+200', 'Hamparan laterit F10'], checked: 'Wati · 31 Okt 07:45', opname: 'Opname 28 Okt · Pak Hendra (Asisten Sipil) ✓', history: ['v1 · 240 m3 · 30 Okt 16:42 · Pak Ujang (HP Android)', 'v2 · 420 m3 · 31 Okt 07:50 · Wati (Laptop kantor) · alasan: salah ketik dari lapangan (foto patok menunjukkan 420)'], spreadsheet: true }),
+  'pct-SPK-047': () => ({ value: fmtPct(projPct(project('SPK-047'))), label: `${fmtRpFull(projPhysical(project('SPK-047')))} dari ${fmtRpFull(project('SPK-047').contract_value)} · Bukit Tiga`, from: '52 laporan harian Pak Ujang + 4 opname bersama', last: '+420 m3 timbunan, +180 m laterit · 30 Okt 16:42 · Pak Ujang (Mandor)', device: 'HP Android · GPS Afd. III (±12 m)', photos: ['Titik 0+400', 'Titik 1+200', 'Hamparan laterit F10'], checked: 'Wati · 31 Okt 07:45', opname: 'Opname 28 Okt · Pak Hendra (Asisten Sipil) ✓', history: ['v1 · 240 m3 · 30 Okt 16:42 · Pak Ujang (HP Android)', 'v2 · 420 m3 · 31 Okt 07:50 · Wati (Laptop kantor) · alasan: salah ketik dari lapangan (foto patok menunjukkan 420)'], spreadsheet: true }),
   'timbunan-420': () => ({ value: '420 m3', label: 'Timbunan badan jalan · Bukit Tiga · 30 Okt', from: 'laporan harian Pak Ujang (EX-01 240 m3 + EX-03 180 m3)', last: '30 Okt 16:42 · Pak Ujang (Mandor)', device: 'HP Android · GPS Afd. III (±12 m)', photos: ['Titik 0+400', 'Titik 1+200', 'Hamparan laterit F10'], checked: 'Wati · 31 Okt 07:45', history: ['v1 · 240 m3 · 30 Okt 16:42 · Pak Ujang', 'v2 · 420 m3 · 31 Okt 07:50 · Wati · alasan: salah ketik dari lapangan (foto patok 420)'] }),
   'kas': () => ({ value: fmtRpFull(cashTotal()), label: 'Kas & bank · 3 rekening', from: 'saldo rekening operasional, rekening proyek, kas kantor', last: 'Rekonsiliasi Sari (Admin Keuangan) · 31 Okt 06:30', device: 'Laptop kantor', photos: ['Mutasi rek. operasional', 'Mutasi rek. proyek', 'Buku kas kantor'], checked: 'Rekonsiliasi harian ✓', history: [] }),
   'fuel-EX-07': () => ({ value: `${fmtDec(DATA.fuel_anomaly.l_per_hm, 1)} L/jam`, label: 'Solar EX-07 · Oktober · 6.120 L / 214 jam', from: '24 bon solar Okt (foto bon, dicatat Rina) dan HM awal/akhir dari laporan harian Pak Samsul', last: 'Bon terakhir 30 Okt 06:40 · 232 L · Rina (Gudang) · HM 8.094 → 8.102 (foto panel, Pak Samsul)', device: 'HP Android (Rina), HP Android (Pak Samsul)', photos: ['Bon solar 30 Okt', 'Panel HM 8.102'], checked: 'Pembanding: EX-01, EX-02, EX-03, EX-08 = 20,8 L/jam', history: [] }),
@@ -3247,7 +3231,7 @@ function photo(caption, opts = {}) {
 }
 function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
 function chainHtml(ids, doneUpTo) {
-  return `<div class="chain">${ids.map((id, i) => { const p = person(id); const open = i >= doneUpTo; return `${i ? '<span class="arr">→</span>' : ''}<span class="av s${open ? ' open' : ''}" title="${esc(p.name)}">${open ? '○' : esc(p.initial)}</span><span>${esc(id === 'owner' ? 'Bapak' : p.name.replace(/^Pak /, ''))}${open ? '' : ' ✓'}</span>`; }).join('')}</div>`;
+  return `<div class="chain">${ids.map((id, i) => { const p = person(id); const open = i >= doneUpTo; return `${i ? '<span class="arr">→</span>' : ''}<span class="av s${open ? ' open' : ''}" title="${esc(p.name)}">${open ? '○' : esc(p.initial)}</span><span>${esc(id === 'owner' ? 'Bapak' : p.name)}${open ? '' : ' ✓'}</span>`; }).join('')}</div>`;
 }
 function kv(rows) { return `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`; }
 
@@ -3264,7 +3248,7 @@ function cashChart(months) {
     s += `<rect x="${padL}" y="${y0}" width="${(x(a) - padL).toFixed(1)}" height="${bh}" rx="3" fill="var(--chart-in)"/><text class="v" x="${(x(a) + 4).toFixed(1)}" y="${(y0 + bh - 1).toFixed(1)}" font-size="10">${fmtInt(Math.round(a))}</text>`;
     s += `<rect x="${padL}" y="${y0 + bh + 2}" width="${(x(b) - padL).toFixed(1)}" height="${bh}" rx="3" fill="var(--chart-out)"/><text x="${(x(b) + 4).toFixed(1)}" y="${(y0 + bh * 2 + 1).toFixed(1)}" font-size="10">${fmtInt(Math.round(b))}</text>`;
   });
-  return s + '</svg><div class="legend"><span><span class="sw" style="background:var(--chart-in)"></span>Masuk (juta Rp, bersih)</span><span><span class="sw" style="background:var(--chart-out)"></span>Keluar</span></div>';
+  return s + '</svg><div class="legend"><span><span class="sw" style="background:var(--chart-in)"></span>Masuk (juta Rp, masuk rekening)</span><span><span class="sw" style="background:var(--chart-out)"></span>Keluar</span></div>';
 }
 function fuelBars(arr, ref) {
   const max = Math.max(...arr, ref) * 1.1; const refTop = (1 - ref / max) * 100;
@@ -3284,15 +3268,20 @@ function navigate(route, opts = {}) {
 window.addEventListener('hashchange', () => { const r = parseRoute(location.hash); if (r !== STATE.route) { closeSheet(); STATE.route = r; render(); window.scrollTo(0, 0); } else closeSheet(); });
 
 // ── Sheets, toast, theme ──────────────────────────────────────────────────────────────────────────────────────────
-let sheetOpen = null;
+let sheetOpen = null; let sheetReturnFocus = null;
 function openSheet(kind, title, body, opts = {}) {
+  const label = String(title).replace(/<[^>]*>/g, '').replace(/&amp;/g, '&');
+  const prev = document.querySelector('.sheet .sb'); const keep = sheetOpen && sheetOpen.kind === kind && prev ? prev.scrollTop : 0; const still = sheetOpen ? ' still' : '';
+  if (!sheetOpen) sheetReturnFocus = document.activeElement;
   sheetOpen = { kind, arg: opts.arg };
-  document.getElementById('layer').innerHTML = `<div class="backdrop" data-act="close"></div><section class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="handle" data-act="close"><i></i></div><div class="sh"><h2>${title}</h2>${opts.head || ''}<button class="ibtn" data-act="close" aria-label="Tutup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div><div class="sb"><div class="stack">${body}</div></div></section>`;
+  document.getElementById('layer').innerHTML = `<div class="backdrop${still}" data-act="close"></div><section class="sheet${still}" role="dialog" aria-modal="true" aria-label="${esc(label)}" tabindex="-1"><div class="handle" data-act="close"><i></i></div><div class="sh"><h2>${title}</h2>${opts.head || ''}<button class="ibtn" data-act="close" aria-label="Tutup"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div><div class="sb"><div class="stack">${body}</div></div></section>`;
   document.body.style.overflow = 'hidden';
+  const sb = document.querySelector('.sheet .sb'); if (sb && keep) sb.scrollTop = keep;
+  if (!still) { const s = document.querySelector('.sheet'); if (s) s.focus({ preventScroll: true }); }
 }
-function closeSheet() { if (!sheetOpen) return; sheetOpen = null; document.getElementById('layer').innerHTML = ''; document.body.style.overflow = ''; }
+function closeSheet() { if (!sheetOpen) return; sheetOpen = null; document.getElementById('layer').innerHTML = ''; document.body.style.overflow = ''; if (sheetReturnFocus && sheetReturnFocus.focus && document.contains(sheetReturnFocus)) { try { sheetReturnFocus.focus({ preventScroll: true }); } catch (e) { /* ignore */ } } sheetReturnFocus = null; }
 let toastTimer = null;
-function toast(msg, cls = '') { let el = document.getElementById('toast'); if (!el) { el = document.createElement('div'); el.id = 'toast'; document.body.appendChild(el); } el.className = 'toast ' + cls; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200); }
+function toast(msg, cls = '') { let el = document.getElementById('toast'); if (!el) { el = document.createElement('div'); el.id = 'toast'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); document.body.appendChild(el); } el.className = 'toast ' + cls; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200); }
 function storeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function storeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* tanpa penyimpanan juga jalan */ } }
 function applyTheme(t) { const root = document.documentElement; if (t === 'dark' || t === 'light') root.setAttribute('data-theme', t); else root.removeAttribute('data-theme'); storeSet('ksm-theme', t || ''); }
@@ -3323,15 +3312,15 @@ function viewBeranda() {
   const c = eqCounts();
   return `<div class="stack">
     <div class="tiles">
-      <div class="tile" data-go="proyek" role="button" tabindex="0"><div class="big">${fmtRp(T.unbilled)}</div><div class="sub">pekerjaan selesai, belum ditagih · ${activeProjects().length} proyek</div></div>
-      <div class="tile danger" data-act="go-anchor" data-arg="uang|piutang" role="button" tabindex="0"><div class="big">${fmtRp(ov)}</div><div class="sub">lewat jatuh tempo · ${overdueRow.t.days_overdue} hari · ${esc(client(overdueRow.p.client_id).name)}</div></div>
+      <div class="tile" data-go="proyek" role="button" tabindex="0"><div class="big">${fmtRp(T.unbilled)}</div><div class="sub">pekerjaan selesai, belum ditagih · ${activeProjects().length}&nbsp;proyek</div></div>
+      <div class="tile danger" data-act="go-anchor" data-arg="uang|piutang" role="button" tabindex="0"><div class="big">${fmtRp(ov)}</div><div class="sub">lewat jatuh tempo · ${overdueRow.t.days_overdue}&nbsp;hari · ${esc(client(overdueRow.p.client_id).name)}</div></div>
       <div class="tile ${poApproved() ? 'warn' : 'danger'} span" data-go="alat-EX-08" role="button" tabindex="0"><div class="big">${c.broken} unit berhenti</div><div class="sub">${esc(tile3sub)}</div></div>
     </div>
     ${glanceCard(true)}
     <section class="card summary"><div class="ch"><h2>Ringkasan pagi ini</h2>${aiChip()}</div>
       <p style="font-size:.95rem">${esc(summary)}</p>
       <p class="tiny" style="margin-top:8px">${esc(DATA.ai.summary_schedule_note)}</p>
-      <div class="btns" style="margin-top:10px"><button class="btn outline sm" data-act="wa" data-arg="summary">${I.wa} Kirim ke WhatsApp</button><button class="btn outline sm" data-act="tanya">${I.chat} Tanya</button></div></section>
+      <div style="margin-top:10px"><button class="btn outline sm wide" data-act="wa" data-arg="summary">${I.wa} Kirim ringkasan ke WhatsApp</button></div></section>
     <section class="card"><div class="ch"><h2>Uang</h2><span class="meta">rekonsiliasi ${fmtTime(DATA.cash.reconciled_at)}</span></div>
       <div class="cols3">
         <div><div class="meta">Kas &amp; bank</div><div class="mid num" data-act="nominal" data-arg="kas">${fmtRp(cashTotal())}</div></div>
@@ -3343,14 +3332,14 @@ function viewBeranda() {
       ${pend.length ? pend.map(appRow).join('<div style="border-top:1px solid var(--border)"></div>') : '<p class="sub">Tidak ada yang menunggu keputusan Bapak.</p>'}
       ${decided.length ? `<div class="group" style="margin-top:8px"><button class="gh" data-act="toggle" data-arg="decidedOpen">${I.check} Sudah diputuskan hari ini (${decided.length})<span style="margin-left:auto" class="chev">${STATE.decidedOpen ? '▾' : '▸'}</span></button>${STATE.decidedOpen ? `<div class="gb">${decided.map(decidedRow).join('')}</div>` : ''}</div>` : ''}</section>
     <section class="card"><div class="ch"><h2>Laporan mandor kemarin</h2><span class="meta">${fmtDateShort(DATA.daily_report.date)}</span></div>
-      <div style="display:flex;align-items:baseline;gap:12px"><div class="big">${mandorReceived()}/${mr.expected}</div><div class="sub ${STATE.synced ? 'ok-t' : 'danger-t'}">${STATE.synced ? 'Semua mandor sudah melapor' : 'Pak Toni (Batu Ampar) belum'}</div></div>
+      <div style="display:flex;align-items:baseline;gap:12px"><div class="big">${mandorReceived()}/${mr.expected}</div><div class="sub ${STATE.synced ? 'ok-t' : 'danger-t'}">${STATE.synced ? 'Semua mandor sudah melapor' : 'Pak Toni (Batu Tilam) belum'}</div></div>
       <div style="margin-top:6px">${mr.rows.map(mandorRow).join('')}</div>
       <button class="link" data-go="mandor">Lihat sisi mandor ${I.chev}</button></section>
     <section class="card"><div class="ch"><h2>Perlu dicek</h2>${aiChip()}</div>
       ${DATA.ai.anomalies.slice(0, 2).map((a) => `<div class="row" style="align-items:flex-start"><span class="warn-t" style="margin-top:2px">${I.warn}</span><div class="grow"><div style="font-size:.9rem">${esc(a.text)}</div><div class="tiny">${esc(a.rule)}</div><button class="link" data-act="link" data-arg="${a.link}">${a.link.startsWith('unit') ? 'Lihat unit EX-07' : 'Lihat jejak barang'} ${I.chev}</button></div></div>`).join('')}</section>
     <section class="card tap" data-go="alat"><div class="ch"><h2>Alat hari ini</h2>${I.chev.replace('<svg', '<svg class="chev"')}</div>
       <div class="chips">${chip('muted', `${DATA.equipment.length} unit`)}${chip('ok', `${c.operating} beroperasi`)}${chip('muted', `${c.standby} standby`)}${chip('info', `${c.service} servis`)}${chip('danger', `${c.broken} rusak`)}</div>
-      <div class="meta" style="margin-top:8px">Solar kemarin ±${fmtL(DATA.equipment_summary.fuel_today_liters_est)} · ${fmtRp(DATA.equipment_summary.fuel_today_liters_est * FUEL_PRICE)}</div></section>
+      <div class="meta" style="margin-top:8px">Solar kemarin ${fmtL(fuelYesterday())} · ${fmtRp(fuelYesterday() * FUEL_PRICE)}</div></section>
   </div>`;
 }
 // Semua proyek sekilas: satu angka gabungan, satu bar per proyek, tanda tegak = rencana hari ini
@@ -3360,11 +3349,11 @@ function glanceCard(onHome) {
   const row = (p) => { const pp = projPct(p); const tone = planTone(p);
     return `<div class="row tap" data-go="proyek-${p.id}"><div class="name">${esc(p.short_name)}</div><div class="pct">${fmtPct(pp, 0)}</div><div class="delta">${deltaChip(projDelta(p))}</div>
       <div class="bar"><div class="track tickable"><i class="${tone === 'ok' ? '' : tone}" style="width:${Math.min(100, pp).toFixed(1)}%"></i><span class="tick" style="left:${projPlan(p)}%" title="rencana ${fmtPct(projPlan(p), 0)}"></span></div></div>
-      <div class="m meta">${esc(p.title.replace('Pembuatan ', ''))} · rencana ${fmtPct(projPlan(p), 0)} · ${p.days_left >= 0 ? `sisa ${p.days_left} hari` : `<span class="danger-t">lewat ${-p.days_left} hari</span>`} · ditagih ${fmtPct(projBilled(p) / p.contract_value * 100, 0)} · dibayar ${fmtPct(projPaid(p) / p.contract_value * 100, 0)}</div></div>`; };
+      <div class="m meta">${esc(p.title.replace('Pembuatan ', ''))} · ${p.days_left >= 0 ? `sisa ${p.days_left} hari` : `<span class="danger-t">lewat ${-p.days_left} hari</span>`}${onHome ? '' : ` · rencana ${fmtPct(projPlan(p), 0)} · ditagih ${fmtPct(projBilled(p) / p.contract_value * 100, 0)} · dibayar ${fmtPct(projPaid(p) / p.contract_value * 100, 0)}`}</div></div>`; };
   return `<section class="card glance"><div class="ch"><h2>Semua proyek sekilas</h2><span class="meta">${a.length} berjalan · ${late ? `<span class="danger-t">${late} terlambat</span>` : 'semua sesuai jadwal'}</span></div>
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span class="big">${fmtPct(pct, 0)}</span><span class="sub">fisik dari ${fmtRp(T.contract)} kontrak · rencana ${fmtPct(plan, 0)}</span>${deltaChip(pct - plan)}</div>
     <div class="track tickable lg" style="margin:8px 0 4px"><i style="width:${pct.toFixed(1)}%"></i><span class="tick" style="left:${plan.toFixed(1)}%"></span></div>
-    <div class="tiny" style="margin-bottom:4px">Isi hijau = fisik terpasang · tanda tegak = rencana per hari ini · merah = di belakang rencana</div>
+    <div class="tiny" style="margin-bottom:4px">Isi = fisik terpasang · tanda tegak = rencana per hari ini · merah = di belakang rencana</div>
     ${a.map(row).join('')}
     ${onHome ? `<button class="link" data-go="proyek">Jadwal &amp; rincian tiap proyek ${I.chev}</button>` : ''}</section>`;
 }
@@ -3377,17 +3366,17 @@ function statusLabel(p) {
 // ── Views: Proyek ─────────────────────────────────────────────────────────────────────────────────────────────────
 function viewProyek() {
   const seg = STATE.seg.proyek; const T = totals();
-  const segs = `<div class="seg" role="tablist"><button class="${seg === 'berjalan' ? 'sel' : ''}" data-act="seg" data-arg="proyek|berjalan">Berjalan (${activeProjects().length})</button><button class="${seg === 'tagihan' ? 'sel' : ''}" data-act="seg" data-arg="proyek|tagihan">Tagihan</button><button class="${seg === 'selesai' ? 'sel' : ''}" data-act="seg" data-arg="proyek|selesai">Selesai (${completedProjects().length})</button></div>`;
+  const segs = `<div class="seg"><button class="${seg === 'berjalan' ? 'sel' : ''}" aria-pressed="${seg === 'berjalan'}" data-act="seg" data-arg="proyek|berjalan">Berjalan (${activeProjects().length})</button><button class="${seg === 'tagihan' ? 'sel' : ''}" aria-pressed="${seg === 'tagihan'}" data-act="seg" data-arg="proyek|tagihan">Tagihan</button><button class="${seg === 'selesai' ? 'sel' : ''}" aria-pressed="${seg === 'selesai'}" data-act="seg" data-arg="proyek|selesai">Selesai (${completedProjects().length})</button></div>`;
   let body = '';
   if (seg === 'berjalan') {
-    body = scheduleCard() + glanceCard(false) + `<div class="sec" style="margin-top:4px">Rincian per proyek</div><div class="card" style="padding:10px 16px"><div class="meta">Nilai kontrak berjalan</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline"><span class="mid">${fmtRp(T.contract)}</span><span class="sub">dikerjakan <b>${fmtRp(T.physical)}</b></span><span class="sub">ditagih <b>${fmtRp(T.billed)}</b></span><span class="sub">dibayar <b>${fmtRp(T.paid)}</b></span></div></div>`
+    body = scheduleCard() + `<div class="sec" style="margin-top:4px">Rincian per proyek</div><div class="card" style="padding:10px 16px"><div class="meta">Nilai kontrak berjalan</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline"><span class="mid">${fmtRp(T.contract)}</span><span class="sub">dikerjakan <b>${fmtRp(T.physical)}</b></span><span class="sub">ditagih <b>${fmtRp(T.billed)}</b></span><span class="sub">dibayar <b>${fmtRp(T.paid)}</b></span></div></div>`
       + activeProjects().map((p) => {
         const upd = updatedLine(p);
         return `<section class="card tap" data-go="proyek-${p.id}"><div style="display:flex;justify-content:space-between;gap:8px"><div class="grow"><h2 style="font-size:1rem">${esc(p.title)} — ${esc(p.location.replace('Kebun ', '').replace('PKS ', 'PKS '))}</h2><div class="meta">${esc(client(p.client_id).name)}</div><div class="meta">SPK ${esc(p.spk_no)} · ${fmtRpFull(p.contract_value)} · ${fmtDateShort(p.period_start)} – ${fmtDate(p.period_end)}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div><div style="margin:10px 0 8px">${projBars(p)}</div><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">${chip(p.status_tone, esc(statusLabel(p)), 'wrap')}</div><div class="tiny" style="margin-top:6px">${upd}</div></section>`;
       }).join('')
       + `<div class="btns"><button class="btn outline sm" data-act="toast" data-arg="Contoh: di aplikasi asli file Excel diunduh.">${I.xls} Ekspor ke Excel (contoh)</button><button class="btn outline sm" data-act="toast" data-arg="Contoh: di aplikasi asli rekap PDF diunduh.">Rekap mingguan PDF (contoh)</button></div>`;
   } else if (seg === 'tagihan') body = viewTagihan();
-  else body = completedProjects().map((p) => { const t2 = p.termin.find((t) => t.status === 'overdue'); const remaining = p.contract_value - projPaid(p); return `<section class="card"><div class="t" style="font-weight:650">${esc(p.title)} — ${esc(p.short_name === 'Titi panen Blok B' ? 'Batu Ampar' : p.location.replace('Kebun ', ''))}</div><div class="meta">${esc(client(p.client_id).name)} · ${fmtRp(p.contract_value)} · selesai ${fmtDateShort(p.completed_date)}</div><div style="margin-top:6px;font-size:.88rem" class="${t2 ? 'danger-t strong' : 'ok-t'}">${t2 ? `Sisa tagihan ${fmtRp(remaining)} · LEWAT ${t2.days_overdue} hari` : `Lunas${p.id === 'SPK-021' ? ' (retensi cair ' + fmtDateShort(p.termin[2].paid_date) + ')' : ''}`}</div></section>`; }).join('');
+  else body = completedProjects().map((p) => { const t2 = p.termin.find((t) => t.status === 'overdue'); const remaining = p.contract_value - projPaid(p); return `<section class="card"><div class="t" style="font-weight:650">${esc(p.title)} — ${esc(p.short_name === 'Titi panen Blok B' ? 'Batu Tilam' : p.location.replace('Kebun ', '').split(',')[0])}</div><div class="meta">${esc(client(p.client_id).name)} · ${fmtRp(p.contract_value)} · selesai ${fmtDateShort(p.completed_date)}</div><div style="margin-top:6px;font-size:.88rem" class="${t2 ? 'danger-t strong' : 'ok-t'}">${t2 ? `Sisa tagihan ${fmtRp(remaining)} · LEWAT ${t2.days_overdue} hari` : `Lunas${p.id === 'SPK-021' ? ' (retensi cair ' + fmtDateShort(p.termin[2].paid_date) + ')' : ''}`}</div></section>`; }).join('');
   return `<div class="stack">${segs}${body}</div>`;
 }
 // Jadwal: satu baris per SPK dari tanggal mulai ke selesai; isi = fisik, tanda = rencana, garis tegak = hari ini
@@ -3424,14 +3413,14 @@ function viewTagihan() {
     if (it.key === 'SPK-029:T2') btn = `<button class="btn outline sm" data-act="wa" data-arg="remind_sari_overdue">${I.wa} Ingatkan Sari (WA)</button>`;
     if (it.key === 'SPK-038:T2') btn = `<button class="btn outline sm" data-act="wa" data-arg="remind_wati_bapp">${I.wa} Ingatkan Wati (WA)</button>`;
     if (it.key === 'SPK-052:T2' && !bappSigned()) btn = `<button class="btn primary sm" data-act="decide" data-arg="BAPP-052-T2">Tandatangani</button>`;
-    return `<section class="card ${it.stage === 'overdue' ? 'danger' : ''}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="grow"><div class="t">${esc(it.project)} · ${esc(it.label)}</div><div class="mid" style="font-size:1.1rem">${fmtRpFull(it.amount)}</div></div>${avatar(it.pic)}</div>
+    return `<section class="card ${it.stage === 'overdue' ? 'danger' : ''}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="grow"><div class="t">${esc(it.project)} · ${esc(it.label)}</div><div class="mid" style="font-size:1.1rem">${fmtRpFull(it.amount)}</div></div><div style="text-align:center">${avatar(it.pic)}<div class="tiny" style="margin-top:2px">${esc(pname(it.pic).split(' ')[0])}</div></div></div>
       <div class="chips" style="margin-top:8px;align-items:center">${chip(s.tone, s.label)}${active ? chip(daysTone(d), `${d} hari di tahap ini`) : ''}${it.attachments ? `<span class="meta">${I.clip} ${it.attachments}</span>` : ''}</div>
       <div class="sub" style="margin-top:6px">${active ? 'Perlu: ' : ''}${esc(it.needs)}</div>${btn ? `<div style="margin-top:8px">${btn}</div>` : ''}</section>`;
   };
-  return `<div class="card" style="padding:10px 16px;position:sticky;top:calc(56px + env(safe-area-inset-top,0px));z-index:5"><div style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline"><span class="sub">Dalam proses &amp; piutang <b class="mid" style="font-size:1.05rem">${fmtRp(inProcess)}</b></span><span class="sub danger-t">Lewat jatuh tempo <b>${fmtRp(overdueTotal())}</b></span><span class="sub">Cair Oktober <b>${fmtRp(paidStage.amount)}</b></span></div></div>
-    <div class="seg"><button class="${STATE.seg.tagihanSort === 'lama' ? 'sel' : ''}" data-act="seg" data-arg="tagihanSort|lama">Paling lama tertahan</button><button class="${STATE.seg.tagihanSort === 'tahap' ? 'sel' : ''}" data-act="seg" data-arg="tagihanSort|tahap">Per tahap</button></div>
+  return `<div class="card" style="padding:10px 16px;position:sticky;top:calc(56px + env(safe-area-inset-top,0px));z-index:5"><div style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline"><span class="sub">Dalam proses &amp; piutang <b class="mid" style="font-size:1.05rem">${fmtRp(inProcess)}</b></span><span class="sub danger-t">Lewat jatuh tempo <b>${fmtRp(overdueTotal())}</b></span><span class="sub">Cair Oktober <b>${fmtRp(paidStage.amount)}</b> <span class="meta">(nilai termin, tanpa PPN)</span></span></div></div>
+    <div class="seg"><button class="${STATE.seg.tagihanSort === 'lama' ? 'sel' : ''}" aria-pressed="${STATE.seg.tagihanSort === 'lama'}" data-act="seg" data-arg="tagihanSort|lama">Paling lama tertahan</button><button class="${STATE.seg.tagihanSort === 'tahap' ? 'sel' : ''}" aria-pressed="${STATE.seg.tagihanSort === 'tahap'}" data-act="seg" data-arg="tagihanSort|tahap">Per tahap</button></div>
     ${sorted.map(item).join('')}
-    <div class="group"><button class="gh" data-act="toggle" data-arg="paidOpen">Cair Oktober (${paidStage.items.length}) · ${fmtRpFull(paidStage.amount)}<span style="margin-left:auto" class="chev">${STATE.open.paidOpen ? '▾' : '▸'}</span></button>${STATE.open.paidOpen ? `<div class="gb">${[['Bukit Tiga T1', 612500000, '3 Okt'], ['Sungai Dua T1', 412500000, '14 Okt'], ['Retensi cuci parit Afd. II', 16000000, '9 Okt']].map(([l, a, d]) => `<div class="row" style="min-height:40px"><div class="grow" style="font-size:.88rem">${l}</div><b>${fmtRp(a)}</b><span class="meta">${d}</span></div>`).join('')}</div>` : ''}</div>
+    <div class="group"><button class="gh" data-act="toggle" data-arg="paidOpen">Cair Oktober (${paidStage.items.length}) · nilai termin ${fmtRp(paidStage.amount)} · masuk rekening ${fmtRp(paidStage.net_cash)}<span style="margin-left:auto" class="chev">${STATE.open.paidOpen ? '▾' : '▸'}</span></button>${STATE.open.paidOpen ? `<div class="gb">${[['Bukit Tiga T1', 612500000, '3 Okt'], ['Sungai Dua T1', 412500000, '14 Okt'], ['Retensi cuci parit Afd. II', 16000000, '9 Okt']].map(([l, a, d]) => `<div class="row" style="min-height:40px"><div class="grow" style="font-size:.88rem">${l}</div><b>${fmtRp(a)}</b><span class="meta">${d}</span></div>`).join('')}</div>` : ''}</div>
     <div class="card" style="font-size:.85rem">Rata-rata Opname → Cair: <b>${st.avg_opname_to_cash_days} hari</b> (${esc(st.sample)}) · Tahap paling lama: <b>${esc(st.slowest_stage)}, rata-rata ${st.slowest_stage_avg_days} hari</b>.</div>`;
 }
 function stageOrder(s) { return ['overdue', 'invoice', 'ttd_pemilik', 'invoice_prep', 'ttd_kebun', 'syarat'].indexOf(s); }
@@ -3448,6 +3437,8 @@ function terminStatusHtml(p, t) {
 }
 function viewProyekDetail(id) {
   const p = project(id); if (!p) return notFound();
+  if (p.status === 'completed') { const od = p.termin.find((t) => t.status === 'overdue'); return `<div class="stack"><section class="card"><div class="t" style="font-weight:700;font-size:1.05rem">${esc(p.title)}</div><div class="sub">${esc(p.location)} · ${esc(client(p.client_id).name)}</div><div class="meta">SPK ${esc(p.spk_no)} · ${fmtRpFull(p.contract_value)} · selesai ${fmtDate(p.completed_date)}</div><div style="margin-top:8px">${od ? chip('danger', `sisa tagihan ${fmtRp(od.amount)} · lewat ${od.days_overdue} hari`) : chip('ok', 'Lunas')}</div></section>
+    <section class="card"><div class="ch"><h2>Termin</h2></div>${p.termin.map((t) => `<div class="row tap" data-act="termin" data-arg="${p.id}|${t.code}" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t">${t.code === 'RET' ? 'Retensi' : t.code} · ${t.pct}%</span><b>${fmtRpFull(t.amount)}</b></div><div style="font-size:.82rem;margin-top:2px">${terminStatusHtml(p, t)}</div></div>`).join('')}</section></div>`; }
   const pct = projPct(p); const unb = projUnbilled(p); const cl = client(p.client_id); const m = person(p.mandor_id);
   const t3 = p.termin.find((t) => t.code === 'T3' && t.forecast_ready) || p.termin.find((t) => t.forecast_ready);
   const itemRow = (it) => { const r = itemReal(p, it); const share = r / it.volume * 100; const isNum = p.id === 'SPK-047' && it.name.startsWith('Timbunan');
@@ -3501,7 +3492,7 @@ function viewLaporan() {
     <section class="card"><div class="ch"><h2>Volume hari ini</h2></div>
       <div style="font-size:.95rem">Timbunan <b class="num" data-act="trace" data-arg="timbunan-420">${fmtInt(r.output.timbunan_m3)} m3</b> · Laterit <b>${r.output.laterit_m} m</b> (${r.output.laterit_m3} m3) · Pemadatan <b>${r.output.pemadatan_m} m</b> · <b>${r.output.rit_total} rit</b></div>
       <div class="tiny" style="margin-top:4px">${esc(r.productivity_note)}</div></section>
-    <section class="card"><div class="ch"><h2>Foto (${r.photos.length})</h2><span class="meta">tap untuk memperbesar</span></div><div class="photos">${r.photos.map((ph, i) => photo(`Foto ${i + 1} dari ${r.photos.length} · ${ph.label} · 16:3${8 + i}`)).join('')}</div></section>
+    <section class="card"><div class="ch"><h2>Foto (${r.photos.length})</h2><span class="meta">tap untuk memperbesar</span></div><div class="photos">${r.photos.map((ph, i) => photo(`Foto ${i + 1} dari ${r.photos.length} · ${ph.label} · 16:${38 + i}`)).join('')}</div></section>
     <section class="card"><div class="ch"><h2>Catatan</h2></div><p style="font-size:.9rem">${esc(r.notes)}</p></section>
     <section class="card warn"><div class="ch"><h2 class="warn-t">${I.pencil} Riwayat perubahan (${r.changes.length})</h2></div>
       <div style="font-size:.9rem"><b>${esc(pname(ch.by))}</b> (${esc(person(ch.by).role.split(' (')[0])}) mengubah ${esc(ch.field)} <span class="strike">${ch.old}</span> → <b>${ch.new} m3</b> · ${fmtDT(ch.at)} · Laptop kantor</div>
@@ -3518,16 +3509,17 @@ function viewMandor() {
   const week = [['29 Okt', '✓ terkirim 17:10', 'ok-t'], ['28 Okt', '✓ 16:55 · ✎ diubah Wati: parit 350 → 340 m\' (alasan: hasil opname)', ''], ['27 Okt', '✓ terkirim 16:58', 'ok-t']];
   return `<div class="stack">
     <div class="banner">Ini layar HP Pak Toni, bukan layar Bapak. Ditampilkan agar terlihat dari mana angkanya.</div>
-    <section class="card"><div class="row nb" style="padding:0;align-items:center">${avatar('toni', false)}<div class="grow"><div class="t">Pak Toni · Mandor</div><div class="meta">SPK-038 Batu Ampar · HP Android</div></div></div>
-      <div class="chips" style="margin-top:10px;align-items:center"><button class="chip ${synced ? 'ok' : 'muted'}" data-act="signal" aria-pressed="${synced}" style="min-height:40px;padding-inline:12px;font-size:.85rem">${I.signal} ${synced ? q.signal_chip_after : q.signal_chip_before} <span class="tiny" style="color:inherit;opacity:.8">· ketuk (demo)</span></button>${!synced && !sending ? chip('warn', 'Menunggu sinyal: 1') : ''}</div></section>
+    <section class="card"><div class="row nb" style="padding:0;align-items:center">${avatar('toni', false)}<div class="grow"><div class="t">Pak Toni · Mandor</div><div class="meta">SPK-038 Batu Tilam · HP Android</div></div></div>
+      <div class="chips" style="margin-top:10px;align-items:center"><button class="chip ${synced ? 'ok' : 'muted'}" data-act="signal" aria-pressed="${synced}" style="min-height:40px;padding-inline:12px;font-size:.85rem">${I.signal} ${synced ? q.signal_chip_after : q.signal_chip_before} <span class="tiny" style="color:inherit;opacity:.8">· ketuk (demo)</span></button>${!synced && !sending ? chip('warn', 'Menunggu sinyal: 1') : ''}</div>
+      <div style="margin-top:10px;font-size:.95rem" class="${synced ? 'ok-t' : sending ? 'info-t' : 'warn-t'}"><b>${synced ? q.queue_label_after : sending ? 'Mengirim 1 laporan…' : `Tersimpan di HP ${fmtDateShort(q.saved_at)} ${fmtTime(q.saved_at)} · menunggu sinyal (1)`}</b>${synced ? ' · sampai di HP Bapak' : ' · tidak perlu diulang'}</div></section>
     <section class="card"><div class="ch"><h2>Laporan harian</h2>${chip('muted', 'form terisi')}</div>
       <div class="stack" style="gap:8px">${field('Tanggal', esc(q.date_label))}${field('Blok', 'C18 · C19')}${field('Cuaca', esc(q.weather))}${field('Cuci parit hari ini', `${fmtInt(q.output.cuci_parit_m)} m'`)}${field('Pasar pikul hari ini', `${fmtInt(q.output.pasar_pikul_m)} m' <span class="meta">· ${esc(q.labour)}</span>`)}${field('Excavator', `${u.unit_id} · ${esc(u.operator)} · HM ${fmtInt(u.hm_start)} → ${fmtInt(u.hm_end)} (${fmtDec(u.hm, 1)} jam) · solar ${u.fuel_l} L`)}</div>
       <div class="ch" style="margin-top:12px"><h2>Foto (${q.photos.length})</h2></div><div class="photos">${q.photos.map((ph) => photo(ph.label, { stamp: q.photo_stamp })).join('')}</div>
       <div class="card" style="margin-top:12px;background:var(--ai-soft);border-color:transparent"><div class="ch"><h2>Baca nota solar</h2>${aiChip()}</div><div style="font-size:.85rem">Foto nota → <b>85 L · Rp 1.190.000</b> terisi otomatis (contoh)</div></div>
-      <div style="margin-top:12px;font-size:.9rem" class="${synced ? 'ok-t' : sending ? 'info-t' : 'warn-t'}"><b>${synced ? q.queue_label_after : sending ? 'Mengirim 1 laporan…' : `Tersimpan di HP ${fmtDateShort(q.saved_at)} ${fmtTime(q.saved_at)} · menunggu sinyal (1)`}</b>${synced ? '' : ' · tidak perlu diulang'}</div></section>
+</section>
     <section class="card"><div class="ch"><h2>Laporan saya minggu ini</h2></div>
-      <div class="row" style="min-height:40px"><div class="grow" style="font-size:.88rem">30 Okt</div><span class="${synced ? 'ok-t' : 'warn-t'}" style="font-size:.85rem">${synced ? `✓ terkirim ${SYNC_TIME} (31 Okt)` : '⏳ menunggu sinyal'}</span></div>
-      ${week.map(([d, s, c]) => `<div class="row" style="min-height:40px"><div class="grow" style="font-size:.88rem">${d}</div><span class="${c}" style="font-size:.82rem;text-align:right">${s}</span></div>`).join('')}</section>
+      <div class="row" style="min-height:40px"><div style="font-size:.88rem;flex:0 0 3.6em">30 Okt</div><span class="grow ${synced ? 'ok-t' : 'warn-t'}" style="font-size:.85rem;text-align:right">${synced ? `✓ terkirim ${SYNC_TIME} (31 Okt)` : '⏳ menunggu sinyal'}</span></div>
+      ${week.map(([d, s, c]) => `<div class="row" style="min-height:40px"><div style="font-size:.88rem;flex:0 0 3.6em">${d}</div><span class="grow ${c}" style="font-size:.82rem;text-align:right">${s}</span></div>`).join('')}</section>
     <p class="tiny">Antrean offline di demo ini disimulasikan. Di aplikasi asli laporan tersimpan di HP dan terkirim sendiri saat ada sinyal.</p>
     ${synced ? `<button class="btn primary wide" data-go="beranda">Lihat perubahan di Beranda ${I.chev}</button>` : ''}
   </div>`;
@@ -3549,9 +3541,9 @@ function viewUang() {
       <div><div class="meta">Masuk</div><div class="mid num" data-act="nominal" data-arg="masuk">${fmtRp(inT)}</div></div>
       <div><div class="meta">Keluar</div><div class="mid num" data-act="nominal" data-arg="keluar-okt">${fmtRp(outT)}</div></div>
       <div><div class="meta">Selisih kas</div><div class="mid ${inT - outT >= 0 ? 'ok-t' : 'danger-t'}">${fmtRp(inT - outT, { sign: true })}</div></div></div>
-      <div class="tiny" style="margin-top:6px">Masuk = diterima bersih setelah PPN &amp; potongan PPh.</div>
+      <div class="tiny" style="margin-top:6px">Masuk = uang yang benar-benar masuk rekening: nilai termin + PPN 11%, dipotong PPh final 1,75%.</div>
       <div style="margin-top:10px">${cashChart(c.months)}</div>
-      <div class="meta" style="margin-top:6px">Agu &amp; Sep minus: mobilisasi 2 SPK baru. Okt kembali plus.</div></section>
+      <div class="meta" style="margin-top:6px">Agu &amp; Sep minus: mobilisasi 4 SPK baru (Agu–Sep). Okt kembali plus.</div></section>
     <section class="card"><div class="ch"><h2>Kas &amp; bank <span class="num" data-act="trace" data-arg="kas">${fmtRpFull(cashTotal())}</span></h2></div>
       ${kv(c.balances.map((b) => [esc(b.label), fmtRpFull(b.amount)]))}<div class="meta" style="margin-top:6px">Rekonsiliasi ${esc(pname(c.reconciled_by))} ${fmtDT(c.reconciled_at)}</div>
       <div class="card" style="margin-top:12px;background:var(--surface-2);border-color:transparent"><div class="ch"><h2>Kewajiban 30 hari ke depan</h2><b>${fmtRp(obligationsTotal())}</b></div>
@@ -3559,9 +3551,9 @@ function viewUang() {
         <div class="meta" style="margin-top:6px">Kas cukup ±${fmtDec(cashTotal() / obligationsTotal(), 1)} bulan tanpa pemasukan baru.</div></div></section>
     <section class="card" id="piutang"><div class="ch"><h2>Piutang ${fmtRp(receivablesTotal())}</h2>${chip('danger', '1 terlambat')}</div>
       ${rec.slice().sort((a, b) => (b.t.days_overdue || 0) - (a.t.days_overdue || 0)).map(recRow).join('')}
-      <div class="meta" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">Umur: 0–30 hari ${fmtRp(612500000)} · 31–60 hari ${fmtRp(205000000)} · &gt;60 hari Rp 0</div>
+      <div class="meta" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">Umur: 0–30 hari ${fmtRp(ageBucket(rec, 0, 30))} · 31–60 hari ${fmtRp(ageBucket(rec, 31, 60))} · &gt;60 hari ${fmtRp(ageBucket(rec, 61, 9999))}</div>
       <div class="meta" style="margin-top:4px">Dalam proses BAPP (belum invoice): ${bappProcess.map((i) => `${esc(i.project)} ${i.label.split(' · ')[0]} ${fmtRp(i.amount)} (${i.stage === 'ttd_pemilik' ? 'TTD Bapak' : i.stage === 'invoice_prep' ? 'invoice disiapkan' : 'TTD Askep'})`).join(' · ')}</div></section>
-    <section class="card"><div class="ch"><h2>Hutang supplier ${fmtRp(pay.total)}</h2></div>
+    <section class="card"><div class="ch"><h2>Utang pemasok ${fmtRp(pay.total)}</h2></div>
       <div style="font-size:.88rem">Jatuh tempo ≤ 7 hari <b>${fmtRp(pay.due_within_7_days)}</b></div>
       ${pay.rows.slice().sort((a, b) => a.due.localeCompare(b.due)).map((r) => `<div class="row" style="min-height:40px;padding:6px 0"><div class="grow" style="font-size:.85rem">${esc(r.supplier)}<div class="meta">${esc(r.for)}</div></div><div class="right"><b>${fmtRp(r.amount)}</b><div class="meta ${daysBetween(DEMO_DATE, r.due) <= 7 ? 'warn-t' : ''}">${fmtDateShort(r.due)}</div></div></div>`).join('')}</section>
     <section class="card"><div class="ch"><h2>Ke mana uang keluar (Okt)</h2><b>${fmtRp(outT)}</b></div>
@@ -3601,7 +3593,7 @@ function unitSub(e) {
 }
 function viewAlat() {
   const seg = STATE.seg.alat; const c = eqCounts(); const f = STATE.seg.alatFilter;
-  const segs = `<div class="seg" role="tablist"><button class="${seg === 'unit' ? 'sel' : ''}" data-act="seg" data-arg="alat|unit">Unit (${DATA.equipment.length})</button><button class="${seg === 'gudang' ? 'sel' : ''}" data-act="seg" data-arg="alat|gudang">Gudang</button></div>`;
+  const segs = `<div class="seg"><button class="${seg === 'unit' ? 'sel' : ''}" aria-pressed="${seg === 'unit'}" data-act="seg" data-arg="alat|unit">Unit (${DATA.equipment.length})</button><button class="${seg === 'gudang' ? 'sel' : ''}" aria-pressed="${seg === 'gudang'}" data-act="seg" data-arg="alat|gudang">Gudang</button></div>`;
   if (seg === 'gudang') return `<div class="stack">${segs}${viewGudang()}</div>`;
   let list = DATA.equipment.slice();
   if (f === 'excavator' || f === 'dump' || f === 'lain') list = list.filter((e) => unitKind(e) === f); else if (f === 'masalah') list = list.filter(unitProblem);
@@ -3647,9 +3639,9 @@ function viewAlatDetail(id) {
         ${poApproved() ? '' : `<div style="margin-top:10px"><button class="btn primary" data-act="decide" data-arg="PO-2026-0187">Setujui PO di sini</button></div>`}</section>`
     : e.status === 'service' ? `<section class="card"><div class="t info-t" style="font-weight:700">SERVIS · ${esc(e.status_note)}</div></section>`
     : e.status === 'standby' ? `<section class="card"><div class="t" style="font-weight:700">STANDBY · ${esc(e.status_note)}</div><div class="meta">Kemarin: 0 jam, 0 L</div></section>`
-    : `<section class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${chip('ok', 'Beroperasi')}<span class="sub">kemarin ${e.yesterday.hm != null ? `${fmtDec(e.yesterday.hm, 1)} jam` : `${e.yesterday.rit} rit`} · ${fmtL(e.yesterday.fuel_l)}${e.yesterday.output ? ` · ${esc(e.yesterday.output)}` : ''}</span></div></section>`;
-  const fuelCard = e.id === 'EX-07' ? `<section class="card"><div class="ch"><h2>Solar 14 hari (L/jam)</h2>${chip('danger', '6 hari di atas batas')}</div>${fuelBars(e.fuel_14d_l_per_hm, DATA.fuel_anomaly.fleet_avg_l_per_hm)}
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:flex-start"><div style="font-size:.88rem"><b class="num" data-act="trace" data-arg="fuel-EX-07">${fmtDec(DATA.fuel_anomaly.l_per_hm, 1)} L/jam</b> Oktober, naik ${DATA.fuel_anomaly.excess_pct}% dari rata-rata 20 ton standar (${fmtDec(DATA.fuel_anomaly.fleet_avg_l_per_hm, 1)}). Selisih ±${fmtL(DATA.fuel_anomaly.excess_l)} ≈ ${fmtRp(DATA.fuel_anomaly.excess_rp)}. Kemungkinan: injektor, selang bocor, atau pencatatan. Servis terakhir ${esc(DATA.fuel_anomaly.last_service)}.</div>${aiChip()}</div>
+    : `<section class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${chip('ok', 'Beroperasi')}<span class="sub">${e.yesterday ? `kemarin ${e.yesterday.hm != null ? `${fmtDec(e.yesterday.hm, 1)} jam` : `${e.yesterday.rit} rit`} · ${fmtL(e.yesterday.fuel_l)}${e.yesterday.output ? ` · ${esc(e.yesterday.output)}` : ''}` : `kendaraan ringan · solar Okt ${fmtL(e.oct_fuel_l || 0)} · tanpa laporan jam/rit`}</span></div></section>`;
+  const fuelCard = e.id === 'EX-07' ? `<section class="card"><div class="ch"><h2>Solar 14 hari (L/jam)</h2>${chip('danger', `${e.fuel_14d_l_per_hm.filter((v) => v > DATA.fuel_anomaly.fleet_avg_l_per_hm * 1.12).length} hari di atas batas`)}</div>${fuelBars(e.fuel_14d_l_per_hm, DATA.fuel_anomaly.fleet_avg_l_per_hm)}
+      <div style="margin-top:10px"><div style="margin-bottom:6px">${aiChip()}</div><div style="font-size:.88rem"><b class="num" data-act="trace" data-arg="fuel-EX-07">${fmtDec(DATA.fuel_anomaly.l_per_hm, 1)} L/jam</b> Oktober, naik ${DATA.fuel_anomaly.excess_pct}% dari rata-rata 20 ton standar (${fmtDec(DATA.fuel_anomaly.fleet_avg_l_per_hm, 1)}). Selisih ±${fmtL(Math.round(DATA.fuel_anomaly.excess_l / 10) * 10)} ≈ ${fmtRp(DATA.fuel_anomaly.excess_rp)}. Kemungkinan: injektor, selang bocor, atau pencatatan. Servis terakhir ${esc(DATA.fuel_anomaly.last_service)}.</div></div>
       <div class="meta" style="margin-top:6px">${esc(DATA.fuel_anomaly.suggestion)}</div></section>` : '';
   const partsRows = e.id === 'EX-08' ? DATA.parts_chains.filter((c) => c.unit_id === 'EX-08').map((c) => `<div class="row tap" data-go="sparepart-${chainKey(c)}"><div class="grow" style="font-size:.88rem"><b>${esc(c.name.split(' (')[0])}</b> · P/N ${esc(c.part_no)}<div class="meta">S/N ${esc(c.serial)} · ${c.po_no} · ${c.status === 'complete' ? `terpasang ${fmtDate(c.steps[5].at)} · ${pname(c.steps[5].by)} · HM 6.102 · rantai lengkap ✓` : poApproved() ? `<span class="ok-t">disetujui ${APPROVAL_TIME}, menunggu barang</span>` : '<span class="danger-t">menunggu Bapak</span>'}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div>`).join('') + `<div class="row"><div class="grow" style="font-size:.88rem"><b>Bucket teeth set</b> · 5 pcs<div class="meta">2 Sep 2026 · Budi · HM 6.480 · bon BK-2026-0301</div></div></div>`
     : e.id === 'EX-06' ? `<div class="row tap" data-go="sparepart-AK-2026-7781"><div class="grow" style="font-size:.88rem"><b>Aki N150 ×2</b> · S/N AK-2026-7781 / 7782<div class="meta warn-t">keluar gudang 27 Okt ke Budi · <b>belum tercatat terpasang (4 hari)</b></div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div>`
@@ -3672,7 +3664,7 @@ function viewAlatDetail(id) {
 function chainSteps(c) {
   const rows = c.steps.map((s) => {
     let cls = s.done ? 'done' : s.broken ? 'broken' : 'future'; let who = '', note = s.note ? esc(s.note) : '';
-    if (s.demo_fills) { if (poApproved()) { cls = 'done'; who = `${esc(OWNER_NAME)} · ${fmtDate(DEMO_DATE)} ${APPROVAL_TIME} · dari HP`; note = ''; } else { cls = 'cur'; who = '<span class="danger-t strong">Menunggu Bapak</span>'; note = `<button class="btn primary sm" data-act="decide" data-arg="PO-2026-0187" style="margin-top:6px">Setujui di sini</button>`; } }
+    if (s.demo_fills) { if (poApproved()) { cls = 'done'; who = `${esc(OWNER_NAME)} · ${fmtDateShort(DEMO_DATE)} ${APPROVAL_TIME} · dari HP`; note = ''; } else { cls = 'cur'; who = '<span class="danger-t strong">Menunggu Bapak</span>'; note = `<button class="btn primary sm" data-act="decide" data-arg="PO-2026-0187" style="margin-top:6px">Setujui di sini</button>`; } }
     else if (s.done) who = `${esc(s.by === 'owner' ? OWNER_NAME : pname(s.by))} · ${fmtDT(s.at)}${s.device ? ` · ${esc(s.device)}` : ''}${s.photos ? ` · ${s.photos} foto` : ''}`;
     else if (s.broken) who = '';
     else who = s.by ? `${esc(pname(s.by))}` : '';
@@ -3701,7 +3693,7 @@ function viewSparepart(key) {
 // ── Views: Jejak (aktivitas · orang) ──────────────────────────────────────────────────────────────────────────────
 function auditRows() {
   const rows = DATA.audit_log.map((r) => ({ ...r }));
-  if (STATE.synced) rows.unshift({ at: `${DEMO_DATE}T${SYNC_TIME}`, by: 'toni', action: 'laporan harian 30 Okt terkirim', object: 'Batu Ampar · disimpan di HP 30 Okt 16:50 · 2 foto', device: 'HP Android' });
+  if (STATE.synced) rows.unshift({ at: `${DEMO_DATE}T${SYNC_TIME}`, by: 'toni', action: 'laporan harian 30 Okt terkirim', object: 'Batu Tilam · disimpan di HP 30 Okt 16:50 · 2 foto', device: 'HP Android' });
   for (const a of DATA.approvals) { const d = STATE.approvals[a.id]; if (d) rows.unshift({ at: `${DEMO_DATE}T${d.at}`, by: 'owner', action: d.status === 'approved' ? (a.id.startsWith('BAPP') ? 'menandatangani' : 'menyetujui') : 'menolak', object: `${a.id.startsWith('BAPP') ? 'BAPP T2 Sungai Dua' : a.id === 'PO-2026-0187' ? 'PO-2026-0187 · Final drive kanan EX-08' : a.title} · ${fmtRpFull(a.amount)}${d.status === 'rejected' ? ` · alasan: ${d.reason}` : ''}`, device: 'HP' }); }
   rows.sort((a, b) => b.at.localeCompare(a.at));
   return rows;
@@ -3713,16 +3705,16 @@ function viewJejak() {
   const row = (r) => { const p = r.by === 'owner' ? person('owner') : person(r.by); const change = r.kind === 'change';
     let obj = esc(r.object); if (change) obj = obj.replace(/(\d+) → (\d+)/, '<span class="chg">$1</span> → <b>$2</b>');
     return `<div class="row"><span class="av s">${esc(p.initial)}</span><div class="grow a"><b>${esc(p.name)}</b> <span class="meta">(${esc(p.role.split(' (')[0])})</span> — ${change ? `<b class="warn-t">${I.pencil} ${esc(r.action)}</b>` : esc(r.action)} — ${obj}${r.reason ? `<div class="meta">alasan: ${esc(r.reason)}</div>` : ''}${r.note ? `<div class="meta">${esc(r.note)}</div>` : ''}<div class="meta">${whenLabel(r.at)} · ${esc(r.device)}${r.flag ? ` ${chip(r.kind === 'late' ? 'warn' : 'warn', esc(r.flag))}` : ''}</div></div></div>`; };
-  const segs = `<div class="seg"><button class="${seg === 'aktivitas' ? 'sel' : ''}" data-act="seg" data-arg="jejak|aktivitas">Aktivitas</button><button class="${seg === 'orang' ? 'sel' : ''}" data-act="seg" data-arg="jejak|orang">Orang</button></div>`;
+  const segs = `<div class="seg"><button class="${seg === 'aktivitas' ? 'sel' : ''}" aria-pressed="${seg === 'aktivitas'}" data-act="seg" data-arg="jejak|aktivitas">Aktivitas</button><button class="${seg === 'orang' ? 'sel' : ''}" aria-pressed="${seg === 'orang'}" data-act="seg" data-arg="jejak|orang">Orang</button></div>`;
   if (seg === 'orang') {
-    const ps = DATA.people_stats.map((s) => { const p = person(s.person_id); const tone = s.person_id === 'toni' && STATE.synced ? 'ok' : s.tone; const note = s.person_id === 'toni' && STATE.synced ? s.note.replace(' · 1 belum diterima', ' · semua diterima') : s.note;
-      return `<div class="row">${avatar(s.person_id)}<div class="grow"><div class="t" style="font-size:.9rem">${esc(p.name)} <span class="meta">· ${esc(p.role.split(' (')[0])}</span></div><div class="meta">${s.inputs_month} ${/Mandor/.test(p.role) ? 'laporan' : /Keuangan/.test(p.role) ? 'transaksi' : /Purchasing/.test(p.role) ? 'PO' : /Mekanik/.test(p.role) ? 'work order' : 'input'} · ${s.corrections} koreksi${s.avg_time ? ` · rata-rata ${s.avg_time}` : ''}${s.late ? ` · ${s.late} kali terlambat` : ''}</div><div class="tiny">${esc(note)}</div></div>${chip(tone, tone === 'ok' ? 'baik' : 'perlu perhatian')}</div>`; }).join('');
+    const ps = DATA.people_stats.map((s) => { const p = person(s.person_id); const tone = s.person_id === 'toni' && STATE.synced ? 'ok' : s.tone; const note = s.person_id === 'toni' && STATE.synced ? 'laporan 30 Okt diterima 08:16' : s.note;
+      return `<div class="row">${avatar(s.person_id)}<div class="grow"><div class="t" style="font-size:.9rem">${esc(p.name)} <span class="meta">· ${esc(p.role.split(' (')[0])}</span></div><div class="meta">${s.inputs_month} ${/Mandor/.test(p.role) ? 'laporan' : /Keuangan/.test(p.role) ? 'transaksi' : /Purchasing/.test(p.role) ? 'PO' : /Mekanik/.test(p.role) ? 'work order' : 'input'} · ${s.corrections} koreksi${s.avg_time ? ` · rata-rata ${s.avg_time}` : ''}${s.late ? ` · ${s.late} kali terlambat` : ''}</div>${note ? `<div class="tiny">${esc(note)}</div>` : ''}</div>${tone === 'ok' ? '' : chip('warn', 'ada yang terbuka')}</div>`; }).join('');
     return `<div class="stack">${segs}<div class="banner">Jejak ini adalah tanggung jawab dan perlindungan: entri yang benar melindungi admin juga.</div>
       <div class="group"><button class="gh" data-act="toggle" data-arg="orangOpen">${I.user} Lihat per orang (${DATA.people_stats.length})<span style="margin-left:auto" class="chev">${STATE.orangOpen ? '▾' : '▸'}</span></button>${STATE.orangOpen ? `<div class="gb">${ps}</div>` : ''}</div>
       <section class="card"><div class="ch"><h2>Siapa boleh apa</h2></div><ul style="margin:0;padding-left:18px;font-size:.88rem;display:grid;gap:4px">${DATA.roles_card.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></section></div>`;
   }
   return `<div class="stack">${segs}
-    <div class="chips scroll">${[['semua', '7 hari'], ['hari', 'Hari ini'], ['ubah', 'Perubahan saja'], ['telat', 'Terlambat / terbuka']].map(([k, l]) => `<button class="fchip ${f === k ? 'sel' : ''}" data-act="seg" data-arg="jejakFilter|${k}">${l}</button>`).join('')}</div>
+    <div class="chips scroll">${[['semua', '7 hari'], ['hari', 'Hari ini'], ['ubah', 'Koreksi'], ['telat', 'Perlu dicek']].map(([k, l]) => `<button class="fchip ${f === k ? 'sel' : ''}" data-act="seg" data-arg="jejakFilter|${k}">${l}</button>`).join('')}</div>
     <section class="card audit" style="padding-top:2px;padding-bottom:2px">${rows.map(row).join('')}${rows.length ? '' : '<p class="sub" style="padding:12px 0">Tidak ada entri.</p>'}</section>
     <section class="card" style="font-size:.88rem">Dihapus: <b>${foot.deleted}</b> (${esc(foot.deleted_note)}) · Koreksi bulan ini: <b>${foot.corrections_month}</b> (${esc(foot.corrections_note)})</section>
   </div>`;
@@ -3734,9 +3726,9 @@ function sheetDecision(id) {
   const chainIds = a.chain; const doneUpTo = d && d.status === 'approved' ? chainIds.length : chainIds.length - 1;
   let rows, title, okLabel;
   if (id === 'PO-2026-0187') { const c = DATA.parts_chains[0]; title = `Setujui ${id}?`; okLabel = 'Setujui';
-    rows = kv([['Barang', `${esc(c.name.split(' (')[0])}, Excavator 20 ton<br><span class="meta">P/N ${esc(c.part_no)} · S/N ${esc(c.serial)}</span>`], ['Harga', `${fmtRpFull(a.amount)}<br><span class="meta">termasuk PPN · garansi 6 bulan · 3 hari</span>`], ['Pemasok', esc(a.supplier)], ['Alasan', `<span style="font-weight:500">${esc(a.reason)}</span>`]])
+    rows = kv([['Barang', `${esc(c.name.split(' (')[0])}, Excavator 20 ton<br><span class="meta">P/N ${esc(c.part_no)} · S/N ${esc(c.serial)}</span>`], ['Harga', `${fmtRpFull(a.amount)}<br><span class="meta">termasuk PPN · garansi ${esc(c.quotes[0].warranty)} · tiba ${esc(c.quotes[0].lead)}</span>`], ['Pemasok', esc(a.supplier)], ['Alasan', `<span style="font-weight:500">${esc(a.reason)}</span>`]])
       + `<div class="meta" style="margin-top:8px">Penawaran dibandingkan: ${c.quotes.map((q) => `${esc(q.supplier)} ${fmtRp(q.amount)}`).join(' · ')}</div>
-      <div style="margin-top:8px;display:flex;gap:8px;align-items:flex-start"><span style="font-size:.85rem">${esc(a.context_price)}</span>${aiChip()}</div>
+      <div style="margin-top:8px"><div style="margin-bottom:4px">${aiChip()}</div><span style="font-size:.85rem">${esc(a.context_price)}</span></div>
       <div style="font-size:.85rem;margin-top:4px" class="danger-t">${esc(a.context_impact)}</div>`; }
   else if (id === 'BAPP-052-T2') { const t = project('SPK-052').termin[1]; title = 'Tandatangani BAPP Termin 2 Sungai Dua?'; okLabel = 'Tandatangani';
     rows = kv([['Nomor', `${esc(t.bapp_no)}<br><span class="meta">Opname ${fmtDateShort(t.opname_date)} · galian 24.000 m3, tanggul 1.950 m3</span>`], ['Nilai termin', `${fmtRpFull(t.amount)} (${t.pct}%)`], ['Sudah TTD', `${esc(t.client_signers)} · ${fmtDateShort(t.client_signed)}`], ['Disiapkan', `${esc(pname(t.uploaded_by))} · diunggah ${fmtDT(t.uploaded_at)} (foto BAPP)`]])
@@ -3760,7 +3752,7 @@ function decide(id, status, reason) {
 function sheetNotif() {
   const rows = DATA.notifications.map((n) => { const done = n.link.startsWith('approval:') && STATE.approvals[n.link.slice(9)]; const read = STATE.notifRead || done;
     return `<div class="row tap" data-act="link" data-arg="${n.link}" style="align-items:flex-start"><span style="width:10px;height:10px;border-radius:50%;background:${read ? 'transparent' : 'var(--danger)'};margin-top:7px;flex:none"></span><div class="grow" style="font-size:.9rem;${read ? 'color:var(--muted)' : 'font-weight:600'}">${esc(n.text)}${done ? ' <span class="ok-t">✓ selesai</span>' : ''}<div class="meta" style="font-weight:400">${whenLabel(n.at)}</div></div></div>`; }).join('');
-  openSheet('notif', 'Pemberitahuan', `<div>${rows}</div><div class="tiny">Ringkasan pagi dikirim setiap 07:00 (contoh).</div>`, { head: `<button class="link" data-act="notif-read" style="min-height:36px">Tandai sudah dibaca</button>` });
+  openSheet('notif', 'Pemberitahuan', `<div>${rows}</div><div class="tiny">Ringkasan pagi dibuat otomatis setiap pukul 06.00 (contoh).</div>`, { head: `<button class="link" data-act="notif-read" style="min-height:36px">Tandai sudah dibaca</button>` });
 }
 function sheetTermin(pid, code) {
   const p = project(pid); const t = p.termin.find((x) => x.code === code); if (!t) return; const cl = client(p.client_id);
@@ -3771,13 +3763,13 @@ function sheetTermin(pid, code) {
   if (t.invoice_no) rows.push(['Invoice', `${t.invoice_no} · ${fmtDateShort(t.invoice_date)}`]);
   if (t.due_date) rows.push(['Jatuh tempo', `${fmtDateShort(t.due_date)}${t.days_to_due ? ` · ${t.days_to_due} hari lagi · PIC ${esc(pname(t.pic))}` : t.days_overdue ? ` · <span class="danger-t strong">lewat ${t.days_overdue} hari</span>` : ''}`]);
   if (t.status === 'awaiting_owner') rows.push(['Status', bappSigned() ? `TTD Bapak ${APPROVAL_TIME} · invoice disiapkan Sari` : `menunggu TTD Bapak · ${esc(t.next_step)}`]);
-  if (t.status === 'awaiting_client') rows.push(['Status', `draft ${esc(pname(t.draft_by))} ${fmtDT(t.draft_at)} · menunggu ${esc(t.waiting_on)} (${t.days_in_stage} hari) · ${esc(t.next_step)}`]);
+  if (t.status === 'awaiting_client') rows.push(['Status', `draft ${esc(pname(t.draft_by))} ${fmtDT(t.draft_at)} · menunggu ${esc(t.waiting_on)} · ${t.days_in_stage} hari · ${esc(t.next_step)}`]);
   if (t.status === 'not_yet') rows.push(['Syarat', esc(t.condition) + (t.forecast_ready ? ` · perkiraan ${fmtDateShort(t.forecast_ready)}` : '')]);
   let money = '';
   if (t.ppn != null) { const projected = t.status !== 'paid';
-    money = `<table class="tbl"><tr><td>Nilai termin</td><td class="r">${fmtRpFull(t.amount)}</td></tr><tr><td>PPN 11%</td><td class="r">${fmtRpFull(t.ppn)}</td></tr><tr><td><b>Total invoice</b></td><td class="r"><b>${fmtRpFull(t.invoice_total)}</b></td></tr><tr><td>Dipotong PPh final 1,75%</td><td class="r">−${fmtRpFull(t.pph_final)}</td></tr><tr><td><b>${projected ? 'Perkiraan diterima bersih' : 'Diterima bersih'}</b>${t.paid_date ? ` · ${fmtDateShort(t.paid_date)}` : ''}</td><td class="r"><b class="ok-t">${fmtRpFull(t.net_received)}</b></td></tr></table>${t.recorded_by ? `<div class="meta">bukti transfer · dicatat ${esc(pname(t.recorded_by))}</div>` : ''}`; }
+    money = `<table class="tbl"><tr><td>Nilai termin</td><td class="r">${fmtRpFull(t.amount)}</td></tr><tr><td>PPN 11% (12% × DPP 11/12)</td><td class="r">${fmtRpFull(t.ppn)}</td></tr><tr><td><b>Total invoice</b></td><td class="r"><b>${fmtRpFull(t.invoice_total)}</b></td></tr><tr><td>Dipotong PPh final 1,75%</td><td class="r">−${fmtRpFull(t.pph_final)}</td></tr><tr><td><b>${projected ? 'Perkiraan diterima bersih' : 'Diterima bersih'}</b>${t.paid_date ? ` · ${fmtDateShort(t.paid_date)}` : ''}</td><td class="r"><b class="ok-t">${fmtRpFull(t.net_received)}</b></td></tr></table>${t.recorded_by ? `<div class="meta">bukti transfer · dicatat ${esc(pname(t.recorded_by))}</div>` : ''}`; }
   else if (t.status === 'invoiced') { const ppn = Math.round(t.amount * DATA.meta.ppn_rate), pph = Math.round(t.amount * DATA.meta.pph_final_rate);
-    money = `<table class="tbl"><tr><td>Nilai termin</td><td class="r">${fmtRpFull(t.amount)}</td></tr><tr><td>PPN 11%</td><td class="r">${fmtRpFull(ppn)}</td></tr><tr><td><b>Total invoice</b></td><td class="r"><b>${fmtRpFull(t.amount + ppn)}</b></td></tr><tr><td>Dipotong PPh final 1,75%</td><td class="r">−${fmtRpFull(pph)}</td></tr><tr><td><b>Perkiraan diterima bersih</b></td><td class="r"><b>${fmtRpFull(t.amount + ppn - pph)}</b></td></tr></table>`; }
+    money = `<table class="tbl"><tr><td>Nilai termin</td><td class="r">${fmtRpFull(t.amount)}</td></tr><tr><td>PPN 11% (12% × DPP 11/12)</td><td class="r">${fmtRpFull(ppn)}</td></tr><tr><td><b>Total invoice</b></td><td class="r"><b>${fmtRpFull(t.amount + ppn)}</b></td></tr><tr><td>Dipotong PPh final 1,75%</td><td class="r">−${fmtRpFull(pph)}</td></tr><tr><td><b>Perkiraan diterima bersih</b></td><td class="r"><b>${fmtRpFull(t.amount + ppn - pph)}</b></td></tr></table>`; }
   else money = `<div class="sub">Nilai termin <b>${fmtRpFull(t.amount)}</b> (${t.pct}% dari ${fmtRpFull(p.contract_value)})</div>`;
   const btn = t.status === 'awaiting_owner' && !bappSigned() ? `<button class="btn primary wide" data-act="decide" data-arg="BAPP-052-T2">Tandatangani BAPP</button>` : (t.bapp_no || t.invoice_no) ? `<button class="btn outline wide" data-act="toast" data-arg="Contoh: di aplikasi asli PDF BAPP/invoice terbuka.">Lihat PDF (contoh)</button>` : '';
   openSheet('termin', `${code === 'RET' ? 'Retensi' : code === 'DP' ? 'Uang muka' : 'Termin ' + code.slice(1)} · ${esc(p.short_name)}`, `<div class="meta">${esc(cl.name)} · SPK ${esc(p.spk_no)}</div>${rows.length ? kv(rows) : ''}<div>${money}</div>${btn}`);
@@ -3794,12 +3786,10 @@ function sheetTrace(key) {
   const xls = `<div class="xls"><div class="bar">${esc(ov.file)}</div><div class="scrollx"><table><tr><th></th>${ov.columns.map((c, i) => `<th>${String.fromCharCode(65 + i)}</th>`).join('')}</tr><tr><th>1</th>${ov.columns.map((c) => `<td style="font-weight:700">${esc(c)}</td>`).join('')}</tr><tr><th>2</th>${ov.row.map((c, i) => `<td class="${i === 4 ? 'hl' : ''}">${esc(c)}</td>`).join('')}</tr><tr><th>3</th>${ov.columns.map(() => '<td></td>').join('')}</tr></table></div><div class="cmt">💬 ${esc(ov.comment)}</div></div>
     <ul style="margin:8px 0 0;padding-left:18px;font-size:.88rem;display:grid;gap:4px">${ov.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>
     <p style="font-size:.88rem;margin-top:10px"><b>Ini soal alatnya, bukan orangnya:</b> Wati tetap yang mengisi, hanya jejaknya sekarang ikut tersimpan.</p>`;
-  const flip = rec.spreadsheet ? `<div class="seg flip"><button class="${view === 'app' ? 'sel' : ''}" data-act="traceview" data-arg="app">Aplikasi</button><button class="${view === 'xls' ? 'sel' : ''}" data-act="traceview" data-arg="xls">Spreadsheet</button></div>` : '';
+  const flip = rec.spreadsheet ? `<div class="seg flip"><button class="${view === 'app' ? 'sel' : ''}" aria-pressed="${view === 'app'}" data-act="traceview" data-arg="app">Aplikasi</button><button class="${view === 'xls' ? 'sel' : ''}" aria-pressed="${view === 'xls'}" data-act="traceview" data-arg="xls">Spreadsheet</button></div>` : '';
   const body = rec.spreadsheet && view === 'xls' ? xls : app;
   const footBtn = rec.spreadsheet && view === 'app' ? `<button class="btn outline wide" data-act="traceview" data-arg="xls">${I.xls} Lihat versi spreadsheet</button>` : '';
   openSheet('trace', 'Jejak angka', `${flip}<div>${body}</div>${footBtn}`, { arg: key });
-  // keep the sheet scrolled to the top on a flip
-  const sb = document.querySelector('.sheet .sb'); if (sb) sb.scrollTop = 0;
 }
 function sheetNominal(key) {
   const map = { kas: ['Kas & bank', cashTotal()], piutang: ['Piutang', receivablesTotal()], keluar: ['Kas keluar hari ini', todayOutTotal()], masuk: ['Masuk Oktober (diterima bersih)', octInTotal()], 'keluar-okt': ['Keluar Oktober', octOutTotal()] };
@@ -3831,24 +3821,29 @@ function sheetTentang() {
     <section class="card summary"><div class="ch"><h2>Kalau Bapak tertarik</h2></div><p style="font-size:.95rem;font-weight:600">${esc(DATA.next_step_card.replace('Kalau Bapak tertarik: ', ''))}</p></section>
     <section class="card"><div class="ch"><h2>Tahap pembangunan (jika ya)</h2></div><ol style="margin:0;padding-left:18px;font-size:.88rem;display:grid;gap:4px"><li>Laporan harian lapangan + progres + ringkasan WhatsApp</li><li>Gudang &amp; sparepart (nomor seri, bon keluar, pemasangan)</li><li>Keuangan &amp; BAPP (termin, invoice, piutang)</li></ol></section>
     <section class="card"><div class="ch"><h2>Yang belum ada di contoh ini</h2></div><p class="sub">login, cetak BAPP PDF, peta, penggajian, pajak, sinkronisasi sungguhan.</p></section>
-    <section class="card"><div class="ch"><h2>Tema</h2></div><div class="seg"><button class="${theme === '' ? 'sel' : ''}" data-act="theme" data-arg="">Otomatis</button><button class="${theme === 'light' ? 'sel' : ''}" data-act="theme" data-arg="light">Terang</button><button class="${theme === 'dark' ? 'sel' : ''}" data-act="theme" data-arg="dark">Gelap</button></div></section>
+    <section class="card"><div class="ch"><h2>Tema</h2></div><div class="seg"><button class="${theme === '' ? 'sel' : ''}" aria-pressed="${theme === ''}" data-act="theme" data-arg="">Otomatis</button><button class="${theme === 'light' ? 'sel' : ''}" aria-pressed="${theme === 'light'}" data-act="theme" data-arg="light">Terang</button><button class="${theme === 'dark' ? 'sel' : ''}" aria-pressed="${theme === 'dark'}" data-act="theme" data-arg="dark">Gelap</button></div></section>
     <section class="card"><div class="ch"><h2>Pasang di layar utama</h2></div><p class="sub">Android (Chrome): menu ⋮ → "Tambahkan ke layar utama". iPhone (Safari): tombol Bagikan → "Tambah ke Layar Utama". Perlu alamat web (bukan file), misalnya GitHub Pages.</p></section>
     <button class="btn outline wide" data-act="reset">Reset data demo</button>
     <div class="tiny" style="text-align:center">Versi: mockup ${fmtDate(DEMO_DATE)} · ${esc(DATA.meta.company)}</div>`);
 }
 function sheetPhoto(caption) {
-  openSheet('photo', 'Foto (contoh)', `${photo(caption, { lg: true })}<div class="meta">diambil ${/\d\d:\d\d/.test(caption) ? caption.match(/\d\d:\d\d/)[0] : '30 Okt 16:40'} · GPS Afd. III (contoh) · tersimpan bersama laporannya, tidak terpisah di WhatsApp</div><button class="btn outline wide" data-act="close">Tutup</button>`);
+  const t = (caption.match(/\d\d:\d\d/) || [])[0];
+  const doc = /BAPP|Opname|Mutasi|Buku kas|Invoice|Tanda terima|Chat WA|Bon solar|Panel HM/.test(caption);
+  const batuTilam = /C18|C19|Batu Tilam|Parit C/.test(caption);
+  const meta = doc ? 'dokumen diunggah dari aplikasi (contoh)' : `diambil ${batuTilam ? '30 Okt 16:48' : (t ? '30 Okt ' + t : '27 Okt 09:08')} · ${batuTilam ? 'GPS Afd. II, Blok C18' : 'GPS Afd. III'} (contoh)`;
+  openSheet('photo', 'Foto (contoh)', `${photo(caption, { lg: true })}<div class="meta">${meta} · tersimpan bersama laporannya, tidak terpisah di WhatsApp</div><button class="btn outline wide" data-act="close">Tutup</button>`);
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────────────────────────────────────────
 const TITLES = { beranda: () => `${fmtLong(DEMO_DATE).replace(MONTHS_LONG[9], 'Okt')}<small>${esc(DATA.meta.company)}</small>`, proyek: () => 'Proyek', uang: () => 'Uang', alat: () => 'Alat', gudang: () => 'Alat', jejak: () => 'Jejak', mandor: () => 'Sisi mandor <small>contoh layar HP Pak Toni</small>' };
+let lastRoute = null;
 function render(opts = {}) {
   const r = STATE.route; const { base, arg } = routeParts(r); const tab = tabOf(r);
   let title, body, back = null;
   if (base === 'beranda') body = viewBeranda();
   else if (base === 'proyek' && !arg) body = viewProyek();
   else if (base === 'proyek') { const p = project(arg); title = p ? esc(p.short_name) : 'Proyek'; back = 'proyek'; body = viewProyekDetail(arg); }
-  else if (base === 'laporan') { title = 'Laporan harian <small>Bukit Tiga · hasil input mandor</small>'; back = 'proyek-SPK-047'; body = viewLaporan(); }
+  else if (base === 'laporan') { title = 'Laporan harian <small>Bukit Tiga · 30 Okt · Pak Ujang</small>'; back = 'proyek-SPK-047'; body = viewLaporan(); }
   else if (base === 'mandor') { back = 'beranda'; body = viewMandor(); }
   else if (base === 'uang') body = viewUang();
   else if (base === 'alat' && !arg) { STATE.seg.alat = 'unit'; body = viewAlat(); }
@@ -3865,7 +3860,7 @@ function render(opts = {}) {
     <button class="ibtn" data-act="tentang" aria-label="Tentang contoh ini"><span class="av">${esc(OWNER_INITIAL)}</span></button></header>`;
   const tabs = `<nav class="tabbar"><div class="strip" data-act="tentang">${esc(DATA.meta.disclaimer)}</div><div class="tabs">${TABS.map(([k, l, ic]) => `<button class="${tab === k ? 'sel' : ''}" data-tab="${k}" data-go="${k}" aria-current="${tab === k ? 'page' : 'false'}">${ic}<span>${l}</span></button>`).join('')}</div></nav>`;
   const fab = !back && base !== 'mandor' ? `<button class="fab" data-act="tanya" aria-label="Tanya data">${I.chat} Tanya</button>` : '';
-  document.getElementById('app').innerHTML = `<div class="app">${hdr}<main class="view" data-route="${esc(r)}">${body}</main>${fab}${tabs}</div>`;
+  document.getElementById('app').innerHTML = `<div class="app">${hdr}<main class="view${r !== lastRoute ? ' enter' : ''}" data-route="${esc(r)}">${body}</main>${fab}${tabs}</div>`; lastRoute = r;
   if (sheetOpen && opts.refreshSheet !== false) refreshSheet();
 }
 function refreshSheet() { const s = sheetOpen; if (!s) return; if (s.kind === 'decision') sheetDecision(s.arg); else if (s.kind === 'tanya') { /* keep */ } }
@@ -3907,8 +3902,9 @@ document.addEventListener('click', (e) => {
   const act = el.getAttribute('data-act'); const fn = ACTIONS[act]; if (fn) { e.preventDefault(); fn(el.getAttribute('data-arg')); }
 });
 document.addEventListener('submit', (e) => { const f = e.target.closest('[data-act="tanya-form"]'); if (!f) return; e.preventDefault(); const v = (document.getElementById('tanya-input') || {}).value || ''; if (v.trim()) sheetTanya(null, v.trim()); });
-document.addEventListener('input', (e) => { if (e.target.id === 'gudang-q') { STATE.seg.gudangQ = e.target.value; const pos = e.target.selectionStart; render({ keepScroll: true }); const el = document.getElementById('gudang-q'); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (err) { /* ignore */ } } } });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+document.addEventListener('compositionend', (e) => { if (e.target.id === 'gudang-q') e.target.dispatchEvent(new Event('input', { bubbles: true })); });
+document.addEventListener('input', (e) => { if (e.target.id === 'gudang-q' && !e.isComposing) { STATE.seg.gudangQ = e.target.value; const pos = e.target.selectionStart; render({ keepScroll: true }); const el = document.getElementById('gudang-q'); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (err) { /* ignore */ } } } });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeSheet(); return; } if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[role="button"][data-go], [role="button"][data-act]')) { e.preventDefault(); e.target.click(); } });
 
 // ── Splash & start ────────────────────────────────────────────────────────────────────────────────────────────────
 function splash() {

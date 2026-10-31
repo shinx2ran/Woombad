@@ -44,7 +44,7 @@ test.describe('Mockup kontraktor sawit', () => {
     await expect(page.locator('.badge')).toHaveText('2')
     await expect(page.getByText('PO disetujui Bapak 08:14', { exact: false }).first()).toBeVisible()
     await page.goto(`${FILE}#sparepart-FD-2026-04417`)
-    await expect(page.getByText('Pak Rahmat · 31 Okt 2026 08:14 · dari HP')).toBeVisible()
+    await expect(page.getByText('Pak Rahmat · 31 Okt 08:14 · dari HP')).toBeVisible()
     await page.goto(`${FILE}#jejak`)
     await expect(page.locator('.audit .row').first()).toContainText('menyetujui')
   })
