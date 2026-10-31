@@ -56,7 +56,7 @@ test.describe('Mockup kontraktor sawit', () => {
     const sheet = page.getByRole('dialog')
     await expect(sheet).toContainText('Pak Ujang')
     await expect(sheet).toContainText('240 m3')
-    await sheet.getByRole('button', { name: 'Spreadsheet' }).click()
+    await sheet.getByRole('button', { name: 'Spreadsheet', exact: true }).click()
     await expect(page.getByRole('dialog')).toContainText('Diubah oleh: ?')
     await page.keyboard.press('Escape')
     await page.locator('[data-act="termin"][data-arg="SPK-047|T1"]').click()

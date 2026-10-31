@@ -11,7 +11,7 @@ fiktif", dan setiap fitur AI ditandai "Contoh fitur AI".
 
 | Klaim | Di mana terlihat di mockup |
 |---|---|
-| Pemilik bisa lihat progres kerja dan uang dari HP, sudah diolah, bukan tabel mentah | Beranda (3 ubin: belum ditagih, lewat jatuh tempo, unit berhenti), Proyek, Uang |
+| Pemilik bisa lihat progres kerja dan uang dari HP, sudah diolah, bukan tabel mentah | Beranda (3 ubin: belum ditagih, lewat jatuh tempo, unit berhenti; kartu "Semua proyek sekilas": realisasi vs rencana semua SPK dalam satu pandangan), Proyek ("Jadwal & progres"), Uang |
 | Setiap angka ada jejaknya: siapa yang mengisi, kapan, dari HP mana, dengan foto apa | Ketuk angka bergaris putus (72%, 420 m3, Rp 1,86 M, 28,6 L/jam, Rp 205 jt) → "Jejak angka"; tab Jejak |
 | Barang bisa ditelusuri: PO → terima gudang → keluar ke mekanik → terpasang di unit mana, dengan nomor seri | Alat → unit EX-08 → "Sparepart terpasang" → rantai barang; Gudang → "Keluar gudang 7 hari" |
 
@@ -35,10 +35,11 @@ Prinsip: **serahkan HP-nya ke Bapak**, biarkan beliau yang mengetuk. Diam lebih 
 | Menit | Ketukan | Kalimat yang diucapkan |
 |---|---|---|
 | 0:00 | Buka ikon. Layar sambutan "Selamat pagi, Pak …". | "Pak, ini bukan aplikasi jadi. Ini contoh tampilan kalau rekap admin dibaca dari HP. Semua angkanya fiktif. Coba Bapak pegang." Diam 10 detik. |
-| 0:30 | Beranda. Tunjuk 3 ubin: Rp 1,46 M · Rp 205 jt · 1 unit berhenti. Minta beliau membaca kartu kuning "Ringkasan pagi ini". | "Tidak ada yang mengetik ini, Pak. Dirangkum dari laporan mandor dan admin kemarin." Tunjuk chip "Contoh fitur AI". |
+| 0:30 | Beranda. Tunjuk 3 ubin: Rp 1,46 M · Rp 205 jt · 1 unit berhenti. Lalu kartu "Semua proyek sekilas": 63% dari Rp 5,47 M, rencana 62%, satu bar per proyek, Batu Ampar merah. | "Ini semua pekerjaan Bapak dalam satu pandangan: isi hijau yang sudah terpasang, tanda tegak rencananya hari ini. Yang merah itu yang di belakang." |
+| 0:50 | Minta beliau membaca kartu kuning "Ringkasan pagi ini". | "Tidak ada yang mengetik ini, Pak. Dirangkum dari laporan mandor dan admin kemarin." Tunjuk chip "Contoh fitur AI". |
 | 1:00 | Ketuk "Rp 1,86 M" → Rp 1.862.450.000 → "Dari mana angka ini?" → rekonsiliasi Sari 06:30. Tutup. | "Angkanya dari input admin yang sama seperti sekarang, hanya tidak di spreadsheet." |
 | 1:30 | Kartu "Perlu keputusan Bapak (3)". Ketuk "Setujui" pada PO final drive. Tunjuk harga terakhir +6,7%, produksi hilang Rp 3,2 jt/hari, rantai Budi → Dedi → Bapak. **Minta beliau sendiri yang mengetuk Setujui.** | "Mulai detik ini semua orang di kantor tahu Bapak sudah setuju, jam berapa, dari mana." (Lonceng 3 → 2.) |
-| 2:30 | Gulir ke "Progres proyek". Tunjuk Batu Ampar merah. Ketuk Bukit Tiga. | — |
+| 2:30 | Tab Proyek: kartu "Jadwal & progres" (batang masa kontrak, garis putus hari ini). Ketuk Bukit Tiga di kartu sekilas. | "Mana yang bakal selesai duluan, mana yang lewat tanggal, kelihatan tanpa buka satu-satu." |
 | 3:00 | Detail Bukit Tiga: tiga bar 72 / 50 / 25 dan kalimat "Rp 539 juta sudah dikerjakan, belum ditagih". | "Sekarang, berapa lama Bapak tahu angka ini dari spreadsheet?" |
 | 3:30 | Ketuk "72%" → Jejak angka: Pak Ujang 16:42, GPS, 3 foto, diperiksa Wati, riwayat 240 → 420 "salah ketik". Geser ke "Spreadsheet", lalu kembali. Tutup. | "Angka boleh dikoreksi, tapi tidak bisa diubah diam-diam. Ini soal alatnya, bukan orangnya." |
 | 4:15 | Gulir ke "Termin & BAPP". Ketuk T1 → PPN, potongan PPh, diterima bersih Rp 669.156.250. Tutup. Tunjuk "Termin 3 diperkirakan 5 Nov". | "Yang biasanya Bapak hitung di kepala, sekarang ada di sini." |
