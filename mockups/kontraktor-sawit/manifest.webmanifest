@@ -1,6 +1,6 @@
 {
-  "name": "KSM Pemilik (contoh tampilan)",
-  "short_name": "KSM Pemilik",
+  "name": "LBS Pemilik (contoh tampilan)",
+  "short_name": "LBS Pemilik",
   "description": "Contoh tampilan aplikasi pemilik kontraktor kebun sawit. Semua data fiktif.",
   "lang": "id",
   "start_url": "./index.html",

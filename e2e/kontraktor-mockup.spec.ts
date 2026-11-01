@@ -21,7 +21,7 @@ test.describe('Mockup kontraktor sawit', () => {
     await expect(page.getByText('Rp 1,46 M')).toBeVisible()
     await expect(page.getByText('Perlu keputusan Bapak (3)')).toBeVisible()
     await expect(page.locator('.badge')).toHaveText('3')
-    expect(logs).toContain('KSM self-check OK')
+    expect(logs).toContain('LBS self-check OK')
     expect(logs.filter((l) => l.startsWith('pageerror'))).toEqual([])
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme })

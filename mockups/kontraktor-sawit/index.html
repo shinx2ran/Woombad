@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
-<title>KSM Pemilik</title>
+<title>LBS Pemilik</title>
 <meta name="description" content="Contoh tampilan (mockup) aplikasi pemilik kontraktor kebun sawit: progres pekerjaan, BAPP & termin, uang, alat berat, jejak sparepart, dan jejak input. Semua data fiktif.">
 <meta name="theme-color" content="#1F6F4A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="KSM Pemilik">
+<meta name="apple-mobile-web-app-title" content="LBS Pemilik">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -322,9 +322,9 @@ h1, h2, h3 { text-wrap: balance; }
 // ── DATA: satu objek untuk semua angka. Angka turunan dihitung di JS, tidak diketik dua kali. Semua nama fiktif.
 const DATA = {
  "meta": {
-  "company": "CV Karya Sawit Mandiri",
-  "company_short": "KSM",
-  "app_name": "KSM Pemilik",
+  "company": "CV Lestari Bumi Sawit",
+  "company_short": "LBS",
+  "app_name": "LBS Pemilik",
   "owner_name": "Pak Rahmat",
   "owner_initial": "R",
   "demo_date": "2026-10-31",
@@ -337,7 +337,7 @@ const DATA = {
   "ppn_rate": 0.11,
   "pph_final_rate": 0.0175,
   "internal_rate_per_hm_20t": 350000,
-  "disclaimer": "Contoh tampilan · semua nama, angka, dan foto fiktif",
+  "disclaimer": "Contoh tampilan · angka, orang, SPK, dan foto fiktif",
   "ai_label": "Contoh fitur AI"
  },
  "terms": {
@@ -394,25 +394,25 @@ const DATA = {
   {
    "id": "ujang",
    "name": "Pak Ujang",
-   "role": "Mandor Bukit Tiga",
+   "role": "Mandor Semitau",
    "initial": "U"
   },
   {
    "id": "samsul",
    "name": "Pak Samsul",
-   "role": "Mandor Sungai Dua",
+   "role": "Mandor PKS Limpah",
    "initial": "Sm"
   },
   {
    "id": "toni",
    "name": "Pak Toni",
-   "role": "Mandor Batu Tilam",
+   "role": "Mandor Belian",
    "initial": "T"
   },
   {
    "id": "rasyid",
    "name": "Pak Rasyid",
-   "role": "Mandor Rantau Payung",
+   "role": "Mandor Bonti",
    "initial": "Ry"
   },
   {
@@ -466,9 +466,9 @@ const DATA = {
  ],
  "clients": [
   {
-   "id": "SPN",
-   "name": "PT Sinar Perkebunan Nusantara",
-   "estate": "Kebun Bukit Tiga",
+   "id": "KPC",
+   "name": "PT Kartika Prima Cipta (Sinar Mas Agribusiness)",
+   "estate": "Kebun Semitau, Kapuas Hulu",
    "contacts": [
     {
      "name": "Pak Hendra",
@@ -489,9 +489,9 @@ const DATA = {
    ]
   },
   {
-   "id": "ALM",
-   "name": "PT Agro Lestari Makmur",
-   "estate": "PKS Sungai Dua",
+   "id": "LS",
+   "name": "PT Limpah Sejahtera (First Resources)",
+   "estate": "PKS Limpah Sejahtera, Ketapang",
    "contacts": [
     {
      "name": "Pak Darmawan",
@@ -504,9 +504,9 @@ const DATA = {
    ]
   },
   {
-   "id": "MSJ",
-   "name": "PT Mitra Sawit Jaya",
-   "estate": "Kebun Batu Tilam",
+   "id": "PGM",
+   "name": "PT Persada Graha Mandiri (Sinar Mas Agribusiness)",
+   "estate": "Belian Estate, Silat Hilir, Kapuas Hulu",
    "contacts": [
     {
      "name": "Pak Yusuf",
@@ -519,9 +519,9 @@ const DATA = {
    ]
   },
   {
-   "id": "THP",
-   "name": "PT Tunas Hijau Plantation",
-   "estate": "Kebun Rantau Payung",
+   "id": "MAS",
+   "name": "PT Mitra Austral Sejahtera",
+   "estate": "Kebun Bonti, Sanggau",
    "contacts": [
     {
      "name": "Pak Rizal",
@@ -533,11 +533,11 @@ const DATA = {
  "projects": [
   {
    "id": "SPK-047",
-   "spk_no": "047/SPN-BT/VIII/2026",
+   "spk_no": "047/KPC-SMT/VIII/2026",
    "title": "Timbunan & laterit jalan CR",
-   "client_id": "SPN",
-   "location": "Kebun Bukit Tiga, Afd. III, Blok F7–F12",
-   "short_name": "Bukit Tiga",
+   "client_id": "KPC",
+   "location": "Kebun Semitau, Afd. III, Blok F7–F12",
+   "short_name": "Semitau",
    "mandor_id": "ujang",
    "client_supervisor": "Pak Hendra (Asisten Sipil)",
    "period_start": "2026-09-01",
@@ -595,7 +595,7 @@ const DATA = {
      "amount": 612500000,
      "condition": "fisik ≥ 25%",
      "status": "paid",
-     "bapp_no": "012/BAPP/SPN-BT/IX/2026",
+     "bapp_no": "012/BAPP/KPC-SMT/IX/2026",
      "bapp_signed": "2026-09-12",
      "invoice_no": "INV-2026-0135",
      "invoice_date": "2026-09-14",
@@ -615,7 +615,7 @@ const DATA = {
      "amount": 612500000,
      "condition": "fisik ≥ 50%",
      "status": "invoiced",
-     "bapp_no": "019/BAPP/SPN-BT/X/2026",
+     "bapp_no": "019/BAPP/KPC-SMT/X/2026",
      "bapp_signed": "2026-10-16",
      "invoice_no": "INV-2026-0151",
      "invoice_date": "2026-10-17",
@@ -678,11 +678,11 @@ const DATA = {
   },
   {
    "id": "SPK-052",
-   "spk_no": "052/ALM-SD/VIII/2026",
+   "spk_no": "052/LS-PKS/VIII/2026",
    "title": "Pembuatan 2 kolam limbah PKS",
-   "client_id": "ALM",
-   "location": "PKS Sungai Dua, area IPAL",
-   "short_name": "Sungai Dua",
+   "client_id": "LS",
+   "location": "PKS Limpah Sejahtera, area IPAL",
+   "short_name": "PKS Limpah",
    "mandor_id": "samsul",
    "client_supervisor": "Pak Darmawan (Askep)",
    "period_start": "2026-09-08",
@@ -732,7 +732,7 @@ const DATA = {
      "amount": 412500000,
      "condition": "fisik ≥ 25%",
      "status": "paid",
-     "bapp_no": "003/BAPP/ALM-SD/IX/2026",
+     "bapp_no": "003/BAPP/LS-PKS/IX/2026",
      "bapp_signed": "2026-09-22",
      "invoice_no": "INV-2026-0140",
      "invoice_date": "2026-09-23",
@@ -751,7 +751,7 @@ const DATA = {
      "amount": 412500000,
      "condition": "fisik ≥ 50%",
      "status": "awaiting_owner",
-     "bapp_no": "007/BAPP/ALM-SD/X/2026",
+     "bapp_no": "007/BAPP/LS-PKS/X/2026",
      "opname_date": "2026-10-26",
      "client_signed": "2026-10-28",
      "client_signers": "Pak Darmawan (Askep), Pak Gunawan (Manajer PKS)",
@@ -805,11 +805,11 @@ const DATA = {
   },
   {
    "id": "SPK-038",
-   "spk_no": "038/MSJ-BA/VIII/2026",
+   "spk_no": "038/PGM-BLN/VIII/2026",
    "title": "Cuci parit kolektor & pembuatan pasar pikul",
-   "client_id": "MSJ",
-   "location": "Kebun Batu Tilam, Afd. II, Blok C12–C20",
-   "short_name": "Batu Tilam",
+   "client_id": "PGM",
+   "location": "Kebun Belian, Afd. II, Blok C12–C20",
+   "short_name": "Belian",
    "mandor_id": "toni",
    "client_supervisor": "Pak Yusuf (Askep)",
    "period_start": "2026-08-15",
@@ -857,7 +857,7 @@ const DATA = {
      "amount": 192000000,
      "condition": "fisik ≥ 40%",
      "status": "paid",
-     "bapp_no": "014/BAPP/MSJ-BA/IX/2026",
+     "bapp_no": "014/BAPP/PGM-BLN/IX/2026",
      "bapp_signed": "2026-09-04",
      "invoice_no": "INV-2026-0131",
      "invoice_date": "2026-09-05",
@@ -876,7 +876,7 @@ const DATA = {
      "amount": 192000000,
      "condition": "fisik ≥ 80%",
      "status": "awaiting_client",
-     "bapp_no": "028/BAPP/MSJ-BA/X/2026 (draft)",
+     "bapp_no": "028/BAPP/PGM-BLN/X/2026 (draft)",
      "opname_date": "2026-10-24",
      "draft_by": "wati",
      "draft_at": "2026-10-26T09:12",
@@ -915,11 +915,11 @@ const DATA = {
   },
   {
    "id": "SPK-055",
-   "spk_no": "055/THP-RP/IX/2026",
+   "spk_no": "055/MAS-BNT/IX/2026",
    "title": "Jembatan beton CR–MR Blok F7 + 6 gorong-gorong",
-   "client_id": "THP",
-   "location": "Kebun Rantau Payung, Afd. IV",
-   "short_name": "Rantau Payung",
+   "client_id": "MAS",
+   "location": "Kebun Bonti, Afd. IV",
+   "short_name": "Bonti",
    "mandor_id": "rasyid",
    "client_supervisor": "Pak Rizal (Asisten Afd. IV)",
    "period_start": "2026-09-15",
@@ -1023,10 +1023,10 @@ const DATA = {
   },
   {
    "id": "SPK-029",
-   "spk_no": "029/MSJ-BA/V/2026",
+   "spk_no": "029/PGM-BLN/V/2026",
    "title": "Titi panen beton 41 unit Blok B",
-   "client_id": "MSJ",
-   "location": "Kebun Batu Tilam, Afd. I, Blok B3–B9",
+   "client_id": "PGM",
+   "location": "Kebun Belian, Afd. I, Blok B3–B9",
    "short_name": "Titi panen Blok B",
    "status": "completed",
    "completed_date": "2026-08-28",
@@ -1055,7 +1055,7 @@ const DATA = {
      "pct": 50,
      "amount": 205000000,
      "status": "overdue",
-     "bapp_no": "016/BAPP/MSJ-BA/IX/2026",
+     "bapp_no": "016/BAPP/PGM-BLN/IX/2026",
      "bapp_signed": "2026-09-10",
      "invoice_no": "INV-2026-0139",
      "invoice_date": "2026-09-22",
@@ -1063,9 +1063,9 @@ const DATA = {
      "days_overdue": 9,
      "invoice_age_days": 39,
      "pic": "sari",
-     "contact": "Bu Lina (KTU Kebun Batu Tilam)",
+     "contact": "Bu Lina (KTU Kebun Belian)",
      "last_reminder": "2026-10-26 oleh Sari (WA)",
-     "client_reason": "menunggu transfer kantor pusat MSJ"
+     "client_reason": "menunggu transfer kantor pusat Sinar Mas"
     }
    ],
    "billed_value": 410000000,
@@ -1074,10 +1074,10 @@ const DATA = {
   },
   {
    "id": "SPK-021",
-   "spk_no": "021/SPN-BT/III/2026",
+   "spk_no": "021/KPC-SMT/III/2026",
    "title": "Cuci parit tersier Afd. II",
-   "client_id": "SPN",
-   "location": "Kebun Bukit Tiga, Afd. II",
+   "client_id": "KPC",
+   "location": "Kebun Semitau, Afd. II",
    "short_name": "Cuci parit Afd. II",
    "status": "completed",
    "completed_date": "2026-06-20",
@@ -1127,10 +1127,10 @@ const DATA = {
   },
   {
    "id": "SPK-033",
-   "spk_no": "033/ALM-SD/VI/2026",
+   "spk_no": "033/LS-PKS/VI/2026",
    "title": "Timbunan jalan Afd. I",
-   "client_id": "ALM",
-   "location": "Kebun Sungai Dua, Afd. I",
+   "client_id": "LS",
+   "location": "Kebun Limpah Sejahtera, Afd. I",
    "short_name": "Timbunan Afd. I",
    "status": "completed",
    "completed_date": "2026-07-30",
@@ -1235,7 +1235,7 @@ const DATA = {
   "items": [
    {
     "key": "SPK-038:T2",
-    "project": "Batu Tilam",
+    "project": "Belian",
     "label": "T2 · 40% · Cuci parit & pasar pikul",
     "amount": 192000000,
     "stage": "ttd_kebun",
@@ -1247,7 +1247,7 @@ const DATA = {
    },
    {
     "key": "SPK-052:T2",
-    "project": "Sungai Dua",
+    "project": "PKS Limpah",
     "label": "T2 · 25% · Kolam limbah PKS",
     "amount": 412500000,
     "stage": "ttd_pemilik",
@@ -1259,14 +1259,14 @@ const DATA = {
    },
    {
     "key": "SPK-047:T2",
-    "project": "Bukit Tiga",
+    "project": "Semitau",
     "label": "T2 · 25% · Timbunan & laterit",
     "amount": 612500000,
     "stage": "invoice",
     "days_in_stage": 14,
     "tone": "ok",
     "pic": "sari",
-    "needs": "pembayaran SPN · jatuh tempo 16 Nov (16 hari lagi)",
+    "needs": "pembayaran KPC · jatuh tempo 16 Nov (16 hari lagi)",
     "attachments": 5
    },
    {
@@ -1278,12 +1278,12 @@ const DATA = {
     "days_in_stage": 9,
     "tone": "danger",
     "pic": "sari",
-    "needs": "Konfirmasi Bu Lina (KTU Batu Tilam)",
+    "needs": "Konfirmasi Bu Lina (KTU Belian)",
     "attachments": 4
    },
    {
     "key": "SPK-047:T3",
-    "project": "Bukit Tiga",
+    "project": "Semitau",
     "label": "T3 · 25%",
     "amount": 612500000,
     "stage": "syarat",
@@ -1294,7 +1294,7 @@ const DATA = {
    },
    {
     "key": "SPK-055:T1",
-    "project": "Rantau Payung",
+    "project": "Bonti",
     "label": "T1 · 30%",
     "amount": 267000000,
     "stage": "syarat",
@@ -1313,16 +1313,16 @@ const DATA = {
  },
  "receivables": [
   {
-   "client_id": "SPN",
+   "client_id": "KPC",
    "amount": 612500000,
    "bucket": "0–30 hari",
    "due_date": "2026-11-16",
    "status": "belum jatuh tempo",
    "invoice_no": "INV-2026-0151",
-   "project": "Bukit Tiga T2"
+   "project": "Semitau T2"
   },
   {
-   "client_id": "MSJ",
+   "client_id": "PGM",
    "amount": 205000000,
    "bucket": "31–60 hari",
    "due_date": "2026-10-22",
@@ -1332,12 +1332,12 @@ const DATA = {
    "contact": "Bu Lina (KTU)"
   },
   {
-   "client_id": "ALM",
+   "client_id": "LS",
    "amount": 0,
    "note": "Rp 412,5 jt dalam proses BAPP (belum invoice)"
   },
   {
-   "client_id": "THP",
+   "client_id": "MAS",
    "amount": 0
   }
  ],
@@ -1448,19 +1448,19 @@ const DATA = {
   "oct_in_rows": [
    {
     "date": "2026-10-03",
-    "label": "SPN · Bukit Tiga T1 (invoice Rp 679.875.000 − PPh final Rp 10.718.750)",
+    "label": "KPC · Semitau T1 (invoice Rp 679.875.000 − PPh final Rp 10.718.750)",
     "amount": 669156250,
     "recorded_by": "sari"
    },
    {
     "date": "2026-10-09",
-    "label": "SPN · Retensi cuci parit Afd. II",
+    "label": "KPC · Retensi cuci parit Afd. II",
     "amount": 17480000,
     "recorded_by": "sari"
    },
    {
     "date": "2026-10-14",
-    "label": "ALM · Sungai Dua T1 (invoice Rp 457.875.000 − PPh final Rp 7.218.750)",
+    "label": "LS · PKS Limpah T1 (invoice Rp 457.875.000 − PPh final Rp 7.218.750)",
     "amount": 450656250,
     "recorded_by": "sari"
    }
@@ -1523,7 +1523,7 @@ const DATA = {
     "source": "dari foto nota (contoh baca nota AI)"
    },
    {
-    "label": "Upah borongan minggu ke-4, 24 pekerja pasar pikul Batu Tilam",
+    "label": "Upah borongan minggu ke-4, 24 pekerja pasar pikul Belian",
     "amount": 18600000,
     "by": "sari",
     "time": "07:30",
@@ -1568,7 +1568,7 @@ const DATA = {
    "meter_value": 11240,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga, Blok F9",
+   "location": "Semitau, Blok F9",
    "operator": "Ucok",
    "oct_hm": 186,
    "oct_fuel_l": 3830,
@@ -1605,7 +1605,7 @@ const DATA = {
    "meter_value": 9870,
    "status": "operating",
    "project_id": "SPK-052",
-   "location": "Sungai Dua, kolam 2",
+   "location": "PKS Limpah, kolam 2",
    "operator": "Herman",
    "oct_hm": 180,
    "oct_fuel_l": 3816,
@@ -1638,7 +1638,7 @@ const DATA = {
    "meter_value": 8420,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga, Blok F10",
+   "location": "Semitau, Blok F10",
    "operator": "Dodi",
    "oct_hm": 178,
    "oct_fuel_l": 3685,
@@ -1670,7 +1670,7 @@ const DATA = {
    "meter_value": 5310,
    "status": "operating",
    "project_id": "SPK-038",
-   "location": "Batu Tilam, Blok C18",
+   "location": "Belian, Blok C18",
    "operator": "Firman",
    "oct_hm": 176,
    "oct_fuel_l": 2130,
@@ -1703,7 +1703,7 @@ const DATA = {
    "status": "standby",
    "status_note": "menunggu cor abutment kanan",
    "project_id": "SPK-055",
-   "location": "Rantau Payung, Blok F7",
+   "location": "Bonti, Blok F7",
    "operator": "Rudi",
    "oct_hm": 108,
    "oct_fuel_l": 1242,
@@ -1732,7 +1732,7 @@ const DATA = {
    "meter_value": 12905,
    "status": "operating",
    "project_id": "SPK-052",
-   "location": "Sungai Dua, kolam 1",
+   "location": "PKS Limpah, kolam 1",
    "operator": "Agus",
    "oct_hm": 190,
    "oct_fuel_l": 4180,
@@ -1767,7 +1767,7 @@ const DATA = {
    "meter_value": 8102,
    "status": "operating",
    "project_id": "SPK-052",
-   "location": "Sungai Dua, tanggul",
+   "location": "PKS Limpah, tanggul",
    "operator": "Amran",
    "oct_hm": 214,
    "oct_fuel_l": 6120,
@@ -1813,7 +1813,7 @@ const DATA = {
    "broken_since": "2026-10-27",
    "broken_days": 4,
    "project_id": "SPK-047",
-   "location": "Bukit Tiga, Blok F11",
+   "location": "Semitau, Blok F11",
    "operator": "Joko",
    "oct_hm": 128,
    "oct_fuel_l": 2650,
@@ -1848,7 +1848,7 @@ const DATA = {
     "HP-2025-11023",
     "BT-SET-2026-09-02"
    ],
-   "previous_project": "Sungai Dua, timbunan Afd. I (Jun–Jul 2026)"
+   "previous_project": "PKS Limpah, timbunan Afd. I (Jun–Jul 2026)"
   },
   {
    "id": "DT-01",
@@ -1858,7 +1858,7 @@ const DATA = {
    "meter_value": 184300,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga",
+   "location": "Semitau",
    "operator": "Yadi",
    "oct_km": 2140,
    "oct_fuel_l": 920,
@@ -1882,7 +1882,7 @@ const DATA = {
    "meter_value": 162800,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga",
+   "location": "Semitau",
    "operator": "Iwan",
    "oct_km": 2050,
    "oct_fuel_l": 880,
@@ -1905,7 +1905,7 @@ const DATA = {
    "meter_value": 190680,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga",
+   "location": "Semitau",
    "operator": "Beni",
    "oct_km": 2210,
    "oct_fuel_l": 950,
@@ -1953,7 +1953,7 @@ const DATA = {
    "meter_value": 98500,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga",
+   "location": "Semitau",
    "operator": "Nanang",
    "oct_km": 2080,
    "oct_fuel_l": 880,
@@ -1977,7 +1977,7 @@ const DATA = {
    "meter_value": 141200,
    "status": "operating",
    "project_id": "SPK-052",
-   "location": "Sungai Dua",
+   "location": "PKS Limpah",
    "operator": "Roni",
    "oct_km": 1980,
    "oct_fuel_l": 860,
@@ -2000,7 +2000,7 @@ const DATA = {
    "meter_value": 4310,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga",
+   "location": "Semitau",
    "operator": "Tarno",
    "oct_hm": 122,
    "oct_fuel_l": 1100,
@@ -2024,7 +2024,7 @@ const DATA = {
    "status": "standby",
    "status_note": "menunggu oprit jembatan",
    "project_id": "SPK-055",
-   "location": "Rantau Payung",
+   "location": "Bonti",
    "operator": "Wahyu",
    "oct_hm": 18,
    "oct_fuel_l": 150,
@@ -2047,7 +2047,7 @@ const DATA = {
    "meter_value": 9880,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga",
+   "location": "Semitau",
    "operator": "Sugeng",
    "oct_hm": 96,
    "oct_fuel_l": 1300,
@@ -2070,7 +2070,7 @@ const DATA = {
    "meter_value": 76200,
    "status": "operating",
    "project_id": "SPK-047",
-   "location": "Bukit Tiga (mandor)",
+   "location": "Semitau (mandor)",
    "operator": "Pak Ujang",
    "oct_fuel_l": 300,
    "next_service": {
@@ -2511,7 +2511,7 @@ const DATA = {
   "project_id": "SPK-047",
   "date": "2026-10-30",
   "date_label": "Jumat, 30 Okt 2026",
-  "location": "Bukit Tiga, Afd. III, Blok F9–F11",
+  "location": "Semitau, Afd. III, Blok F9–F11",
   "by": "ujang",
   "saved_at": "2026-10-30T16:42",
   "saved_note": "Tersimpan di HP 16:42 (tanpa sinyal)",
@@ -2623,7 +2623,7 @@ const DATA = {
   "rows": [
    {
     "mandor_id": "ujang",
-    "project": "Bukit Tiga",
+    "project": "Semitau",
     "status": "received",
     "time": "18:05",
     "note": "disimpan di HP 16:42, terkirim 18:05",
@@ -2631,7 +2631,7 @@ const DATA = {
    },
    {
     "mandor_id": "samsul",
-    "project": "Sungai Dua",
+    "project": "PKS Limpah",
     "status": "late",
     "time": "21:40",
     "note": "terlambat 4 jam 40 menit (batas 17:00)",
@@ -2639,14 +2639,14 @@ const DATA = {
    },
    {
     "mandor_id": "rasyid",
-    "project": "Rantau Payung",
+    "project": "Bonti",
     "status": "received",
     "time": "16:55",
     "photos": 2
    },
    {
     "mandor_id": "toni",
-    "project": "Batu Tilam",
+    "project": "Belian",
     "status": "missing",
     "note": "belum diterima · terakhir online 30 Okt 06:10",
     "status_after_sync": "received",
@@ -2658,7 +2658,7 @@ const DATA = {
   "mandor_id": "toni",
   "project_id": "SPK-038",
   "date_label": "Jumat, 30 Okt 2026",
-  "location": "Batu Tilam, Afd. II, Blok C18–C19",
+  "location": "Belian, Afd. II, Blok C18–C19",
   "weather": "Hujan pagi 2 jam · cerah siang",
   "units": [
    {
@@ -2699,7 +2699,7 @@ const DATA = {
    "supplier": "CV Sumber Alat Berat",
    "requested_by": "dedi",
    "requested_at": "2026-10-29T14:30",
-   "reason": "EX-08 Bukit Tiga berhenti sejak 27 Okt (4 hari), final drive bocor · laporan mekanik Budi, 2 foto",
+   "reason": "EX-08 Semitau berhenti sejak 27 Okt (4 hari), final drive bocor · laporan mekanik Budi, 2 foto",
    "chain": [
     "budi",
     "dedi",
@@ -2718,7 +2718,7 @@ const DATA = {
   {
    "id": "BAPP-052-T2",
    "type": "Tanda tangan BAPP",
-   "title": "BAPP Termin 2 · Kolam limbah Sungai Dua",
+   "title": "BAPP Termin 2 · Kolam limbah PKS Limpah",
    "amount": 412500000,
    "requested_by": "wati",
    "requested_at": "2026-10-28T16:30",
@@ -2756,14 +2756,14 @@ const DATA = {
   },
   {
    "id": "n2",
-   "text": "BAPP termin 2 Sungai Dua sudah ditandatangani Askep & Manajer PKS, tinggal tanda tangan Bapak",
+   "text": "BAPP termin 2 PKS Limpah sudah ditandatangani Askep & Manajer PKS, tinggal tanda tangan Bapak",
    "at": "2026-10-28T16:30",
    "read": false,
    "link": "approval:BAPP-052-T2"
   },
   {
    "id": "n3",
-   "text": "Invoice PT Mitra Sawit Jaya Rp 205 jt lewat jatuh tempo 9 hari",
+   "text": "Invoice PT Persada Graha Mandiri Rp 205 jt lewat jatuh tempo 9 hari",
    "at": "2026-10-31T06:00",
    "read": false,
    "link": "uang"
@@ -2782,7 +2782,7 @@ const DATA = {
    "at": "2026-10-31T07:50",
    "by": "wati",
    "action": "mengoreksi",
-   "object": "Laporan harian Bukit Tiga 30 Okt · Timbunan 240 → 420 m3",
+   "object": "Laporan harian Semitau 30 Okt · Timbunan 240 → 420 m3",
    "device": "Laptop kantor",
    "reason": "salah ketik dari lapangan (foto patok 420)",
    "kind": "change"
@@ -2791,7 +2791,7 @@ const DATA = {
    "at": "2026-10-31T07:45",
    "by": "wati",
    "action": "memeriksa",
-   "object": "Laporan harian Bukit Tiga 30 Okt ✓",
+   "object": "Laporan harian Semitau 30 Okt ✓",
    "device": "Laptop kantor"
   },
   {
@@ -2813,7 +2813,7 @@ const DATA = {
    "at": "2026-10-30T21:40",
    "by": "samsul",
    "action": "laporan harian",
-   "object": "Sungai Dua 30 Okt · 2 foto",
+   "object": "PKS Limpah 30 Okt · 2 foto",
    "device": "HP Android",
    "flag": "TERLAMBAT 4 jam 40 menit",
    "kind": "late"
@@ -2822,7 +2822,7 @@ const DATA = {
    "at": "2026-10-30T18:05",
    "by": "ujang",
    "action": "laporan harian terkirim",
-   "object": "Bukit Tiga 30 Okt · 3 foto · GPS Afd. III",
+   "object": "Semitau 30 Okt · 3 foto · GPS Afd. III",
    "device": "HP Android",
    "note": "disimpan di HP 16:42 tanpa sinyal"
   },
@@ -2830,7 +2830,7 @@ const DATA = {
    "at": "2026-10-30T16:55",
    "by": "rasyid",
    "action": "laporan harian",
-   "object": "Rantau Payung 30 Okt · 2 foto",
+   "object": "Bonti 30 Okt · 2 foto",
    "device": "HP Android"
   },
   {
@@ -2859,7 +2859,7 @@ const DATA = {
    "at": "2026-10-28T16:30",
    "by": "wati",
    "action": "mengunggah BAPP ber-TTD klien",
-   "object": "BAPP T2 Sungai Dua · Rp 412.500.000 · menunggu TTD Pemilik",
+   "object": "BAPP T2 PKS Limpah · Rp 412.500.000 · menunggu TTD Pemilik",
    "device": "Laptop kantor",
    "note": "foto BAPP TTD Askep & Manajer PKS"
   },
@@ -2976,8 +2976,8 @@ const DATA = {
  "data_card": "Data disimpan di database milik perusahaan (bukan di HP siapa pun), dicadangkan setiap malam, dan bisa diekspor ke Excel kapan saja.",
  "next_step_card": "Kalau Bapak tertarik: 1 SPK · 1 mandor · 1 admin · 2 minggu uji coba · spreadsheet tetap jalan.",
  "ai": {
-  "summary_before": "Empat proyek berjalan, tiga sesuai jadwal; Batu Tilam terlambat 2 hari karena hujan. Bukit Tiga sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 Sungai Dua Rp 412,5 juta tinggal tanda tangan Bapak. Tiga dari empat mandor sudah melapor kemarin; Pak Toni (Batu Tilam) belum. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
-  "summary_after_sync": "Empat proyek berjalan, tiga sesuai jadwal; Batu Tilam terlambat 2 hari karena hujan, kini 93,5%. Bukit Tiga sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 Sungai Dua Rp 412,5 juta tinggal tanda tangan Bapak. Semua empat mandor sudah melapor. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
+  "summary_before": "Empat proyek berjalan, tiga sesuai jadwal; Belian terlambat 2 hari karena hujan. Semitau sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 PKS Limpah Rp 412,5 juta tinggal tanda tangan Bapak. Tiga dari empat mandor sudah melapor kemarin; Pak Toni (Belian) belum. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
+  "summary_after_sync": "Empat proyek berjalan, tiga sesuai jadwal; Belian terlambat 2 hari karena hujan, kini 93,5%. Semitau sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 PKS Limpah Rp 412,5 juta tinggal tanda tangan Bapak. Semua empat mandor sudah melapor. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
   "summary_schedule_note": "Di aplikasi asli, ringkasan ini dibuat otomatis setiap pukul 06.00 dari laporan mandor dan admin.",
   "anomalies": [
    {
@@ -2997,7 +2997,7 @@ const DATA = {
    {
     "id": "a3",
     "tone": "info",
-    "text": "Laporan harian Sungai Dua kemarin masuk 21:40 (batas 17:00). Pak Samsul 4 kali terlambat bulan ini.",
+    "text": "Laporan harian PKS Limpah kemarin masuk 21:40 (batas 17:00). Pak Samsul 4 kali terlambat bulan ini.",
     "rule": "jam kirim laporan vs batas 17:00",
     "link": "jejak"
    },
@@ -3009,21 +3009,21 @@ const DATA = {
     "link": "gudang"
    }
   ],
-  "forecast_t3": "Termin 3 Bukit Tiga (syarat fisik 75%) diperkirakan siap diajukan 5 Nov, dari laju 1,1%/hari dua minggu terakhir.",
+  "forecast_t3": "Termin 3 Semitau (syarat fisik 75%) diperkirakan siap diajukan 5 Nov, dari laju 1,1%/hari dua minggu terakhir.",
   "qa": [
    {
     "q": "Berapa solar EX-07 bulan ini?",
     "a": "Oktober: 6.120 liter (Rp 85,7 jt) untuk 214 jam kerja = 28,6 L/jam. Excavator 20 ton lain rata-rata 20,8 L/jam. Lebih boros 38%: ±1.670 liter atau ±Rp 23,4 jt. Operator: Amran. Servis terakhir 1 Okt (HM 7.890). Saran: cek injektor dan selang, lalu cocokkan bon solar Rina dengan laporan harian Pak Samsul.",
     "sources": [
      "Bon solar Okt (24 bon)",
-     "Laporan harian Sungai Dua",
+     "Laporan harian PKS Limpah",
      "Unit EX-07"
     ],
     "link": "unit:EX-07"
    },
    {
     "q": "Siapa yang belum bayar?",
-    "a": "PT Mitra Sawit Jaya Rp 205.000.000, lewat jatuh tempo 9 hari (INV-2026-0139, titi panen Blok B; kontak Bu Lina, KTU Kebun Batu Tilam; alasan terakhir: menunggu transfer kantor pusat). PT Sinar Perkebunan Nusantara Rp 612.500.000 jatuh tempo 16 Nov. Sari sudah mengirim pengingat 26 Okt.",
+    "a": "PT Persada Graha Mandiri Rp 205.000.000, lewat jatuh tempo 9 hari (INV-2026-0139, titi panen Blok B; kontak Bu Lina, KTU Kebun Belian; alasan terakhir: menunggu transfer kantor pusat). PT Kartika Prima Cipta Rp 612.500.000 jatuh tempo 16 Nov. Sari sudah mengirim pengingat 26 Okt.",
     "sources": [
      "Piutang",
      "INV-2026-0139",
@@ -3032,7 +3032,7 @@ const DATA = {
     "link": "uang"
    },
    {
-    "q": "Kapan termin 3 Bukit Tiga bisa ditagih?",
+    "q": "Kapan termin 3 Semitau bisa ditagih?",
     "a": "Fisik 72%, syarat termin 3 adalah 75%. Dengan laju 1,1% per hari (dua minggu terakhir), 75% tercapai sekitar 3 Nov. Jika opname disetujui Pak Hendra, BAPP Rp 612.500.000 bisa diajukan 5 Nov. Risiko: EX-08 masih rusak; kalau tidak jalan 4 Nov, mundur ±2 hari.",
     "sources": [
      "Opname 28 Okt",
@@ -3054,16 +3054,16 @@ const DATA = {
   "free_text_reply": "Dalam contoh ini hanya 4 pertanyaan yang dijawab. Versi sebenarnya menjawab dari data perusahaan Bapak."
  },
  "wa_templates": {
-  "summary": "Ringkasan KSM, Sabtu 31 Okt 2026:\n• 4 proyek berjalan, Batu Tilam terlambat 2 hari (hujan)\n• Bukit Tiga 72%, Rp 539 jt belum ditagih\n• BAPP T2 Sungai Dua Rp 412,5 jt menunggu TTD\n• Piutang Rp 817,5 jt, MSJ Rp 205 jt lewat 9 hari\n• EX-08 rusak (PO final drive), EX-07 solar boros",
-  "remind_wati_bapp": "Wat, BAPP T2 Batu Tilam Rp 192 jt sudah 5 hari di meja Pak Yusuf (Askep). Tolong follow up hari ini dan foto bukti TTD-nya ya. Terima kasih.",
-  "remind_sari_overdue": "Sar, invoice INV-2026-0139 PT Mitra Sawit Jaya Rp 205 jt sudah lewat jatuh tempo 9 hari. Tolong hubungi Bu Lina (KTU Batu Tilam) hari ini dan catat hasilnya di aplikasi.",
+  "summary": "Ringkasan LBS, Sabtu 31 Okt 2026:\n• 4 proyek berjalan, Belian terlambat 2 hari (hujan)\n• Semitau 72%, Rp 539 jt belum ditagih\n• BAPP T2 PKS Limpah Rp 412,5 jt menunggu TTD\n• Piutang Rp 817,5 jt, PGM Rp 205 jt lewat 9 hari\n• EX-08 rusak (PO final drive), EX-07 solar boros",
+  "remind_wati_bapp": "Wat, BAPP T2 Belian Rp 192 jt sudah 5 hari di meja Pak Yusuf (Askep). Tolong follow up hari ini dan foto bukti TTD-nya ya. Terima kasih.",
+  "remind_sari_overdue": "Sar, invoice INV-2026-0139 PT Persada Graha Mandiri Rp 205 jt sudah lewat jatuh tempo 9 hari. Tolong hubungi Bu Lina (KTU Belian) hari ini dan catat hasilnya di aplikasi.",
   "ask_budi_aki": "Bud, 2 aki N150 (AK-2026-7781/7782) keluar gudang 27 Okt untuk EX-06 tapi belum tercatat terpasang. Sudah dipasang? Tolong foto dan catat HM-nya hari ini ya.",
-  "project_recap_bt": "Rekap Bukit Tiga, 31 Okt: fisik 72% (timbunan 8.200/11.000 m3, laterit 4,0/6,0 km), tagihan 50%, Rp 539 jt belum ditagih. T2 Rp 612,5 jt jatuh tempo 16 Nov. EX-08 rusak sejak 27 Okt, PO final drive disetujui."
+  "project_recap_bt": "Rekap Semitau, 31 Okt: fisik 72% (timbunan 8.200/11.000 m3, laterit 4,0/6,0 km), tagihan 50%, Rp 539 jt belum ditagih. T2 Rp 612,5 jt jatuh tempo 16 Nov. EX-08 rusak sejak 27 Okt, PO final drive disetujui."
  },
  "spreadsheet_overlay": {
   "file": "PROGRESS OKT 2026.xlsx",
   "columns": ["Pekerjaan", "Realisasi (Rp)", "%"],
-  "row": ["Bukit Tiga", "1.764.000.000", "72%"],
+  "row": ["Semitau", "1.764.000.000", "72%"],
   "comment": "Diubah oleh: ? · Kapan: ? · Dari mana: ? · Foto: ? · Versi sebelumnya: ?",
   "bullets": [
    "Siapa pun yang pegang file bisa mengubah sel ini.",
@@ -3177,11 +3177,11 @@ function daysTone(d) { return d > 14 ? 'danger' : d >= 7 ? 'warn' : 'ok'; }
 
 // ── Jejak angka: catatan asal angka-angka utama ───────────────────────────────────────────────────────────────────
 const TRACE = {
-  'pct-SPK-047': () => ({ value: fmtPct(projPct(project('SPK-047'))), label: `${fmtRpFull(projPhysical(project('SPK-047')))} dari ${fmtRpFull(project('SPK-047').contract_value)} · Bukit Tiga`, from: '52 laporan harian Pak Ujang + 4 opname bersama', last: '+420 m3 timbunan, +180 m laterit · 30 Okt 16:42 · Pak Ujang (Mandor)', device: 'HP Android · GPS Afd. III (±12 m)', photos: ['Titik 0+400', 'Titik 1+200', 'Hamparan laterit F10'], checked: 'Wati · 31 Okt 07:45', opname: 'Opname 28 Okt · Pak Hendra (Asisten Sipil) ✓', history: ['v1 · 240 m3 · 30 Okt 16:42 · Pak Ujang (HP Android)', 'v2 · 420 m3 · 31 Okt 07:50 · Wati (Laptop kantor) · alasan: salah ketik dari lapangan (foto patok menunjukkan 420)'], spreadsheet: true }),
-  'timbunan-420': () => ({ value: '420 m3', label: 'Timbunan badan jalan · Bukit Tiga · 30 Okt', from: 'laporan harian Pak Ujang (EX-01 240 m3 + EX-03 180 m3)', last: '30 Okt 16:42 · Pak Ujang (Mandor)', device: 'HP Android · GPS Afd. III (±12 m)', photos: ['Titik 0+400', 'Titik 1+200', 'Hamparan laterit F10'], checked: 'Wati · 31 Okt 07:45', history: ['v1 · 240 m3 · 30 Okt 16:42 · Pak Ujang', 'v2 · 420 m3 · 31 Okt 07:50 · Wati · alasan: salah ketik dari lapangan (foto patok 420)'] }),
+  'pct-SPK-047': () => ({ value: fmtPct(projPct(project('SPK-047'))), label: `${fmtRpFull(projPhysical(project('SPK-047')))} dari ${fmtRpFull(project('SPK-047').contract_value)} · Semitau`, from: '52 laporan harian Pak Ujang + 4 opname bersama', last: '+420 m3 timbunan, +180 m laterit · 30 Okt 16:42 · Pak Ujang (Mandor)', device: 'HP Android · GPS Afd. III (±12 m)', photos: ['Titik 0+400', 'Titik 1+200', 'Hamparan laterit F10'], checked: 'Wati · 31 Okt 07:45', opname: 'Opname 28 Okt · Pak Hendra (Asisten Sipil) ✓', history: ['v1 · 240 m3 · 30 Okt 16:42 · Pak Ujang (HP Android)', 'v2 · 420 m3 · 31 Okt 07:50 · Wati (Laptop kantor) · alasan: salah ketik dari lapangan (foto patok menunjukkan 420)'], spreadsheet: true }),
+  'timbunan-420': () => ({ value: '420 m3', label: 'Timbunan badan jalan · Semitau · 30 Okt', from: 'laporan harian Pak Ujang (EX-01 240 m3 + EX-03 180 m3)', last: '30 Okt 16:42 · Pak Ujang (Mandor)', device: 'HP Android · GPS Afd. III (±12 m)', photos: ['Titik 0+400', 'Titik 1+200', 'Hamparan laterit F10'], checked: 'Wati · 31 Okt 07:45', history: ['v1 · 240 m3 · 30 Okt 16:42 · Pak Ujang', 'v2 · 420 m3 · 31 Okt 07:50 · Wati · alasan: salah ketik dari lapangan (foto patok 420)'] }),
   'kas': () => ({ value: fmtRpFull(cashTotal()), label: 'Kas & bank · 3 rekening', from: 'saldo rekening operasional, rekening proyek, kas kantor', last: 'Rekonsiliasi Sari (Admin Keuangan) · 31 Okt 06:30', device: 'Laptop kantor', photos: ['Mutasi rek. operasional', 'Mutasi rek. proyek', 'Buku kas kantor'], checked: 'Rekonsiliasi harian ✓', history: [] }),
   'fuel-EX-07': () => ({ value: `${fmtDec(DATA.fuel_anomaly.l_per_hm, 1)} L/jam`, label: 'Solar EX-07 · Oktober · 6.120 L / 214 jam', from: '24 bon solar Okt (foto bon, dicatat Rina) dan HM awal/akhir dari laporan harian Pak Samsul', last: 'Bon terakhir 30 Okt 06:40 · 232 L · Rina (Gudang) · HM 8.094 → 8.102 (foto panel, Pak Samsul)', device: 'HP Android (Rina), HP Android (Pak Samsul)', photos: ['Bon solar 30 Okt', 'Panel HM 8.102'], checked: 'Pembanding: EX-01, EX-02, EX-03, EX-08 = 20,8 L/jam', history: [] }),
-  'piutang-205': () => ({ value: fmtRpFull(205000000), label: 'PT Mitra Sawit Jaya · Titi panen Blok B · T2', from: 'Invoice INV-2026-0139 · 22 Sep · lampiran BAPP 016/BAPP/MSJ-BA/IX/2026 TTD 10 Sep', last: 'Pengingat WA 26 Okt · Sari (Admin Keuangan) · jawaban klien: menunggu transfer kantor pusat MSJ', device: 'Laptop kantor', photos: ['Invoice 0139', 'BAPP 016 TTD', 'Tanda terima 22 Sep', 'Chat WA 26 Okt'], checked: 'Jatuh tempo 22 Okt · lewat 9 hari', history: [] }),
+  'piutang-205': () => ({ value: fmtRpFull(205000000), label: 'PT Persada Graha Mandiri · Titi panen Blok B · T2', from: 'Invoice INV-2026-0139 · 22 Sep · lampiran BAPP 016/BAPP/PGM-BLN/IX/2026 TTD 10 Sep', last: 'Pengingat WA 26 Okt · Sari (Admin Keuangan) · jawaban klien: menunggu transfer kantor pusat Sinar Mas', device: 'Laptop kantor', photos: ['Invoice 0139', 'BAPP 016 TTD', 'Tanda terima 22 Sep', 'Chat WA 26 Okt'], checked: 'Jatuh tempo 22 Okt · lewat 9 hari', history: [] }),
 };
 
 // ── Icons (inline SVG, 24px) ──────────────────────────────────────────────────────────────────────────────────────
@@ -3288,7 +3288,7 @@ let toastTimer = null;
 function toast(msg, cls = '') { let el = document.getElementById('toast'); if (!el) { el = document.createElement('div'); el.id = 'toast'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); document.body.appendChild(el); } el.className = 'toast ' + cls; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3200); }
 function storeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function storeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* tanpa penyimpanan juga jalan */ } }
-function applyTheme(t) { const root = document.documentElement; if (t === 'dark' || t === 'light') root.setAttribute('data-theme', t); else root.removeAttribute('data-theme'); storeSet('ksm-theme', t || ''); }
+function applyTheme(t) { const root = document.documentElement; if (t === 'dark' || t === 'light') root.setAttribute('data-theme', t); else root.removeAttribute('data-theme'); storeSet('lbs-theme', t || ''); }
 function isDark() { const t = document.documentElement.getAttribute('data-theme'); if (t) return t === 'dark'; return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
 
 // ── Views: Beranda ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -3336,7 +3336,7 @@ function viewBeranda() {
       ${pend.length ? pend.map(appRow).join('<div style="border-top:1px solid var(--border)"></div>') : '<p class="sub">Tidak ada yang menunggu keputusan Bapak.</p>'}
       ${decided.length ? `<div class="group" style="margin-top:8px"><button class="gh" data-act="toggle" data-arg="decidedOpen">${I.check} Sudah diputuskan hari ini (${decided.length})<span style="margin-left:auto" class="chev">${STATE.decidedOpen ? '▾' : '▸'}</span></button>${STATE.decidedOpen ? `<div class="gb">${decided.map(decidedRow).join('')}</div>` : ''}</div>` : ''}</section>
     <section class="card"><div class="ch"><h2>Laporan mandor kemarin</h2><span class="meta">${fmtDateShort(DATA.daily_report.date)}</span></div>
-      <div style="display:flex;align-items:baseline;gap:12px"><div class="big">${mandorReceived()}/${mr.expected}</div><div class="sub ${STATE.synced ? 'ok-t' : 'danger-t'}">${STATE.synced ? 'Semua mandor sudah melapor' : 'Pak Toni (Batu Tilam) belum'}</div></div>
+      <div style="display:flex;align-items:baseline;gap:12px"><div class="big">${mandorReceived()}/${mr.expected}</div><div class="sub ${STATE.synced ? 'ok-t' : 'danger-t'}">${STATE.synced ? 'Semua mandor sudah melapor' : 'Pak Toni (Belian) belum'}</div></div>
       <div style="margin-top:6px">${mr.rows.map(mandorRow).join('')}</div>
       <button class="link" data-go="mandor">Lihat sisi mandor ${I.chev}</button></section>
     <section class="card"><div class="ch"><h2>Perlu dicek</h2>${ruleChip()}</div>
@@ -3380,7 +3380,7 @@ function viewProyek() {
       }).join('')
       + `<div class="btns"><button class="btn outline sm" data-act="toast" data-arg="Contoh: di aplikasi asli file Excel diunduh.">${I.xls} Ekspor ke Excel (contoh)</button><button class="btn outline sm" data-act="toast" data-arg="Contoh: di aplikasi asli rekap PDF diunduh.">Rekap mingguan PDF (contoh)</button></div>`;
   } else if (seg === 'tagihan') body = viewTagihan();
-  else body = completedProjects().map((p) => { const t2 = p.termin.find((t) => t.status === 'overdue'); const remaining = p.contract_value - projPaid(p); return `<section class="card"><div class="t" style="font-weight:650">${esc(p.title)} — ${esc(p.short_name === 'Titi panen Blok B' ? 'Batu Tilam' : p.location.replace('Kebun ', '').split(',')[0])}</div><div class="meta">${esc(client(p.client_id).name)} · ${fmtRp(p.contract_value)} · selesai ${fmtDateShort(p.completed_date)}</div><div style="margin-top:6px;font-size:.88rem" class="${t2 ? 'danger-t strong' : 'ok-t'}">${t2 ? `Sisa tagihan ${fmtRp(remaining)} · LEWAT ${t2.days_overdue} hari` : `Lunas${p.id === 'SPK-021' ? ' (retensi cair ' + fmtDateShort(p.termin[2].paid_date) + ')' : ''}`}</div></section>`; }).join('');
+  else body = completedProjects().map((p) => { const t2 = p.termin.find((t) => t.status === 'overdue'); const remaining = p.contract_value - projPaid(p); return `<section class="card"><div class="t" style="font-weight:650">${esc(p.title)} — ${esc(p.short_name === 'Titi panen Blok B' ? 'Belian' : p.location.replace('Kebun ', '').split(',')[0])}</div><div class="meta">${esc(client(p.client_id).name)} · ${fmtRp(p.contract_value)} · selesai ${fmtDateShort(p.completed_date)}</div><div style="margin-top:6px;font-size:.88rem" class="${t2 ? 'danger-t strong' : 'ok-t'}">${t2 ? `Sisa tagihan ${fmtRp(remaining)} · LEWAT ${t2.days_overdue} hari` : `Lunas${p.id === 'SPK-021' ? ' (retensi cair ' + fmtDateShort(p.termin[2].paid_date) + ')' : ''}`}</div></section>`; }).join('');
   return `<div class="stack">${segs}${body}</div>`;
 }
 // Jadwal: satu baris per SPK dari tanggal mulai ke selesai; isi = fisik, tanda = rencana, garis tegak = hari ini
@@ -3424,7 +3424,7 @@ function viewTagihan() {
   return `<div class="card" style="padding:10px 16px;position:sticky;top:calc(56px + env(safe-area-inset-top,0px));z-index:5"><div style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline"><span class="sub">Dalam proses &amp; piutang <b class="mid" style="font-size:1.05rem">${fmtRp(inProcess)}</b></span><span class="sub danger-t">Lewat jatuh tempo <b>${fmtRp(overdueTotal())}</b></span><span class="sub">Cair Oktober <b>${fmtRp(paidStage.amount)}</b> <span class="meta">(nilai termin, tanpa PPN)</span></span></div></div>
     <div class="seg"><button class="${STATE.seg.tagihanSort === 'lama' ? 'sel' : ''}" aria-pressed="${STATE.seg.tagihanSort === 'lama'}" data-act="seg" data-arg="tagihanSort|lama">Paling lama tertahan</button><button class="${STATE.seg.tagihanSort === 'tahap' ? 'sel' : ''}" aria-pressed="${STATE.seg.tagihanSort === 'tahap'}" data-act="seg" data-arg="tagihanSort|tahap">Per tahap</button></div>
     ${sorted.map(item).join('')}
-    <div class="group"><button class="gh" data-act="toggle" data-arg="paidOpen">Cair Oktober (${paidStage.items.length}) · nilai termin ${fmtRp(paidStage.amount)} · masuk rekening ${fmtRp(paidStage.net_cash)}<span style="margin-left:auto" class="chev">${STATE.open.paidOpen ? '▾' : '▸'}</span></button>${STATE.open.paidOpen ? `<div class="gb">${[['Bukit Tiga T1', 612500000, '3 Okt'], ['Sungai Dua T1', 412500000, '14 Okt'], ['Retensi cuci parit Afd. II', 16000000, '9 Okt']].map(([l, a, d]) => `<div class="row" style="min-height:40px"><div class="grow" style="font-size:.88rem">${l}</div><b>${fmtRp(a)}</b><span class="meta">${d}</span></div>`).join('')}</div>` : ''}</div>
+    <div class="group"><button class="gh" data-act="toggle" data-arg="paidOpen">Cair Oktober (${paidStage.items.length}) · nilai termin ${fmtRp(paidStage.amount)} · masuk rekening ${fmtRp(paidStage.net_cash)}<span style="margin-left:auto" class="chev">${STATE.open.paidOpen ? '▾' : '▸'}</span></button>${STATE.open.paidOpen ? `<div class="gb">${[['Semitau T1', 612500000, '3 Okt'], ['PKS Limpah T1', 412500000, '14 Okt'], ['Retensi cuci parit Afd. II', 16000000, '9 Okt']].map(([l, a, d]) => `<div class="row" style="min-height:40px"><div class="grow" style="font-size:.88rem">${l}</div><b>${fmtRp(a)}</b><span class="meta">${d}</span></div>`).join('')}</div>` : ''}</div>
     <div class="card" style="font-size:.85rem">Rata-rata Opname → Cair: <b>${st.avg_opname_to_cash_days} hari</b> (${esc(st.sample)}) · Tahap paling lama: <b>${esc(st.slowest_stage)}, rata-rata ${st.slowest_stage_avg_days} hari</b>.</div>`;
 }
 function stageOrder(s) { return ['overdue', 'invoice', 'ttd_pemilik', 'invoice_prep', 'ttd_kebun', 'syarat'].indexOf(s); }
@@ -3513,7 +3513,7 @@ function viewMandor() {
   const week = [['29 Okt', '✓ terkirim 17:10', 'ok-t'], ['28 Okt', '✓ 16:55 · ✎ diubah Wati: parit 350 → 340 m\' (alasan: hasil opname)', ''], ['27 Okt', '✓ terkirim 16:58', 'ok-t']];
   return `<div class="stack">
     <div class="banner">Ini layar HP Pak Toni, bukan layar Bapak. Ditampilkan agar terlihat dari mana angkanya.</div>
-    <section class="card"><div class="row nb" style="padding:0;align-items:center">${avatar('toni', false)}<div class="grow"><div class="t">Pak Toni · Mandor</div><div class="meta">SPK-038 Batu Tilam · HP Android</div></div></div>
+    <section class="card"><div class="row nb" style="padding:0;align-items:center">${avatar('toni', false)}<div class="grow"><div class="t">Pak Toni · Mandor</div><div class="meta">SPK-038 Belian · HP Android</div></div></div>
       <div class="chips" style="margin-top:10px;align-items:center"><button class="chip ${synced ? 'ok' : 'muted'}" data-act="signal" aria-pressed="${synced}" style="min-height:40px;padding-inline:12px;font-size:.85rem">${I.signal} ${synced ? q.signal_chip_after : q.signal_chip_before} <span class="tiny" style="color:inherit;opacity:.8">· ketuk (demo)</span></button>${!synced && !sending ? chip('warn', 'Menunggu sinyal: 1') : ''}</div>
       <div style="margin-top:10px;font-size:.95rem" class="${synced ? 'ok-t' : sending ? 'info-t' : 'warn-t'}"><b>${synced ? q.queue_label_after : sending ? 'Mengirim 1 laporan…' : `Tersimpan di HP ${fmtDateShort(q.saved_at)} ${fmtTime(q.saved_at)} · menunggu sinyal (1)`}</b>${synced ? ' · sampai di HP Bapak' : ' · tidak perlu diulang'}</div></section>
     <section class="card"><div class="ch"><h2>Laporan harian</h2>${chip('muted', 'form terisi')}</div>
@@ -3697,8 +3697,8 @@ function viewSparepart(key) {
 // ── Views: Jejak (aktivitas · orang) ──────────────────────────────────────────────────────────────────────────────
 function auditRows() {
   const rows = DATA.audit_log.map((r) => ({ ...r }));
-  if (STATE.synced) rows.unshift({ at: `${DEMO_DATE}T${SYNC_TIME}`, by: 'toni', action: 'laporan harian 30 Okt terkirim', object: 'Batu Tilam · disimpan di HP 30 Okt 16:50 · 2 foto', device: 'HP Android' });
-  for (const a of DATA.approvals) { const d = STATE.approvals[a.id]; if (d) rows.unshift({ at: `${DEMO_DATE}T${d.at}`, by: 'owner', action: d.status === 'approved' ? (a.id.startsWith('BAPP') ? 'menandatangani' : 'menyetujui') : 'menolak', object: `${a.id.startsWith('BAPP') ? 'BAPP T2 Sungai Dua' : a.id === 'PO-2026-0187' ? 'PO-2026-0187 · Final drive kanan EX-08' : a.title} · ${fmtRpFull(a.amount)}${d.status === 'rejected' ? ` · alasan: ${d.reason}` : ''}`, device: 'HP' }); }
+  if (STATE.synced) rows.unshift({ at: `${DEMO_DATE}T${SYNC_TIME}`, by: 'toni', action: 'laporan harian 30 Okt terkirim', object: 'Belian · disimpan di HP 30 Okt 16:50 · 2 foto', device: 'HP Android' });
+  for (const a of DATA.approvals) { const d = STATE.approvals[a.id]; if (d) rows.unshift({ at: `${DEMO_DATE}T${d.at}`, by: 'owner', action: d.status === 'approved' ? (a.id.startsWith('BAPP') ? 'menandatangani' : 'menyetujui') : 'menolak', object: `${a.id.startsWith('BAPP') ? 'BAPP T2 PKS Limpah' : a.id === 'PO-2026-0187' ? 'PO-2026-0187 · Final drive kanan EX-08' : a.title} · ${fmtRpFull(a.amount)}${d.status === 'rejected' ? ` · alasan: ${d.reason}` : ''}`, device: 'HP' }); }
   rows.sort((a, b) => b.at.localeCompare(a.at));
   return rows;
 }
@@ -3734,10 +3734,10 @@ function sheetDecision(id) {
       + `<div class="meta" style="margin-top:8px">Penawaran dibandingkan: ${c.quotes.map((q) => `${esc(q.supplier)} ${fmtRp(q.amount)}`).join(' · ')}</div>
       <div style="margin-top:8px"><div style="margin-bottom:4px">${ruleChip()}</div><span style="font-size:.85rem">${esc(a.context_price)}</span></div>
       <div style="font-size:.85rem;margin-top:4px" class="danger-t">${esc(a.context_impact)}</div>`; }
-  else if (id === 'BAPP-052-T2') { const t = project('SPK-052').termin[1]; title = 'Tandatangani BAPP Termin 2 Sungai Dua?'; okLabel = 'Tandatangani';
+  else if (id === 'BAPP-052-T2') { const t = project('SPK-052').termin[1]; title = 'Tandatangani BAPP Termin 2 PKS Limpah?'; okLabel = 'Tandatangani';
     rows = kv([['Nomor', `${esc(t.bapp_no)}<br><span class="meta">Opname ${fmtDateShort(t.opname_date)} · galian 24.000 m3, tanggul 1.950 m3</span>`], ['Nilai termin', `${fmtRpFull(t.amount)} (${t.pct}%)`], ['Sudah TTD', `${esc(t.client_signers)} · ${fmtDateShort(t.client_signed)}`], ['Disiapkan', `${esc(pname(t.uploaded_by))} · diunggah ${fmtDT(t.uploaded_at)} (foto BAPP)`]])
       + `<div class="photos" style="margin-top:8px;grid-template-columns:1fr 1fr 1fr">${photo('BAPP hal. 1 · TTD Askep')}${photo('BAPP hal. 2 · TTD Manajer PKS')}${photo('BA Opname 26 Okt')}</div>`; }
-  else { title = `Setujui lembur ${fmtRpFull(a.amount)}?`; okLabel = 'Setujui'; rows = kv([['Periode', 'Minggu ke-4 Oktober · Bukit Tiga'], ['Rincian', esc(a.reason)], ['Diajukan', `${esc(pname(a.requested_by))} · ${whenLabel(a.requested_at)}`]]); }
+  else { title = `Setujui lembur ${fmtRpFull(a.amount)}?`; okLabel = 'Setujui'; rows = kv([['Periode', 'Minggu ke-4 Oktober · Semitau'], ['Rincian', esc(a.reason)], ['Diajukan', `${esc(pname(a.requested_by))} · ${whenLabel(a.requested_at)}`]]); }
   const foot = d ? `<div class="card ${d.status === 'approved' ? '' : 'warn'}" style="background:var(--surface-2);border-color:transparent;font-size:.9rem">${d.status === 'approved' ? `✓ ${okLabel === 'Tandatangani' ? 'Ditandatangani' : 'Disetujui'} oleh <b>${esc(OWNER_NAME)}</b> · ${d.at} · dari HP` : `Ditolak oleh ${esc(OWNER_NAME)} · ${d.at} · alasan: ${esc(d.reason)}`}</div>`
     : `<div class="btns"><button class="btn primary" data-act="approve" data-arg="${id}">${okLabel}</button><button class="btn outline" data-act="reject" data-arg="${id}">Tolak</button></div>`;
   openSheet('decision', esc(title), `<div>${rows}</div><div><div class="meta" style="margin-bottom:6px">Rantai persetujuan</div>${chainHtml(chainIds, doneUpTo)}</div>${foot}`, { arg: id });
@@ -3816,11 +3816,11 @@ function sheetTanya(qIdx, free) {
     <form data-act="tanya-form" style="display:flex;gap:8px"><input id="tanya-input" class="inp" placeholder="Ketik pertanyaan…" autocomplete="off"><button class="btn outline" type="button" data-act="toast" data-arg="Contoh: di aplikasi asli bisa bicara, tidak perlu mengetik." aria-label="Bicara">${I.mic}</button><button class="btn primary" type="submit">Kirim</button></form>
     ${chips}${answer}`, { arg: qIdx });
   if (q) setTimeout(() => { const el = document.getElementById('tanya-answer'); if (!el) return;
-    el.innerHTML = `<div class="bubble">${esc(q.a)}</div><div class="meta" style="margin-top:6px">Sumber:</div><div class="chips">${q.sources.map((s) => `<button class="chip muted" data-act="link" data-arg="${q.link}">${esc(s)}</button>`).join('')}</div><button class="btn outline wide" data-act="link" data-arg="${q.link}" style="margin-top:8px">${{ 'unit:EX-07': 'Lihat unit EX-07', uang: 'Lihat piutang', 'project:SPK-047': 'Lihat proyek Bukit Tiga', 'report:2026-10-30': 'Lihat laporan 30 Okt' }[q.link] || 'Lihat'}</button>`; }, 600);
+    el.innerHTML = `<div class="bubble">${esc(q.a)}</div><div class="meta" style="margin-top:6px">Sumber:</div><div class="chips">${q.sources.map((s) => `<button class="chip muted" data-act="link" data-arg="${q.link}">${esc(s)}</button>`).join('')}</div><button class="btn outline wide" data-act="link" data-arg="${q.link}" style="margin-top:8px">${{ 'unit:EX-07': 'Lihat unit EX-07', uang: 'Lihat piutang', 'project:SPK-047': 'Lihat proyek Semitau', 'report:2026-10-30': 'Lihat laporan 30 Okt' }[q.link] || 'Lihat'}</button>`; }, 600);
 }
 function sheetTentang() {
-  const theme = storeGet('ksm-theme') || '';
-  openSheet('tentang', 'Tentang contoh ini', `<p style="font-size:.9rem">Semua nama perusahaan, orang, angka, dan nomor part adalah contoh. Tidak ada data yang dikirim ke mana pun. Tujuan: menunjukkan cara kerja, bukan produk jadi.</p>
+  const theme = storeGet('lbs-theme') || '';
+  openSheet('tentang', 'Tentang contoh ini', `<p style="font-size:.9rem">Nama perusahaan klien adalah perusahaan perkebunan sungguhan yang dipakai sebagai contoh; semua orang, angka, nomor SPK, nomor part, dan foto adalah rekaan. Tidak ada data yang dikirim ke mana pun. Tujuan: menunjukkan cara kerja, bukan produk jadi.</p>
     <section class="card"><div class="ch"><h2>Data Bapak di mana?</h2></div><p style="font-size:.88rem">${esc(DATA.data_card)}</p></section>
     <section class="card summary"><div class="ch"><h2>Kalau Bapak tertarik</h2></div><p style="font-size:.95rem;font-weight:600">${esc(DATA.next_step_card.replace('Kalau Bapak tertarik: ', ''))}</p></section>
     <section class="card"><div class="ch"><h2>Tahap pembangunan (jika ya)</h2></div><ol style="margin:0;padding-left:18px;font-size:.88rem;display:grid;gap:4px"><li>Laporan harian lapangan + progres + ringkasan WhatsApp</li><li>Gudang &amp; sparepart (nomor seri, bon keluar, pemasangan)</li><li>Keuangan &amp; BAPP (termin, invoice, piutang)</li></ol></section>
@@ -3833,7 +3833,7 @@ function sheetTentang() {
 function sheetPhoto(caption) {
   const t = (caption.match(/\d\d:\d\d/) || [])[0];
   const doc = /BAPP|Opname|Mutasi|Buku kas|Invoice|Tanda terima|Chat WA|Bon solar|Panel HM/.test(caption);
-  const batuTilam = /C18|C19|Batu Tilam|Parit C/.test(caption);
+  const batuTilam = /C18|C19|Belian|Parit C/.test(caption);
   const meta = doc ? 'dokumen diunggah dari aplikasi (contoh)' : `diambil ${batuTilam ? '30 Okt 16:48' : (t ? '30 Okt ' + t : '27 Okt 09:08')} · ${batuTilam ? 'GPS Afd. II, Blok C18' : 'GPS Afd. III'} (contoh)`;
   openSheet('photo', 'Foto (contoh)', `${photo(caption, { lg: true })}<div class="meta">${meta} · tersimpan bersama laporannya, tidak terpisah di WhatsApp</div><button class="btn outline wide" data-act="close">Tutup</button>`);
 }
@@ -3847,7 +3847,7 @@ function render(opts = {}) {
   if (base === 'beranda') body = viewBeranda();
   else if (base === 'proyek' && !arg) body = viewProyek();
   else if (base === 'proyek') { const p = project(arg); title = p ? esc(p.short_name) : 'Proyek'; back = 'proyek'; body = viewProyekDetail(arg); }
-  else if (base === 'laporan') { title = 'Laporan harian <small>Bukit Tiga · 30 Okt · Pak Ujang</small>'; back = 'proyek-SPK-047'; body = viewLaporan(); }
+  else if (base === 'laporan') { title = 'Laporan harian <small>Semitau · 30 Okt · Pak Ujang</small>'; back = 'proyek-SPK-047'; body = viewLaporan(); }
   else if (base === 'mandor') { back = 'beranda'; body = viewMandor(); }
   else if (base === 'uang') body = viewUang();
   else if (base === 'alat' && !arg) { STATE.seg.alat = 'unit'; body = viewAlat(); }
@@ -3856,7 +3856,7 @@ function render(opts = {}) {
   else if (base === 'sparepart') { title = 'Jejak barang'; back = 'gudang'; body = viewSparepart(arg); }
   else if (base === 'jejak') body = viewJejak();
   else body = notFound();
-  if (!title) title = (TITLES[base] || (() => 'KSM Pemilik'))();
+  if (!title) title = (TITLES[base] || (() => DATA.meta.app_name))();
   const unread = unreadCount();
   const hdr = `<header class="hdr app-header">${back ? `<button class="ibtn" data-go="${back}" aria-label="Kembali">${I.back}</button>` : ''}<div class="ttl" style="${back ? 'padding-left:0' : ''}">${title}</div>
     <button class="ibtn" data-act="notif" aria-label="Pemberitahuan">${I.bell}${unread ? `<span class="badge">${unread}</span>` : ''}</button>
@@ -3923,11 +3923,11 @@ function selfCheck() {
   const checks = [['kontrak berjalan', T.contract, 5470000000], ['belum ditagih', Math.round(T.unbilled), 1461800000], ['piutang', receivablesTotal(), 817500000], ['masuk Okt', octInTotal(), 1137292500], ['keluar Okt', octOutTotal(), 1094642000], ['beroperasi', c.operating, 15], ['standby', c.standby, 2], ['servis', c.service, 1], ['rusak', c.broken, 1], ['solar armada L', fleetFuelL(), 35903], ['EX-07 L/jam', Math.round(unit('EX-07').oct_fuel_l / unit('EX-07').oct_hm * 10) / 10, 28.6], ['BT belum ditagih', projUnbilled(project('SPK-047')), 539000000], ['kas', cashTotal(), 1862450000], ['kewajiban 30 hari', obligationsTotal(), 532400000], ['kas keluar hari ini', todayOutTotal(), 59750000]];
   let ok = true; for (const [l, a, b] of checks) { const pass = Math.abs(a - b) < 1000; console.assert(pass, `self-check ${l}: ${a} != ${b}`); if (!pass) ok = false; }
   for (const p of DATA.projects) { const sum = p.termin.reduce((s, t) => s + t.amount, 0); const pass = sum === p.contract_value; console.assert(pass, `termin ${p.id} ${sum} != ${p.contract_value}`); if (!pass) ok = false; }
-  console.log(ok ? 'KSM self-check OK' : 'KSM self-check FAILED');
+  console.log(ok ? 'LBS self-check OK' : 'LBS self-check FAILED');
   return ok;
 }
 (function start() {
-  const saved = storeGet('ksm-theme'); if (saved) applyTheme(saved);
+  const saved = storeGet('lbs-theme'); if (saved) applyTheme(saved);
   const r = parseRoute(location.hash); STATE.route = r;
   render();
   if (r === 'beranda' && !/\bnosplash\b/.test(location.search)) splash();
