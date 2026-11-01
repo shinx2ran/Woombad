@@ -26,9 +26,9 @@ Perkiraan biaya kalau nanti dinyalakan ada di bagian 9.
 
 1. **Nama dan sapaan.** Aplikasi menyapa "Selamat pagi, Manajemen LBS" dan tidak memakai sebutan "Bapak". Yang masuk di demo adalah **Lenny**; **Eric** juga anggota manajemen dan muncul di riwayat (persetujuan PO pompa hidrolik dan aki, pembayaran pemasok 29 Okt). Setiap persetujuan tercatat atas nama orangnya, jadi terlihat siapa yang menyetujui apa. Nama bisa diganti di `index.html`: `"owner_name"` dan `"owner_initial"` (yang masuk), entri `"eric"` di `people`, dan `"greeting"` untuk sapaan.
    Nama ini dipakai di layar sambutan, toast persetujuan, rantai barang, dan jejak aktivitas.
-2. **Buka dari HP, bukan laptop.** Pakai alamat web (GitHub Pages atau hosting statis lain), lalu "Tambahkan ke layar utama"
-   supaya ikon "LBS Manajemen" muncul seperti aplikasi. Tautan Artifact claude.ai juga bisa, tetapi tidak bisa dipasang di layar
-   utama dan tidak bisa dibuka tanpa sinyal.
+2. **Buka dari HP, bukan laptop.** Alamatnya **https://shinx2ran.github.io/lbs-mockup/** (tanpa login Claude). Buka sekali,
+   lalu "Tambahkan ke layar utama" supaya ikon "LBS" muncul seperti aplikasi; setelah itu bisa dibuka tanpa sinyal. Tautan
+   Artifact claude.ai hanya untuk Anda sendiri (perlu login).
 3. **Latihan 3 kali**, termasuk menekan "Reset data demo" (avatar kanan atas → paling bawah) supaya PO kembali "menunggu",
    mandor kembali 3/4, dan Belian kembali 91%.
 4. **Baca semua tulisan bersama istri atau admin senior** sebelum demo: istilah di kantor LBS mungkin berbeda (BAPP vs BA
