@@ -327,8 +327,9 @@ const DATA = {
   "company": "Manajemen LBS",
   "company_short": "LBS",
   "app_name": "LBS Manajemen",
-  "owner_name": "Pak Rahmat",
-  "owner_initial": "R",
+  "owner_name": "Lenny",
+  "owner_initial": "L",
+  "greeting": "Manajemen LBS",
   "demo_date": "2026-10-31",
   "demo_day": "Sabtu",
   "demo_date_label": "Sabtu, 31 Oktober 2026",
@@ -359,9 +360,15 @@ const DATA = {
  "people": [
   {
    "id": "owner",
-   "name": "Pak Rahmat",
+   "name": "Lenny",
    "role": "Manajemen LBS",
-   "initial": "R"
+   "initial": "L"
+  },
+  {
+   "id": "eric",
+   "name": "Eric",
+   "role": "Manajemen LBS",
+   "initial": "E"
   },
   {
    "id": "wati",
@@ -691,7 +698,7 @@ const DATA = {
    "period_end": "2027-01-15",
    "days_left": 76,
    "status": "active",
-   "status_label": "Sesuai jadwal · BAPP T2 menunggu TTD Bapak",
+   "status_label": "Sesuai jadwal · BAPP T2 menunggu TTD manajemen",
    "status_tone": "info",
    "contract_value": 1650000000,
    "budget": 1190000000,
@@ -760,7 +767,7 @@ const DATA = {
      "uploaded_by": "wati",
      "uploaded_at": "2026-10-28T16:30",
      "days_in_stage": 3,
-     "next_step": "Tanda tangan Bapak → Sari membuat invoice + faktur pajak"
+     "next_step": "Tanda tangan manajemen → Sari membuat invoice + faktur pajak"
     },
     {
      "code": "T3",
@@ -1256,7 +1263,7 @@ const DATA = {
     "days_in_stage": 3,
     "tone": "ok",
     "pic": "wati",
-    "needs": "Tanda tangan Bapak",
+    "needs": "Tanda tangan manajemen",
     "attachments": 3
    },
    {
@@ -2280,7 +2287,7 @@ const DATA = {
    "supplier": "CV Sumber Alat Berat",
    "po_no": "PO-2026-0187",
    "status": "awaiting_owner",
-   "status_label_before": "Menunggu persetujuan Bapak",
+   "status_label_before": "Menunggu persetujuan manajemen",
    "status_label_after": "Disetujui · menunggu barang (perkiraan 3 Nov)",
    "quotes": [
     {
@@ -2334,7 +2341,7 @@ const DATA = {
      "by": "owner",
      "at": "2026-10-31T08:14",
      "device": "HP",
-     "note": "terisi saat Bapak mengetuk Setujui di Beranda",
+     "note": "terisi saat manajemen mengetuk Setujui di Beranda",
      "done": false,
      "demo_fills": true
     },
@@ -2404,7 +2411,7 @@ const DATA = {
     {
      "n": 3,
      "label": "Disetujui manajemen",
-     "by": "owner",
+     "by": "eric",
      "at": "2026-03-09T11:05",
      "device": "HP",
      "done": true
@@ -2470,7 +2477,7 @@ const DATA = {
      "label": "PO dibuat & disetujui manajemen",
      "by": "dedi",
      "at": "2026-10-20T10:15",
-     "note": "PO-2026-0179 · disetujui Pak Rahmat 20 Okt 10:40 dari HP",
+     "note": "PO-2026-0179 · disetujui Eric (Manajemen LBS) 20 Okt 10:40 dari HP",
      "done": true
     },
     {
@@ -2758,7 +2765,7 @@ const DATA = {
   },
   {
    "id": "n2",
-   "text": "BAPP termin 2 PKS Limpah sudah ditandatangani Askep & Manajer PKS, tinggal tanda tangan Bapak",
+   "text": "BAPP termin 2 PKS Limpah sudah ditandatangani Askep & Manajer PKS, tinggal tanda tangan manajemen",
    "at": "2026-10-28T16:30",
    "read": false,
    "link": "approval:BAPP-052-T2"
@@ -2855,7 +2862,7 @@ const DATA = {
    "action": "pembayaran pemasok",
    "object": "CV Sumber Alat Berat · Rp 38.500.000 (filter & oli Sep)",
    "device": "Laptop kantor",
-   "note": "disetujui Pak Rahmat 29 Okt 14:10 dari HP · bukti transfer"
+   "note": "disetujui Eric (Manajemen LBS) 29 Okt 14:10 dari HP · bukti transfer"
   },
   {
    "at": "2026-10-28T16:30",
@@ -2972,14 +2979,14 @@ const DATA = {
   "Mandor: hanya mengisi laporan proyeknya sendiri.",
   "Admin kantor: memeriksa laporan & menyiapkan BAPP; koreksi wajib pakai alasan.",
   "Keuangan: kas, invoice, pembayaran. Gudang: barang masuk/keluar.",
-  "Manajemen LBS (Pak Rahmat): melihat semua; harga, kontrak, dan persetujuan hanya manajemen.",
+  "Manajemen LBS (Lenny, Eric): melihat semua; harga, kontrak, dan persetujuan hanya manajemen, tercatat atas nama masing-masing.",
   "Tidak ada yang bisa menghapus. Koreksi selalu membuat versi baru."
  ],
  "data_card": "Data disimpan di database milik perusahaan (bukan di HP siapa pun), dicadangkan setiap malam, dan bisa diekspor ke Excel kapan saja.",
- "next_step_card": "Kalau Bapak tertarik: 1 SPK · 1 mandor · 1 admin · 2 minggu uji coba · spreadsheet tetap jalan.",
+ "next_step_card": "Kalau manajemen tertarik: 1 SPK · 1 mandor · 1 admin · 2 minggu uji coba · spreadsheet tetap jalan.",
  "ai": {
-  "summary_before": "Empat proyek berjalan, tiga sesuai jadwal; Belian terlambat 2 hari karena hujan. Semitau sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 PKS Limpah Rp 412,5 juta tinggal tanda tangan Bapak. Tiga dari empat mandor sudah melapor kemarin; Pak Toni (Belian) belum. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
-  "summary_after_sync": "Empat proyek berjalan, tiga sesuai jadwal; Belian terlambat 2 hari karena hujan, kini 93,5%. Semitau sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 PKS Limpah Rp 412,5 juta tinggal tanda tangan Bapak. Semua empat mandor sudah melapor. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
+  "summary_before": "Empat proyek berjalan, tiga sesuai jadwal; Belian terlambat 2 hari karena hujan. Semitau sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 PKS Limpah Rp 412,5 juta tinggal tanda tangan manajemen. Tiga dari empat mandor sudah melapor kemarin; Pak Toni (Belian) belum. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
+  "summary_after_sync": "Empat proyek berjalan, tiga sesuai jadwal; Belian terlambat 2 hari karena hujan, kini 93,5%. Semitau sudah 72%: Rp 539 juta pekerjaan selesai, belum ditagih. BAPP termin 2 PKS Limpah Rp 412,5 juta tinggal tanda tangan manajemen. Semua empat mandor sudah melapor. Solar EX-07 perlu dicek: 28,6 liter per jam, 38% di atas unit sejenis.",
   "summary_schedule_note": "Di aplikasi asli, ringkasan ini dibuat otomatis setiap pukul 06.00 dari laporan mandor dan admin.",
   "anomalies": [
    {
@@ -3053,7 +3060,7 @@ const DATA = {
     "link": "report:2026-10-30"
    }
   ],
-  "free_text_reply": "Dalam contoh ini hanya 4 pertanyaan yang dijawab. Versi sebenarnya menjawab dari data perusahaan Bapak."
+  "free_text_reply": "Dalam contoh ini hanya 4 pertanyaan yang dijawab. Versi sebenarnya menjawab dari data LBS."
  },
  "wa_templates": {
   "summary": "Ringkasan LBS, Sabtu 31 Okt 2026:\n• 4 proyek berjalan, Belian terlambat 2 hari (hujan)\n• Semitau 72%, Rp 539 jt belum ditagih\n• BAPP T2 PKS Limpah Rp 412,5 jt menunggu TTD\n• Piutang Rp 817,5 jt, PGM Rp 205 jt lewat 9 hari\n• EX-08 rusak (PO final drive), EX-07 solar boros",
@@ -3075,7 +3082,7 @@ const DATA = {
  }
 };
 
-// ── Constants (ganti nama pemilik di sini sebelum demo) ───────────────────────────────────────────────────────────
+// ── Constants (nama yang masuk dan sapaan ada di DATA.meta: owner_name, owner_initial, greeting) ───────────────────────────────────────────────────────────
 const OWNER_NAME = DATA.meta.owner_name;
 const OWNER_INITIAL = DATA.meta.owner_initial;
 const DEMO_DATE = DATA.meta.demo_date;        // semua label relatif ("kemarin", "4 hari") dihitung dari tanggal ini, bukan jam HP
@@ -3237,7 +3244,7 @@ function photo(caption, opts = {}) {
 }
 function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
 function chainHtml(ids, doneUpTo) {
-  return `<div class="chain">${ids.map((id, i) => { const p = person(id); const open = i >= doneUpTo; return `${i ? '<span class="arr">→</span>' : ''}<span class="av s${open ? ' open' : ''}" title="${esc(p.name)}">${open ? '○' : esc(p.initial)}</span><span>${esc(id === 'owner' ? 'Bapak' : p.name)}${open ? '' : ' ✓'}</span>`; }).join('')}</div>`;
+  return `<div class="chain">${ids.map((id, i) => { const p = person(id); const open = i >= doneUpTo; return `${i ? '<span class="arr">→</span>' : ''}<span class="av s${open ? ' open' : ''}" title="${esc(p.name)}">${open ? '○' : esc(p.initial)}</span><span>${esc(id === 'owner' ? (open ? 'Manajemen' : OWNER_NAME) : p.name)}${open ? '' : ' ✓'}</span>`; }).join('')}</div>`;
 }
 function kv(rows) { return `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`; }
 
@@ -3297,7 +3304,7 @@ function isDark() { const t = document.documentElement.getAttribute('data-theme'
 function viewBeranda() {
   const T = totals(); const ov = overdueTotal(); const rec = receivables(); const overdueRow = rec.find((r) => r.t.status === 'overdue');
   const ex08 = unit('EX-08'); const pend = pendingApprovals(); const decided = decidedApprovals(); const mr = DATA.mandor_reports_yesterday;
-  const tile3sub = poApproved() ? `EX-08 · PO disetujui Bapak ${APPROVAL_TIME} · perkiraan jalan ${fmtDateShort(ex08.expected_running)}` : `EX-08 · ${ex08.status_note.split(' ').slice(0, 2).join(' ')} · ${daysAgo(ex08.broken_since)} hari · PO menunggu Bapak`;
+  const tile3sub = poApproved() ? `EX-08 · PO disetujui ${OWNER_NAME} ${APPROVAL_TIME} · perkiraan jalan ${fmtDateShort(ex08.expected_running)}` : `EX-08 · ${ex08.status_note.split(' ').slice(0, 2).join(' ')} · ${daysAgo(ex08.broken_since)} hari · PO menunggu manajemen`;
   const todayOut = DATA.cash.today_out;
   const summary = STATE.synced ? DATA.ai.summary_after_sync : DATA.ai.summary_before;
   const appRow = (a) => `<div class="row nb" style="display:block;padding:12px 0">
@@ -3334,8 +3341,8 @@ function viewBeranda() {
         <div><div class="meta">Keluar hari ini</div><div class="mid num" data-act="nominal" data-arg="keluar">${fmtRp(todayOutTotal())}</div><div class="tiny">solar ${fmtJt(todayOut[0].amount)} · upah ${fmtJt(todayOut[1].amount)} · oli ${fmtJt(todayOut[2].amount)} · lain ${fmtJt(todayOut[3].amount)}</div></div>
       </div>
       <button class="link" data-go="uang">Lihat keuangan ${I.chev}</button></section>
-    <section class="card"><div class="ch"><h2>Perlu keputusan Bapak (${pend.length})</h2>${pend.length ? chip('danger', pend.length) : chip('ok', 'Selesai')}</div>
-      ${pend.length ? pend.map(appRow).join('<div style="border-top:1px solid var(--border)"></div>') : '<p class="sub">Tidak ada yang menunggu keputusan Bapak.</p>'}
+    <section class="card"><div class="ch"><h2>Perlu keputusan manajemen (${pend.length})</h2>${pend.length ? chip('danger', pend.length) : chip('ok', 'Selesai')}</div>
+      ${pend.length ? pend.map(appRow).join('<div style="border-top:1px solid var(--border)"></div>') : '<p class="sub">Tidak ada yang menunggu keputusan manajemen.</p>'}
       ${decided.length ? `<div class="group" style="margin-top:8px"><button class="gh" data-act="toggle" data-arg="decidedOpen">${I.check} Sudah diputuskan hari ini (${decided.length})<span style="margin-left:auto" class="chev">${STATE.decidedOpen ? '▾' : '▸'}</span></button>${STATE.decidedOpen ? `<div class="gb">${decided.map(decidedRow).join('')}</div>` : ''}</div>` : ''}</section>
     <section class="card"><div class="ch"><h2>Laporan mandor kemarin</h2><span class="meta">${fmtDateShort(DATA.daily_report.date)}</span></div>
       <div style="display:flex;align-items:baseline;gap:12px"><div class="big">${mandorReceived()}/${mr.expected}</div><div class="sub ${STATE.synced ? 'ok-t' : 'danger-t'}">${STATE.synced ? 'Semua mandor sudah melapor' : 'Pak Toni (Belian) belum'}</div></div>
@@ -3438,7 +3445,7 @@ function terminStatusHtml(p, t) {
   if (t.status === 'paid') return `<span class="ok-t strong">Dibayar ${fmtDateShort(t.paid_date)}</span>`;
   if (t.status === 'invoiced') return `<span class="info-t strong">jatuh tempo ${fmtDateShort(t.due_date)} (${t.days_to_due} hari lagi)</span>`;
   if (t.status === 'overdue') return `<span class="danger-t strong">LEWAT ${t.days_overdue} hari</span>`;
-  if (t.status === 'awaiting_owner') return bappSigned() ? `<span class="ok-t strong">TTD Bapak ${APPROVAL_TIME} · invoice disiapkan Sari</span>` : `<span class="info-t strong">menunggu TTD Bapak (${t.days_in_stage} hari)</span>`;
+  if (t.status === 'awaiting_owner') return bappSigned() ? `<span class="ok-t strong">TTD ${esc(OWNER_NAME)} ${APPROVAL_TIME} · invoice disiapkan Sari</span>` : `<span class="info-t strong">menunggu TTD manajemen (${t.days_in_stage} hari)</span>`;
   if (t.status === 'awaiting_client') return `<span class="warn-t strong">draft BAPP Wati ${fmtDateShort(t.draft_at)} · menunggu TTD ${esc(t.waiting_on.split(' (')[0])} ${t.days_in_stage} hari</span>`;
   if (t.forecast_ready) return `<span class="sub">syarat ${esc(t.condition)} · perkiraan ${fmtDateShort(t.forecast_ready)}</span>`;
   return `<span class="sub">${esc(t.condition)}</span>`;
@@ -3516,10 +3523,10 @@ function viewMandor() {
   const field = (l, v) => `<div class="field"><span class="l">${l}</span><span class="v">${v}</span></div>`;
   const week = [['29 Okt', '✓ terkirim 17:10', 'ok-t'], ['28 Okt', '✓ 16:55 · ✎ diubah Wati: parit 350 → 340 m\' (alasan: hasil opname)', ''], ['27 Okt', '✓ terkirim 16:58', 'ok-t']];
   return `<div class="stack">
-    <div class="banner">Ini layar HP Pak Toni, bukan layar Bapak. Ditampilkan agar terlihat dari mana angkanya.</div>
+    <div class="banner">Ini layar HP Pak Toni, bukan layar manajemen. Ditampilkan agar terlihat dari mana angkanya.</div>
     <section class="card"><div class="row nb" style="padding:0;align-items:center">${avatar('toni', false)}<div class="grow"><div class="t">Pak Toni · Mandor</div><div class="meta">SPK-038 Belian · HP Android</div></div></div>
       <div class="chips" style="margin-top:10px;align-items:center"><button class="chip ${synced ? 'ok' : 'muted'}" data-act="signal" aria-pressed="${synced}" style="min-height:40px;padding-inline:12px;font-size:.85rem">${I.signal} ${synced ? q.signal_chip_after : q.signal_chip_before} <span class="tiny" style="color:inherit;opacity:.8">· ketuk (demo)</span></button>${!synced && !sending ? chip('warn', 'Menunggu sinyal: 1') : ''}</div>
-      <div style="margin-top:10px;font-size:.95rem" class="${synced ? 'ok-t' : sending ? 'info-t' : 'warn-t'}"><b>${synced ? q.queue_label_after : sending ? 'Mengirim 1 laporan…' : `Tersimpan di HP ${fmtDateShort(q.saved_at)} ${fmtTime(q.saved_at)} · menunggu sinyal (1)`}</b>${synced ? ' · sampai di HP Bapak' : ' · tidak perlu diulang'}</div></section>
+      <div style="margin-top:10px;font-size:.95rem" class="${synced ? 'ok-t' : sending ? 'info-t' : 'warn-t'}"><b>${synced ? q.queue_label_after : sending ? 'Mengirim 1 laporan…' : `Tersimpan di HP ${fmtDateShort(q.saved_at)} ${fmtTime(q.saved_at)} · menunggu sinyal (1)`}</b>${synced ? ' · sampai di HP manajemen' : ' · tidak perlu diulang'}</div></section>
     <section class="card"><div class="ch"><h2>Laporan harian</h2>${chip('muted', 'form terisi')}</div>
       <div class="stack" style="gap:8px">${field('Tanggal', esc(q.date_label))}${field('Blok', 'C18 · C19')}${field('Cuaca', esc(q.weather))}${field('Cuci parit hari ini', `${fmtInt(q.output.cuci_parit_m)} m'`)}${field('Pasar pikul hari ini', `${fmtInt(q.output.pasar_pikul_m)} m' <span class="meta">· ${esc(q.labour)}</span>`)}${field('Excavator', `${u.unit_id} · ${esc(u.operator)} · HM ${fmtInt(u.hm_start)} → ${fmtInt(u.hm_end)} (${fmtDec(u.hm, 1)} jam) · solar ${u.fuel_l} L`)}</div>
       <div class="ch" style="margin-top:12px"><h2>Foto (${q.photos.length})</h2></div><div class="photos">${q.photos.map((ph) => photo(ph.label, { stamp: q.photo_stamp })).join('')}</div>
@@ -3560,7 +3567,7 @@ function viewUang() {
     <section class="card" id="piutang"><div class="ch"><h2>Piutang ${fmtRp(receivablesTotal())}</h2>${chip('danger', '1 terlambat')}</div>
       ${rec.slice().sort((a, b) => (b.t.days_overdue || 0) - (a.t.days_overdue || 0)).map(recRow).join('')}
       <div class="meta" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">Umur: 0–30 hari ${fmtRp(ageBucket(rec, 0, 30))} · 31–60 hari ${fmtRp(ageBucket(rec, 31, 60))} · &gt;60 hari ${fmtRp(ageBucket(rec, 61, 9999))}</div>
-      <div class="meta" style="margin-top:4px">Dalam proses BAPP (belum invoice): ${bappProcess.map((i) => `${esc(i.project)} ${i.label.split(' · ')[0]} ${fmtRp(i.amount)} (${i.stage === 'ttd_pemilik' ? 'TTD Bapak' : i.stage === 'invoice_prep' ? 'invoice disiapkan' : 'TTD Askep'})`).join(' · ')}</div></section>
+      <div class="meta" style="margin-top:4px">Dalam proses BAPP (belum invoice): ${bappProcess.map((i) => `${esc(i.project)} ${i.label.split(' · ')[0]} ${fmtRp(i.amount)} (${i.stage === 'ttd_pemilik' ? 'TTD manajemen' : i.stage === 'invoice_prep' ? 'invoice disiapkan' : 'TTD Askep'})`).join(' · ')}</div></section>
     <section class="card"><div class="ch"><h2>Utang pemasok ${fmtRp(pay.total)}</h2></div>
       <div style="font-size:.88rem">Jatuh tempo ≤ 7 hari <b>${fmtRp(pay.due_within_7_days)}</b></div>
       ${pay.rows.slice().sort((a, b) => a.due.localeCompare(b.due)).map((r) => `<div class="row" style="min-height:40px;padding:6px 0"><div class="grow" style="font-size:.85rem">${esc(r.supplier)}<div class="meta">${esc(r.for)}</div></div><div class="right"><b>${fmtRp(r.amount)}</b><div class="meta ${daysBetween(DEMO_DATE, r.due) <= 7 ? 'warn-t' : ''}">${fmtDateShort(r.due)}</div></div></div>`).join('')}</section>
@@ -3588,7 +3595,7 @@ function unitKind(e) { return /Excavator/.test(e.type) ? 'excavator' : /Dump/.te
 function unitProblem(e) { return e.status !== 'operating' || (e.flags && e.flags.length) || (e.next_service && (e.meter === 'HM' ? e.next_service.remaining <= 40 : e.next_service.remaining <= 400)); }
 function unitSub(e) {
   const parts = [];
-  if (e.status === 'broken') parts.push(`<span class="danger-t strong">RUSAK sejak ${fmtDateShort(e.broken_since)} (${daysAgo(e.broken_since)} hari)</span>`, esc(e.status_note), poApproved() ? `PO disetujui Bapak ${APPROVAL_TIME} · perkiraan jalan ${fmtDateShort(e.expected_running)}` : '<span class="danger-t">PO menunggu Bapak</span>');
+  if (e.status === 'broken') parts.push(`<span class="danger-t strong">RUSAK sejak ${fmtDateShort(e.broken_since)} (${daysAgo(e.broken_since)} hari)</span>`, esc(e.status_note), poApproved() ? `PO disetujui ${esc(OWNER_NAME)} ${APPROVAL_TIME} · perkiraan jalan ${fmtDateShort(e.expected_running)}` : '<span class="danger-t">PO menunggu manajemen</span>');
   else if (e.status === 'service') parts.push(`<span class="info-t strong">SERVIS</span>`, esc(e.status_note));
   else if (e.status === 'standby') parts.push('Standby', esc(e.status_note || ''));
   else {
@@ -3633,7 +3640,7 @@ function viewGudang() {
     <section class="card"><div class="ch"><h2>Stok penting</h2><span class="meta">hitung fisik ${fmtDateShort('2026-10-30')}</span></div>${st.rows.map(stockRow).join('')}
       <div class="meta" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">Nilai stok sparepart ±${fmtRp(st.value_sparepart)} · barang keluar belum terpasang: <b class="warn-t">${st.unresolved_issues}</b></div></section>
     <section class="card"><div class="ch"><h2>Keluar gudang 7 hari terakhir</h2><span class="meta">siapa ambil apa, untuk unit mana</span></div>${DATA.warehouse_issues_7d.map(issueRow).join('')}</section>
-    <section class="card"><div class="ch"><h2>PO menunggu</h2></div><div class="row tap nb" data-go="sparepart-FD-2026-04417" style="padding:4px 0"><div class="grow" style="font-size:.88rem"><b>${po.po_no}</b> · ${esc(po.name.split(' (')[0])} ${po.unit_id} · ${fmtRp(po.price)}<div class="meta ${poApproved() ? 'ok-t' : 'danger-t'}">${poApproved() ? `disetujui ${APPROVAL_TIME} · perkiraan tiba 3 Nov` : 'menunggu Bapak'}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div></section>`;
+    <section class="card"><div class="ch"><h2>PO menunggu</h2></div><div class="row tap nb" data-go="sparepart-FD-2026-04417" style="padding:4px 0"><div class="grow" style="font-size:.88rem"><b>${po.po_no}</b> · ${esc(po.name.split(' (')[0])} ${po.unit_id} · ${fmtRp(po.price)}<div class="meta ${poApproved() ? 'ok-t' : 'danger-t'}">${poApproved() ? `disetujui ${APPROVAL_TIME} · perkiraan tiba 3 Nov` : 'menunggu manajemen'}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div></section>`;
 }
 
 // ── Views: Detail unit ────────────────────────────────────────────────────────────────────────────────────────────
@@ -3642,7 +3649,7 @@ function viewAlatDetail(id) {
   const statusBlock = e.status === 'broken'
     ? `<section class="card danger"><div class="t danger-t" style="font-size:1rem;font-weight:700">RUSAK sejak ${fmtDateShort(e.broken_since)} · ${daysAgo(e.broken_since)} hari</div><div style="font-size:.9rem">${esc(e.status_note)} · laporan Budi 27 Okt 09:10 · 2 foto</div>
         <div class="photos" style="margin-top:8px;grid-template-columns:1fr 1fr">${photo('Kebocoran final drive kanan · 27 Okt 09:08').replace('data-act="photo"', 'data-act="photo"')}${photo('Oli di track kanan · 27 Okt 09:09')}</div>
-        <div style="margin-top:8px;font-size:.9rem"><b>${e.pending_po}</b> ${fmtRp(oc.pending_po_amount)} · ${poApproved() ? `<span class="ok-t">disetujui Bapak ${APPROVAL_TIME} · barang ±3 Nov · jalan ±${fmtDateShort(e.expected_running)}</span>` : '<span class="danger-t strong">menunggu Bapak</span>'}</div>
+        <div style="margin-top:8px;font-size:.9rem"><b>${e.pending_po}</b> ${fmtRp(oc.pending_po_amount)} · ${poApproved() ? `<span class="ok-t">disetujui ${esc(OWNER_NAME)} ${APPROVAL_TIME} · barang ±3 Nov · jalan ±${fmtDateShort(e.expected_running)}</span>` : '<span class="danger-t strong">menunggu manajemen</span>'}</div>
         <div class="meta">Produksi hilang ±${fmtRp(e.lost_production_per_day)}/hari · ${daysAgo(e.broken_since)} hari = ±${fmtRp(e.lost_production_per_day * daysAgo(e.broken_since))}</div>
         ${poApproved() ? '' : `<div style="margin-top:10px"><button class="btn primary" data-act="decide" data-arg="PO-2026-0187">Setujui PO di sini</button></div>`}</section>`
     : e.status === 'service' ? `<section class="card"><div class="t info-t" style="font-weight:700">SERVIS · ${esc(e.status_note)}</div></section>`
@@ -3651,7 +3658,7 @@ function viewAlatDetail(id) {
   const fuelCard = e.id === 'EX-07' ? `<section class="card"><div class="ch"><h2>Solar 14 hari (L/jam)</h2>${chip('danger', `${e.fuel_14d_l_per_hm.filter((v) => v > DATA.fuel_anomaly.fleet_avg_l_per_hm * 1.12).length} hari di atas batas`)}</div>${fuelBars(e.fuel_14d_l_per_hm, DATA.fuel_anomaly.fleet_avg_l_per_hm)}
       <div style="margin-top:10px"><div style="margin-bottom:6px">${ruleChip()}</div><div style="font-size:.88rem"><b class="num" data-act="trace" data-arg="fuel-EX-07">${fmtDec(DATA.fuel_anomaly.l_per_hm, 1)} L/jam</b> Oktober, naik ${DATA.fuel_anomaly.excess_pct}% dari rata-rata 20 ton standar (${fmtDec(DATA.fuel_anomaly.fleet_avg_l_per_hm, 1)}). Selisih ±${fmtL(Math.round(DATA.fuel_anomaly.excess_l / 10) * 10)} ≈ ${fmtRp(DATA.fuel_anomaly.excess_rp)}. Kemungkinan: injektor, selang bocor, atau pencatatan. Servis terakhir ${esc(DATA.fuel_anomaly.last_service)}.</div></div>
       <div class="meta" style="margin-top:6px">${esc(DATA.fuel_anomaly.suggestion)}</div></section>` : '';
-  const partsRows = e.id === 'EX-08' ? DATA.parts_chains.filter((c) => c.unit_id === 'EX-08').map((c) => `<div class="row tap" data-go="sparepart-${chainKey(c)}"><div class="grow" style="font-size:.88rem"><b>${esc(c.name.split(' (')[0])}</b> · P/N ${esc(c.part_no)}<div class="meta">S/N ${esc(c.serial)} · ${c.po_no} · ${c.status === 'complete' ? `terpasang ${fmtDate(c.steps[5].at)} · ${pname(c.steps[5].by)} · HM 6.102 · rantai lengkap ✓` : poApproved() ? `<span class="ok-t">disetujui ${APPROVAL_TIME}, menunggu barang</span>` : '<span class="danger-t">menunggu Bapak</span>'}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div>`).join('') + `<div class="row"><div class="grow" style="font-size:.88rem"><b>Bucket teeth set</b> · 5 pcs<div class="meta">2 Sep 2026 · Budi · HM 6.480 · bon BK-2026-0301</div></div></div>`
+  const partsRows = e.id === 'EX-08' ? DATA.parts_chains.filter((c) => c.unit_id === 'EX-08').map((c) => `<div class="row tap" data-go="sparepart-${chainKey(c)}"><div class="grow" style="font-size:.88rem"><b>${esc(c.name.split(' (')[0])}</b> · P/N ${esc(c.part_no)}<div class="meta">S/N ${esc(c.serial)} · ${c.po_no} · ${c.status === 'complete' ? `terpasang ${fmtDate(c.steps[5].at)} · ${pname(c.steps[5].by)} · HM 6.102 · rantai lengkap ✓` : poApproved() ? `<span class="ok-t">disetujui ${APPROVAL_TIME}, menunggu barang</span>` : '<span class="danger-t">menunggu manajemen</span>'}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div>`).join('') + `<div class="row"><div class="grow" style="font-size:.88rem"><b>Bucket teeth set</b> · 5 pcs<div class="meta">2 Sep 2026 · Budi · HM 6.480 · bon BK-2026-0301</div></div></div>`
     : e.id === 'EX-06' ? `<div class="row tap" data-go="sparepart-AK-2026-7781"><div class="grow" style="font-size:.88rem"><b>Aki N150 ×2</b> · S/N AK-2026-7781 / 7782<div class="meta warn-t">keluar gudang 27 Okt ke Budi · <b>belum tercatat terpasang (4 hari)</b></div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div>`
     : e.id === 'EX-07' ? `<div class="row"><div class="grow" style="font-size:.88rem"><b>Bucket teeth 1 set</b> (5 pcs)<div class="meta">27 Okt · Budi · bon BK-2026-0411 ✓</div></div></div><div class="row"><div class="grow" style="font-size:.88rem"><b>Oli hidrolik 20 L</b><div class="meta">26 Okt · Amran · bon BK-2026-0409 ✓</div></div></div>`
     : `<p class="sub">Belum ada sparepart tercatat bulan ini (contoh).</p>`;
@@ -3672,7 +3679,7 @@ function viewAlatDetail(id) {
 function chainSteps(c) {
   const rows = c.steps.map((s) => {
     let cls = s.done ? 'done' : s.broken ? 'broken' : 'future'; let who = '', note = s.note ? esc(s.note) : '';
-    if (s.demo_fills) { if (poApproved()) { cls = 'done'; who = `${esc(OWNER_NAME)} · ${fmtDateShort(DEMO_DATE)} ${APPROVAL_TIME} · dari HP`; note = ''; } else { cls = 'cur'; who = '<span class="danger-t strong">Menunggu Bapak</span>'; note = `<button class="btn primary sm" data-act="decide" data-arg="PO-2026-0187" style="margin-top:6px">Setujui di sini</button>`; } }
+    if (s.demo_fills) { if (poApproved()) { cls = 'done'; who = `${esc(OWNER_NAME)} · ${fmtDateShort(DEMO_DATE)} ${APPROVAL_TIME} · dari HP`; note = ''; } else { cls = 'cur'; who = '<span class="danger-t strong">Menunggu manajemen</span>'; note = `<button class="btn primary sm" data-act="decide" data-arg="PO-2026-0187" style="margin-top:6px">Setujui di sini</button>`; } }
     else if (s.done) who = `${esc(s.by === 'owner' ? OWNER_NAME : pname(s.by))} · ${fmtDT(s.at)}${s.device ? ` · ${esc(s.device)}` : ''}${s.photos ? ` · ${s.photos} foto` : ''}`;
     else if (s.broken) who = '';
     else who = s.by ? `${esc(pname(s.by))}` : '';
@@ -3687,7 +3694,7 @@ function viewSparepart(key) {
   const doneN = c.steps.filter((s) => s.done || (s.demo_fills && poApproved())).length;
   const quotes = c.quotes ? `<div class="meta" style="margin-top:6px">Penawaran dibandingkan: ${c.quotes.map((q) => `${esc(q.supplier)} ${fmtRp(q.amount)}`).join(' · ')}</div>` : '';
   const brokenExtra = c.status === 'broken' ? `<div class="btns" style="margin-top:4px"><button class="btn outline sm" data-act="wa" data-arg="ask_budi_aki">${I.wa} Tanya Budi (WA)</button><button class="btn outline sm" data-act="toast" data-arg="Dicatat: cek fisik aki EX-06 ditugaskan ke Rina, hari ini.">Tandai cek fisik</button></div><p style="font-size:.9rem;margin-top:10px"><b>Barang ${fmtRp(c.price, { words: true })} keluar gudang, belum tercatat di unit mana pun.</b> Ini kalimat yang tidak pernah muncul dari spreadsheet.</p>` : '';
-  const otherCard = (o) => { const open = STATE.chainOpen[chainKey(o)]; const label = o.status === 'complete' ? `${esc(o.name.split(' (')[0])} · S/N ${esc(o.serial)} · ${o.steps.length}/${o.steps.length} selesai · 9–14 Mar 2026 ✓` : o.status === 'broken' ? `${esc(o.name)} · S/N ${esc(o.serial)} · belum tercatat terpasang · 4 hari ⚠` : `${esc(o.name.split(' (')[0])} · S/N ${esc(o.serial)} · ${poApproved() ? 'disetujui, menunggu barang' : 'menunggu Bapak'}`;
+  const otherCard = (o) => { const open = STATE.chainOpen[chainKey(o)]; const label = o.status === 'complete' ? `${esc(o.name.split(' (')[0])} · S/N ${esc(o.serial)} · ${o.steps.length}/${o.steps.length} selesai · 9–14 Mar 2026 ✓` : o.status === 'broken' ? `${esc(o.name)} · S/N ${esc(o.serial)} · belum tercatat terpasang · 4 hari ⚠` : `${esc(o.name.split(' (')[0])} · S/N ${esc(o.serial)} · ${poApproved() ? 'disetujui, menunggu barang' : 'menunggu manajemen'}`;
     return `<div class="group ${o.status === 'broken' ? 'warn' : ''}"><button class="gh" data-act="chain" data-arg="${chainKey(o)}"><span class="grow" style="min-width:0;font-size:.85rem" class="${o.status === 'broken' ? 'warn-t' : ''}">${label}</span><span class="chev">${open ? '▾' : '▸'}</span></button>${open ? `<div class="gb" style="padding-top:10px">${chainSteps(o)}${o.status === 'broken' ? `<div class="btns"><button class="btn outline sm" data-act="wa" data-arg="ask_budi_aki">${I.wa} Tanya Budi (WA)</button><button class="btn outline sm" data-act="toast" data-arg="Dicatat: cek fisik aki EX-06 ditugaskan ke Rina, hari ini.">Tandai cek fisik</button></div>` : ''}<button class="link" data-go="sparepart-${chainKey(o)}">Buka halaman barang ini ${I.chev}</button></div>` : ''}</div>`; };
   return `<div class="stack">
     <section class="card"><div class="t" style="font-size:1rem;font-weight:700">${esc(c.name)}</div><div class="sub">P/N ${esc(c.part_no)} · S/N <b>${esc(c.serial)}</b></div><div class="sub">${fmtRpFull(c.price)}${c.price_note ? ` <span class="meta">(${esc(c.price_note)})</span>` : ''} · untuk <b>${c.unit_id}</b> · ${esc(c.supplier)} · ${c.po_no}</div><div style="margin-top:8px">${statusChip}</div>${quotes}</section>
@@ -3770,7 +3777,7 @@ function sheetTermin(pid, code) {
   if (t.client_signers) rows.push(['TTD klien', esc(t.client_signers)]);
   if (t.invoice_no) rows.push(['Invoice', `${t.invoice_no} · ${fmtDateShort(t.invoice_date)}`]);
   if (t.due_date) rows.push(['Jatuh tempo', `${fmtDateShort(t.due_date)}${t.days_to_due ? ` · ${t.days_to_due} hari lagi · PIC ${esc(pname(t.pic))}` : t.days_overdue ? ` · <span class="danger-t strong">lewat ${t.days_overdue} hari</span>` : ''}`]);
-  if (t.status === 'awaiting_owner') rows.push(['Status', bappSigned() ? `TTD Bapak ${APPROVAL_TIME} · invoice disiapkan Sari` : `menunggu TTD Bapak · ${esc(t.next_step)}`]);
+  if (t.status === 'awaiting_owner') rows.push(['Status', bappSigned() ? `TTD ${esc(OWNER_NAME)} ${APPROVAL_TIME} · invoice disiapkan Sari` : `menunggu TTD manajemen · ${esc(t.next_step)}`]);
   if (t.status === 'awaiting_client') rows.push(['Status', `draft ${esc(pname(t.draft_by))} ${fmtDT(t.draft_at)} · menunggu ${esc(t.waiting_on)} · ${t.days_in_stage} hari · ${esc(t.next_step)}`]);
   if (t.status === 'not_yet') rows.push(['Syarat', esc(t.condition) + (t.forecast_ready ? ` · perkiraan ${fmtDateShort(t.forecast_ready)}` : '')]);
   let money = '';
@@ -3814,8 +3821,8 @@ function sheetTanya(qIdx, free) {
   const qa = DATA.ai.qa; const q = qIdx != null ? qa[qIdx] : null;
   const chips = `<div class="chips">${qa.map((x, i) => `<button class="fchip ${i === qIdx ? 'sel' : ''}" data-act="tanya-q" data-arg="${i}">${esc(x.q)}</button>`).join('')}</div>`;
   let answer = '';
-  if (free) answer = `<div class="bubble" style="background:var(--surface-2)"><b>Bapak:</b> ${esc(free)}</div><div class="bubble">${esc(DATA.ai.free_text_reply)}</div>`;
-  else if (q) answer = `<div class="bubble" style="background:var(--surface-2)"><b>Bapak:</b> ${esc(q.q)}</div><div id="tanya-answer"><div class="bubble typing"><i></i><i></i><i></i></div></div>`;
+  if (free) answer = `<div class="bubble" style="background:var(--surface-2)"><b>${esc(OWNER_NAME)}:</b> ${esc(free)}</div><div class="bubble">${esc(DATA.ai.free_text_reply)}</div>`;
+  else if (q) answer = `<div class="bubble" style="background:var(--surface-2)"><b>${esc(OWNER_NAME)}:</b> ${esc(q.q)}</div><div id="tanya-answer"><div class="bubble typing"><i></i><i></i><i></i></div></div>`;
   openSheet('tanya', `Tanya data ${aiChip()}`, `<div class="tiny">Jawaban disiapkan untuk demo dari data fiktif di halaman ini; belum terhubung AI sungguhan.</div>
     <form data-act="tanya-form" style="display:flex;gap:8px"><input id="tanya-input" class="inp" placeholder="Ketik pertanyaan…" autocomplete="off"><button class="btn outline" type="button" data-act="toast" data-arg="Contoh: di aplikasi asli bisa bicara, tidak perlu mengetik." aria-label="Bicara">${I.mic}</button><button class="btn primary" type="submit">Kirim</button></form>
     ${chips}${answer}`, { arg: qIdx });
@@ -3825,8 +3832,8 @@ function sheetTanya(qIdx, free) {
 function sheetTentang() {
   const theme = storeGet('lbs-theme') || '';
   openSheet('tentang', 'Tentang contoh ini', `<p style="font-size:.9rem">Nama perusahaan klien adalah perusahaan perkebunan sungguhan yang dipakai sebagai contoh; semua orang, angka, nomor SPK, nomor part, dan foto adalah rekaan. Tidak ada data yang dikirim ke mana pun. Tujuan: menunjukkan cara kerja, bukan produk jadi.</p>
-    <section class="card"><div class="ch"><h2>Data Bapak di mana?</h2></div><p style="font-size:.88rem">${esc(DATA.data_card)}</p></section>
-    <section class="card summary"><div class="ch"><h2>Kalau Bapak tertarik</h2></div><p style="font-size:.95rem;font-weight:600">${esc(DATA.next_step_card.replace('Kalau Bapak tertarik: ', ''))}</p></section>
+    <section class="card"><div class="ch"><h2>Data LBS di mana?</h2></div><p style="font-size:.88rem">${esc(DATA.data_card)}</p></section>
+    <section class="card summary"><div class="ch"><h2>Kalau manajemen tertarik</h2></div><p style="font-size:.95rem;font-weight:600">${esc(DATA.next_step_card.replace('Kalau manajemen tertarik: ', ''))}</p></section>
     <section class="card"><div class="ch"><h2>Tahap pembangunan (jika ya)</h2></div><ol style="margin:0;padding-left:18px;font-size:.88rem;display:grid;gap:4px"><li>Laporan harian lapangan + progres + ringkasan WhatsApp</li><li>Gudang &amp; sparepart (nomor seri, bon keluar, pemasangan)</li><li>Keuangan &amp; BAPP (termin, invoice, piutang)</li></ol></section>
     <section class="card"><div class="ch"><h2>Yang belum ada di contoh ini</h2></div><p class="sub">login, cetak BAPP PDF, peta, penggajian, pajak, sinkronisasi sungguhan${AI_ON ? '' : ', fitur AI (ringkasan otomatis, tanya data, baca nota: sengaja dimatikan dulu karena berbiaya bulanan; perkiraan biayanya ada di panduan demo)'}.</p></section>
     <section class="card"><div class="ch"><h2>Tema</h2></div><div class="seg"><button class="${theme === '' ? 'sel' : ''}" aria-pressed="${theme === ''}" data-act="theme" data-arg="">Otomatis</button><button class="${theme === 'light' ? 'sel' : ''}" aria-pressed="${theme === 'light'}" data-act="theme" data-arg="light">Terang</button><button class="${theme === 'dark' ? 'sel' : ''}" aria-pressed="${theme === 'dark'}" data-act="theme" data-arg="dark">Gelap</button></div></section>
@@ -3898,7 +3905,7 @@ const ACTIONS = {
   chain: (k) => { STATE.chainOpen[k] = !STATE.chainOpen[k]; render(); },
   link: (l) => { closeSheet(); if (l.startsWith('unit:')) navigate('alat-' + l.slice(5)); else if (l.startsWith('chain:')) navigate('sparepart-' + l.slice(6)); else if (l.startsWith('approval:')) sheetDecision(l.slice(9)); else if (l.startsWith('project:')) navigate('proyek-' + l.slice(8)); else if (l.startsWith('report:')) navigate('laporan-' + l.slice(7)); else if (l === 'gudang') navigate('gudang'); else navigate(l); },
   'go-anchor': (arg) => { const [route, id] = arg.split('|'); navigate(route); const el = document.getElementById(id); if (el) el.scrollIntoView({ block: 'start' }); },
-  signal: () => { if (STATE.synced || STATE.sending) return; STATE.sending = true; render({ keepScroll: true }); setTimeout(() => { STATE.sending = false; STATE.synced = true; render({ keepScroll: true }); toast(`Laporan Pak Toni sampai di HP Bapak.`, 'ok'); }, 1200); },
+  signal: () => { if (STATE.synced || STATE.sending) return; STATE.sending = true; render({ keepScroll: true }); setTimeout(() => { STATE.sending = false; STATE.synced = true; render({ keepScroll: true }); toast(`Laporan Pak Toni sampai di HP manajemen.`, 'ok'); }, 1200); },
   theme: (t) => { applyTheme(t); render({ refreshSheet: false }); sheetTentang(); },
   'theme-toggle': () => { applyTheme(isDark() ? 'light' : 'dark'); render({ keepScroll: true }); },
   reset: () => { STATE = INITIAL_STATE(); closeSheet(); navigate('beranda'); toast('Demo dikembalikan ke awal'); },
@@ -3917,7 +3924,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeShe
 // ── Splash & start ────────────────────────────────────────────────────────────────────────────────────────────────
 function splash() {
   const el = document.createElement('div'); el.className = 'splash'; el.setAttribute('role', 'button'); el.setAttribute('aria-label', 'Lewati');
-  el.innerHTML = `<div class="logo">${esc(DATA.meta.company_short)}</div><h1>Selamat pagi, ${esc(OWNER_NAME)}</h1><div class="sub">${esc(fmtLong(DEMO_DATE))} · ${DEMO_TIME}</div><div class="fp">${I.finger}<span>Masuk otomatis</span></div><div class="strip">${esc(DATA.meta.disclaimer)}</div>`;
+  el.innerHTML = `<div class="logo">${esc(DATA.meta.company_short)}</div><h1>Selamat pagi, ${esc(DATA.meta.greeting)}</h1><div class="sub">${esc(fmtLong(DEMO_DATE))} · ${DEMO_TIME}</div><div class="fp">${I.finger}<span>Masuk otomatis · ${esc(OWNER_NAME)}</span></div><div class="strip">${esc(DATA.meta.disclaimer)}</div>`;
   document.body.appendChild(el);
   const off = () => { if (el.parentNode) el.parentNode.removeChild(el); };
   el.addEventListener('click', off); setTimeout(off, 1500);

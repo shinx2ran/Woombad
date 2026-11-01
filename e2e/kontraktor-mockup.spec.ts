@@ -8,7 +8,11 @@ const FILE = 'file://' + resolve(process.cwd(), 'mockups/kontraktor-sawit/index.
 async function open(page: Page, hash = 'beranda') {
   await page.goto(`${FILE}#${hash}`)
   const splash = page.locator('.splash')
-  if (await splash.isVisible().catch(() => false)) await splash.click()
+  // the greeting addresses the management team, never "Bapak"
+  if (await splash.isVisible().catch(() => false)) {
+    await expect(splash).toContainText('Selamat pagi, Manajemen LBS')
+    await splash.click()
+  }
   await expect(splash).toBeHidden()
 }
 
@@ -21,9 +25,10 @@ test.describe('Mockup kontraktor sawit', () => {
     await expect(page.getByText('Rp 1,46 M')).toBeVisible()
     // the portfolio overview names every running job by its SPK number
     for (const spk of ['047/KPC-SMT/VIII/2026', '052/LS-PKS/VIII/2026', '038/PGM-BLN/VIII/2026', '055/MAS-BNT/IX/2026']) await expect(page.locator('.glance')).toContainText(`SPK ${spk}`)
-    await expect(page.getByText('Perlu keputusan Bapak (3)')).toBeVisible()
+    await expect(page.getByText('Perlu keputusan manajemen (3)')).toBeVisible()
     await expect(page.locator('.badge')).toHaveText('3')
     expect(logs).toContain('LBS self-check OK')
+    expect(await page.evaluate(() => document.body.innerText.includes('Bapak'))).toBe(false)
     expect(logs.filter((l) => l.startsWith('pageerror'))).toEqual([])
     for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
@@ -41,15 +46,15 @@ test.describe('Mockup kontraktor sawit', () => {
     const sheet = page.getByRole('dialog')
     await expect(sheet.getByText('+6,7%')).toBeVisible()
     await sheet.getByRole('button', { name: 'Setujui', exact: true }).click()
-    await expect(page.locator('#toast')).toContainText('Pak Rahmat, 08:14')
-    await expect(page.getByText('Perlu keputusan Bapak (2)')).toBeVisible()
+    await expect(page.locator('#toast')).toContainText('Lenny, 08:14')
+    await expect(page.getByText('Perlu keputusan manajemen (2)')).toBeVisible()
     await expect(page.locator('.badge')).toHaveText('2')
-    await expect(page.getByText('PO disetujui Bapak 08:14', { exact: false }).first()).toBeVisible()
+    await expect(page.getByText('PO disetujui Lenny 08:14', { exact: false }).first()).toBeVisible()
     await page.goto(`${FILE}#sparepart-FD-2026-04417`)
-    await expect(page.getByText('Pak Rahmat · 31 Okt 08:14 · dari HP')).toBeVisible()
+    await expect(page.getByText('Lenny · 31 Okt 08:14 · dari HP')).toBeVisible()
     await page.goto(`${FILE}#jejak`)
     await expect(page.locator('.audit .row').first()).toContainText('menyetujui')
-    await expect(page.locator('.audit .row').first()).toContainText('Pak Rahmat (Manajemen LBS)')
+    await expect(page.locator('.audit .row').first()).toContainText('Lenny (Manajemen LBS)')
   })
 
   test('a number explains itself: 72% opens Jejak angka with the correction history and the spreadsheet view', async ({ page }) => {
@@ -94,6 +99,6 @@ test.describe('Mockup kontraktor sawit', () => {
     await expect(page.getByText('28,6 L/jam').first()).toBeVisible()
     await page.locator('[data-act="tentang"]').first().click()
     await page.getByRole('button', { name: 'Reset data demo' }).click()
-    await expect(page.getByText('Perlu keputusan Bapak (3)')).toBeVisible()
+    await expect(page.getByText('Perlu keputusan manajemen (3)')).toBeVisible()
   })
 })
