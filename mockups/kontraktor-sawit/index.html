@@ -3111,9 +3111,10 @@ const APPROVAL_TIME = DATA.meta.approval_time;
 const SYNC_TIME = DATA.meta.sync_time;
 const FUEL_PRICE = DATA.meta.fuel_price_per_liter;
 const AI = DATA.meta.ai_label;
-// Saklar fitur AI. false = contoh fitur AI disembunyikan (ringkasan pagi, Tanya data, baca nota). Perkiraan biaya bulanan ada di
-// PANDUAN-DEMO.md. Pengecekan otomatis (solar boros, barang belum terpasang, perkiraan termin) adalah aturan hitung biasa, tanpa AI.
-const AI_ON = false;
+// Saklar contoh fitur AI. true = ringkasan pagi otomatis, Tanya data, baca nota dari foto, dan penjelasan di "Perlu dicek"
+// ditandai "Contoh fitur AI" (rencana awal). Jawabannya disiapkan untuk demo, belum memanggil model AI sungguhan.
+// false = fitur AI disembunyikan dan pengecekan tampil sebagai "Hitungan otomatis". Perkiraan biaya: PANDUAN-DEMO.md bagian 9.
+const AI_ON = true;
 
 const INITIAL_STATE = () => ({
   route: 'beranda', approvals: {}, synced: false, notifRead: false, signalOn: false, sending: false,
@@ -3247,6 +3248,7 @@ const I = {
 const chip = (tone, text, extra = '') => `<span class="chip ${tone} ${extra}">${text}</span>`;
 const aiChip = () => chip('ai', esc(AI));
 const ruleChip = () => chip('muted', 'Hitungan otomatis');
+const insightChip = () => (AI_ON ? aiChip() : ruleChip());
 function avatar(id, small = true) { const p = person(id); return `<span class="av${small ? ' s' : ''}" aria-hidden="true">${esc(p.initial)}</span>`; }
 function track(pct, cls = '') { const w = Math.max(0, Math.min(100, pct)); return `<div class="track"><i class="${cls}" style="width:${w.toFixed(1)}%"></i></div>`; }
 function bars3(fisik, ditagih, dibayar, lg = false, fisikHtml = null) {
@@ -3381,7 +3383,7 @@ function viewBeranda() {
       <div style="display:flex;align-items:baseline;gap:12px"><div class="big">${mandorReceived()}/${mr.expected}</div><div class="sub ${STATE.synced ? 'ok-t' : 'danger-t'}">${STATE.synced ? 'Semua mandor sudah melapor' : 'Pak Toni (Belian) belum'}</div></div>
       <div style="margin-top:6px">${mr.rows.map(mandorRow).join('')}</div>
       <button class="link" data-go="mandor">Lihat sisi mandor ${I.chev}</button></section>
-    <section class="card"><div class="ch"><h2>Perlu dicek</h2>${ruleChip()}</div>
+    <section class="card"><div class="ch"><h2>Perlu dicek</h2>${insightChip()}</div>
       ${DATA.ai.anomalies.slice(0, 2).map((a) => `<div class="row" style="align-items:flex-start"><span class="warn-t" style="margin-top:2px">${I.warn}</span><div class="grow"><div style="font-size:.9rem">${esc(a.text)}</div><div class="tiny">${esc(a.rule)}</div><button class="link" data-act="link" data-arg="${a.link}">${a.link.startsWith('unit') ? 'Lihat unit EX-07' : 'Lihat jejak barang'} ${I.chev}</button></div></div>`).join('')}</section>
     <section class="card tap" data-go="alat"><div class="ch"><h2>Alat hari ini</h2>${I.chev.replace('<svg', '<svg class="chev"')}</div>
       <div class="chips">${chip('muted', `${DATA.equipment.length} unit`)}${chip('ok', `${c.operating} beroperasi`)}${chip('muted', `${c.standby} standby`)}${chip('info', `${c.service} servis`)}${chip('danger', `${c.broken} rusak`)}</div>
@@ -3503,7 +3505,7 @@ function viewProyekDetail(id) {
     <div>${spkLine(p)}<div class="t" style="font-weight:700;font-size:1.05rem">${esc(p.title)}</div><div class="sub">${esc(p.location)}</div><div class="meta">${esc(cl.name)}</div><div class="meta">${fmtDateShort(p.period_start)} – ${fmtDate(p.period_end)} · ${p.days_left >= 0 ? `sisa ${p.days_left} hari` : `<span class="danger-t">lewat ${-p.days_left} hari</span>`} · mandor ${esc(m.name)}</div>${p.status_tone !== 'ok' ? `<div style="margin-top:6px">${chip(p.status_tone, esc(statusLabel(p)), 'wrap')}</div>` : ''}</div>
     <section class="card"><div class="ch"><h2>Fisik vs tagihan</h2></div>${projBars(p, true, true)}
       <p style="margin-top:12px;font-size:1rem"><b>${fmtRp(unb, { words: true })}</b> pekerjaan sudah dikerjakan, belum ditagih.</p>
-      ${t3 ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><span style="font-size:.88rem">Termin ${t3.code.replace('T', '')} (syarat ${esc(t3.condition)}) diperkirakan siap diajukan <b>${fmtDateShort(t3.forecast_ready)}</b></span>${ruleChip()}</div>${t3.forecast_note ? `<div class="tiny">${esc(t3.forecast_note)}</div>` : ''}` : ''}</section>
+      ${t3 ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><span style="font-size:.88rem">Termin ${t3.code.replace('T', '')} (syarat ${esc(t3.condition)}) diperkirakan siap diajukan <b>${fmtDateShort(t3.forecast_ready)}</b></span>${insightChip()}</div>${t3.forecast_note ? `<div class="tiny">${esc(t3.forecast_note)}</div>` : ''}` : ''}</section>
     <section class="card"><div class="ch"><h2>Termin &amp; BAPP</h2><span class="meta">tap baris untuk rincian</span></div>
       ${p.termin.map((t) => `<div class="row tap" data-act="termin" data-arg="${p.id}|${t.code}" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t">${t.code === 'RET' ? 'Retensi' : t.code} · ${t.pct}%</span><b>${fmtRpFull(t.amount)}</b></div><div style="font-size:.82rem;margin-top:2px">${t.bapp_signed ? `BAPP TTD ${fmtDateShort(t.bapp_signed)} · ` : ''}${t.invoice_date && t.status !== 'paid' ? `invoice ${fmtDateShort(t.invoice_date)} · ` : ''}${terminStatusHtml(p, t)}</div>${dp && t.code === 'DP' ? `<div class="tiny">${esc(t.condition)}</div>` : ''}</div>`).join('')}
       <div class="row" style="justify-content:space-between;font-size:.88rem"><span class="sub">Jumlah</span><b>${fmtRpFull(p.termin.reduce((s, t) => s + t.amount, 0))}</b></div>${p.retention_note ? `<div class="tiny">${esc(p.retention_note)}</div>` : ''}</section>
@@ -3689,7 +3691,7 @@ function viewAlatDetail(id) {
     : e.status === 'standby' ? `<section class="card"><div class="t" style="font-weight:700">STANDBY · ${esc(e.status_note)}</div><div class="meta">Kemarin: 0 jam, 0 L</div></section>`
     : `<section class="card"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${chip('ok', 'Beroperasi')}<span class="sub">${e.yesterday ? `kemarin ${e.yesterday.hm != null ? `${fmtDec(e.yesterday.hm, 1)} jam` : `${e.yesterday.rit} rit`} · ${fmtL(e.yesterday.fuel_l)}${e.yesterday.output ? ` · ${esc(e.yesterday.output)}` : ''}` : `kendaraan ringan · solar Okt ${fmtL(e.oct_fuel_l || 0)} · tanpa laporan jam/rit`}</span></div></section>`;
   const fuelCard = e.id === 'EX-07' ? `<section class="card"><div class="ch"><h2>Solar 14 hari (L/jam)</h2>${chip('danger', `${e.fuel_14d_l_per_hm.filter((v) => v > DATA.fuel_anomaly.fleet_avg_l_per_hm * 1.12).length} hari di atas batas`)}</div>${fuelBars(e.fuel_14d_l_per_hm, DATA.fuel_anomaly.fleet_avg_l_per_hm)}
-      <div style="margin-top:10px"><div style="margin-bottom:6px">${ruleChip()}</div><div style="font-size:.88rem"><b class="num" data-act="trace" data-arg="fuel-EX-07">${fmtDec(DATA.fuel_anomaly.l_per_hm, 1)} L/jam</b> Oktober, naik ${DATA.fuel_anomaly.excess_pct}% dari rata-rata 20 ton standar (${fmtDec(DATA.fuel_anomaly.fleet_avg_l_per_hm, 1)}). Selisih ±${fmtL(Math.round(DATA.fuel_anomaly.excess_l / 10) * 10)} ≈ ${fmtRp(DATA.fuel_anomaly.excess_rp)}. Kemungkinan: injektor, selang bocor, atau pencatatan. Servis terakhir ${esc(DATA.fuel_anomaly.last_service)}.</div></div>
+      <div style="margin-top:10px"><div style="margin-bottom:6px">${insightChip()}</div><div style="font-size:.88rem"><b class="num" data-act="trace" data-arg="fuel-EX-07">${fmtDec(DATA.fuel_anomaly.l_per_hm, 1)} L/jam</b> Oktober, naik ${DATA.fuel_anomaly.excess_pct}% dari rata-rata 20 ton standar (${fmtDec(DATA.fuel_anomaly.fleet_avg_l_per_hm, 1)}). Selisih ±${fmtL(Math.round(DATA.fuel_anomaly.excess_l / 10) * 10)} ≈ ${fmtRp(DATA.fuel_anomaly.excess_rp)}. Kemungkinan: injektor, selang bocor, atau pencatatan. Servis terakhir ${esc(DATA.fuel_anomaly.last_service)}.</div></div>
       <div class="meta" style="margin-top:6px">${esc(DATA.fuel_anomaly.suggestion)}</div></section>` : '';
   const partsRows = e.id === 'EX-08' ? DATA.parts_chains.filter((c) => c.unit_id === 'EX-08').map((c) => `<div class="row tap" data-go="sparepart-${chainKey(c)}"><div class="grow" style="font-size:.88rem"><b>${esc(c.name.split(' (')[0])}</b> · P/N ${esc(c.part_no)}<div class="meta">S/N ${esc(c.serial)} · ${c.po_no} · ${c.status === 'complete' ? `terpasang ${fmtDate(c.steps[5].at)} · ${pname(c.steps[5].by)} · HM 6.102 · rantai lengkap ✓` : poApproved() ? `<span class="ok-t">disetujui ${APPROVAL_TIME}, menunggu barang</span>` : '<span class="danger-t">menunggu manajemen</span>'}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div>`).join('') + `<div class="row"><div class="grow" style="font-size:.88rem"><b>Bucket teeth set</b> · 5 pcs<div class="meta">2 Sep 2026 · Budi · HM 6.480 · bon BK-2026-0301</div></div></div>`
     : e.id === 'EX-06' ? `<div class="row tap" data-go="sparepart-AK-2026-7781"><div class="grow" style="font-size:.88rem"><b>Aki N150 ×2</b> · S/N AK-2026-7781 / 7782<div class="meta warn-t">keluar gudang 27 Okt ke Budi · <b>belum tercatat terpasang (4 hari)</b></div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div>`
@@ -3776,7 +3778,7 @@ function sheetDecision(id) {
   if (id === 'PO-2026-0187') { const c = DATA.parts_chains[0]; title = `Setujui ${id}?`; okLabel = 'Setujui';
     rows = kv([['Barang', `${esc(c.name.split(' (')[0])}, Excavator 20 ton<br><span class="meta">P/N ${esc(c.part_no)} · S/N ${esc(c.serial)}</span>`], ['Harga', `${fmtRpFull(a.amount)}<br><span class="meta">termasuk PPN · garansi ${esc(c.quotes[0].warranty)} · tiba ${esc(c.quotes[0].lead)}</span>`], ['Pemasok', esc(a.supplier)], ['Alasan', `<span style="font-weight:500">${esc(a.reason)}</span>`]])
       + `<div class="meta" style="margin-top:8px">Penawaran dibandingkan: ${c.quotes.map((q) => `${esc(q.supplier)} ${fmtRp(q.amount)}`).join(' · ')}</div>
-      <div style="margin-top:8px"><div style="margin-bottom:4px">${ruleChip()}</div><span style="font-size:.85rem">${esc(a.context_price)}</span></div>
+      <div style="margin-top:8px"><div style="margin-bottom:4px">${insightChip()}</div><span style="font-size:.85rem">${esc(a.context_price)}</span></div>
       <div style="font-size:.85rem;margin-top:4px" class="danger-t">${esc(a.context_impact)}</div>`; }
   else if (id === 'BAPP-052-T2') { const t = project('SPK-052').termin[1]; title = 'Tandatangani BAPP Termin 2 PKS Limpah?'; okLabel = 'Tandatangani';
     rows = kv([['Nomor', `${esc(t.bapp_no)}<br><span class="meta">Opname ${fmtDateShort(t.opname_date)} · galian 24.000 m3, tanggul 1.950 m3</span>`], ['Nilai termin', `${fmtRpFull(t.amount)} (${t.pct}%)`], ['Sudah TTD', `${esc(t.client_signers)} · ${fmtDateShort(t.client_signed)}`], ['Disiapkan', `${esc(pname(t.uploaded_by))} · diunggah ${fmtDT(t.uploaded_at)} (foto BAPP)`]])

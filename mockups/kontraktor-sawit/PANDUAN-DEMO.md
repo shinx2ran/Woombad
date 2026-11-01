@@ -9,10 +9,11 @@ PT Mitra Austral Sejahtera Bonti) adalah perusahaan sungguhan yang dipakai supay
 BAPP, invoice, angka, dan foto adalah rekaan. Jangan tunjukkan mockup ini ke pihak kebun seolah data nyata. Tidak ada data yang dikirim ke mana pun. Setiap layar menampilkan strip "Contoh tampilan · data
 fiktif".
 
-**Fitur AI sengaja dimatikan dulu** (ringkasan pagi otomatis, "Tanya data", baca nota dari foto) karena berbiaya bulanan.
-Yang tetap ada adalah pengecekan berbasis aturan hitung biasa (solar boros, barang keluar gudang belum terpasang, perkiraan
-tanggal termin), ditandai "Hitungan otomatis", dan itu gratis. Saklarnya satu baris di `index.html`: `const AI_ON = false`.
-Perkiraan biaya kalau nanti dinyalakan ada di bagian 9.
+**Contoh fitur AI menyala** sesuai rencana awal, semuanya ditandai "Contoh fitur AI": ringkasan pagi otomatis di Beranda,
+"Tanya data" (tombol ungu), baca nota solar dari foto di sisi mandor, dan penjelasan di kartu "Perlu dicek". Jawabannya
+sudah disiapkan untuk demo (4 pertanyaan "Tanya data"), belum memanggil model AI sungguhan, jadi belum ada biayanya.
+Saklarnya satu baris di `index.html`: `const AI_ON = true` (`false` menyembunyikan fitur AI dan menampilkan pengecekan sebagai
+"Hitungan otomatis"). Perkiraan biaya bulanan kalau AI sungguhan dipakai ada di bagian 9.
 
 ## 1. Tiga hal yang ingin dibuktikan
 
@@ -43,6 +44,7 @@ Prinsip: **serahkan HP-nya ke orang yang diajak bicara** (Lenny, Eric, atau pimp
 |---|---|---|
 | 0:00 | Buka ikon. Layar sambutan "Selamat pagi, Manajemen LBS" (masuk otomatis sebagai Lenny). | "Ini bukan aplikasi jadi. Ini contoh tampilan kalau rekap admin dibaca dari HP. Semua angkanya fiktif. Silakan dipegang." Diam 10 detik. |
 | 0:30 | Beranda. Tunjuk 3 ubin: Rp 1,46 M · Rp 205 jt · 1 unit berhenti. Lalu kartu "Semua proyek sekilas": 63% dari Rp 5,47 M, rencana 62%, satu bar per proyek lengkap dengan nomor SPK dan nama klien, Belian merah. | "Ini semua pekerjaan LBS dalam satu pandangan: isi hijau yang sudah terpasang, tanda tegak rencananya hari ini. Yang merah itu yang di belakang." |
+| 0:50 | Minta dia membaca kartu kuning "Ringkasan pagi ini". | "Tidak ada yang mengetik ini. Dirangkum dari laporan mandor dan admin kemarin, setiap pagi jam 6." Tunjuk chip "Contoh fitur AI". |
 | 1:00 | Ketuk "Rp 1,86 M" → Rp 1.862.450.000 → "Dari mana angka ini?" → rekonsiliasi Sari 06:30. Tutup. | "Angkanya dari input admin yang sama seperti sekarang, hanya tidak di spreadsheet." |
 | 1:30 | Kartu "Perlu keputusan manajemen (3)" (persetujuan tercatat atas nama Lenny, Manajemen LBS). Ketuk "Setujui" pada PO final drive. Tunjuk harga terakhir +6,7%, produksi hilang Rp 3,2 jt/hari, rantai Budi → Dedi → Manajemen. **Minta dia sendiri yang mengetuk Setujui.** | "Mulai detik ini semua orang di kantor tahu manajemen sudah setuju: siapa, jam berapa, dari mana." (Lonceng 3 → 2.) |
 | 2:30 | Tab Proyek: kartu "Jadwal & progres" (satu baris per SPK, batang masa kontrak, garis putus hari ini). Ketuk Semitau di kartu sekilas. | "Mana yang bakal selesai duluan, mana yang lewat tanggal, kelihatan tanpa buka satu-satu." |
@@ -52,7 +54,7 @@ Prinsip: **serahkan HP-nya ke orang yang diajak bicara** (Lenny, Eric, atau pimp
 | 4:45 | Ketuk kartu "Laporan harian terakhir" → baris "tersimpan 16:42 tanpa sinyal, terkirim 18:05". Ketuk "Lihat sisi mandor". | — |
 | 5:00 | Sisi mandor Pak Toni: form tombol besar, foto berstempel GPS, "menunggu sinyal (1)". Ketuk chip "Sinyal: Tidak ada" → "Ada" → "Terkirim 08:16". Kembali ke Beranda: 3/4 → 4/4, Belian 91% → 94%. Diam 3 detik. | "Di kebun sering tidak ada sinyal. Mandor tetap isi; laporannya sampai ke HP manajemen begitu dapat sinyal, bukan besok setelah admin ketik ulang." |
 | 6:00 | Tab Proyek → "Tagihan" (tiap kartu diawali nomor SPK). Baca dari atas: Rp 205 jt lewat 9 hari (Bu Lina), Semitau T2 jatuh tempo 16 Nov, Belian T2 "5 hari di meja Pak Yusuf". Ketuk "Ingatkan Wati (WA)" → pesan terisi → Tutup. Tunjuk footer "rata-rata 41 hari, tahap paling lama TTD Kebun". | "Ini uang LBS dan di meja siapa dia berhenti. Manajemen tidak perlu tanya Wati sudah sampai mana." |
-| 7:00 | Tab Uang: masuk 1,14 M, keluar 1,09 M, grafik 6 bulan, "Kewajiban 30 hari" dan "kas cukup ±3,5 bulan", piutang merah, solar 46%. Kembali ke Beranda → kartu "Perlu dicek" → "Lihat unit EX-07". | "Yang ini bukan AI, Pak, cuma hitungan: solar per jam dibandingkan unit sejenis. Kalau datanya rapi, peringatan seperti ini keluar sendiri, gratis." |
+| 7:00 | Tab Uang: masuk 1,14 M, keluar 1,09 M, grafik 6 bulan, "Kewajiban 30 hari" dan "kas cukup ±3,5 bulan", piutang merah, solar 46%. Ketuk tombol ungu "Tanya" → "Berapa solar EX-07 bulan ini?" → jawaban → "Lihat unit EX-07". | "Ini contoh; jawabannya sudah disiapkan. Yang nyata dulu adalah datanya tercatat rapi; setelah itu AI tinggal membaca dan menjawab." |
 | 7:45 | EX-07: grafik 14 hari, bar merah. Kembali ke daftar Alat: EX-08 paling atas sudah "PO disetujui Lenny 08:14". Ketuk EX-08 → "Sparepart terpasang" → Final drive S/N FD-2026-04417. | — |
 | 8:15 | Rantai barang: Budi → Dedi (3 penawaran) → **nama Lenny dan jam tadi** → Rina → Budi → terpasang → part lama kembali. Buka "Aki N150": simpul merah "belum tercatat terpasang, posisi terakhir Budi". Ketuk "Tanya Budi (WA)". | "Barang Rp 68 juta ini tidak bisa hilang di tengah jalan; tiap langkah orangnya beda. Dan yang Rp 6,4 juta ini: di spreadsheet tidak pernah kelihatan." |
 | 9:00 | Tab Jejak: baris pertama "Lenny (Manajemen LBS) menyetujui PO 08:14", baris Wati mengoreksi 240 → 420, Pak Samsul terlambat. Tunjuk footer "Dihapus: 0 · Koreksi: 12". Ketuk ikon bulan (tema gelap), ketuk lagi. | "Manajemen tidak perlu curiga ke semua orang; yang perlu dilihat kelihatan sendiri, dan admin juga terlindungi karena jejaknya jelas." |
@@ -72,7 +74,7 @@ Kalau waktunya cuma 3 menit: Beranda → Setujui PO → Semitau 72% → Jejak an
 | "Admin saya nanti merasa diawasi." | "Jejak ini melindungi mereka juga: kalau ada angka salah, yang kelihatan adalah siapa yang mengoreksi dan alasannya, bukan tuduhan. Tidak ada yang bisa dihapus, termasuk oleh manajemen." |
 | "Rekap mingguan yang biasa di-print masih ada?" | "Ada, tombol 'Rekap mingguan PDF' di Proyek. Kebiasaan yang sekarang tidak perlu berubah hari pertama." |
 | "Ini sudah bisa dipakai?" | "Belum. Ini contoh tampilan. Yang sudah ada: gambaran dan alur. Yang belum: login, sinkronisasi sungguhan, cetak BAPP, penggajian, pajak." |
-| "Ada AI-nya tidak?" | "Sengaja belum. Peringatan yang tadi dilihat itu hitungan biasa, gratis. Fitur AI (ringkasan otomatis, tanya data, baca nota) bisa ditambah nanti; biayanya sekitar Rp 20 ribu sampai Rp 600 ribu per bulan tergantung model dan pemakaian (bagian 9)." |
+| "AI-nya sudah jalan?" | "Belum, yang tadi contoh dengan jawaban yang disiapkan. Kalau dipakai sungguhan, biayanya sekitar Rp 20 ribu sampai Rp 600 ribu per bulan tergantung model dan pemakaian (bagian 9). Peringatan seperti solar boros bisa juga dibuat dengan hitungan biasa tanpa biaya." |
 
 ## 5. Tanda tertarik atau tidak
 
@@ -132,10 +134,10 @@ Jalan yang masuk akal (bukan "bangun semuanya"):
   dihitung ulang saat halaman dibuka, dan ada pemeriksaan otomatis di konsol browser ("LBS self-check OK").
 - `manifest.webmanifest`, `sw.js`, dan ikon membuat versi yang di-hosting bisa dipasang di layar utama dan dibuka tanpa sinyal.
 - Uji otomatis (Playwright) berjalan di `e2e/kontraktor-mockup.spec.ts` dan menjalankan seluruh alur demo di atas.
-- Yang sengaja tidak ada: login, sinkronisasi sungguhan, cetak PDF, peta, penggajian, pajak. Contoh fitur AI ada di kode
-  tetapi dimatikan (`AI_ON = false`); jawaban "Tanya data" hanya disiapkan untuk 4 pertanyaan.
+- Yang sengaja tidak ada: login, sinkronisasi sungguhan, cetak PDF, peta, penggajian, pajak. Contoh fitur AI menyala
+  (`AI_ON = true`) tetapi tidak memanggil model AI; jawaban "Tanya data" hanya disiapkan untuk 4 pertanyaan.
 
-## 9. Perkiraan biaya AI per bulan (kalau nanti dinyalakan)
+## 9. Perkiraan biaya AI per bulan (kalau AI sungguhan dipakai)
 
 Tiga fitur yang benar-benar memakai model AI (API Claude, harga resmi Okt 2026, bayar sesuai pemakaian, tanpa biaya tetap):
 
