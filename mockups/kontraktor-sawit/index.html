@@ -159,11 +159,27 @@ h1, h2, h3 { text-wrap: balance; }
 
 /* tiles */
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 16px; min-height: 96px; display: flex; flex-direction: column; justify-content: center; gap: 4px; cursor: pointer; min-width: 0; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px 14px 12px; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; cursor: pointer; min-width: 0; }
 .tile:active { background: var(--surface-2); }
 .tile.span { grid-column: 1 / -1; }
-.tile .big { font-size: clamp(1.3rem, 7vw, 1.65rem); white-space: nowrap; }
+.tile .tl { display: flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 650; color: var(--muted); letter-spacing: .01em; }
+.tile .tl .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex: none; }
+.tile.warn .tl .dot { background: var(--warn); }
+.tile .big { font-size: clamp(1.35rem, 7vw, 1.7rem); white-space: nowrap; line-height: 1.1; }
 .tile.danger .big { color: var(--danger); } .tile.warn .big { color: var(--warn); }
+.tile .ts { font-size: .82rem; color: var(--muted); line-height: 1.35; }
+.tile .tm { display: grid; gap: 4px; font-size: .74rem; color: var(--muted); }
+.tile .tm .track { height: 6px; }
+.tile .tf { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 4px; font-size: .8rem; font-weight: 650; color: var(--accent); }
+.tile .tf svg { width: 16px; height: 16px; flex: none; }
+.tile.span .tf { border-top: 0; padding-top: 0; }
+@media (max-width: 380px) { .tile { padding: 14px 12px 12px; } .tile .tl { font-size: .74rem; white-space: nowrap; } }
+@media (max-width: 340px) {
+  .tiles { gap: 10px; }
+  .tile { padding: 12px 10px 10px; }
+  .tile .tl { font-size: .72rem; } .tile .tl .dot { display: none; }
+  .tile .ts { font-size: .76rem; } .tile .tf { font-size: .74rem; }
+}
 .cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 @media (max-width: 340px) { .cols3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .cols3 .mid { font-size: 1.05rem; }
@@ -477,6 +493,7 @@ const DATA = {
   {
    "id": "KPC",
    "name": "PT Kartika Prima Cipta (Sinar Mas Agribusiness)",
+   "short": "KPC · Sinar Mas",
    "estate": "Kebun Semitau, Kapuas Hulu",
    "contacts": [
     {
@@ -500,6 +517,7 @@ const DATA = {
   {
    "id": "LS",
    "name": "PT Limpah Sejahtera (First Resources)",
+   "short": "Limpah Sejahtera",
    "estate": "PKS Limpah Sejahtera, Ketapang",
    "contacts": [
     {
@@ -515,6 +533,7 @@ const DATA = {
   {
    "id": "PGM",
    "name": "PT Persada Graha Mandiri (Sinar Mas Agribusiness)",
+   "short": "PGM · Sinar Mas",
    "estate": "Belian Estate, Silat Hilir, Kapuas Hulu",
    "contacts": [
     {
@@ -530,6 +549,7 @@ const DATA = {
   {
    "id": "MAS",
    "name": "PT Mitra Austral Sejahtera",
+   "short": "Mitra Austral",
    "estate": "Kebun Bonti, Sanggau",
    "contacts": [
     {
@@ -3303,6 +3323,7 @@ function isDark() { const t = document.documentElement.getAttribute('data-theme'
 // ── Views: Beranda ────────────────────────────────────────────────────────────────────────────────────────────────
 function viewBeranda() {
   const T = totals(); const ov = overdueTotal(); const rec = receivables(); const overdueRow = rec.find((r) => r.t.status === 'overdue');
+  const unbilledShare = T.physical ? T.unbilled / T.physical * 100 : 0;
   const ex08 = unit('EX-08'); const pend = pendingApprovals(); const decided = decidedApprovals(); const mr = DATA.mandor_reports_yesterday;
   const tile3sub = poApproved() ? `EX-08 · PO disetujui ${OWNER_NAME} ${APPROVAL_TIME} · perkiraan jalan ${fmtDateShort(ex08.expected_running)}` : `EX-08 · ${ex08.status_note.split(' ').slice(0, 2).join(' ')} · ${daysAgo(ex08.broken_since)} hari · PO menunggu manajemen`;
   const todayOut = DATA.cash.today_out;
@@ -3325,9 +3346,21 @@ function viewBeranda() {
   const c = eqCounts();
   return `<div class="stack">
     <div class="tiles">
-      <div class="tile" data-go="proyek" role="button" tabindex="0"><div class="big">${fmtRp(T.unbilled)}</div><div class="sub">pekerjaan selesai, belum ditagih · ${activeProjects().length}&nbsp;proyek</div></div>
-      <div class="tile danger" data-act="go-anchor" data-arg="uang|piutang" role="button" tabindex="0"><div class="big">${fmtRp(ov)}</div><div class="sub">lewat jatuh tempo · ${overdueRow.t.days_overdue}&nbsp;hari · ${esc(client(overdueRow.p.client_id).name)}</div></div>
-      <div class="tile ${poApproved() ? 'warn' : 'danger'} span" data-go="alat-EX-08" role="button" tabindex="0"><div class="big">${c.broken} unit berhenti</div><div class="sub">${esc(tile3sub)}</div></div>
+      <div class="tile" data-go="proyek" role="button" tabindex="0" aria-label="Belum ditagih ${fmtRp(T.unbilled)}, ${fmtPct(unbilledShare, 0)} dari pekerjaan terpasang">
+        <div class="tl">Belum ditagih</div>
+        <div class="big">${fmtRp(T.unbilled)}</div>
+        <div class="ts">dari ${activeProjects().length}&nbsp;SPK berjalan</div>
+        <div class="tm" title="${fmtPct(unbilledShare, 0)} dari nilai pekerjaan yang sudah terpasang belum ditagih"><div class="track"><i style="width:${unbilledShare.toFixed(1)}%"></i></div><span>${fmtPct(unbilledShare, 0)} dari nilai fisik</span></div>
+        <div class="tf"><span>Lihat per SPK</span>${I.chev}</div></div>
+      <div class="tile danger" data-act="go-anchor" data-arg="uang|piutang" role="button" tabindex="0" aria-label="Lewat jatuh tempo ${fmtRp(ov)}, ${overdueRow.t.days_overdue} hari, ${esc(client(overdueRow.p.client_id).name)}">
+        <div class="tl"><span class="dot"></span>Lewat jatuh tempo</div>
+        <div class="big">${fmtRp(ov)}</div>
+        <div class="ts">${esc(client(overdueRow.p.client_id).short)}<br>SPK&nbsp;${esc(overdueRow.p.spk_no.split('/')[0])} · Termin&nbsp;${esc(overdueRow.t.code.replace('T', ''))}</div>
+        <div>${chip('danger', `lewat ${overdueRow.t.days_overdue}&nbsp;hari`)}</div>
+        <div class="tf"><span>Lihat piutang</span>${I.chev}</div></div>
+      <div class="tile ${poApproved() ? 'warn' : 'danger'} span" data-go="alat-EX-08" role="button" tabindex="0">
+        <div class="tl"><span class="dot"></span>Alat berat</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div style="min-width:0"><div class="big">${c.broken} unit berhenti</div><div class="ts" style="margin-top:4px">${esc(tile3sub)}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div></div>
     </div>
     ${glanceCard(true)}
     ${AI_ON ? `<section class="card summary"><div class="ch"><h2>Ringkasan pagi ini</h2>${aiChip()}</div>
