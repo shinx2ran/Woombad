@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
-<title>LBS Pemilik</title>
-<meta name="description" content="Contoh tampilan (mockup) aplikasi pemilik kontraktor kebun sawit: progres pekerjaan, BAPP & termin, uang, alat berat, jejak sparepart, dan jejak input. Semua data fiktif.">
+<title>LBS Manajemen</title>
+<meta name="description" content="Contoh tampilan (mockup) aplikasi manajemen kontraktor kebun sawit: progres pekerjaan, BAPP & termin, uang, alat berat, jejak sparepart, dan jejak input. Semua data fiktif.">
 <meta name="theme-color" content="#1F6F4A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="LBS Pemilik">
+<meta name="apple-mobile-web-app-title" content="LBS">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -176,6 +176,7 @@ h1, h2, h3 { text-wrap: balance; }
 .track.tickable { overflow: visible; }
 .track .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); border-radius: 1px; }
 .glance .row { display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name pct delta" "spk spk spk" "bar bar bar" "meta meta meta"; gap: 4px 8px; align-items: center; padding: 10px 0; }
+.spkline { font-size: .78rem; font-weight: 650; color: var(--muted); letter-spacing: .02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .glance .row .spk { grid-area: spk; margin-top: -4px; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .glance .row .name { grid-area: name; font-weight: 650; font-size: .95rem; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .glance .row .pct { grid-area: pct; font-weight: 700; font-size: 1.05rem; font-variant-numeric: normal; }
@@ -323,9 +324,9 @@ h1, h2, h3 { text-wrap: balance; }
 // ── DATA: satu objek untuk semua angka. Angka turunan dihitung di JS, tidak diketik dua kali. Semua nama fiktif.
 const DATA = {
  "meta": {
-  "company": "CV Lestari Bumi Sawit",
+  "company": "Manajemen LBS",
   "company_short": "LBS",
-  "app_name": "LBS Pemilik",
+  "app_name": "LBS Manajemen",
   "owner_name": "Pak Rahmat",
   "owner_initial": "R",
   "demo_date": "2026-10-31",
@@ -359,7 +360,7 @@ const DATA = {
   {
    "id": "owner",
    "name": "Pak Rahmat",
-   "role": "Pemilik",
+   "role": "Manajemen LBS",
    "initial": "R"
   },
   {
@@ -1199,7 +1200,7 @@ const DATA = {
    },
    {
     "id": "ttd_pemilik",
-    "label": "TTD Pemilik",
+    "label": "TTD Manajemen",
     "items": [
      "SPK-052:T2"
     ],
@@ -2329,7 +2330,7 @@ const DATA = {
     },
     {
      "n": 3,
-     "label": "Disetujui pemilik",
+     "label": "Disetujui manajemen",
      "by": "owner",
      "at": "2026-10-31T08:14",
      "device": "HP",
@@ -2402,7 +2403,7 @@ const DATA = {
     },
     {
      "n": 3,
-     "label": "Disetujui pemilik",
+     "label": "Disetujui manajemen",
      "by": "owner",
      "at": "2026-03-09T11:05",
      "device": "HP",
@@ -2466,7 +2467,7 @@ const DATA = {
     },
     {
      "n": 2,
-     "label": "PO dibuat & disetujui pemilik",
+     "label": "PO dibuat & disetujui manajemen",
      "by": "dedi",
      "at": "2026-10-20T10:15",
      "note": "PO-2026-0179 · disetujui Pak Rahmat 20 Okt 10:40 dari HP",
@@ -2860,7 +2861,7 @@ const DATA = {
    "at": "2026-10-28T16:30",
    "by": "wati",
    "action": "mengunggah BAPP ber-TTD klien",
-   "object": "BAPP T2 PKS Limpah · Rp 412.500.000 · menunggu TTD Pemilik",
+   "object": "BAPP T2 PKS Limpah · Rp 412.500.000 · menunggu TTD Manajemen",
    "device": "Laptop kantor",
    "note": "foto BAPP TTD Askep & Manajer PKS"
   },
@@ -2971,7 +2972,7 @@ const DATA = {
   "Mandor: hanya mengisi laporan proyeknya sendiri.",
   "Admin kantor: memeriksa laporan & menyiapkan BAPP; koreksi wajib pakai alasan.",
   "Keuangan: kas, invoice, pembayaran. Gudang: barang masuk/keluar.",
-  "Pemilik: melihat semua; harga, kontrak, dan persetujuan hanya pemilik.",
+  "Manajemen LBS (Pak Rahmat): melihat semua; harga, kontrak, dan persetujuan hanya manajemen.",
   "Tidak ada yang bisa menghapus. Koreksi selalu membuat versi baru."
  ],
  "data_card": "Data disimpan di database milik perusahaan (bukan di HP siapa pun), dicadangkan setiap malam, dan bisa diekspor ke Excel kapan saja.",
@@ -3125,7 +3126,7 @@ function daysBetween(a, b) { return Math.round((dateOf(b) - dateOf(a)) / 8640000
 function daysAgo(iso) { return daysBetween(iso, DEMO_DATE); }
 function dayLabel(iso) { const d = daysAgo(iso); if (d === 0) return 'hari ini'; if (d === 1) return 'kemarin'; if (d < 0) return fmtDateShort(iso); return fmtDateShort(iso); }
 function whenLabel(iso) { const d = daysAgo(iso); const t = fmtTime(iso); if (d === 0) return `hari ini ${t}`; if (d === 1) return `kemarin ${t}`; return `${fmtDateShort(iso)} ${t}`; }
-function person(id) { if (id === 'owner') return { id, name: OWNER_NAME, role: 'Pemilik', initial: OWNER_INITIAL }; return DATA.people.find((p) => p.id === id) || { id, name: id, role: '', initial: (id || '?')[0].toUpperCase() }; }
+function person(id) { if (id === 'owner') return { id, name: OWNER_NAME, role: 'Manajemen LBS', initial: OWNER_INITIAL }; return DATA.people.find((p) => p.id === id) || { id, name: id, role: '', initial: (id || '?')[0].toUpperCase() }; }
 const pname = (id) => person(id).name;
 const client = (id) => DATA.clients.find((c) => c.id === id);
 const project = (id) => DATA.projects.find((p) => p.id === id);
@@ -3173,7 +3174,7 @@ function pipelineItems() {
   for (const it of items) if (it.key === 'SPK-052:T2' && bappSigned()) { it.stage = 'invoice_prep'; it.days_in_stage = 0; it.needs = 'Sari menyiapkan invoice + faktur pajak hari ini'; it.pic = 'sari'; }
   return items;
 }
-const STAGE = { syarat: { label: 'Belum memenuhi syarat', tone: 'muted' }, ttd_kebun: { label: 'TTD Kebun', tone: 'warn' }, ttd_pemilik: { label: 'TTD Pemilik', tone: 'info' }, invoice_prep: { label: 'Invoice disiapkan Sari', tone: 'ok' }, invoice: { label: 'Invoice terkirim', tone: 'info' }, overdue: { label: 'Lewat jatuh tempo', tone: 'danger' } };
+const STAGE = { syarat: { label: 'Belum memenuhi syarat', tone: 'muted' }, ttd_kebun: { label: 'TTD Kebun', tone: 'warn' }, ttd_pemilik: { label: 'TTD Manajemen', tone: 'info' }, invoice_prep: { label: 'Invoice disiapkan Sari', tone: 'ok' }, invoice: { label: 'Invoice terkirim', tone: 'info' }, overdue: { label: 'Lewat jatuh tempo', tone: 'danger' } };
 function daysTone(d) { return d > 14 ? 'danger' : d >= 7 ? 'warn' : 'ok'; }
 
 // ── Jejak angka: catatan asal angka-angka utama ───────────────────────────────────────────────────────────────────
@@ -3363,6 +3364,7 @@ function glanceCard(onHome) {
     ${a.map(row).join('')}
     ${onHome ? `<button class="link" data-go="proyek">Jadwal &amp; rincian tiap proyek ${I.chev}</button>` : ''}</section>`;
 }
+const spkLine = (p, extra = '') => `<div class="spkline">SPK ${esc(p.spk_no)}${extra}</div>`;
 function statusLabel(p) {
   if (p.id === 'SPK-052' && bappSigned()) return 'Sesuai jadwal · invoice T2 disiapkan';
   if (p.id === 'SPK-038') return STATE.synced ? 'Terlambat 2 hari (hujan 6 hari) · laporan 30 Okt masuk' : p.status_label;
@@ -3378,11 +3380,11 @@ function viewProyek() {
     body = scheduleCard() + `<div class="sec" style="margin-top:4px">Rincian per proyek</div><div class="card" style="padding:10px 16px"><div class="meta">Nilai kontrak berjalan</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline"><span class="mid">${fmtRp(T.contract)}</span><span class="sub">dikerjakan <b>${fmtRp(T.physical)}</b></span><span class="sub">ditagih <b>${fmtRp(T.billed)}</b></span><span class="sub">dibayar <b>${fmtRp(T.paid)}</b></span></div></div>`
       + activeProjects().map((p) => {
         const upd = updatedLine(p);
-        return `<section class="card tap" data-go="proyek-${p.id}"><div style="display:flex;justify-content:space-between;gap:8px"><div class="grow"><h2 style="font-size:1rem">${esc(p.title)} — ${esc(p.location.replace('Kebun ', '').replace('PKS ', 'PKS '))}</h2><div class="meta">${esc(client(p.client_id).name)}</div><div class="meta">SPK ${esc(p.spk_no)} · ${fmtRpFull(p.contract_value)} · ${fmtDateShort(p.period_start)} – ${fmtDate(p.period_end)}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div><div style="margin:10px 0 8px">${projBars(p)}</div><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">${chip(p.status_tone, esc(statusLabel(p)), 'wrap')}</div><div class="tiny" style="margin-top:6px">${upd}</div></section>`;
+        return `<section class="card tap" data-go="proyek-${p.id}"><div style="display:flex;justify-content:space-between;gap:8px"><div class="grow">${spkLine(p)}<h2 style="font-size:1rem">${esc(p.title)} — ${esc(p.location.replace('Kebun ', '').replace('PKS ', 'PKS '))}</h2><div class="meta">${esc(client(p.client_id).name)}</div><div class="meta">${fmtRpFull(p.contract_value)} · ${fmtDateShort(p.period_start)} – ${fmtDate(p.period_end)}</div></div>${I.chev.replace('<svg', '<svg class="chev"')}</div><div style="margin:10px 0 8px">${projBars(p)}</div><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">${chip(p.status_tone, esc(statusLabel(p)), 'wrap')}</div><div class="tiny" style="margin-top:6px">${upd}</div></section>`;
       }).join('')
       + `<div class="btns"><button class="btn outline sm" data-act="toast" data-arg="Contoh: di aplikasi asli file Excel diunduh.">${I.xls} Ekspor ke Excel (contoh)</button><button class="btn outline sm" data-act="toast" data-arg="Contoh: di aplikasi asli rekap PDF diunduh.">Rekap mingguan PDF (contoh)</button></div>`;
   } else if (seg === 'tagihan') body = viewTagihan();
-  else body = completedProjects().map((p) => { const t2 = p.termin.find((t) => t.status === 'overdue'); const remaining = p.contract_value - projPaid(p); return `<section class="card"><div class="t" style="font-weight:650">${esc(p.title)} — ${esc(p.short_name === 'Titi panen Blok B' ? 'Belian' : p.location.replace('Kebun ', '').split(',')[0])}</div><div class="meta">${esc(client(p.client_id).name)} · ${fmtRp(p.contract_value)} · selesai ${fmtDateShort(p.completed_date)}</div><div style="margin-top:6px;font-size:.88rem" class="${t2 ? 'danger-t strong' : 'ok-t'}">${t2 ? `Sisa tagihan ${fmtRp(remaining)} · LEWAT ${t2.days_overdue} hari` : `Lunas${p.id === 'SPK-021' ? ' (retensi cair ' + fmtDateShort(p.termin[2].paid_date) + ')' : ''}`}</div></section>`; }).join('');
+  else body = completedProjects().map((p) => { const t2 = p.termin.find((t) => t.status === 'overdue'); const remaining = p.contract_value - projPaid(p); return `<section class="card">${spkLine(p)}<div class="t" style="font-weight:650">${esc(p.title)} — ${esc(p.short_name === 'Titi panen Blok B' ? 'Belian' : p.location.replace('Kebun ', '').split(',')[0])}</div><div class="meta">${esc(client(p.client_id).name)} · ${fmtRp(p.contract_value)} · selesai ${fmtDateShort(p.completed_date)}</div><div style="margin-top:6px;font-size:.88rem" class="${t2 ? 'danger-t strong' : 'ok-t'}">${t2 ? `Sisa tagihan ${fmtRp(remaining)} · LEWAT ${t2.days_overdue} hari` : `Lunas${p.id === 'SPK-021' ? ' (retensi cair ' + fmtDateShort(p.termin[2].paid_date) + ')' : ''}`}</div></section>`; }).join('');
   return `<div class="stack">${segs}${body}</div>`;
 }
 // Jadwal: satu baris per SPK dari tanggal mulai ke selesai; isi = fisik, tanda = rencana, garis tegak = hari ini
@@ -3419,7 +3421,7 @@ function viewTagihan() {
     if (it.key === 'SPK-029:T2') btn = `<button class="btn outline sm" data-act="wa" data-arg="remind_sari_overdue">${I.wa} Ingatkan Sari (WA)</button>`;
     if (it.key === 'SPK-038:T2') btn = `<button class="btn outline sm" data-act="wa" data-arg="remind_wati_bapp">${I.wa} Ingatkan Wati (WA)</button>`;
     if (it.key === 'SPK-052:T2' && !bappSigned()) btn = `<button class="btn primary sm" data-act="decide" data-arg="BAPP-052-T2">Tandatangani</button>`;
-    return `<section class="card ${it.stage === 'overdue' ? 'danger' : ''}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="grow"><div class="t">${esc(it.project)} · ${esc(it.label)}</div><div class="mid" style="font-size:1.1rem">${fmtRpFull(it.amount)}</div></div><div style="text-align:center">${avatar(it.pic)}<div class="tiny" style="margin-top:2px">${esc(pname(it.pic).split(' ')[0])}</div></div></div>
+    return `<section class="card ${it.stage === 'overdue' ? 'danger' : ''}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div class="grow">${spkLine(project(it.key.split(':')[0]))}<div class="t">${esc(it.project)} · ${esc(it.label)}</div><div class="mid" style="font-size:1.1rem">${fmtRpFull(it.amount)}</div></div><div style="text-align:center">${avatar(it.pic)}<div class="tiny" style="margin-top:2px">${esc(pname(it.pic).split(' ')[0])}</div></div></div>
       <div class="chips" style="margin-top:8px;align-items:center">${chip(s.tone, s.label)}${active ? chip(daysTone(d), `${d} hari di tahap ini`) : ''}${it.attachments ? `<span class="meta">${I.clip} ${it.attachments}</span>` : ''}</div>
       <div class="sub" style="margin-top:6px">${active ? 'Perlu: ' : ''}${esc(it.needs)}</div>${btn ? `<div style="margin-top:8px">${btn}</div>` : ''}</section>`;
   };
@@ -3443,7 +3445,7 @@ function terminStatusHtml(p, t) {
 }
 function viewProyekDetail(id) {
   const p = project(id); if (!p) return notFound();
-  if (p.status === 'completed') { const od = p.termin.find((t) => t.status === 'overdue'); return `<div class="stack"><section class="card"><div class="t" style="font-weight:700;font-size:1.05rem">${esc(p.title)}</div><div class="sub">${esc(p.location)} · ${esc(client(p.client_id).name)}</div><div class="meta">SPK ${esc(p.spk_no)} · ${fmtRpFull(p.contract_value)} · selesai ${fmtDate(p.completed_date)}</div><div style="margin-top:8px">${od ? chip('danger', `sisa tagihan ${fmtRp(od.amount)} · lewat ${od.days_overdue} hari`) : chip('ok', 'Lunas')}</div></section>
+  if (p.status === 'completed') { const od = p.termin.find((t) => t.status === 'overdue'); return `<div class="stack"><section class="card">${spkLine(p)}<div class="t" style="font-weight:700;font-size:1.05rem">${esc(p.title)}</div><div class="sub">${esc(p.location)} · ${esc(client(p.client_id).name)}</div><div class="meta">${fmtRpFull(p.contract_value)} · selesai ${fmtDate(p.completed_date)}</div><div style="margin-top:8px">${od ? chip('danger', `sisa tagihan ${fmtRp(od.amount)} · lewat ${od.days_overdue} hari`) : chip('ok', 'Lunas')}</div></section>
     <section class="card"><div class="ch"><h2>Termin</h2></div>${p.termin.map((t) => `<div class="row tap" data-act="termin" data-arg="${p.id}|${t.code}" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t">${t.code === 'RET' ? 'Retensi' : t.code} · ${t.pct}%</span><b>${fmtRpFull(t.amount)}</b></div><div style="font-size:.82rem;margin-top:2px">${terminStatusHtml(p, t)}</div></div>`).join('')}</section></div>`; }
   const pct = projPct(p); const unb = projUnbilled(p); const cl = client(p.client_id); const m = person(p.mandor_id);
   const t3 = p.termin.find((t) => t.code === 'T3' && t.forecast_ready) || p.termin.find((t) => t.forecast_ready);
@@ -3458,7 +3460,7 @@ function viewProyekDetail(id) {
     : `<section class="card"><div class="ch"><h2>Laporan harian terakhir</h2></div><div class="sub">${esc(updatedLine(p))}</div>${p.id === 'SPK-038' ? `<button class="link" data-go="mandor">Lihat sisi mandor ${I.chev}</button>` : ''}</section>`;
   const dp = p.termin.find((t) => t.code === 'DP');
   return `<div class="stack">
-    <div><div class="t" style="font-weight:700;font-size:1.05rem">${esc(p.title)}</div><div class="sub">${esc(p.location)}</div><div class="meta">${esc(cl.name)} · SPK ${esc(p.spk_no)}</div><div class="meta">${fmtDateShort(p.period_start)} – ${fmtDate(p.period_end)} · ${p.days_left >= 0 ? `sisa ${p.days_left} hari` : `<span class="danger-t">lewat ${-p.days_left} hari</span>`} · mandor ${esc(m.name)}</div>${p.status_tone !== 'ok' ? `<div style="margin-top:6px">${chip(p.status_tone, esc(statusLabel(p)), 'wrap')}</div>` : ''}</div>
+    <div>${spkLine(p)}<div class="t" style="font-weight:700;font-size:1.05rem">${esc(p.title)}</div><div class="sub">${esc(p.location)}</div><div class="meta">${esc(cl.name)}</div><div class="meta">${fmtDateShort(p.period_start)} – ${fmtDate(p.period_end)} · ${p.days_left >= 0 ? `sisa ${p.days_left} hari` : `<span class="danger-t">lewat ${-p.days_left} hari</span>`} · mandor ${esc(m.name)}</div>${p.status_tone !== 'ok' ? `<div style="margin-top:6px">${chip(p.status_tone, esc(statusLabel(p)), 'wrap')}</div>` : ''}</div>
     <section class="card"><div class="ch"><h2>Fisik vs tagihan</h2></div>${projBars(p, true, true)}
       <p style="margin-top:12px;font-size:1rem"><b>${fmtRp(unb, { words: true })}</b> pekerjaan sudah dikerjakan, belum ditagih.</p>
       ${t3 ? `<div style="margin-top:8px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><span style="font-size:.88rem">Termin ${t3.code.replace('T', '')} (syarat ${esc(t3.condition)}) diperkirakan siap diajukan <b>${fmtDateShort(t3.forecast_ready)}</b></span>${ruleChip()}</div>${t3.forecast_note ? `<div class="tiny">${esc(t3.forecast_note)}</div>` : ''}` : ''}</section>
@@ -3488,7 +3490,7 @@ function viewLaporan() {
     return `<tr><td><b>${x.unit_id}</b><div class="tiny">${esc(x.operator)}</div></td><td>${work}</td><td class="r">${x.fuel_l ? fmtL(x.fuel_l) : '—'}</td><td class="r">${x.fuel_l && x.hm ? fmtDec(x.fuel_l / x.hm, 1) : '—'}</td></tr>`; };
   const ch = r.changes[0];
   return `<div class="stack">
-    <div><div class="t" style="font-weight:700;font-size:1.05rem">${esc(r.date_label)}</div><div class="sub">${esc(r.location)}</div></div>
+    <div>${spkLine(project(r.project_id))}<div class="t" style="font-weight:700;font-size:1.05rem">${esc(r.date_label)}</div><div class="sub">${esc(r.location)}</div></div>
     <section class="card"><div class="row nb" style="padding:0">${avatar(r.by, false)}<div class="grow"><div class="t">Dicatat oleh ${esc(pname(r.by))} (Mandor) · ${fmtTime(r.saved_at)}</div><div class="meta">${esc(r.device)} · <span class="ok-t">${I.pin} GPS ${esc(r.gps)}</span></div></div></div>
       <div class="row" style="align-items:flex-start"><span class="info-t" style="margin-top:3px">${I.cloud}</span><div class="grow" style="font-size:.85rem">${esc(r.saved_note)} · ${esc(r.sent_note)}<div class="meta ok-t">Diperiksa ${esc(pname(r.checked_by))} · ${fmtDT(r.checked_at)} ✓</div></div></div>
       <div class="row" style="min-height:36px;font-size:.88rem">Cuaca: ${esc(r.weather)}</div></section>
@@ -3567,7 +3569,7 @@ function viewUang() {
       <div style="margin-top:8px">${cats.map((x, i) => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:.85rem;padding:3px 0"><span><span class="sw" style="background:var(--ramp-${i + 1})"></span>${esc(x.label)}${x.liters ? ` <span class="meta">· ${fmtL(x.liters)}</span>` : ''}</span><b>${fmtRp(x.amount)} <span class="meta">(${fmtPct(x.amount / outT * 100, 0)})</span></b></div>`).join('')}</div>
       <div class="tiny" style="margin-top:6px">Pajak, penyusutan, dan cicilan tidak termasuk.</div></section>
     <section class="card"><div class="ch"><h2>Laba kotor per proyek (Okt)</h2>${chip('muted', 'perkiraan kasar')}</div>
-      ${margins.map((m) => { const mp = (m.physical - m.cost) / m.physical * 100; return `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:.88rem"><span>${esc(m.p.short_name)} <span class="meta">· fisik ${fmtRp(m.physical)} · biaya ${fmtRp(m.cost)}</span></span><b class="${mp < 22 ? 'warn-t' : ''}">${fmtPct(mp, 0)}</b></div><div style="margin-top:4px">${track(mp, mp < 22 ? 'warn' : '')}</div>${m.p.id === 'SPK-038' ? '<div class="tiny">hujan 6 hari, alat menganggur</div>' : ''}</div>`; }).join('')}
+      ${margins.map((m) => { const mp = (m.physical - m.cost) / m.physical * 100; return `<div style="padding:6px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:.88rem"><span>${esc(m.p.short_name)} <span class="meta">· SPK ${esc(m.p.spk_no.split('/')[0])} · fisik ${fmtRp(m.physical)} · biaya ${fmtRp(m.cost)}</span></span><b class="${mp < 22 ? 'warn-t' : ''}">${fmtPct(mp, 0)}</b></div><div style="margin-top:4px">${track(mp, mp < 22 ? 'warn' : '')}</div>${m.p.id === 'SPK-038' ? '<div class="tiny">hujan 6 hari, alat menganggur</div>' : ''}</div>`; }).join('')}
       <div class="tiny">dari biaya tercatat per proyek; overhead kantor ${fmtRp(c.oct_overhead)} tidak dibagi.</div></section>
     ${todayOutCard()}
     <section class="card"><div class="ch"><h2>Cair Oktober (diterima bersih)</h2></div>

@@ -49,6 +49,7 @@ test.describe('Mockup kontraktor sawit', () => {
     await expect(page.getByText('Pak Rahmat · 31 Okt 08:14 · dari HP')).toBeVisible()
     await page.goto(`${FILE}#jejak`)
     await expect(page.locator('.audit .row').first()).toContainText('menyetujui')
+    await expect(page.locator('.audit .row').first()).toContainText('Pak Rahmat (Manajemen LBS)')
   })
 
   test('a number explains itself: 72% opens Jejak angka with the correction history and the spreadsheet view', async ({ page }) => {
@@ -78,6 +79,8 @@ test.describe('Mockup kontraktor sawit', () => {
   test('Tagihan, Uang, Perlu dicek and Reset', async ({ page }) => {
     await open(page, 'proyek')
     await page.getByRole('button', { name: 'Tagihan' }).click()
+    // every progress card leads with its SPK number
+    await expect(page.locator('main .card .spkline').first()).toContainText('SPK ')
     await expect(page.getByText('41 hari', { exact: false })).toBeVisible()
     await expect(page.locator('.card.danger').first()).toContainText('Lewat jatuh tempo')
     await page.goto(`${FILE}#uang`)

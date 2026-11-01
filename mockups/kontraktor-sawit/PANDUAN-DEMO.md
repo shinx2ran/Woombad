@@ -1,4 +1,4 @@
-# Panduan demo: "LBS Pemilik" (contoh tampilan aplikasi kontraktor kebun sawit)
+# Panduan demo: "LBS Manajemen" (contoh tampilan aplikasi kontraktor kebun sawit)
 
 Tujuan demo ini satu: **tahu apakah Bapak tertarik atau tidak.** Kalau ya, lanjut ke uji coba kecil. Kalau tidak, berhenti,
 dan tidak ada yang rugi selain satu sore.
@@ -24,10 +24,10 @@ Perkiraan biaya kalau nanti dinyalakan ada di bagian 9.
 
 ## 2. Persiapan (15 menit, sehari sebelumnya)
 
-1. **Ganti nama pemilik dan nama perusahaan.** Di `index.html`, cari `"owner_name": "Pak Rahmat"`, `"owner_initial": "R"`, dan `"company": "CV Lestari Bumi Sawit"` (nama panjang LBS ini hanya pengisi; singkatannya LBS) di blok `DATA.meta`.
+1. **Nama dan peran.** Di layar, Pak Rahmat tampil sebagai **Manajemen LBS** (bukan "Pemilik"): di sapaan, persetujuan, rantai barang, dan jejak aktivitas. Nama dan inisial bisa diganti di `index.html` (`"owner_name"`, `"owner_initial"` di blok `DATA.meta`); label header ada di `"company": "Manajemen LBS"`.
    Nama ini dipakai di layar sambutan, toast persetujuan, rantai barang, dan jejak aktivitas.
 2. **Buka dari HP, bukan laptop.** Pakai alamat web (GitHub Pages atau hosting statis lain), lalu "Tambahkan ke layar utama"
-   supaya ikon "LBS Pemilik" muncul seperti aplikasi. Tautan Artifact claude.ai juga bisa, tetapi tidak bisa dipasang di layar
+   supaya ikon "LBS Manajemen" muncul seperti aplikasi. Tautan Artifact claude.ai juga bisa, tetapi tidak bisa dipasang di layar
    utama dan tidak bisa dibuka tanpa sinyal.
 3. **Latihan 3 kali**, termasuk menekan "Reset data demo" (avatar kanan atas → paling bawah) supaya PO kembali "menunggu",
    mandor kembali 3/4, dan Belian kembali 91%.
@@ -44,14 +44,14 @@ Prinsip: **serahkan HP-nya ke Bapak**, biarkan beliau yang mengetuk. Diam lebih 
 | 0:00 | Buka ikon. Layar sambutan "Selamat pagi, Pak …". | "Pak, ini bukan aplikasi jadi. Ini contoh tampilan kalau rekap admin dibaca dari HP. Semua angkanya fiktif. Coba Bapak pegang." Diam 10 detik. |
 | 0:30 | Beranda. Tunjuk 3 ubin: Rp 1,46 M · Rp 205 jt · 1 unit berhenti. Lalu kartu "Semua proyek sekilas": 63% dari Rp 5,47 M, rencana 62%, satu bar per proyek lengkap dengan nomor SPK dan nama klien, Belian merah. | "Ini semua pekerjaan Bapak dalam satu pandangan: isi hijau yang sudah terpasang, tanda tegak rencananya hari ini. Yang merah itu yang di belakang." |
 | 1:00 | Ketuk "Rp 1,86 M" → Rp 1.862.450.000 → "Dari mana angka ini?" → rekonsiliasi Sari 06:30. Tutup. | "Angkanya dari input admin yang sama seperti sekarang, hanya tidak di spreadsheet." |
-| 1:30 | Kartu "Perlu keputusan Bapak (3)". Ketuk "Setujui" pada PO final drive. Tunjuk harga terakhir +6,7%, produksi hilang Rp 3,2 jt/hari, rantai Budi → Dedi → Bapak. **Minta beliau sendiri yang mengetuk Setujui.** | "Mulai detik ini semua orang di kantor tahu Bapak sudah setuju, jam berapa, dari mana." (Lonceng 3 → 2.) |
+| 1:30 | Kartu "Perlu keputusan Bapak (3)" (persetujuan tercatat atas nama Pak Rahmat, Manajemen LBS). Ketuk "Setujui" pada PO final drive. Tunjuk harga terakhir +6,7%, produksi hilang Rp 3,2 jt/hari, rantai Budi → Dedi → Bapak. **Minta beliau sendiri yang mengetuk Setujui.** | "Mulai detik ini semua orang di kantor tahu Bapak sudah setuju, jam berapa, dari mana." (Lonceng 3 → 2.) |
 | 2:30 | Tab Proyek: kartu "Jadwal & progres" (satu baris per SPK, batang masa kontrak, garis putus hari ini). Ketuk Semitau di kartu sekilas. | "Mana yang bakal selesai duluan, mana yang lewat tanggal, kelihatan tanpa buka satu-satu." |
 | 3:00 | Detail Semitau: tiga bar 72 / 50 / 25 dan kalimat "Rp 539 juta sudah dikerjakan, belum ditagih". | "Sekarang, berapa lama Bapak tahu angka ini dari spreadsheet?" |
 | 3:30 | Ketuk "72%" → Jejak angka: Pak Ujang 16:42, GPS, 3 foto, diperiksa Wati, riwayat 240 → 420 "salah ketik". Geser ke "Spreadsheet", lalu kembali. Tutup. | "Angka boleh dikoreksi, tapi tidak bisa diubah diam-diam. Ini soal alatnya, bukan orangnya." |
 | 4:15 | Gulir ke "Termin & BAPP". Ketuk T1 → PPN, potongan PPh, diterima bersih Rp 669.156.250. Tutup. Tunjuk "Termin 3 diperkirakan 5 Nov". | "Yang biasanya Bapak hitung di kepala, sekarang ada di sini." |
 | 4:45 | Ketuk kartu "Laporan harian terakhir" → baris "tersimpan 16:42 tanpa sinyal, terkirim 18:05". Ketuk "Lihat sisi mandor". | — |
 | 5:00 | Sisi mandor Pak Toni: form tombol besar, foto berstempel GPS, "menunggu sinyal (1)". Ketuk chip "Sinyal: Tidak ada" → "Ada" → "Terkirim 08:16". Kembali ke Beranda: 3/4 → 4/4, Belian 91% → 93,5%. Diam 3 detik. | "Di kebun sering tidak ada sinyal. Mandor tetap isi; laporannya sampai ke HP Bapak begitu dapat sinyal, bukan besok setelah admin ketik ulang." |
-| 6:00 | Tab Proyek → "Tagihan". Baca dari atas: Rp 205 jt lewat 9 hari (Bu Lina), Semitau T2 jatuh tempo 16 Nov, Belian T2 "5 hari di meja Pak Yusuf". Ketuk "Ingatkan Wati (WA)" → pesan terisi → Tutup. Tunjuk footer "rata-rata 41 hari, tahap paling lama TTD Kebun". | "Ini uang Bapak dan di meja siapa dia berhenti. Bapak tidak perlu tanya Wati sudah sampai mana." |
+| 6:00 | Tab Proyek → "Tagihan" (tiap kartu diawali nomor SPK). Baca dari atas: Rp 205 jt lewat 9 hari (Bu Lina), Semitau T2 jatuh tempo 16 Nov, Belian T2 "5 hari di meja Pak Yusuf". Ketuk "Ingatkan Wati (WA)" → pesan terisi → Tutup. Tunjuk footer "rata-rata 41 hari, tahap paling lama TTD Kebun". | "Ini uang Bapak dan di meja siapa dia berhenti. Bapak tidak perlu tanya Wati sudah sampai mana." |
 | 7:00 | Tab Uang: masuk 1,14 M, keluar 1,09 M, grafik 6 bulan, "Kewajiban 30 hari" dan "kas cukup ±3,5 bulan", piutang merah, solar 46%. Kembali ke Beranda → kartu "Perlu dicek" → "Lihat unit EX-07". | "Yang ini bukan AI, Pak, cuma hitungan: solar per jam dibandingkan unit sejenis. Kalau datanya rapi, peringatan seperti ini keluar sendiri, gratis." |
 | 7:45 | EX-07: grafik 14 hari, bar merah. Kembali ke daftar Alat: EX-08 paling atas sudah "PO disetujui Bapak 08:14". Ketuk EX-08 → "Sparepart terpasang" → Final drive S/N FD-2026-04417. | — |
 | 8:15 | Rantai barang: Budi → Dedi (3 penawaran) → **nama Bapak dan jam tadi** → Rina → Budi → terpasang → part lama kembali. Buka "Aki N150": simpul merah "belum tercatat terpasang, posisi terakhir Budi". Ketuk "Tanya Budi (WA)". | "Barang Rp 68 juta ini tidak bisa hilang di tengah jalan; tiap langkah orangnya beda. Dan yang Rp 6,4 juta ini: di spreadsheet tidak pernah kelihatan." |
