@@ -69,11 +69,11 @@ test.describe('Mockup kontraktor sawit', () => {
     await expect(page.getByText('Terkirim 31 Okt 08:16')).toBeVisible()
     await page.goto(`${FILE}#beranda`)
     await expect(page.getByText('4/4')).toBeVisible()
-    await expect(page.getByText('93,5%').first()).toBeVisible()
+    await expect(page.getByText('94%').first()).toBeVisible()
     await expect(page.getByText('Rp 1,47 M')).toBeVisible()
   })
 
-  test('Tagihan, Uang, Tanya and Reset', async ({ page }) => {
+  test('Tagihan, Uang, Perlu dicek and Reset', async ({ page }) => {
     await open(page, 'proyek')
     await page.getByRole('button', { name: 'Tagihan' }).click()
     await expect(page.getByText('41 hari', { exact: false })).toBeVisible()
@@ -81,10 +81,12 @@ test.describe('Mockup kontraktor sawit', () => {
     await page.goto(`${FILE}#uang`)
     await expect(page.getByText('+Rp 42,7 jt')).toBeVisible()
     await expect(page.getByText('Rp 532,4 jt')).toBeVisible()
-    await page.locator('.fab').click()
-    await page.locator('[data-act="tanya-q"][data-arg="0"]').click()
-    await expect(page.getByRole('dialog')).toContainText('28,6 L/jam')
-    await page.keyboard.press('Escape')
+    // AI examples are switched off (AI_ON = false): no floating "Tanya" button; the checks are plain rules
+    await expect(page.locator('.fab')).toHaveCount(0)
+    await page.goto(`${FILE}#beranda`)
+    await expect(page.getByText('Hitungan otomatis').first()).toBeVisible()
+    await page.locator('[data-act="link"][data-arg="unit:EX-07"]').click()
+    await expect(page.getByText('28,6 L/jam').first()).toBeVisible()
     await page.locator('[data-act="tentang"]').first().click()
     await page.getByRole('button', { name: 'Reset data demo' }).click()
     await expect(page.getByText('Perlu keputusan Bapak (3)')).toBeVisible()

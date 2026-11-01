@@ -8,7 +8,7 @@ dibangun. Semua nama dan angka fiktif. Tidak berhubungan dengan aplikasi Woombad
 - `PANDUAN-DEMO.md` — alur demo 10 menit, jawaban atas keberatan, tanda tertarik/tidak, perbandingan jujur dengan alat lain.
 - `manifest.webmanifest`, `sw.js`, `icon-*.png` — agar versi yang di-hosting bisa dipasang dan dibuka tanpa sinyal.
 
-Mengubah nama pemilik: cari `"owner_name"` di `index.html`. Mengubah tanggal demo: `"demo_date"` (semua label "kemarin",
+Mengubah nama pemilik: cari `"owner_name"` di `index.html`. Menyalakan contoh fitur AI: `const AI_ON = true` (dimatikan secara bawaan; perkiraan biaya di `PANDUAN-DEMO.md` bagian 9). Mengubah tanggal demo: `"demo_date"` (semua label "kemarin",
 "4 hari", "16 hari lagi" dihitung dari tanggal itu, bukan dari jam HP).
 
 Uji otomatis: `npx playwright test e2e/kontraktor-mockup.spec.ts` dari folder utama repositori.
