@@ -19,6 +19,8 @@ test.describe('Mockup kontraktor sawit', () => {
     page.on('pageerror', (e) => logs.push('pageerror: ' + e.message))
     await open(page)
     await expect(page.getByText('Rp 1,46 M')).toBeVisible()
+    // the portfolio overview names every running job by its SPK number
+    for (const spk of ['047/KPC-SMT/VIII/2026', '052/LS-PKS/VIII/2026', '038/PGM-BLN/VIII/2026', '055/MAS-BNT/IX/2026']) await expect(page.locator('.glance')).toContainText(`SPK ${spk}`)
     await expect(page.getByText('Perlu keputusan Bapak (3)')).toBeVisible()
     await expect(page.locator('.badge')).toHaveText('3')
     expect(logs).toContain('LBS self-check OK')

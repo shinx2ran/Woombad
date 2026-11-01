@@ -175,7 +175,8 @@ h1, h2, h3 { text-wrap: balance; }
 .track { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; position: relative; }
 .track.tickable { overflow: visible; }
 .track .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); border-radius: 1px; }
-.glance .row { display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name pct delta" "bar bar bar" "meta meta meta"; gap: 4px 8px; align-items: center; padding: 10px 0; }
+.glance .row { display: grid; grid-template-columns: 1fr auto auto; grid-template-areas: "name pct delta" "spk spk spk" "bar bar bar" "meta meta meta"; gap: 4px 8px; align-items: center; padding: 10px 0; }
+.glance .row .spk { grid-area: spk; margin-top: -4px; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .glance .row .name { grid-area: name; font-weight: 650; font-size: .95rem; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .glance .row .pct { grid-area: pct; font-weight: 700; font-size: 1.05rem; font-variant-numeric: normal; }
 .glance .row .delta { grid-area: delta; }
@@ -3352,6 +3353,7 @@ function glanceCard(onHome) {
   const late = a.filter((p) => planTone(p) === 'danger').length;
   const row = (p) => { const pp = projPct(p); const tone = planTone(p);
     return `<div class="row tap" data-go="proyek-${p.id}"><div class="name">${esc(p.short_name)}</div><div class="pct">${fmtPct(pp, 0)}</div><div class="delta">${deltaChip(projDelta(p))}</div>
+      <div class="spk">SPK ${esc(p.spk_no)} · <span style="white-space:nowrap">${esc(client(p.client_id).name.split(' (')[0])}</span></div>
       <div class="bar"><div class="track tickable"><i class="${tone === 'ok' ? '' : tone}" style="width:${Math.min(100, pp).toFixed(1)}%"></i><span class="tick" style="left:${projPlan(p)}%" title="rencana ${fmtPct(projPlan(p), 0)}"></span></div></div>
       <div class="m meta">${esc(p.title.replace('Pembuatan ', ''))} · ${p.days_left >= 0 ? `sisa ${p.days_left} hari` : `<span class="danger-t">lewat ${-p.days_left} hari</span>`}${onHome ? '' : ` · rencana ${fmtPct(projPlan(p), 0)} · ditagih ${fmtPct(projBilled(p) / p.contract_value * 100, 0)} · dibayar ${fmtPct(projPaid(p) / p.contract_value * 100, 0)}`}</div></div>`; };
   return `<section class="card glance"><div class="ch"><h2>Semua proyek sekilas</h2><span class="meta">${a.length} berjalan · ${late ? `<span class="danger-t">${late} terlambat</span>` : 'semua sesuai jadwal'}</span></div>
@@ -3385,13 +3387,13 @@ function viewProyek() {
 }
 // Jadwal: satu baris per SPK dari tanggal mulai ke selesai; isi = fisik, tanda = rencana, garis tegak = hari ini
 function scheduleCard() {
-  const a = activeProjects(); const W = 360, rowH = 30, padL = 96, padR = 40, padT = 18, padB = 16; const H = padT + rowH * a.length + padB;
+  const a = activeProjects(); const W = 360, rowH = 36, padL = 118, padR = 40, padT = 18, padB = 16; const H = padT + rowH * a.length + padB;
   const t0 = dateOf('2026-08-01').getTime(), t1 = dateOf('2027-02-01').getTime(); const x = (iso) => padL + (W - padL - padR) * ((dateOf(iso).getTime() - t0) / (t1 - t0));
-  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Jadwal empat proyek berjalan dengan progres fisik dan rencana">`;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Jadwal proyek berjalan per nomor SPK, dengan progres fisik dan rencana">`;
   for (const m of ['2026-09-01', '2026-10-01', '2026-11-01', '2026-12-01', '2027-01-01']) s += `<line class="grid" x1="${x(m).toFixed(1)}" x2="${x(m).toFixed(1)}" y1="${padT - 4}" y2="${H - padB}"/><text x="${x(m).toFixed(1)}" y="${padT - 7}" text-anchor="middle" font-size="10">${MONTHS[parts(m).m - 1]}</text>`;
-  a.forEach((p, i) => { const y = padT + rowH * i + 6; const xs = x(p.period_start), xe = x(p.period_end); const pp = Math.min(100, projPct(p)); const tone = planTone(p);
+  a.forEach((p, i) => { const y = padT + rowH * i + 8; const xs = x(p.period_start), xe = x(p.period_end); const pp = Math.min(100, projPct(p)); const tone = planTone(p);
     const fill = tone === 'ok' ? 'var(--accent)' : tone === 'warn' ? 'var(--warn)' : 'var(--danger)';
-    s += `<text x="${padL - 6}" y="${y + 13}" text-anchor="end" font-size="10.5" class="v">${esc(p.short_name)}</text>`;
+    s += `<text x="${padL - 6}" y="${y + 6}" text-anchor="end" font-size="10.5" class="v">${esc(p.short_name)}</text><text x="${padL - 6}" y="${y + 18}" text-anchor="end" font-size="9.5">SPK ${esc(p.spk_no.split('/').slice(0, 2).join('/'))}</text>`;
     s += `<rect x="${xs.toFixed(1)}" y="${y}" width="${(xe - xs).toFixed(1)}" height="16" rx="4" fill="var(--surface-2)"/>`;
     s += `<rect x="${xs.toFixed(1)}" y="${y}" width="${((xe - xs) * pp / 100).toFixed(1)}" height="16" rx="4" fill="${fill}"/>`;
     const xp = xs + (xe - xs) * projPlan(p) / 100; s += `<rect x="${(xp - 1).toFixed(1)}" y="${y - 3}" width="2" height="22" fill="var(--text)"/>`;
