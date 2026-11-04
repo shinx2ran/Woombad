@@ -70,6 +70,10 @@ export function LeaseDetailPage() {
   const today = todayISO()
 
   const [modal, setModal] = useState<ModalKind | null>(null)
+  /** SPEC 7.13: the next-invoice sheet opens as "Bayar & perpanjang" (the rent is recorded with it) */
+  const [payNow, setPayNow] = useState(false)
+  /** SPEC 7.15: "Catat deposit diterima" was opened from the checkout sheet, which comes back when it closes */
+  const [depositFromCheckout, setDepositFromCheckout] = useState(false)
   const [payInvoiceId, setPayInvoiceId] = useState<string | undefined>(undefined)
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
   /** Ubah pembayaran (SPEC 7.5) */
@@ -94,13 +98,18 @@ export function LeaseDetailPage() {
   const deposit = useMemo(() => (lease ? depositBalance(lease, data.payments, data.expenses) : null), [lease, data.payments, data.expenses])
   const timeline = useMemo(() => (lease ? invoiceTimeline(lease, data.invoices, data.payments, today) : []), [lease, data.invoices, data.payments, today])
 
-  // Deep links from other modules: /sewa/:id?action=bayar|tagih|checkout
+  // Deep links from other modules: /sewa/:id?action=bayar|tagih|bayar-perpanjang|checkout
   useEffect(() => {
     const action = params.get('action')
     if (!action || !lease) return
     if (action === 'bayar') setModal('pay')
-    else if (action === 'tagih') setModal('invoice')
-    else if (action === 'checkout' && lease.status === 'active') setModal('checkout')
+    else if (action === 'tagih') {
+      setPayNow(false)
+      setModal('invoice')
+    } else if (action === 'bayar-perpanjang' && lease.status === 'active') {
+      setPayNow(true)
+      setModal('invoice')
+    } else if (action === 'checkout' && lease.status === 'active') setModal('checkout')
     const next = new URLSearchParams(params)
     next.delete('action')
     setParams(next, { replace: true })
@@ -145,6 +154,11 @@ export function LeaseDetailPage() {
     setPayInvoiceId(invoiceId)
     setModal('pay')
   }
+  /** "Buat tagihan berikutnya" (pay = false) or "Bayar & perpanjang" (SPEC 7.13) */
+  const openNextInvoice = (pay: boolean) => {
+    setPayNow(pay)
+    setModal('invoice')
+  }
 
   const runConfirm = async () => {
     if (!confirm) return
@@ -178,7 +192,8 @@ export function LeaseDetailPage() {
 
   const menuItems: MenuItem[] = []
   if (isActive) {
-    menuItems.push({ label: 'Perpanjang', hint: 'Buat tagihan periode berikutnya', icon: <CalendarPlus className="h-4 w-4" />, onClick: () => setModal('invoice') })
+    menuItems.push({ label: 'Perpanjang', hint: 'Buat tagihan periode berikutnya', icon: <CalendarPlus className="h-4 w-4" />, onClick: () => openNextInvoice(false) })
+    menuItems.push({ label: 'Bayar & perpanjang', hint: 'Tagihan periode berikutnya, langsung lunas', icon: <Wallet className="h-4 w-4" />, onClick: () => openNextInvoice(true) })
     menuItems.push({ label: 'Pindah kamar', hint: 'Dalam kos yang sama', icon: <ArrowLeftRight className="h-4 w-4" />, onClick: () => setModal('move') })
     // SPEC 7.6: moves the whole billing schedule; owner/admin only (the hook and the database refuse staff too)
     if (isAdmin) {
@@ -323,13 +338,20 @@ export function LeaseDetailPage() {
                 <MessageCircle className="h-4 w-4" /> <span className="hidden sm:inline">Pengingat WA</span>
               </a>
             )}
-            {(isActive || summary.outstanding > 0) && (
-              <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => openPay()} disabled={openInvoices.length === 0}>
-                Catat pembayaran
+            {/* nothing open to pay: the tenant pays the next period (SPEC 7.13) instead of a greyed-out button */}
+            {isActive && openInvoices.length === 0 ? (
+              <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => openNextInvoice(true)}>
+                Bayar &amp; perpanjang
               </Button>
+            ) : (
+              (isActive || summary.outstanding > 0) && (
+                <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => openPay()} disabled={openInvoices.length === 0}>
+                  Catat pembayaran
+                </Button>
+              )
             )}
             {isActive && (
-              <Button icon={<FilePlus2 className="h-4 w-4" />} onClick={() => setModal('invoice')}>
+              <Button icon={<FilePlus2 className="h-4 w-4" />} onClick={() => openNextInvoice(false)}>
                 Buat tagihan berikutnya
               </Button>
             )}
@@ -415,7 +437,7 @@ export function LeaseDetailPage() {
           title={`Tagihan (${leaseInvoices.length})`}
           action={
             isActive ? (
-              <Button size="sm" variant="outline" icon={<FilePlus2 className="h-4 w-4" />} onClick={() => setModal('invoice')}>
+              <Button size="sm" variant="outline" icon={<FilePlus2 className="h-4 w-4" />} onClick={() => openNextInvoice(false)}>
                 Buat tagihan
               </Button>
             ) : undefined
@@ -563,7 +585,17 @@ export function LeaseDetailPage() {
         actions={actions}
         defaultInvoiceId={payInvoiceId}
       />
-      <DepositModal open={modal === 'deposit'} onClose={() => setModal(null)} lease={lease} payments={data.payments} expenses={data.expenses} actions={actions} />
+      <DepositModal
+        open={modal === 'deposit'}
+        onClose={() => {
+          setModal(depositFromCheckout ? 'checkout' : null)
+          setDepositFromCheckout(false)
+        }}
+        lease={lease}
+        payments={data.payments}
+        expenses={data.expenses}
+        actions={actions}
+      />
       {/* the fresh bill opens straight in the share modal so the owner can send it in one tap */}
       <NextInvoiceModal
         open={modal === 'invoice'}
@@ -577,6 +609,7 @@ export function LeaseDetailPage() {
         expenses={data.expenses}
         actions={actions}
         onCreated={setShareInvoice}
+        payNow={payNow}
       />
       {sharedInvoice && (
         <InvoiceShareModal
@@ -601,7 +634,19 @@ export function LeaseDetailPage() {
         expenses={data.expenses}
         actions={actions}
       />
-      <CheckoutModal open={modal === 'checkout'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
+      <CheckoutModal
+        open={modal === 'checkout'}
+        onClose={() => setModal(null)}
+        lease={lease}
+        invoices={leaseInvoices}
+        payments={data.payments}
+        expenses={data.expenses}
+        actions={actions}
+        onRecordDeposit={() => {
+          setDepositFromCheckout(true)
+          setModal('deposit')
+        }}
+      />
       <CancelLeaseModal open={modal === 'cancel'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
       <MoveRoomModal open={modal === 'move'} onClose={() => setModal(null)} lease={lease} rooms={data.rooms} leases={data.leases} currentRoom={room} actions={actions} />
       <AddonModal open={modal === 'addon'} onClose={() => setModal(null)} lease={lease} catalog={data.addonCatalog} actions={actions} />

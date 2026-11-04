@@ -173,15 +173,16 @@ function AttentionRow({ item }: { item: AttentionItem }) {
         )}
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
+        {/* nothing open (the next period is not billed yet): pay it and extend in one sheet (SPEC 7.13) */}
         <Link
-          to={`/sewa/${lease.id}?action=bayar`}
-          className="inline-flex h-9 items-center justify-center rounded-lg bg-brand-700 px-3 text-sm font-medium text-white hover:bg-brand-800"
+          to={summary.outstanding > 0 ? `/sewa/${lease.id}?action=bayar` : `/sewa/${lease.id}?action=bayar-perpanjang`}
+          className="inline-flex min-h-9 items-center justify-center rounded-lg bg-brand-700 px-3 py-1 text-center text-sm font-medium leading-tight text-white hover:bg-brand-800"
         >
-          Bayar
+          {summary.outstanding > 0 ? 'Bayar' : 'Bayar & perpanjang'}
         </Link>
         <Link
           to={`/sewa/${lease.id}?action=tagih`}
-          className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1 text-center text-sm font-medium leading-tight text-slate-800 hover:bg-slate-50"
         >
           Tagih
         </Link>

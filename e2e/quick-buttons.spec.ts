@@ -152,7 +152,7 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     await page.keyboard.press('Escape')
     await expect(sheet).toBeHidden()
     await tiles(page).and(page.locator('[data-tone="occupied"]')).first().click()
-    await expect(page.getByRole('dialog').getByRole('link', { name: 'Perpanjang' })).toBeVisible()
+    await expect(page.getByRole('dialog').getByRole('link', { name: 'Perpanjang', exact: true })).toBeVisible()
     await expect(page.getByRole('dialog').getByRole('link', { name: 'Kirim pengingat WhatsApp' })).toHaveCount(0)
   })
 

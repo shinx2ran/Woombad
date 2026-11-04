@@ -22,7 +22,7 @@ test.describe('Perpanjang harian → mingguan: deposit (SPEC 7.12)', () => {
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(e.message))
     await page.locator('[data-testid="board-tile"][aria-label*="(Hendra Wijaya)"]').click()
-    await page.getByRole('dialog').getByRole('link', { name: 'Perpanjang' }).click()
+    await page.getByRole('dialog').getByRole('link', { name: 'Perpanjang', exact: true }).click()
     const sheet = page.getByRole('dialog')
     await expect(sheet.getByRole('heading', { name: 'Buat tagihan berikutnya' })).toBeVisible()
     // still daily: no deposit question

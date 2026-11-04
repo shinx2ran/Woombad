@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../components/ui'
 import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddon, Payment, Room } from '../../types/db'
@@ -20,6 +20,8 @@ import {
 } from './leaseUtils'
 import { DepositSettlementForm, PriceField, Row } from './components'
 import type { LeaseActions, PartialDecision } from './useLeaseActions'
+import { usePriceConfirm } from './usePriceConfirm'
+import { PriceConfirm } from './PriceConfirm'
 
 const emptySettlement = (held: number): DepositSettlement => ({ refund: Math.max(0, held), rent: 0, damage: 0, damageNotes: '' })
 
@@ -87,15 +89,21 @@ export interface CheckoutModalProps {
   payments: Payment[]
   expenses: Expense[]
   actions: LeaseActions
+  /**
+   * SPEC 7.15: open "Catat deposit diterima" (the lease page returns to this checkout afterwards). Without it the
+   * warning about an agreed deposit that was never recorded as received only says where to record it.
+   */
+  onRecordDeposit?: () => void
 }
 
 /**
  * SPEC 2b.5: checkout date, void future unpaid invoices, decide per future partially-paid invoice (refund /
  * forfeit, so no receivable survives on an ended lease), settle the held deposit, status ended. The checkout date is
  * the day the tenant leaves: invoices starting ON that day count as future (SPEC 7.3, futureInvoicesAtCheckout). It
- * starts at the tenant's Rencana keluar when one is recorded (SPEC 7.8), else today.
+ * starts at the tenant's Rencana keluar when one is recorded (SPEC 7.8), else today. An agreed deposit that was never
+ * recorded as received is pointed out above the settlement, which only returns what was received (SPEC 7.15).
  */
-export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions }: CheckoutModalProps) {
+export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions, onRecordDeposit }: CheckoutModalProps) {
   const toast = useToast()
   const balance = useMemo(() => depositBalance(lease, payments, expenses), [lease, payments, expenses])
   const planned = plannedCheckoutOf(lease)
@@ -103,9 +111,17 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
   const [decisions, setDecisions] = useState<Record<string, PartialDecision>>({})
   const [settlement, setSettlement] = useState<DepositSettlement>(emptySettlement(balance.held))
   const [saving, setSaving] = useState(false)
+  /** SPEC 7.15: the sheet closes for "Catat deposit diterima" and comes back: keep what was typed */
+  const resumeRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
+    if (resumeRef.current) {
+      resumeRef.current = false
+      // the deposit held may have grown: keep the deductions typed when they still fit, refund the rest
+      setSettlement((s) => (s.rent + s.damage > 0 && s.rent + s.damage <= balance.held ? { ...s, refund: balance.held - s.rent - s.damage } : emptySettlement(balance.held)))
+      return
+    }
     setDate(planned ?? todayISO())
     setDecisions({})
     setSettlement(emptySettlement(balance.held))
@@ -207,6 +223,29 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
           </p>
         )}
         <UnrecordedRefundsNote refunds={unrecorded} />
+        {balance.shortfall > 0 && (
+          <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" data-testid="checkout-deposit-shortfall">
+            <p>
+              <strong>
+                Deposit disepakati {formatRupiah(balance.agreed)}, tercatat diterima {formatRupiah(balance.received)}.
+              </strong>{' '}
+              Pengembalian di bawah hanya menghitung deposit yang tercatat diterima. Bila uang jaminannya memang sudah dipegang, catat dulu
+              {onRecordDeposit ? '.' : ' lewat Lainnya → Catat deposit diterima.'}
+            </p>
+            {onRecordDeposit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  resumeRef.current = true
+                  onRecordDeposit()
+                }}
+              >
+                Catat deposit diterima
+              </Button>
+            )}
+          </div>
+        )}
         <DepositSettlementForm balance={balance} value={settlement} onChange={setSettlement} rentCapacity={rentCapacity} error={settlementError} />
       </div>
     </Modal>
@@ -329,12 +368,15 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
   const [date, setDate] = useState(todayISO())
   const [price, setPrice] = useState(lease.price_per_period)
   const [saving, setSaving] = useState(false)
+  const [touched, setTouched] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setRoomId('')
     setDate(todayISO())
     setPrice(lease.price_per_period)
+    priceCheck.reset()
+    setTouched(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -348,6 +390,12 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
     [rooms, leases, lease, date, stayEnd],
   )
   const target = candidates.find((c) => c.room.id === roomId)
+  const unit = PERIOD_UNIT_LABEL[lease.period_type]
+  // SPEC 7.14: only a NEW price is questioned (the price the lease already has is not this dialog's business)
+  const newPrice = Boolean(target) && actions.canEditLeaseTerms && price !== lease.price_per_period
+  const priceCheck = usePriceConfirm(price, roomPriceFor(target?.room, lease.period_type), unit, newPrice)
+  // a cleared price field is 0: never written as the lease's new price (a lease already at 0 still moves)
+  const priceZero = newPrice && price <= 0
 
   const pickRoom = (id: string) => {
     setRoomId(id)
@@ -360,6 +408,12 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
 
   const submit = async () => {
     if (!target || target.availability !== 'kosong') return
+    setTouched(true)
+    if (priceZero) return
+    if (!priceCheck.ok) {
+      priceCheck.focus()
+      return
+    }
     setSaving(true)
     try {
       await actions.moveRoom(lease, currentRoom, target.room, price !== lease.price_per_period ? price : null, date)
@@ -422,9 +476,11 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
             onChange={setPrice}
             standard={roomPriceFor(target.room, lease.period_type)}
             unit={PERIOD_UNIT_LABEL[lease.period_type]}
+            error={touched && priceZero ? `Harga per ${PERIOD_UNIT_LABEL[lease.period_type]} harus lebih dari 0.` : undefined}
             extraHint={`Harga sekarang ${formatRupiah(lease.price_per_period)}; berlaku untuk tagihan berikutnya.`}
           />
         )}
+        <PriceConfirm state={priceCheck} showError={touched} />
       </div>
     </Modal>
   )

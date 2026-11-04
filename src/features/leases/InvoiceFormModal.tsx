@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button, CountInput, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
 import type { Expense, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { buildInvoiceDraft, depositBalance, nextPeriodBounds, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
+import { buildInvoiceDraft, depositBalance, nextPeriodBounds, outstandingFor, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 import { plannedCheckoutOf } from '../../domain/occupancy'
 import {
@@ -16,6 +16,7 @@ import {
   extensionPriceFor,
   invoicesToPinType,
   nextPeriodCheckout,
+  openInvoicesSorted,
   permanentSwitchAddonsAmount,
   previewFollowingPeriod,
   proRataSuggestion,
@@ -25,10 +26,13 @@ import {
   sumExtraBreakdown,
 } from './leaseUtils'
 import { PeriodTypePicker, PriceField, Row } from './components'
-import type { LeaseActions } from './useLeaseActions'
+import { InvoiceIssuedError, type LeaseActions } from './useLeaseActions'
 import { RecordHistory } from '../settings/audit/RecordHistory'
+import { usePriceConfirm } from './usePriceConfirm'
+import { PriceConfirm } from './PriceConfirm'
 
-const DEPOSIT_METHODS = PAYMENT_METHODS.filter((m) => m !== 'deposit').map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))
+/** cash in hand: every method except 'potong jaminan' (deposit and rent handed over now) */
+const CASH_METHODS = PAYMENT_METHODS.filter((m) => m !== 'deposit').map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))
 
 interface ExtraFieldsProps {
   parts: ExtraBreakdown
@@ -102,7 +106,14 @@ export interface NextInvoiceModalProps {
   expenses?: Expense[]
   actions: LeaseActions
   onCreated?: (invoice: Invoice) => void
+  /**
+   * SPEC 7.13 "Bayar & perpanjang": the tenant hands over the rent for the next period. The sheet asks how it was paid
+   * ("Sudah dibayar lunas", ticked) and records the payment on the fresh invoice in the same save.
+   */
+  payNow?: boolean
 }
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : 'kesalahan tak dikenal')
 
 /**
  * "Buat tagihan berikutnya": quantity-driven (SPEC 2b.10) with a pro-rata 'Periode khusus' override, a
@@ -111,9 +122,11 @@ export interface NextInvoiceModalProps {
  * sewa ini' copies type and price to the lease (default on when the type changed). The custom pro-rata price
  * follows the chosen end date until the user edits it. Every end date typed here is a CHECK-OUT day: the period
  * ends the night before (lastNightISO), and computed ends are shown as check-out days (SPEC 7.3). Switching into a
- * weekly or monthly period asks for the uang jaminan a daily stay usually went without (SPEC 7.12).
+ * weekly or monthly period asks for the uang jaminan a daily stay usually went without (SPEC 7.12). With `payNow` it is
+ * "Bayar & perpanjang" (SPEC 7.13): the same sheet, plus the rent payment. A price far from the room's rate asks for a
+ * confirmation tap (SPEC 7.14).
  */
-export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvoices, orgInvoices, payments = [], expenses = [], actions, onCreated }: NextInvoiceModalProps) {
+export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvoices, orgInvoices, payments = [], expenses = [], actions, onCreated, payNow = false }: NextInvoiceModalProps) {
   const toast = useToast()
   const [periodType, setPeriodType] = useState<PeriodType>(lease.period_type)
   const [price, setPrice] = useState(lease.price_per_period)
@@ -137,6 +150,10 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const [depositNowChoice, setDepositNowChoice] = useState<boolean | null>(null)
   const [depositTyped, setDepositTyped] = useState(false)
   const [depositMethod, setDepositMethod] = useState<PaymentMethod>('cash')
+  /** SPEC 7.13 (payNow): paid in full now, how and on which day */
+  const [paidFull, setPaidFull] = useState(true)
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('cash')
+  const [paidAt, setPaidAt] = useState(todayISO())
   const [saving, setSaving] = useState(false)
   const [touched, setTouched] = useState(false)
 
@@ -169,6 +186,10 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     setDepositNowChoice(null)
     setDepositTyped(false)
     setDepositMethod('cash')
+    setPaidFull(true)
+    setPayMethod('cash')
+    setPaidAt(todayISO())
+    priceCheck.reset()
     setTouched(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -187,6 +208,8 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
 
   const unit = PERIOD_UNIT_LABEL[periodType]
   const standard = roomPriceFor(room, periodType)
+  // SPEC 7.14: a price far from the room's rate (Rp 1, a zero too few or too many) waits for "Harga ini memang benar"
+  const priceCheck = usePriceConfirm(price, standard, unit)
   const typeChanged = periodType !== lease.period_type
   const changesTerms = extensionChangesTerms(lease, periodType, price)
   // Staff may bill a one-off extension but never change the lease's type or price (SPEC 6.2). Old invoices with
@@ -240,7 +263,8 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     if (coverInfo) setQuantity(coverInfo.n)
   }, [coverInfo])
 
-  const priceError = !custom && price <= 0 ? `Isi harga per ${unit}.` : undefined
+  // Periode khusus bills its own amount, but a switch made permanent still writes this price to the lease
+  const priceError = price <= 0 && (!custom || makePermanent) ? `Isi harga per ${unit}.` : undefined
   const extraAmount = sumExtraBreakdown(parts)
   const preview = useMemo<{ draft: InvoiceDraft | null; error: string | null }>(() => {
     try {
@@ -277,9 +301,19 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const leavingBefore = planned !== null && billedFrom !== null && planned <= billedFrom
 
   const dateError = customError ?? untilError
+  // SPEC 7.13: money handed over here pays the NEXT period; an older bill still open is named so it is not mistaken for it
+  const openBefore = useMemo(() => (payNow ? openInvoicesSorted(lease.id, leaseInvoices, payments) : []), [payNow, lease.id, leaseInvoices, payments])
+  // SPEC 7.13: the rent handed over now, recorded on the fresh invoice (a part payment: untick, then Catat pembayaran)
+  const paying = payNow && paidFull
+  const today = todayISO()
+  const payError = paying ? (!paidAt ? 'Isi tanggal bayar.' : paidAt > today ? 'Tanggal bayar tidak boleh sesudah hari ini.' : undefined) : undefined
   const submit = async () => {
     setTouched(true)
-    if (!preview.draft || priceError || dateError || depositError) return
+    if (!preview.draft || priceError || dateError || depositError || payError) return
+    if (!priceCheck.ok) {
+      priceCheck.focus()
+      return
+    }
     setSaving(true)
     try {
       const invoice = await actions.issueInvoice({
@@ -301,28 +335,50 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
         orgInvoices,
       })
       const terms = makePermanent ? ` Sewa kini ${PERIOD_TYPE_LABEL[periodType]} ${formatRupiah(price)} / ${unit}.` : ''
+      // the invoice and the lease are saved: a step after them that fails is named, with where to finish it
+      const failures: string[] = []
+      let rentPaid = false
+      if (paying && invoice.total_amount > 0) {
+        try {
+          // a brand-new invoice has no payments yet: the whole total is outstanding
+          await actions.recordRentPayment({ invoice, lease, payments: [], amount: invoice.total_amount, method: payMethod, paidAt, notes: null })
+          rentPaid = true
+        } catch (err) {
+          failures.push(`pembayaran sewanya gagal dicatat: ${errorText(err)} Catat lewat Catat pembayaran.`)
+        }
+      }
       let deposit = ''
       if (setsDeposit && depositAmount !== lease.deposit_amount) {
         deposit = ` Deposit ${formatRupiah(depositAmount)}${depositDue > 0 && !depositNow ? (depositReceived > 0 ? `, sisa ${formatRupiah(depositDue)} belum diterima` : ' belum diterima') : ''}.`
       }
       if (depositDue > 0 && depositNow) {
         try {
-          await actions.recordDeposit(lease, depositDue, depositMethod, todayISO(), 'Uang jaminan')
+          // handed over with the rent (SPEC 7.13): the same day as the rent payment
+          await actions.recordDeposit(lease, depositDue, depositMethod, paying ? paidAt : todayISO(), 'Uang jaminan')
           deposit = ` Deposit ${formatRupiah(depositAmount)}, ${rest}diterima ${formatRupiah(depositDue)} (${PAYMENT_METHOD_LABEL[depositMethod]}).`
         } catch (err) {
-          // the invoice and the lease are saved: say what is missing and where to finish it
-          toast.error(
-            `Tagihan ${invoice.invoice_number} dibuat, tetapi deposit yang diterima gagal dicatat: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'} Catat lewat Lainnya → Catat deposit diterima.`,
-          )
-          onCreated?.(invoice)
-          onClose()
-          return
+          failures.push(`deposit yang diterima gagal dicatat: ${errorText(err)} Catat lewat Lainnya → Catat deposit diterima.`)
         }
       }
-      toast.success(`Tagihan ${invoice.invoice_number} dibuat. Sewa diperpanjang, check-out ${formatCheckout(invoice.period_end)}.${terms}${deposit}`)
+      if (failures.length > 0) {
+        toast.error(`Tagihan ${invoice.invoice_number} dibuat${rentPaid ? ' dan lunas' : ''}, tetapi ${failures[0]}${failures[1] ? ` Selain itu, ${failures[1]}` : ''}`)
+        onCreated?.(invoice)
+        onClose()
+        return
+      }
+      const billed = rentPaid
+        ? `lunas, ${formatRupiah(invoice.total_amount)} diterima (${PAYMENT_METHOD_LABEL[payMethod]}).`
+        : 'dibuat.'
+      toast.success(`Tagihan ${invoice.invoice_number} ${billed} Sewa diperpanjang, check-out ${formatCheckout(invoice.period_end)}.${terms}${deposit}`)
       onCreated?.(invoice)
       onClose()
     } catch (err) {
+      if (paying && err instanceof InvoiceIssuedError) {
+        // the invoice exists: say the rent is not recorded and close, so a retry cannot bill (and pay) another period
+        toast.error(`${err.message} Pembayaran sewanya belum dicatat: catat lewat Catat pembayaran.`)
+        onClose()
+        return
+      }
       toast.error(err instanceof Error ? err.message : 'Gagal membuat tagihan.')
     } finally {
       setSaving(false)
@@ -333,19 +389,30 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     <Modal
       open={open}
       onClose={onClose}
-      title="Buat tagihan berikutnya"
+      title={payNow ? 'Bayar & perpanjang' : 'Buat tagihan berikutnya'}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Batal
           </Button>
           <Button onClick={submit} loading={saving} disabled={!preview.draft || Boolean(dateError)}>
-            Buat tagihan
+            {paying ? 'Simpan & perpanjang' : 'Buat tagihan'}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        {openBefore.length > 0 && (
+          <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="pay-now-open-invoices">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              <strong>
+                Masih ada tagihan belum lunas: {openBefore.map((i) => `${i.invoice_number} (sisa ${formatRupiah(outstandingFor(i, payments))})`).join(', ')}.
+              </strong>{' '}
+              Pembayaran di sini untuk periode berikutnya. Untuk melunasi tagihan itu, tutup lembar ini dan pakai Catat pembayaran.
+            </span>
+          </p>
+        )}
         {leavingBefore && (
           <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="planned-checkout-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
@@ -372,6 +439,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
           error={touched ? priceError : undefined}
           extraHint={typeChanged ? `Diisi dari tarif kamar untuk sewa ${PERIOD_TYPE_LABEL[periodType].toLowerCase()}; boleh diubah sesuai kesepakatan.` : 'Boleh diubah khusus untuk tagihan ini.'}
         />
+        <PriceConfirm state={priceCheck} showError={touched} />
         {changesTerms && (
           <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700">
             <input
@@ -420,7 +488,7 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
                       <input type="checkbox" checked={depositNow} onChange={(e) => setDepositNowChoice(e.target.checked)} />
                       {depositReceived > 0 ? 'Sisa deposit' : 'Deposit'} {formatRupiah(depositDue)} sudah diterima
                     </label>
-                    {depositNow && <Select label="Metode deposit" value={depositMethod} onChange={(e) => setDepositMethod(e.target.value as PaymentMethod)} options={DEPOSIT_METHODS} />}
+                    {depositNow && <Select label="Metode deposit" value={depositMethod} onChange={(e) => setDepositMethod(e.target.value as PaymentMethod)} options={CASH_METHODS} />}
                   </>
                 )}
               </>
@@ -508,6 +576,22 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
             Tagihan berikutnya setelah ini: {formatStay(following.period_start, following.period_end)} ({PERIOD_TYPE_LABEL[following.period_type].toLowerCase()}
             {following.anchored && following.anchor ? `, mengikuti jadwal sejak ${formatDate(following.anchor)}` : ', dihitung dari akhir tagihan ini'}).
           </p>
+        )}
+        {payNow && (
+          <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3" data-testid="pay-now">
+            <label className="flex min-h-11 items-center gap-3 text-sm font-medium text-slate-900">
+              <input type="checkbox" className="h-5 w-5 shrink-0" checked={paidFull} onChange={(e) => setPaidFull(e.target.checked)} />
+              Sudah dibayar lunas{preview.draft ? ` ${formatRupiah(preview.draft.total_amount)}` : ''}
+            </label>
+            {paidFull ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Select label="Metode bayar" value={payMethod} onChange={(e) => setPayMethod(e.target.value as PaymentMethod)} options={CASH_METHODS} />
+                <Input label="Tanggal bayar" type="date" value={paidAt} max={today} onChange={(e) => setPaidAt(e.target.value)} required error={touched ? payError : undefined} />
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600">Tagihan dibuat belum dibayar. Dibayar sebagian? Catat lewat Catat pembayaran sesudah ini.</p>
+            )}
+          </div>
         )}
         <button
           type="button"

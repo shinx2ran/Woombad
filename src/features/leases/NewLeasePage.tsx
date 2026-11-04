@@ -27,6 +27,8 @@ import { useLeaseActions } from './useLeaseActions'
 import { matchesTenantQuery, roomAvailability, roomPriceFor, ROOM_AVAILABILITY_LABEL, type RoomAvailability } from './leaseUtils'
 import { PeriodTypePicker, PriceField, Row } from './components'
 import { PlateInput } from './PlateInput'
+import { usePriceConfirm } from './usePriceConfirm'
+import { PriceConfirm } from './PriceConfirm'
 import { PAY_MODE_LABEL, scannedExtraFields, validatePayment, type PayMode } from './newLeaseUtils'
 
 interface DraftAddon {
@@ -198,6 +200,8 @@ export function NewLeasePage() {
     true,
   )
   const total = base + addonsAmount
+  // SPEC 7.14: a price far from the room's rate (Rp 1 on A13, a zero too few or too many) waits for "Harga ini memang benar"
+  const priceCheck = usePriceConfirm(price, roomPriceFor(room, periodType), PERIOD_UNIT_LABEL[periodType], Boolean(room))
   const payAmount = payMode === 'lunas' ? total : payMode === 'dp' ? dpAmount : 0
 
   // The received-deposit section follows the agreed deposit: clearing the agreement to 0 unticks it,
@@ -235,6 +239,7 @@ export function NewLeasePage() {
   else if (roomState && roomState !== 'kosong') errors.room = `Kamar ${ROOM_AVAILABILITY_LABEL[roomState].toLowerCase()} pada periode ini.`
   if (!startDate) errors.start = 'Tanggal check-in wajib diisi.'
   if (room && price <= 0) errors.price = `Harga per ${PERIOD_UNIT_LABEL[periodType]} harus lebih dari 0.`
+  else if (!priceCheck.ok) errors.priceConfirm = 'Harga perlu dicek: centang “Harga ini memang benar” di Jenis sewa, atau perbaiki harganya.'
   if (quantity < 1) errors.quantity = 'Jumlah periode minimal 1.'
   const payError = validatePayment(payMode, dpAmount, total)
   if (payError) errors.pay = payError
@@ -267,6 +272,8 @@ export function NewLeasePage() {
     setTouched(true)
     if (hasErrors || !periodPreview || !room) {
       toast.error('Lengkapi data yang ditandai merah.')
+      // SPEC 7.14: when the price question is all that is left, bring its tick into view
+      if (errors.priceConfirm && Object.keys(errors).length === 1) priceCheck.focus()
       return
     }
     if (!isNewTenant && !tenant) return
@@ -609,7 +616,7 @@ export function NewLeasePage() {
           </Section>
 
           {/* 3) Jenis sewa */}
-          <Section step={3} title="Jenis sewa" done={!errors.price && !errors.quantity && Boolean(room)} hint={room ? `Tarif standar kamar ${room.name}; harga bisa dinegosiasi.` : 'Pilih kamar untuk melihat tarifnya.'}>
+          <Section step={3} title="Jenis sewa" done={!errors.price && !errors.priceConfirm && !errors.quantity && Boolean(room)} hint={room ? `Tarif standar kamar ${room.name}; harga bisa dinegosiasi.` : 'Pilih kamar untuk melihat tarifnya.'}>
             <PeriodTypePicker
               variant="cards"
               label="Jenis sewa"
@@ -636,6 +643,7 @@ export function NewLeasePage() {
                 missingText={room ? undefined : 'Pilih kamar untuk melihat harga standar.'}
               />
             </div>
+            <PriceConfirm state={priceCheck} showError={touched} />
             {periodPreview && (
               <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700" data-testid="stay-preview">
                 {/* periodPreview.end is the last night; people read the end as the check-out day (SPEC 7.3) */}

@@ -157,7 +157,10 @@ export function countTones(groups: BoardGroup[]): Record<BoardTone, number> {
   return counts
 }
 
-/** Deep links into the lease page, which opens the existing dialog itself (LeaseDetailPage `?action=`). */
-export function leaseActionLink(leaseId: string, action: 'bayar' | 'tagih' | 'checkout'): string {
+/**
+ * Deep links into the lease page, which opens the existing dialog itself (LeaseDetailPage `?action=`); 'bayar-perpanjang'
+ * is the next-invoice sheet with the rent recorded in the same save (SPEC 7.13).
+ */
+export function leaseActionLink(leaseId: string, action: 'bayar' | 'tagih' | 'bayar-perpanjang' | 'checkout'): string {
   return `/sewa/${leaseId}?action=${action}`
 }

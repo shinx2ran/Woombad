@@ -9,6 +9,8 @@ import { PAYMENT_METHOD_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { EMPTY_TENANT_FORM, validateTenantForm } from '../tenants/tenantUtils'
 import { perPeriodText, planStayBooking, QuickCheckInError, resolveTenantChoice, tenantsNamed } from '../quick/quickCheckIn'
 import { PlateInput } from '../leases/PlateInput'
+import { usePriceConfirm } from '../leases/usePriceConfirm'
+import { PriceConfirm } from '../leases/PriceConfirm'
 import { rateText, type PlannedStay } from './availability'
 import { useRencanaActions } from './useRencanaActions'
 
@@ -72,11 +74,17 @@ export function BookingSheet({ room, property, stay, rate, entry, tenants, tenan
   if (dp < 0) errors.dp = 'Tidak boleh negatif.'
   else if (dp > total) errors.dp = `DP tidak boleh lebih dari total (${formatRupiah(total)}).`
   const hasErrors = Object.keys(errors).length > 0
+  // SPEC 7.14: the price per night / week / month the total works out to, against the room's rate
+  const priceCheck = usePriceConfirm(plan?.pricePerPeriod ?? 0, rate, unit)
 
   const submit = async () => {
     setTouched(true)
     setRefusal(null)
     if (hasErrors || !plan) return
+    if (!priceCheck.ok) {
+      priceCheck.focus()
+      return
+    }
     setSaving(true)
     try {
       const { lease, invoice, waitlistError } = await actions.bookStay({
@@ -205,6 +213,7 @@ export function BookingSheet({ room, property, stay, rate, entry, tenants, tenan
           error={touched ? errors.total : undefined}
           hint={plan ? perPeriodText(plan, total, stay.periodType) : rate === null ? 'Harga kamar belum diatur: ketik total yang disepakati.' : undefined}
         />
+        <PriceConfirm state={priceCheck} showError={touched} />
         <MoneyInput label="DP / sudah dibayar (opsional)" value={dp} onChange={setDp} error={touched ? errors.dp : undefined} hint="Kosongkan bila belum bayar; isi sama dengan total bila lunas." />
         {dp > 0 && (
           <div className="flex flex-col gap-1">
