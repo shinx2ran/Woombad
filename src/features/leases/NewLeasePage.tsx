@@ -272,6 +272,8 @@ export function NewLeasePage() {
     setTouched(true)
     if (hasErrors || !periodPreview || !room) {
       toast.error('Lengkapi data yang ditandai merah.')
+      // SPEC 7.14: when the price question is all that is left, bring its tick into view
+      if (errors.priceConfirm && Object.keys(errors).length === 1) priceCheck.focus()
       return
     }
     if (!isNewTenant && !tenant) return

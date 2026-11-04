@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button, CountInput, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
 import type { Expense, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { buildInvoiceDraft, depositBalance, nextPeriodBounds, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
+import { buildInvoiceDraft, depositBalance, nextPeriodBounds, outstandingFor, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 import { plannedCheckoutOf } from '../../domain/occupancy'
 import {
@@ -16,6 +16,7 @@ import {
   extensionPriceFor,
   invoicesToPinType,
   nextPeriodCheckout,
+  openInvoicesSorted,
   permanentSwitchAddonsAmount,
   previewFollowingPeriod,
   proRataSuggestion,
@@ -25,7 +26,7 @@ import {
   sumExtraBreakdown,
 } from './leaseUtils'
 import { PeriodTypePicker, PriceField, Row } from './components'
-import type { LeaseActions } from './useLeaseActions'
+import { InvoiceIssuedError, type LeaseActions } from './useLeaseActions'
 import { RecordHistory } from '../settings/audit/RecordHistory'
 import { usePriceConfirm } from './usePriceConfirm'
 import { PriceConfirm } from './PriceConfirm'
@@ -262,7 +263,8 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
     if (coverInfo) setQuantity(coverInfo.n)
   }, [coverInfo])
 
-  const priceError = !custom && price <= 0 ? `Isi harga per ${unit}.` : undefined
+  // Periode khusus bills its own amount, but a switch made permanent still writes this price to the lease
+  const priceError = price <= 0 && (!custom || makePermanent) ? `Isi harga per ${unit}.` : undefined
   const extraAmount = sumExtraBreakdown(parts)
   const preview = useMemo<{ draft: InvoiceDraft | null; error: string | null }>(() => {
     try {
@@ -299,6 +301,8 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
   const leavingBefore = planned !== null && billedFrom !== null && planned <= billedFrom
 
   const dateError = customError ?? untilError
+  // SPEC 7.13: money handed over here pays the NEXT period; an older bill still open is named so it is not mistaken for it
+  const openBefore = useMemo(() => (payNow ? openInvoicesSorted(lease.id, leaseInvoices, payments) : []), [payNow, lease.id, leaseInvoices, payments])
   // SPEC 7.13: the rent handed over now, recorded on the fresh invoice (a part payment: untick, then Catat pembayaran)
   const paying = payNow && paidFull
   const today = todayISO()
@@ -369,6 +373,12 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
       onCreated?.(invoice)
       onClose()
     } catch (err) {
+      if (paying && err instanceof InvoiceIssuedError) {
+        // the invoice exists: say the rent is not recorded and close, so a retry cannot bill (and pay) another period
+        toast.error(`${err.message} Pembayaran sewanya belum dicatat: catat lewat Catat pembayaran.`)
+        onClose()
+        return
+      }
       toast.error(err instanceof Error ? err.message : 'Gagal membuat tagihan.')
     } finally {
       setSaving(false)
@@ -392,6 +402,17 @@ export function NextInvoiceModal({ open, onClose, lease, room, addons, leaseInvo
       }
     >
       <div className="space-y-4">
+        {openBefore.length > 0 && (
+          <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="pay-now-open-invoices">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              <strong>
+                Masih ada tagihan belum lunas: {openBefore.map((i) => `${i.invoice_number} (sisa ${formatRupiah(outstandingFor(i, payments))})`).join(', ')}.
+              </strong>{' '}
+              Pembayaran di sini untuk periode berikutnya. Untuk melunasi tagihan itu, tutup lembar ini dan pakai Catat pembayaran.
+            </span>
+          </p>
+        )}
         {leavingBefore && (
           <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="planned-checkout-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />

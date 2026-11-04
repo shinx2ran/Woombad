@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../components/ui'
 import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddon, Payment, Room } from '../../types/db'
@@ -111,9 +111,17 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
   const [decisions, setDecisions] = useState<Record<string, PartialDecision>>({})
   const [settlement, setSettlement] = useState<DepositSettlement>(emptySettlement(balance.held))
   const [saving, setSaving] = useState(false)
+  /** SPEC 7.15: the sheet closes for "Catat deposit diterima" and comes back: keep what was typed */
+  const resumeRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
+    if (resumeRef.current) {
+      resumeRef.current = false
+      // the deposit held may have grown: keep the deductions typed when they still fit, refund the rest
+      setSettlement((s) => (s.rent + s.damage > 0 && s.rent + s.damage <= balance.held ? { ...s, refund: balance.held - s.rent - s.damage } : emptySettlement(balance.held)))
+      return
+    }
     setDate(planned ?? todayISO())
     setDecisions({})
     setSettlement(emptySettlement(balance.held))
@@ -225,7 +233,14 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
               {onRecordDeposit ? '.' : ' lewat Lainnya → Catat deposit diterima.'}
             </p>
             {onRecordDeposit && (
-              <Button size="sm" variant="outline" onClick={onRecordDeposit}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  resumeRef.current = true
+                  onRecordDeposit()
+                }}
+              >
                 Catat deposit diterima
               </Button>
             )}
@@ -377,7 +392,10 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
   const target = candidates.find((c) => c.room.id === roomId)
   const unit = PERIOD_UNIT_LABEL[lease.period_type]
   // SPEC 7.14: only a NEW price is questioned (the price the lease already has is not this dialog's business)
-  const priceCheck = usePriceConfirm(price, roomPriceFor(target?.room, lease.period_type), unit, Boolean(target) && actions.canEditLeaseTerms && price !== lease.price_per_period)
+  const newPrice = Boolean(target) && actions.canEditLeaseTerms && price !== lease.price_per_period
+  const priceCheck = usePriceConfirm(price, roomPriceFor(target?.room, lease.period_type), unit, newPrice)
+  // a cleared price field is 0: never written as the lease's new price (a lease already at 0 still moves)
+  const priceZero = newPrice && price <= 0
 
   const pickRoom = (id: string) => {
     setRoomId(id)
@@ -391,6 +409,7 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
   const submit = async () => {
     if (!target || target.availability !== 'kosong') return
     setTouched(true)
+    if (priceZero) return
     if (!priceCheck.ok) {
       priceCheck.focus()
       return
@@ -457,6 +476,7 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
             onChange={setPrice}
             standard={roomPriceFor(target.room, lease.period_type)}
             unit={PERIOD_UNIT_LABEL[lease.period_type]}
+            error={touched && priceZero ? `Harga per ${PERIOD_UNIT_LABEL[lease.period_type]} harus lebih dari 0.` : undefined}
             extraHint={`Harga sekarang ${formatRupiah(lease.price_per_period)}; berlaku untuk tagihan berikutnya.`}
           />
         )}

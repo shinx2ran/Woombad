@@ -52,6 +52,16 @@ import { StaleWriteError } from '../../lib/repo/types'
 
 export type { PartialDecision } from './leaseUtils'
 
+/** issueInvoice wrote the invoice but not the lease update after it: the invoice exists (SPEC 7.13 names what is left). */
+export class InvoiceIssuedError extends Error {
+  readonly invoice: Invoice
+  constructor(message: string, invoice: Invoice) {
+    super(message)
+    this.name = 'InvoiceIssuedError'
+    this.invoice = invoice
+  }
+}
+
 /** SPEC 7.6 Ubah tanggal mulai sewa */
 export interface RedateLeaseActionInput {
   lease: Lease
@@ -313,7 +323,7 @@ export function useLeaseActions() {
         } catch (err) {
           await invalidate('invoices', 'leases', 'lease_addons')
           const detail = err instanceof Error ? err.message : 'kesalahan tak dikenal'
-          throw new Error(`Tagihan ${invoice.invoice_number} sudah dibuat, tetapi data sewa gagal diperbarui: ${detail}`)
+          throw new InvoiceIssuedError(`Tagihan ${invoice.invoice_number} sudah dibuat, tetapi data sewa gagal diperbarui: ${detail}`, invoice)
         }
       }
       await invalidate('invoices', 'leases', 'lease_addons')

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { ToastProvider } from '../../components/ui'
-import type { Invoice, Lease, MemberRole, Room } from '../../types/db'
+import type { Invoice, Lease, MemberRole, Payment, Room } from '../../types/db'
 import { LocalRepo, emptyLocalDb } from '../../lib/repo/localRepo'
 import { bindOrg, type OrgRepo } from '../../lib/repo/types'
 
@@ -84,7 +84,10 @@ const stored = async () => (await repo.get('leases', 'L1')) as Lease
 const actions = () => renderHook(() => useLeaseActions()).result.current
 const newInvoice = async () => (await repo.list('invoices')).find((i) => i.id !== 'I1')
 
-async function openSheet({ payNow = true, using, onCreated }: { payNow?: boolean; using?: LeaseActions; onCreated?: (i: Invoice) => void } = {}) {
+/** the cash already received for I1 (the sheet's view of the org's payments; not written to the repo) */
+const paidI1 = { id: 'P-I1', lease_id: 'L1', invoice_id: 'I1', amount: 250_000, kind: 'rent', method: 'cash', paid_at: '2026-10-29' } as Payment
+
+async function openSheet({ payNow = true, using, onCreated, sheetRoom = room }: { payNow?: boolean; using?: LeaseActions; onCreated?: (i: Invoice) => void; sheetRoom?: Room } = {}) {
   const onClose = vi.fn()
   const leaseInvoices = await repo.list('invoices')
   render(
@@ -93,11 +96,11 @@ async function openSheet({ payNow = true, using, onCreated }: { payNow?: boolean
         open
         onClose={onClose}
         lease={await stored()}
-        room={room}
+        room={sheetRoom}
         addons={[]}
         leaseInvoices={leaseInvoices}
         orgInvoices={leaseInvoices}
-        payments={[]}
+        payments={[paidI1]}
         expenses={[]}
         actions={using ?? actions()}
         onCreated={onCreated}
@@ -251,5 +254,66 @@ describe('Cek harga in the next-invoice sheet (SPEC 7.14)', () => {
     await openSheet()
     fireEvent.click(screen.getByRole('radio', { name: 'Mingguan' }))
     expect(screen.queryByTestId('price-confirm')).toBeNull()
+  })
+})
+
+describe('Bayar & perpanjang: review follow-ups', () => {
+  it('an older invoice still open is named in the sheet: the money here pays the next period', async () => {
+    await repo.insert('invoices', {
+      id: 'I2',
+      property_id: 'P1',
+      lease_id: 'L1',
+      invoice_number: 'INV-202610-0039',
+      period_type: 'daily',
+      period_start: '2026-10-30',
+      period_end: '2026-10-30',
+      quantity: 1,
+      base_amount: 250_000,
+      addons_amount: 0,
+      extra_amount: 0,
+      discount_amount: 0,
+      total_amount: 250_000,
+      due_date: '2026-10-30',
+      status: 'unpaid',
+      notes: null,
+    } as never)
+    await repo.update('leases', 'L1', { end_date: '2026-10-30' })
+    await openSheet()
+    expect(screen.getByTestId('pay-now-open-invoices').textContent).toContain('Masih ada tagihan belum lunas: INV-202610-0039 (sisa Rp 250.000).')
+    cleanup()
+    // the plain sheet says nothing new
+    await openSheet({ payNow: false })
+    expect(screen.queryByTestId('pay-now-open-invoices')).toBeNull()
+  })
+
+  it('the invoice written but the lease update failing: the rent is said to be unrecorded and the sheet closes (no second period on a retry)', async () => {
+    const real = actions()
+    const { InvoiceIssuedError } = await import('./useLeaseActions')
+    const recordRentPayment = vi.fn(real.recordRentPayment)
+    const failing = {
+      ...real,
+      recordRentPayment,
+      issueInvoice: vi.fn(async () => {
+        throw new InvoiceIssuedError('Tagihan INV-202610-0039 sudah dibuat, tetapi data sewa gagal diperbarui: Tidak dapat terhubung ke server.', { id: 'I9' } as Invoice)
+      }),
+    }
+    const onClose = await openSheet({ using: failing })
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan & perpanjang' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(screen.getByText(/data sewa gagal diperbarui: Tidak dapat terhubung ke server\. Pembayaran sewanya belum dicatat: catat lewat Catat pembayaran\./)).toBeTruthy()
+    expect(recordRentPayment).not.toHaveBeenCalled()
+  })
+
+  it('Periode khusus with the type switch made permanent: a price of Rp 0 is not written to the lease', async () => {
+    const onClose = await openSheet({ payNow: false, sheetRoom: { ...room, price_monthly: null } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Bulanan' }))
+    expect(screen.getByLabelText(/Harga per bulan/)).toHaveProperty('value', '')
+    fireEvent.click(screen.getByRole('checkbox', { name: /Periode khusus/ }))
+    fireEvent.change(screen.getByLabelText('Harga periode khusus'), { target: { value: '900000' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Buat tagihan' }))
+    expect(await screen.findByText('Isi harga per bulan.')).toBeTruthy()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(await repo.list('invoices')).toHaveLength(1)
+    expect((await stored()).price_per_period).toBe(250_000)
   })
 })

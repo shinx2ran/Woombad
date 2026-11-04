@@ -898,12 +898,16 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   ditambah kotak **Sudah dibayar lunas Rp <total>** (`data-testid="pay-now"`, tercentang), **Metode bayar** (Tunai/Transfer/QRIS/
   Lainnya; bawaan Tunai) dan **Tanggal bayar** (bawaan hari ini, boleh mundur, tidak boleh sesudah hari ini). Tombol **Simpan &
   perpanjang**. Centang dihapus: lembar biasa (tombol **Buat tagihan**, tagihan belum dibayar); dibayar sebagian dicatat sesudahnya
-  lewat **Catat pembayaran**. Lembar biasa tanpa `payNow` tidak berubah.
+  lewat **Catat pembayaran**. Lembar biasa tanpa `payNow` tidak berubah. Masih ada tagihan lama yang belum lunas: kotak kuning
+  (`data-testid="pay-now-open-invoices"`) menyebut nomornya dan sisanya, "Pembayaran di sini untuk periode berikutnya. Untuk
+  melunasi tagihan itu, tutup lembar ini dan pakai Catat pembayaran." (membayar di muka tetap boleh).
 - **Simpan**: `issueInvoice` (semua pemeriksaan lama: tanggal mulai bergeser, bentrok kamar, staf, deposit), lalu
   `recordRentPayment` sebesar total tagihan baru (tagihan baru belum punya pembayaran) dengan metode dan tanggal itu; deposit
   yang dicentang diterima dicatat dengan tanggal bayar yang sama. Langkah sesudah tagihan yang gagal disebut beserta tempat
   menyelesaikannya: "Tagihan X dibuat, tetapi pembayaran sewanya gagal dicatat: … Catat lewat Catat pembayaran." (deposit: seperti
-  7.12; keduanya: "… Selain itu, …"; sewa tercatat tetapi deposit gagal: "dibuat dan lunas, tetapi …"). Toast sukses: "Tagihan X
+  7.12; keduanya: "… Selain itu, …"; sewa tercatat tetapi deposit gagal: "dibuat dan lunas, tetapi …"). Tagihan tertulis tetapi
+  update sewa sesudahnya gagal (`InvoiceIssuedError`): pesan itu ditambah "Pembayaran sewanya belum dicatat: catat lewat Catat
+  pembayaran." dan lembar ditutup, supaya mengulang tidak menagih (dan membayar) periode lain. Toast sukses: "Tagihan X
   lunas, Rp 250.000 diterima (Tunai). Sewa diperpanjang, check-out …". Sesudahnya lembar **Kirim tagihan** terbuka seperti biasa,
   kini dengan gambar dan teks berstatus LUNAS (kwitansi). Staf boleh (pekerjaan meja depan).
 - **Pintu masuk** (tautan `/sewa/:id?action=bayar-perpanjang`, `leaseActionLink(…, 'bayar-perpanjang')`, hanya sewa aktif):
@@ -914,7 +918,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   pembayaran** diganti **Bayar & perpanjang**; juga **Lainnya → Bayar & perpanjang**.
 - **Uji**: `bayarPerpanjang.test.tsx` (lembar biasa tidak berubah; sekali simpan: tagihan, pembayaran lunas tunai hari ini, sewa
   diperpanjang, lembar kirim menerima tagihan; 2 malam transfer kemarin; centang dihapus; tanggal sesudah hari ini ditolak sebelum
-  menulis; harian → mingguan dengan deposit; pembayaran gagal; deposit gagal sesudah sewa tercatat; staf), `e2e/bayar-perpanjang.spec.ts`
+  menulis; harian → mingguan dengan deposit; pembayaran gagal; deposit gagal sesudah sewa tercatat; staf; tagihan lama terbuka
+  disebut; update sewa gagal → lembar ditutup tanpa pembayaran), `e2e/bayar-perpanjang.spec.ts`
   (juga dengan gerak; papan → lembar → LUNAS di lembar kirim → tombol di halaman sewa; baris Perlu perhatian).
 
 ### 7.14 Cek harga (salah ketik angka nol)
@@ -931,10 +936,14 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   untuk harga itu saja: harga lain ditanya lagi; dibuka ulang, ditanya lagi.
 - **Di mana**: **Sewa baru** (harga disepakati; daftar galat "Harga perlu dicek: …"), **Check-in cepat** dan lembar **Pesan /
   Check-in** Rencana (harga per periode dari total ÷ jumlah, terhadap tarif kamar), **Buat tagihan berikutnya / Bayar & perpanjang**
-  (harga per periode), **Pindah kamar** (hanya harga baru, bila berbeda dari harga sewa). Tidak di Ubah tagihan, tarif kamar, atau
-  Ubah harga massal.
+  (harga per periode; Rp 0 juga ditolak di Periode khusus bila jenis/harga dijadikan tetap sewa ini), **Pindah kamar** (hanya
+  harga baru, bila berbeda dari harga sewa; harga baru Rp 0, isian dikosongkan, ditolak "Harga per bulan harus lebih dari 0.").
+  Sewa baru yang hanya tertahan pertanyaan harga memfokuskan centangnya. Tidak di Ubah tagihan, tarif kamar, atau Ubah harga
+  massal.
 - **Uji**: `priceCheck.test.ts` (A13; kurang/kelebihan nol; harga nyata lolos; batas eksklusif; lantai Rp 50.000; tanpa tarif),
-  `bayarPerpanjang.test.tsx` (simpan menunggu centang; centang per harga; tarif kamar yang terisi tidak ditanya),
+  `bayarPerpanjang.test.tsx` (simpan menunggu centang; centang per harga; tarif kamar yang terisi tidak ditanya; Rp 0 tetap di
+  Periode khusus ditolak), `moveRoomPrice.test.tsx` (tarif kamar baru, dikosongkan ditolak, kurang nol menunggu centang, harga
+  sama, staf),
   `e2e/bayar-perpanjang.spec.ts` (Check-in cepat Rp 18.000 / malam; Sewa baru Rp 1 / bulan).
 
 ### 7.15 Checkout: deposit disepakati yang belum tercatat diterima
@@ -945,8 +954,11 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   penyelesaian deposit: "**Deposit disepakati Rp X, tercatat diterima Rp Y.** Pengembalian di bawah hanya menghitung deposit yang
   tercatat diterima. Bila uang jaminannya memang sudah dipegang, catat dulu." dengan tombol **Catat deposit diterima**
   (`onRecordDeposit`): halaman sewa membuka `DepositModal` (jumlah terisi sisa yang belum diterima) dan kembali ke checkout setelah
-  ditutup (disimpan atau batal); checkout yang dibuka lagi menghitung ulang yang dipegang. Tanpa `onRecordDeposit` kalimatnya
+  ditutup (disimpan atau batal). Yang sudah diisi di checkout tetap (tanggal checkout, keputusan tagihan DP, potongan sewa/
+  kerusakan bila masih muat); pengembalian dihitung ulang dari deposit yang kini dipegang. Membuka checkout dengan cara lain
+  tetap mulai dari awal. Tanpa `onRecordDeposit` kalimatnya
   menunjuk **Lainnya → Catat deposit diterima**. Checkout tidak pernah diblokir olehnya (deposit mungkin memang tidak pernah
   diambil).
 - **Uji**: `checkoutDeposit.test.tsx` (belum ada / sebagian / semua tercatat; tanpa deposit; tanpa pintasan; tidak memblokir),
-  `e2e/bayar-perpanjang.spec.ts` (Hendra mingguan dengan deposit belum diterima → checkout → catat → kembali, baris hilang).
+  `e2e/bayar-perpanjang.spec.ts` (Hendra mingguan dengan deposit belum diterima → checkout dengan tanggal diketik → catat →
+  kembali: baris hilang, tanggal tetap).

@@ -67,6 +67,8 @@ test.describe('Bayar & perpanjang, Cek harga, deposit at checkout (SPEC 7.13-7.1
     expect(await owed.count()).toBeGreaterThan(0)
     for (const link of await extend.all()) await expect(link).toHaveAttribute('href', /\/sewa\/[^/?]+\?action=bayar-perpanjang$/)
     for (const link of await owed.all()) await expect(link).toHaveAttribute('href', /\/sewa\/[^/?]+\?action=bayar$/)
+    // the longer label fits its button on a 360 px phone (two centred lines at most, nothing spills out)
+    for (const link of await extend.all()) expect(await link.evaluate((el) => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)).toBe(true)
     await page.locator('[data-attention-row]', { hasText: 'Hendra' }).getByRole('link', { name: 'Bayar & perpanjang' }).click()
     await expect(page.getByRole('dialog').getByRole('heading', { name: 'Bayar & perpanjang' })).toBeVisible()
   })
@@ -88,6 +90,8 @@ test.describe('Bayar & perpanjang, Cek harga, deposit at checkout (SPEC 7.13-7.1
     await page.getByRole('menuitem', { name: /^Checkout/ }).click()
     const checkout = page.getByRole('dialog')
     await expect(checkout.getByRole('heading', { name: 'Checkout penyewa' })).toBeVisible()
+    // the day he leaves is typed first; the round trip below must keep it
+    await checkout.getByLabel('Tanggal checkout').fill('2026-11-02')
     await expect(checkout.getByTestId('checkout-deposit-shortfall')).toContainText('Deposit disepakati Rp 200.000, tercatat diterima Rp 0.')
     await checkout.getByRole('button', { name: 'Catat deposit diterima' }).click()
 
@@ -101,6 +105,7 @@ test.describe('Bayar & perpanjang, Cek harga, deposit at checkout (SPEC 7.13-7.1
     const again = page.getByRole('dialog')
     await expect(again.getByRole('heading', { name: 'Checkout penyewa' })).toBeVisible()
     await expect(again.getByTestId('checkout-deposit-shortfall')).toHaveCount(0)
+    await expect(again.getByLabel('Tanggal checkout')).toHaveValue('2026-11-02')
     await expect(again).toContainText('200.000')
     await again.getByRole('button', { name: 'Batal' }).click()
   })
@@ -140,6 +145,8 @@ test.describe('Bayar & perpanjang, Cek harga, deposit at checkout (SPEC 7.13-7.1
     await page.getByRole('button', { name: 'Simpan & check-in' }).click()
     await expect(page.getByTestId('wizard-errors')).toContainText('Harga perlu dicek')
     await expect(page).toHaveURL(/\/sewa\/baru/)
+    // the only thing left: the tick is brought into view
+    await expect(page.getByRole('checkbox', { name: 'Harga ini memang benar' })).toBeFocused()
     await page.getByRole('checkbox', { name: 'Harga ini memang benar' }).check()
     await page.getByRole('button', { name: 'Simpan & check-in' }).click()
     await page.waitForURL(/\/sewa\/(?!baru)[^/?]+$/)
