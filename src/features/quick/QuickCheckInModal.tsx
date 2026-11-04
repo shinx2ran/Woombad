@@ -7,6 +7,8 @@ import { normalizePlate } from '../../domain/plate'
 import { formatCheckout, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_UNIT_LABEL, type PaymentMethod, type PeriodType, type Room } from '../../types/db'
 import { PlateInput } from '../leases/PlateInput'
+import { usePriceConfirm } from '../leases/usePriceConfirm'
+import { PriceConfirm } from '../leases/PriceConfirm'
 import { useRencanaActions } from '../rencana/useRencanaActions'
 import { perPeriodText, planStayBooking, QuickCheckInError, quantityText, resolveTenantChoice, tenantsNamed, validateStayBooking, type StayBookingInput } from './quickCheckIn'
 import { useBoardData } from './useBoardData'
@@ -90,6 +92,8 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const errors = validateStayBooking(input, data.leases)
   const plan = planStayBooking(startDate, periodType, quantity, total, input.bonusQuantity)
   const hasErrors = Object.keys(errors).length > 0
+  // SPEC 7.14: the price per night / week / month the total works out to, against the room's rate
+  const priceCheck = usePriceConfirm(plan?.pricePerPeriod ?? 0, rate, unit)
 
   const pickKind = (next: StayKind) => {
     // re-tapping the selected kind (to close the keyboard, a mis-tap) keeps what was typed
@@ -103,6 +107,10 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const submit = async () => {
     setTouched(true)
     if (hasErrors || !plan) return
+    if (!priceCheck.ok) {
+      priceCheck.focus()
+      return
+    }
     setSaving(true)
     try {
       const { lease, invoice } = await actions.bookStay({ ...input, orgInvoices: data.invoices, today })
@@ -216,6 +224,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
             error={touched ? errors.total : undefined}
             hint={plan ? perPeriodText(plan, total, periodType) : rate ? `Tarif kamar ${formatRupiah(rate)} / ${unit}` : `Kamar ini belum punya tarif ${kind === 'yearly' ? 'bulanan' : STAY_KINDS.find((k) => k.kind === kind)!.label.toLowerCase()}.`}
           />
+          <PriceConfirm state={priceCheck} showError={touched} />
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={paidFull} onChange={(e) => setPaidFull(e.target.checked)} />
             Sudah dibayar lunas

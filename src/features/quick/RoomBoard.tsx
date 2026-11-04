@@ -167,9 +167,9 @@ const ACTION_BASE = 'inline-flex h-12 items-center justify-center gap-2 rounded-
 const ACTION_PRIMARY = `${ACTION_BASE} bg-brand-700 text-white hover:bg-brand-800`
 const ACTION_OUTLINE = `${ACTION_BASE} border border-slate-300 bg-white text-slate-800 hover:bg-slate-50`
 
-function ActionLink({ to, primary, icon, children }: { to: string; primary?: boolean; icon: ReactNode; children: ReactNode }) {
+function ActionLink({ to, primary, icon, children, className }: { to: string; primary?: boolean; icon: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <Link to={to} className={primary ? ACTION_PRIMARY : ACTION_OUTLINE}>
+    <Link to={to} className={clsx(primary ? ACTION_PRIMARY : ACTION_OUTLINE, className)}>
       {icon}
       {children}
     </Link>
@@ -266,12 +266,17 @@ function RoomActionSheet({
         )}
         {living && lease && (
           <div className="grid grid-cols-2 gap-2">
-            {summary && summary.outstanding > 0 && (
+            {summary && summary.outstanding > 0 ? (
               <ActionLink to={leaseActionLink(lease.id, 'bayar')} primary icon={<Wallet className="h-4 w-4" aria-hidden />}>
                 Bayar
               </ActionLink>
+            ) : (
+              // nothing open: the tenant pays the next period, billed and recorded in one sheet (SPEC 7.13)
+              <ActionLink to={leaseActionLink(lease.id, 'bayar-perpanjang')} primary className="col-span-2" icon={<Wallet className="h-4 w-4" aria-hidden />}>
+                Bayar &amp; perpanjang
+              </ActionLink>
             )}
-            <ActionLink to={leaseActionLink(lease.id, 'tagih')} primary={!summary || summary.outstanding <= 0} icon={<CalendarPlus className="h-4 w-4" aria-hidden />}>
+            <ActionLink to={leaseActionLink(lease.id, 'tagih')} icon={<CalendarPlus className="h-4 w-4" aria-hidden />}>
               Perpanjang
             </ActionLink>
             <ActionLink to={leaseActionLink(lease.id, 'checkout')} icon={<DoorOpen className="h-4 w-4" aria-hidden />}>

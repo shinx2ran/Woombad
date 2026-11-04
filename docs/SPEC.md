@@ -888,3 +888,65 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   "sisa"; deposit lama belum dibayar tidak tercentang; peringatan mingguan → bulanan; pencatatan deposit gagal → tagihan & sewa
   tetap, pesan menunjuk Catat deposit diterima; staf ditolak sebelum menulis; deposit sama tidak mengubah apa pun), `e2e/perpanjang-deposit.spec.ts` (Hendra 102 harian → mingguan dengan
   deposit Rp 200.000 transfer di HP 360 px).
+
+### 7.13 Bayar & perpanjang
+- **Alasan** (tinjauan 3 Nov 2026, data langsung): 35 dari 36 tagihan sejak 14 Okt dibayar pada hari tagihan itu dibuat, 9 dengan
+  tanggal bayar mundur; penyewa menyerahkan uang lalu pemilik "melanjutkan sebulan". Sebelumnya: tagihan dibuat, lembar kirim
+  tagihan terbuka, ditutup, lalu Catat pembayaran: 7 ketukan di 3 lembar.
+- **Lembar**: `NextInvoiceModal` dengan `payNow` (judul **Bayar & perpanjang**): isinya sama dengan **Buat tagihan berikutnya**
+  (jenis periode, harga, jumlah/tanggal check-out, periode khusus, deposit 7.12, tambahan & diskon, peringatan rencana keluar 7.8),
+  ditambah kotak **Sudah dibayar lunas Rp <total>** (`data-testid="pay-now"`, tercentang), **Metode bayar** (Tunai/Transfer/QRIS/
+  Lainnya; bawaan Tunai) dan **Tanggal bayar** (bawaan hari ini, boleh mundur, tidak boleh sesudah hari ini). Tombol **Simpan &
+  perpanjang**. Centang dihapus: lembar biasa (tombol **Buat tagihan**, tagihan belum dibayar); dibayar sebagian dicatat sesudahnya
+  lewat **Catat pembayaran**. Lembar biasa tanpa `payNow` tidak berubah.
+- **Simpan**: `issueInvoice` (semua pemeriksaan lama: tanggal mulai bergeser, bentrok kamar, staf, deposit), lalu
+  `recordRentPayment` sebesar total tagihan baru (tagihan baru belum punya pembayaran) dengan metode dan tanggal itu; deposit
+  yang dicentang diterima dicatat dengan tanggal bayar yang sama. Langkah sesudah tagihan yang gagal disebut beserta tempat
+  menyelesaikannya: "Tagihan X dibuat, tetapi pembayaran sewanya gagal dicatat: … Catat lewat Catat pembayaran." (deposit: seperti
+  7.12; keduanya: "… Selain itu, …"; sewa tercatat tetapi deposit gagal: "dibuat dan lunas, tetapi …"). Toast sukses: "Tagihan X
+  lunas, Rp 250.000 diterima (Tunai). Sewa diperpanjang, check-out …". Sesudahnya lembar **Kirim tagihan** terbuka seperti biasa,
+  kini dengan gambar dan teks berstatus LUNAS (kwitansi). Staf boleh (pekerjaan meja depan).
+- **Pintu masuk** (tautan `/sewa/:id?action=bayar-perpanjang`, `leaseActionLink(…, 'bayar-perpanjang')`, hanya sewa aktif):
+  **Papan kamar**: kamar terisi tanpa tagihan terbuka menampilkan **Bayar & perpanjang** (utama, selebar lembar) di atas
+  **Perpanjang** (hanya tagihan) dan **Check-out**; kamar dengan sisa tagihan tetap **Bayar**. **Perlu perhatian**: baris tanpa
+  tagihan terbuka (periode berikutnya belum ditagih) menampilkan **Bayar & perpanjang** menggantikan **Bayar** (yang di sana hanya
+  membuka Catat pembayaran tanpa tagihan untuk dibayar). **Halaman sewa**: tanpa tagihan terbuka, tombol abu-abu **Catat
+  pembayaran** diganti **Bayar & perpanjang**; juga **Lainnya → Bayar & perpanjang**.
+- **Uji**: `bayarPerpanjang.test.tsx` (lembar biasa tidak berubah; sekali simpan: tagihan, pembayaran lunas tunai hari ini, sewa
+  diperpanjang, lembar kirim menerima tagihan; 2 malam transfer kemarin; centang dihapus; tanggal sesudah hari ini ditolak sebelum
+  menulis; harian → mingguan dengan deposit; pembayaran gagal; deposit gagal sesudah sewa tercatat; staf), `e2e/bayar-perpanjang.spec.ts`
+  (juga dengan gerak; papan → lembar → LUNAS di lembar kirim → tombol di halaman sewa; baris Perlu perhatian).
+
+### 7.14 Cek harga (salah ketik angka nol)
+- **Alasan**: sewa A13 tersimpan dengan harga Rp 1 / bulan (25 Okt 2026); tagihan tahunannya Rp 12 dan perbaikannya butuh SQL
+  operator. Formulir tidak mempertanyakan harga yang mustahil.
+- **Aturan** (`src/domain/priceCheck.ts`, `implausiblePrice(harga, tarif kamar untuk jenis yang sama, satuan)`): harga per
+  malam/minggu/bulan **di bawah 10 %** tarif kamar ("jauh di bawah tarif kamar (Rp X). Kurang angka nol?"), **lebih dari 5×** tarif
+  kamar ("Kelebihan angka nol?"), atau **di bawah Rp 50.000** ("sangat kecil"; berlaku juga tanpa tarif kamar). Batasnya eksklusif.
+  Harga sewa nyata EG Kost (Rp 1,5–2,8 jt terhadap tarif 1,8 jt) tidak ditanya. Harga 0 tetap ditangani pemeriksaan "harus lebih
+  dari 0" formulirnya.
+- **Tampilan** (`PriceConfirm` + `usePriceConfirm`): kotak kuning (`data-testid="price-confirm"`) di bawah isian harga dengan
+  centang besar **Harga ini memang benar**. Simpan menunggu centang itu atau harga yang diperbaiki (tidak ada yang ditolak); simpan
+  yang tertahan memfokuskan centang itu dan menulis "Centang bila harganya memang benar, atau perbaiki harganya.". Centang berlaku
+  untuk harga itu saja: harga lain ditanya lagi; dibuka ulang, ditanya lagi.
+- **Di mana**: **Sewa baru** (harga disepakati; daftar galat "Harga perlu dicek: …"), **Check-in cepat** dan lembar **Pesan /
+  Check-in** Rencana (harga per periode dari total ÷ jumlah, terhadap tarif kamar), **Buat tagihan berikutnya / Bayar & perpanjang**
+  (harga per periode), **Pindah kamar** (hanya harga baru, bila berbeda dari harga sewa). Tidak di Ubah tagihan, tarif kamar, atau
+  Ubah harga massal.
+- **Uji**: `priceCheck.test.ts` (A13; kurang/kelebihan nol; harga nyata lolos; batas eksklusif; lantai Rp 50.000; tanpa tarif),
+  `bayarPerpanjang.test.tsx` (simpan menunggu centang; centang per harga; tarif kamar yang terisi tidak ditanya),
+  `e2e/bayar-perpanjang.spec.ts` (Check-in cepat Rp 18.000 / malam; Sewa baru Rp 1 / bulan).
+
+### 7.15 Checkout: deposit disepakati yang belum tercatat diterima
+- **Alasan** (data langsung 3 Nov 2026): 5 sewa aktif dengan deposit disepakati tanpa pembayaran deposit tercatat (Rp 3.500.000).
+  Penyelesaian checkout hanya mengembalikan deposit yang **tercatat diterima** (`depositBalance().held`), jadi ia akan menawarkan
+  Rp 0 tanpa penjelasan.
+- **CheckoutModal**: bila `depositBalance().shortfall > 0`, baris merah (`data-testid="checkout-deposit-shortfall"`) di atas
+  penyelesaian deposit: "**Deposit disepakati Rp X, tercatat diterima Rp Y.** Pengembalian di bawah hanya menghitung deposit yang
+  tercatat diterima. Bila uang jaminannya memang sudah dipegang, catat dulu." dengan tombol **Catat deposit diterima**
+  (`onRecordDeposit`): halaman sewa membuka `DepositModal` (jumlah terisi sisa yang belum diterima) dan kembali ke checkout setelah
+  ditutup (disimpan atau batal); checkout yang dibuka lagi menghitung ulang yang dipegang. Tanpa `onRecordDeposit` kalimatnya
+  menunjuk **Lainnya → Catat deposit diterima**. Checkout tidak pernah diblokir olehnya (deposit mungkin memang tidak pernah
+  diambil).
+- **Uji**: `checkoutDeposit.test.tsx` (belum ada / sebagian / semua tercatat; tanpa deposit; tanpa pintasan; tidak memblokir),
+  `e2e/bayar-perpanjang.spec.ts` (Hendra mingguan dengan deposit belum diterima → checkout → catat → kembali, baris hilang).
