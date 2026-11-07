@@ -1098,3 +1098,43 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   hanya pemilik/admin + CHECK, riwayat, akun dihapus, `export_backup`), `e2e/scan-nota.spec.ts` (biaya di layar periksa, kartu
   Kredit Claude: sisa, siklus, daftar, tautan Console, ubah kredit & tanggal, tetap setelah muat ulang; staf tidak melihat
   biaya maupun kartu).
+
+### 7.18 Ringkasan WhatsApp dari papan kamar
+- **Permintaan pemilik** (7 Nov 2026): tombol di Papan kamar yang membuka WhatsApp (Business) dengan ringkasan kamar, untuk
+  dikirim ke istri atau grup WhatsApp data kos (staf), mis. "kamar 5d (pak beni) telat 2 hari (bulanan)", "kamar 3a (mulan)
+  habis sewa hari ini (harian)".
+- **Isi** (`boardSummaryText`, `src/features/quick/boardSummary.ts`, murni, dari ubin `buildBoard` yang sama dengan warna papan,
+  mengikuti filter kos): judul `*<kos>* · <hari>, d MMM yyyy` (nama organisasi bila lebih dari satu kos tampil; blok per kos
+  `_<kos>_`, kos tanpa berita dilewati), lalu bagian:
+  - **Telat bayar**: ubin merah, paling lama telat dulu: "Kamar 5D (Pak Beni) telat 2 hari (bulanan)"; rencana keluar hari ini
+    ditambahkan "· rencana keluar hari ini".
+  - **Hari ini**: jatuh tempo hari ini ("habis sewa" untuk harian, "jatuh tempo" untuk mingguan/bulanan), rencana keluar hari
+    ini (menggantikan baris jatuh tempo), penyewa yang mulai hari ini ("check-in hari ini"; sewa yang mulai hari ini adalah
+    ubin terisi sejak hari pertama, bukan "Dipesan"; bila pembayaran pertamanya masih terbuka ditambah "· belum lunas", bukan
+    "habis sewa"; "lunas" karena ringkasan tagihan hanya tahu sisa yang terutang, dan staf mungkin sudah menerima DP).
+  - Checkout yang dicatat lebih awal (status `ended`, `checkout_date` masih di depan): tidak pernah "telat"/"jatuh tempo";
+    "keluar hari ini" (Hari ini) atau "keluar 10 Nov" (Segera, ≤ 7 hari).
+  - Jatuh tempo **sebelum** rencana keluar (keduanya ≤ 7 hari): uangnya yang jadi judul, rencananya ikut: "jatuh tempo 2 hari
+    lagi (bulanan) · rencana keluar 12 Nov" (ubin tetap oranye karena itu). Rencana keluar ≤ 7 hari dilaporkan apa pun warna
+    ubin, juga di kamar perbaikan.
+  - **Tidak dilaporkan, disengaja**: pergantian penyewa di hari yang sama (rencana keluar lama = mulai sewa baru; papan hanya
+    memegang satu sewa per kamar, jadi hanya satu yang tampil) dan rencana keluar yang sudah lewat tanpa checkout (sudah
+    merah di lembar kamar).
+  - **Segera**: ubin oranye (1–7 hari), paling dekat dulu: "besok" / "N hari lagi"; rencana keluar dalam 7 hari ("rencana keluar
+    24 Nov") dilaporkan apa pun warna ubinnya (juga ubin biru "Keluar 24 Nov"), diurutkan menurut hari keluarnya.
+  - Kamar **perbaikan** yang masih ada penyewanya dilaporkan seperti kamar terisi (telat tetap telat), ditandai "· perbaikan".
+  - Nama kamar "Kamar 12" tidak menjadi "Kamar Kamar 12"; nama penyewa seperti diketik; jenis sewa dalam kurung. Ada yang perlu
+    ditangani: pesan ditutup "Mohon ditindaklanjuti." (permintaan pemilik). Tanpa berita: "Semua kamar aman hari ini ✅" saja.
+- **Tampilan**: tombol **Ringkasan WA** (hijau, ikon kirim) di kepala kartu Papan kamar, untuk semua anggota (staf juga bisa
+  melapor). Pesan dibuat saat tombol ditekan, dengan tanggal saat itu (papan yang dibiarkan terbuka lewat tengah malam tidak
+  mengirim tanggal kemarin). Lembar **Kirim ringkasan ke WhatsApp**: kotak pesan yang bisa diubah, **Buka WhatsApp**
+  (`https://api.whatsapp.com/send?text=…` tanpa nomor: WhatsApp atau WhatsApp Business menanyakan kontak/grup; bukan `wa.me`,
+  yang pengalihannya mengubah emoji ✅ menjadi "�"; nonaktif bila pesan kosong, tetap `role="link"` agar pembaca layar
+  mendengar nonaktif), **Bagikan…** (Web Share, hanya bila didukung; iPhone dengan WhatsApp dan WhatsApp Business terpasang
+  selalu membuka satu aplikasi tetap, jadi petunjuknya menyarankan Bagikan… untuk memilih Business), **Salin** (`copyText`;
+  gagal → teks ditandai dengan petunjuk). Gagalnya penyegaran data di latar belakang tidak lagi membongkar papan (dan lembar
+  yang sedang diedit) selama data lama masih ada (`useBoardData`, `useDashboardData`: galat fatal hanya tanpa data).
+- **Uji**: `boardSummary.test.ts` (contoh pemilik, hari ini dan segera berurutan, telat + keluar hari ini, beberapa kos, tanpa
+  berita, nama kamar, tautan), `e2e/ringkasan-wa.spec.ts` (HP 360 px, Mode Demo 15 Okt: judul, blok kos, 102 habis sewa hari ini,
+  satu baris per ubin merah, tautan api.whatsapp.com = isi kotak, ubah pesan, kosong → nonaktif (juga sebagai link); satu kos →
+  judul kos tanpa blok).

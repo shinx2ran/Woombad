@@ -5,7 +5,7 @@ export type CopyResult = 'copied' | 'selected' | 'failed'
  * Copy text. navigator.clipboard is missing on plain http and refused by some older iPhones, so the
  * fallback selects the (readonly) field showing the same text and tries the legacy copy command.
  */
-export async function copyText(text: string, field?: HTMLInputElement | null): Promise<CopyResult> {
+export async function copyText(text: string, field?: HTMLInputElement | HTMLTextAreaElement | null): Promise<CopyResult> {
   if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text)

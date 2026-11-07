@@ -48,7 +48,8 @@ export function useDashboardData() {
 
   const queries = [rooms, leases, invoices, payments, expenses, tenants, addons]
   const isPending = queries.some((q) => q.isPending)
-  const error = queries.find((q) => q.isError)?.error ?? null
+  // fatal only without data: a failed background refresh keeps the page as it is, like useOrg
+  const error = queries.find((q) => q.isError && q.data === undefined)?.error ?? null
 
   const today = todayISO()
 
