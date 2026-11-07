@@ -962,3 +962,60 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Uji**: `checkoutDeposit.test.tsx` (belum ada / sebagian / semua tercatat; tanpa deposit; tanpa pintasan; tidak memblokir),
   `e2e/bayar-perpanjang.spec.ts` (Hendra mingguan dengan deposit belum diterima → checkout dengan tanggal diketik → catat →
   kembali: baris hilang, tanggal tetap).
+
+### 7.16 Scan nota (pengeluaran dari foto)
+- **Permintaan pemilik**: staf EG Kost mencatat pengeluaran di kertas (satu halaman per bulan: tanggal, keterangan, jumlah,
+  total di bawah). Tombol **Scan nota** membaca foto halaman itu, atau nota toko, dan mengisi pengeluarannya otomatis.
+  Alasan tambahan (tinjauan 3 Nov 2026): 0 pengeluaran operasional tercatat, jadi Laporan "laba" = pendapatan.
+- **Pembaca**: tulisan tangan tidak terbaca oleh OCR di browser (tesseract.js, dipakai Scan KTP), jadi foto dibaca Claude
+  (vision) lewat Edge Function **`scan-nota`** (`supabase/functions/scan-nota/`). Model `claude-opus-5-5`, effort `medium`,
+  keluaran terstruktur (`output_config.format` JSON schema, `SCAN_SCHEMA`), `fallbacks: "default"` (beta
+  `server-side-fallback-2026-07-01`: permintaan yang ditolak pengaman model diulang otomatis di model cadangan), SDK
+  `npm:@anthropic-ai/sdk@1.6.0`. Kunci API hanya di secret Edge Function **`ANTHROPIC_API_KEY`**; tidak pernah di aplikasi
+  atau repo. Prompt, skema, dan pemeriksaan hasil (`parseScanOutput`: jumlah bilangan bulat positif, tanggal di luar kalender
+  → null, kategori tak dikenal → Lainnya) ada di `scan.ts` tanpa impor, dipakai bersama oleh fungsi (Deno) dan aplikasi.
+- **Yang dibaca**: daftar tulisan tangan → satu baris per pengeluaran (judul, nama bulan, dan baris total dilewati; total di
+  bawah daftar → `written_total`, total daftar lain di halaman diabaikan); nota toko → satu baris (total dibayar, ringkasan
+  barang, toko sebagai vendor). Per baris: hari/bulan/tahun seperti tertulis (null bila tidak ada), keterangan Indonesia yang
+  rapi (singkatan ditulis lengkap: bh → buah, bks → bungkus, bwh → bawah), teks persis yang terbaca, jumlah rupiah
+  ("500.000" → 500000, "30rb" → 30000), kategori operasional (Listrik/air/internet, Perbaikan, Perlengkapan, Gaji, Pajak,
+  Promosi, Lainnya; pengembalian tidak pernah), vendor, dan **tidak jelas** bila sulit dibaca. Foto bukan catatan
+  pengeluaran → `unreadable` dengan alasannya.
+- **Fungsi**: CORS untuk `https://shinx2ran.github.io` (+ localhost). Urutan: sesi pengguna (`auth.getUser(token)`; tanpa
+  sesi → 401, sebelum apa pun), kunci API ada (503 `not_configured`), isi permintaan (org uuid, foto base64 ≤ 8 juta
+  karakter, JPG/PNG/WebP), keanggotaan org dengan token pengguna sendiri (`organization_members`, RLS; bukan anggota → 403),
+  lalu Claude. Galat Claude dipetakan ke pesan Indonesia (kunci salah/kredit habis → 503, sibuk → 429, foto ditolak → 400,
+  koneksi → 502); `stop_reason` refusal → 422, max_tokens → 502. Dideploy dengan **`verify_jwt = false`**: proyek memakai
+  kunci `sb_publishable_`, dan pemeriksaan JWT bawaan Edge Functions hanya mengenal kunci lama (dokumen Supabase); fungsi
+  memeriksa sesi sendiri. Kunci publik dibaca dari `SUPABASE_PUBLISHABLE_KEYS.default`, lalu `SUPABASE_ANON_KEY`, lalu header
+  `apikey`. Tidak menulis apa pun ke database.
+- **Aplikasi** (`ScanNotaModal`, `scanNota.ts`): tombol **Scan nota** di Pengeluaran (header dan saat kosong), di form
+  **Catat pengeluaran** (kotak di atas: menutup form, membuka scan), dan `/pengeluaran?scan=1`. Foto (kamera atau galeri)
+  diperkecil ke JPEG ≤ 2000 px (cukup untuk tulisan tangan, biaya per scan terduga), dikirim, lalu **diperiksa sebelum
+  disimpan**: ringkasan "N baris terbaca · jumlah Rp X" dan **cek total**: jumlah semua baris (dicentang atau tidak)
+  dibandingkan total di kertas ("Sama dengan total di kertas" atau "selisih Rp X: periksa angka yang ditandai"); catatan
+  pembaca; pilihan **Kos** untuk semua baris (bawaan: filter kos, atau satu-satunya kos; "Semua kos" → wajib dipilih;
+  "Bersama" boleh); per baris: centang simpan, tanggal, keterangan, jumlah, kategori, label "Periksa: tulisan kurang jelas",
+  "Mungkin sudah tercatat", "Bulan diperkirakan", dan teks yang terbaca di foto. Baris tidak jelas atau tidak lengkap terbuka
+  otomatis. **Tanggal**: tahun yang tidak tertulis = tahun terbaru yang tidak lebih dari 7 hari ke depan (Oktober dibaca 7 Nov
+  2026 → 2026; Desember dibaca Januari → tahun lalu); tanpa bulan → bulan ini, atau bulan lalu bila harinya belum lewat;
+  tanggal yang tidak ada → kosong (wajib diisi). **Duplikat**: baris dengan tanggal dan jumlah sama dengan pengeluaran yang sudah
+  ada ditampilkan tetapi tidak dicentang (scan halaman yang sama dua kali tidak menggandakan biaya). **Simpan N pengeluaran**:
+  baris dicentang wajib bertanggal, berjumlah > 0, berketerangan (merah + dibuka bila tidak); `saveScannedExpenses`
+  mengunggah foto sekali ("Simpan foto ini sebagai bukti di setiap baris", bawaan aktif) dan menulis semua baris dalam satu
+  `insertMany` dengan `receipt_path` yang sama (hapus satu baris kemudian tidak menghapus foto selama baris lain memakainya);
+  unggah gagal → baris tetap tersimpan tanpa foto + peringatan; insert ditolak → foto dihapus lagi. Semua anggota (staf
+  juga) boleh; riwayat perubahan mencatat setiap baris. Halaman pindah ke bulan baris yang disimpan.
+- **Mode Demo**: tidak ada server: setelah memilih foto, layar periksa menampilkan **contoh rekaan** (`DEMO_SCAN_RESULT`,
+  bukan data pemilik) dengan keterangan jelas, supaya alurnya bisa dicoba; foto tidak dikirim.
+- **Biaya & privasi**: berbayar per scan di akun API Anthropic pemilik (perkiraan US$0,05–0,15 per foto; harga Opus 5.5
+  $4 / $20 per juta token masuk/keluar). Kredit prabayar tanpa isi ulang otomatis menjadi batas belanja. Foto catatan
+  pengeluaran dikirim ke Anthropic untuk dibaca.
+- **Uji**: `supabase/functions/scan-nota/scan.test.ts` (skema: semua objek tertutup dan semua properti wajib, tanpa batasan
+  angka, tanpa kategori pengembalian; parse: daftar, nota, tanggal di luar kalender, kategori tak dikenal, total 0,
+  `unreadable`, angka berupa teks/pecahan/negatif ditolak), `scanNota.test.ts` (tanggal: tahun, Desember di Januari, 7 hari ke
+  depan, tanpa bulan, tanggal tidak ada; baris, duplikat, cek total, draf; pemanggilan fungsi, pesan galat fungsi, belum
+  dideploy, tanpa koneksi, hasil rusak), `saveExpense.test.ts` (`saveScannedExpenses`: satu unggahan + satu insert, unggah
+  gagal, insert ditolak tanpa foto tertinggal, tanpa foto), `e2e/scan-nota.spec.ts` (juga dengan gerak; HP 360 px, Mode Demo:
+  8 baris, cek total, salah baca → selisih, kos wajib, simpan 7, pindah ke Oktober, scan ulang → 7 "Mungkin sudah tercatat";
+  dari form Catat; tanggal kosong ditolak). Fungsi diperiksa dengan `deno check`.

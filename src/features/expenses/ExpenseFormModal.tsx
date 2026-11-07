@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
 import { clsx } from 'clsx'
-import { Camera, Trash2 } from 'lucide-react'
+import { Camera, ScanLine, Trash2 } from 'lucide-react'
 import { Button, Field, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate, useTable } from '../../hooks/useTable'
@@ -35,6 +35,8 @@ export interface ExpenseFormModalProps {
   onClose: () => void
   /** Called after a successful save with the expense_date of the saved row(s), before onClose. */
   onSaved?: (expenseDate: string) => void
+  /** "Scan nota" instead (SPEC 7.16): the page closes this form and opens the scan sheet */
+  onScan?: () => void
 }
 
 // Same limit as the `receipts` bucket (supabase/schema.sql): a bigger photo would be refused by Storage.
@@ -51,7 +53,7 @@ function initialPropertyValue(initial: ExpenseDraft, mode: ExpenseFormMode, sele
  * Create / edit / duplicate form. Mounted fresh for every open (the page gives it a new `key`),
  * so state can be initialised from props without sync effects.
  */
-export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onSaved }: ExpenseFormModalProps) {
+export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onSaved, onScan }: ExpenseFormModalProps) {
   const { repo, role, properties, selectedPropertyId, isLocalMode } = useOrg()
   const invalidate = useInvalidate()
   const toast = useToast()
@@ -207,6 +209,19 @@ export function ExpenseFormModal({ mode, title, initial, editingId, onClose, onS
       }
     >
       <form id="expense-form" onSubmit={submit} className="space-y-4" noValidate>
+        {onScan && (
+          <button
+            type="button"
+            onClick={onScan}
+            className="flex w-full items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-left text-sm text-brand-900 hover:bg-brand-100"
+          >
+            <ScanLine className="h-5 w-5 shrink-0 text-brand-700" aria-hidden />
+            <span>
+              <span className="block font-medium">Scan nota</span>
+              <span className="block text-xs text-brand-800">Punya nota atau catatan tulisan tangan? Foto saja, isinya terbaca otomatis.</span>
+            </span>
+          </button>
+        )}
         {!isEdit && (
           <div>
             <p className="mb-1.5 text-xs font-medium text-slate-500">Template cepat</p>

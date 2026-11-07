@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router'
 import { clsx } from 'clsx'
-import { CalendarRange, ChevronLeft, ChevronRight, Copy, Paperclip, Pencil, Plus, Trash2, Undo2, Wallet } from 'lucide-react'
+import { CalendarRange, ChevronLeft, ChevronRight, Copy, Paperclip, Pencil, Plus, ScanLine, Trash2, Undo2, Wallet } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -26,6 +26,7 @@ import { comparableRanges, inRange, rangeForPreset, shiftRange, type DateRange }
 import { expensesByCategory, operatingExpensesInRange } from '../../domain/finance'
 import { EXPENSE_CATEGORY_LABEL, type Expense, type ExpenseCategory } from '../../types/db'
 import { ExpenseFormModal, type ExpenseFormMode } from './ExpenseFormModal'
+import { ScanNotaModal } from './ScanNotaModal'
 import { ReceiptModal } from './ReceiptModal'
 import { removeReceiptIfUnused } from './receiptFiles'
 import {
@@ -151,6 +152,8 @@ export function ExpensesPage() {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [receiptPath, setReceiptPath] = useState<string | null>(null)
   const [sheet, setSheet] = useState<Expense | null>(null)
+  /** Scan nota (SPEC 7.16); a new key mounts a fresh sheet each time */
+  const [scanKey, setScanKey] = useState<number | null>(null)
 
   const openForm = (mode: ExpenseFormMode, title: string, initial: ExpenseDraft, editingId?: string) => {
     formCounter.current += 1
@@ -158,6 +161,11 @@ export function ExpensesPage() {
     setSheet(null)
   }
   const openCreate = () => openForm('create', 'Catat pengeluaran', emptyDraft())
+  const openScan = () => {
+    setForm(null)
+    setSheet(null)
+    setScanKey((k) => (k ?? 0) + 1)
+  }
   const openEdit = (e: Expense) => openForm('edit', 'Ubah pengeluaran', draftFrom(e), e.id)
   const openDuplicate = (e: Expense) =>
     openForm('duplicate', 'Duplikat ke bulan ini', { ...draftFrom(e), expense_date: sameDayInMonth(e.expense_date, today), receipt_path: null })
@@ -171,12 +179,16 @@ export function ExpensesPage() {
     toast.toast(`Menampilkan ${rangeLabel(rangeForPreset('monthly', savedDate), true)}.`, 'info')
   }
 
-  // Dashboard links here with ?new=1 to open the form straight away.
+  // Dashboard links here with ?new=1 to open the form straight away (?scan=1: Scan nota, SPEC 7.16).
   useEffect(() => {
-    if (searchParams.get('new') !== '1') return
-    openCreate()
+    const wantsNew = searchParams.get('new') === '1'
+    const wantsScan = searchParams.get('scan') === '1'
+    if (!wantsNew && !wantsScan) return
+    if (wantsScan) openScan()
+    else openCreate()
     const next = new URLSearchParams(searchParams)
     next.delete('new')
+    next.delete('scan')
     setSearchParams(next, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
@@ -311,9 +323,14 @@ export function ExpensesPage() {
         title="Pengeluaran"
         subtitle={scopeLabel}
         actions={
-          <Button onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
-            Catat pengeluaran
-          </Button>
+          <>
+            <Button variant="outline" onClick={openScan} icon={<ScanLine className="h-4 w-4" />}>
+              Scan nota
+            </Button>
+            <Button onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
+              Catat pengeluaran
+            </Button>
+          </>
         }
       />
 
@@ -407,9 +424,14 @@ export function ExpensesPage() {
                   : `Tidak ada pengeluaran yang tercatat pada ${rangeLabel(range, isMonth)} untuk ${showShared ? 'semua kos' : propertyName(selectedPropertyId)}.`
               }
               action={
-                <Button onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
-                  Catat pengeluaran
-                </Button>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button variant="outline" onClick={openScan} icon={<ScanLine className="h-4 w-4" />}>
+                    Scan nota
+                  </Button>
+                  <Button onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
+                    Catat pengeluaran
+                  </Button>
+                </div>
               }
             />
           ) : (
@@ -537,8 +559,18 @@ export function ExpensesPage() {
       </Modal>
 
       {form && (
-        <ExpenseFormModal key={form.key} mode={form.mode} title={form.title} initial={form.initial} editingId={form.editingId} onSaved={onSaved} onClose={() => setForm(null)} />
+        <ExpenseFormModal
+          key={form.key}
+          mode={form.mode}
+          title={form.title}
+          initial={form.initial}
+          editingId={form.editingId}
+          onSaved={onSaved}
+          onClose={() => setForm(null)}
+          onScan={form.mode === 'create' ? openScan : undefined}
+        />
       )}
+      {scanKey !== null && <ScanNotaModal key={scanKey} onSaved={onSaved} onClose={() => setScanKey(null)} />}
 
       <ConfirmDialog
         open={deleting !== null}

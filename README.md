@@ -22,6 +22,7 @@ Woombad adalah aplikasi web progresif (PWA) untuk mengelola satu atau banyak kos
 | Database, login, penyimpanan foto | Supabase Free | Rp 0 (500 MB DB, 1 GB storage, 50.000 pengguna aktif/bulan) |
 | Hosting web (PWA) | GitHub Pages (atau Cloudflare Pages / Vercel / Netlify) | Rp 0 |
 | Scan KTP | tesseract.js di browser | Rp 0 (tanpa API) |
+| Scan nota (pengeluaran dari foto) | Claude API (Anthropic), lewat Edge Function Supabase | Per scan, kira-kira US$0,05–0,15 per foto; kredit prabayar menjadi batas belanja ([lihat di bawah](#scan-nota-pengeluaran-dari-foto)) |
 
 Catatan jujur: paket gratis Supabase **tidak membuat cadangan otomatis**, dan proyek **dijeda bila sepekan terlalu
 sedikit permintaan ke database**. Untuk itu GitHub Actions memanggil database 3× sehari secara otomatis
@@ -172,6 +173,7 @@ pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disemb
 | Kata sandi database | Ya | Tidak dipakai aplikasi; simpan di pengelola sandi. |
 | Kode pemilik | Ya, sampai dipakai | Sekali pakai. |
 | Kode undangan | Ya | Hanya untuk orang yang dituju. Sekali pakai, berlaku 7 hari. Salah kirim? Tekan **Batalkan** di **Pengaturan → Anggota → Undangan menunggu**. |
+| API key Claude (Anthropic, `sk-ant-…`) | **Ya** | Hanya di Supabase → Edge Functions → Secrets (`ANTHROPIC_API_KEY`), untuk Scan nota. Bila bocor: hapus kunci itu di console.anthropic.com, buat yang baru, lalu ganti isi secret di Supabase. |
 
 **Bila kunci rahasia bocor**: buka Supabase → Project Settings → **API Keys**. Membuat kunci baru saja **tidak**
 mematikan kunci yang bocor.
@@ -262,7 +264,7 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 | Kotak kuning "Kurang angka nol?" di bawah harga | Harga yang diketik jauh dari tarif kamar (di bawah 10 %, lebih dari 5×, atau di bawah Rp 50.000), mis. Rp 1 atau 170.000 untuk 1.700.000. Perbaiki angkanya, atau centang **Harga ini memang benar** bila memang harga khusus. |
 | Salah hapus kamar / penyewa / kos / add-on / pengeluaran | Langsung setelah hapus: ketuk **Urungkan** di pesan hijau (10 detik). Lebih lama dari itu (Mode Online): **Pengaturan → Riwayat perubahan →** cari baris "Dihapus" → **Pulihkan** (juga untuk pembayaran, add-on sewa, dan daftar tunggu; tagihan yang terhapus dibuat ulang lewat **Tagih**). Foto KTP/struk/logo tidak ikut kembali. |
 | Salah input tanggal mulai sewa | Buka sewa → **Lainnya → Ubah tanggal mulai** (pemilik/admin): semua periode tagihan ikut digeser ([lihat di bawah](#salah-input-tanggal-mulai-sewa)). |
-| Pengeluaran | **Pengeluaran → Catat**: gaji, listrik/air, perbaikan, dll., per kos atau **Bersama**; ada tombol **Duplikat ke bulan ini** untuk biaya rutin. |
+| Pengeluaran | **Pengeluaran → Catat**: gaji, listrik/air, perbaikan, dll., per kos atau **Bersama**; ada tombol **Duplikat ke bulan ini** untuk biaya rutin. Catatan di kertas atau nota toko? **Pengeluaran → Scan nota** ([lihat di bawah](#scan-nota-pengeluaran-dari-foto)). |
 | Lihat kinerja | **Laporan**: harian / mingguan / bulanan / tahunan, laba-rugi, piutang, hunian, grafik, lalu **Unduh XLSX / CSV** atau **Cetak / PDF**. |
 | Tambah kos baru | Di HP: **Pengaturan** (ikon ⚙️ di atas) → **Kos & Kamar** → **Tambah Kos**. Di iPad/laptop: menu kiri **Kos & Kamar** → **Tambah Kos**. Lalu buka kos itu dan isi kamarnya (**Tambah kamar** / **Tambah banyak**). |
 | Istri / pegawai ikut mengelola | **Pengaturan → Anggota → Undang**, kirim kodenya lewat WhatsApp (lihat [langkah 6](#6-pemilik--istri-undang-istri)). |
@@ -352,6 +354,25 @@ Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik
   keterangan internal seperti "Sisa dianggap hangus").
 - **Logo kos**: **Kos → Ubah kos → Logo kos → Pilih logo** (PNG transparan paling bagus; hanya tersimpan di mode online).
   Logo tampil di gambar tagihan dan di halaman kos.
+
+### Scan nota (pengeluaran dari foto)
+
+**Pengeluaran → Scan nota** (juga di form **Catat pengeluaran**): foto halaman catatan pengeluaran (tanggal, keterangan,
+jumlah) atau nota toko. Aplikasi membaca baris-barisnya dan menampilkannya untuk **diperiksa dulu**: jumlah semua baris
+dibandingkan dengan total yang tertulis di kertas, baris yang tulisannya kurang jelas ditandai kuning, dan baris yang
+tanggal dan jumlahnya sama dengan pengeluaran yang sudah tercatat tidak dicentang ("Mungkin sudah tercatat"). Pilih kosnya,
+perbaiki bila perlu (ketuk baris), lalu **Simpan**. Foto ikut disimpan sebagai bukti. Tahun yang tidak ditulis diisi
+otomatis (catatan Oktober yang di-scan November = tahun ini). Satu halaman atau satu nota per foto, foto lurus dan terang.
+
+**Sekali saja, oleh pemilik**, supaya Scan nota aktif (di Mode Demo tombolnya sudah bisa dicoba dengan contoh hasil):
+
+1. Buat akun di **console.anthropic.com**, isi **kredit prabayar** (mis. US$5) dan biarkan *auto-reload* mati: kredit itu
+   menjadi batas belanja. Satu scan kira-kira US$0,05–0,15.
+2. Di sana buat **API key** (Settings → API keys). Jangan dikirim lewat WhatsApp/email dan jangan ditempel di chat.
+3. Buka Supabase → **Edge Functions → Secrets** → *Add secret*: nama `ANTHROPIC_API_KEY`, isi kunci tadi → Save.
+
+Sebelum langkah 3, tombolnya menjawab "Scan nota belum aktif". Kunci salah atau kredit habis: pesannya menyebut itu.
+Foto catatan dikirim ke Anthropic untuk dibaca; jangan scan dokumen berisi data pribadi penyewa.
 
 ### Transisi halaman & jendela
 
