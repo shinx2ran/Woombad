@@ -22,7 +22,7 @@ Woombad adalah aplikasi web progresif (PWA) untuk mengelola satu atau banyak kos
 | Database, login, penyimpanan foto | Supabase Free | Rp 0 (500 MB DB, 1 GB storage, 50.000 pengguna aktif/bulan) |
 | Hosting web (PWA) | GitHub Pages (atau Cloudflare Pages / Vercel / Netlify) | Rp 0 |
 | Scan KTP | tesseract.js di browser | Rp 0 (tanpa API) |
-| Scan nota (pengeluaran dari foto) | Claude API (Anthropic), lewat Edge Function Supabase | Per scan, kira-kira US$0,05–0,15 per foto; kredit prabayar menjadi batas belanja ([lihat di bawah](#scan-nota-pengeluaran-dari-foto)) |
+| Scan nota (pengeluaran dari foto) | Claude API (Anthropic), lewat Edge Function Supabase | Per scan, kira-kira US$0,05–0,15 per foto, dari kredit API (paket Claude Max: US$100/bulan sudah termasuk; atau kredit prabayar) yang menjadi batas belanja ([lihat di bawah](#scan-nota-pengeluaran-dari-foto)) |
 
 Catatan jujur: paket gratis Supabase **tidak membuat cadangan otomatis**, dan proyek **dijeda bila sepekan terlalu
 sedikit permintaan ke database**. Untuk itu GitHub Actions memanggil database 3× sehari secara otomatis
@@ -178,7 +178,7 @@ pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disemb
 | Kata sandi database | Ya | Tidak dipakai aplikasi; simpan di pengelola sandi. |
 | Kode pemilik | Ya, sampai dipakai | Sekali pakai. |
 | Kode undangan | Ya | Hanya untuk orang yang dituju. Sekali pakai, berlaku 7 hari. Salah kirim? Tekan **Batalkan** di **Pengaturan → Anggota → Undangan menunggu**. |
-| API key Claude (Anthropic, `sk-ant-…`) | **Ya** | Hanya di Supabase → Edge Functions → Secrets (`ANTHROPIC_API_KEY`), untuk Scan nota. Bila bocor: hapus kunci itu di console.anthropic.com, buat yang baru, lalu ganti isi secret di Supabase. |
+| API key Claude (Anthropic, `sk-ant-…`) | **Ya** | Hanya di Supabase → Edge Functions → Secrets (`ANTHROPIC_API_KEY`), untuk Scan nota. Bila bocor: hapus kunci itu di platform.claude.com, buat kunci workspace yang baru, lalu ganti isi secret di Supabase. |
 
 **Bila kunci rahasia bocor**: buka Supabase → Project Settings → **API Keys**. Membuat kunci baru saja **tidak**
 mematikan kunci yang bocor.
@@ -371,13 +371,21 @@ otomatis (catatan Oktober yang di-scan November = tahun ini). Satu halaman atau 
 
 **Sekali saja, oleh pemilik**, supaya Scan nota aktif (di Mode Demo tombolnya sudah bisa dicoba dengan contoh hasil):
 
-1. Buat akun di **console.anthropic.com**, isi **kredit prabayar** (mis. US$5) dan biarkan *auto-reload* mati: kredit itu
-   menjadi batas belanja. Satu scan kira-kira US$0,05–0,15.
-2. Di sana buat **API key** (Settings → API keys). Jangan dikirim lewat WhatsApp/email dan jangan ditempel di chat.
-3. Buka Supabase → **Edge Functions → Secrets** → *Add secret*: nama `ANTHROPIC_API_KEY`, isi kunci tadi → Save.
+1. **Kredit API** di **platform.claude.com** (Claude Console). Pakai paket **Claude Max**? Kredit API US$100 per bulan sudah
+   termasuk: di claude.ai (browser) → **Settings → Billing → API credits → Link organization**, pilih organisasi Console
+   (hanya satu organisasi, tidak bisa diganti sendiri). Tanpa paket itu: isi **kredit prabayar** (mis. US$5) dan biarkan
+   *auto-reload* mati. Kredit menjadi batas belanja: habis → scan berhenti, tidak pernah ditagih ke paket Claude. Satu scan
+   kira-kira US$0,05–0,15.
+2. Di organisasi yang sama buat **API key** milik **workspace** (mis. *Default*) di **Keys & access → API keys**, bukan
+   kunci pribadi: kunci pribadi ditolak ("Kunci API Claude harus milik sebuah workspace"). Jangan dikirim lewat
+   WhatsApp/email dan jangan ditempel di chat.
+3. Buka Supabase → **Edge Functions → Secrets** → *Add secret*: nama `ANTHROPIC_API_KEY`, isi kunci tadi → Save. Mengganti
+   kunci: ubah isi secret yang sama; tidak perlu deploy ulang.
 
-Sebelum langkah 3, tombolnya menjawab "Scan nota belum aktif". Kunci salah, model tidak tersedia, atau kredit habis: pesannya
-menyebut itu ("Kredit API Claude habis" berarti isi kredit di console.anthropic.com).
+Sebelum langkah 3, tombolnya menjawab "Scan nota belum aktif". Kunci salah atau bukan kunci workspace, model tidak tersedia,
+atau kredit habis: pesannya menyebut itu dan menunjuk ke platform.claude.com; hanya masalah pada foto itu sendiri yang
+meminta foto ulang. Biaya tiap scan tercatat di **Supabase → Edge Functions → scan-nota → Logs** (baris `scan-nota ok`:
+model, token masuk/keluar, jumlah baris; foto dan isinya tidak dicatat).
 Foto catatan dikirim ke Anthropic untuk dibaca; jangan scan dokumen berisi data pribadi penyewa.
 
 ### Transisi halaman & jendela
