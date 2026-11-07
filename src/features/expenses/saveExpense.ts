@@ -77,3 +77,38 @@ export async function saveExpense(repo: ExpenseSaveRepo, input: SaveExpenseInput
   }
   return { count, receiptWarning }
 }
+
+export interface SaveScannedInput {
+  /** one row per ticked line of the scan (SPEC 7.16) */
+  drafts: ExpenseDraft[]
+  /** the scanned photo, kept as the receipt of every row (one file, shared like a split expense's) */
+  file?: File | null
+  canEdit: boolean
+}
+
+/**
+ * Write the lines of a scan in one insert, each pointing at the same receipt photo. As in saveExpense: the photo is
+ * uploaded first; a failed upload still saves the rows (without the photo); a refused insert removes the photo again.
+ * A row deleted later keeps the photo for the others (removeReceiptIfUnused).
+ */
+export async function saveScannedExpenses(repo: ExpenseSaveRepo, input: SaveScannedInput): Promise<SaveExpenseResult> {
+  if (input.drafts.length === 0) return { count: 0, receiptWarning: null }
+  let receiptWarning: string | null = null
+  let uploaded: string | null = null
+  if (input.file) {
+    try {
+      const ext = (input.file.name.split('.').pop() || 'jpg').toLowerCase()
+      uploaded = await repo.uploadFile('receipts', `${newId()}.${ext}`, input.file, input.file.type || undefined)
+    } catch {
+      receiptWarning = input.canEdit ? RECEIPT_UPLOAD_FAILED_ADMIN : RECEIPT_UPLOAD_FAILED_STAFF
+    }
+  }
+  const rows = input.drafts.map((d) => (uploaded ? { ...d, receipt_path: uploaded } : d))
+  try {
+    const saved = await repo.insertMany('expenses', rows)
+    return { count: saved.length, receiptWarning }
+  } catch (err) {
+    if (uploaded) await repo.removeFile('receipts', uploaded).catch(() => undefined)
+    throw err
+  }
+}

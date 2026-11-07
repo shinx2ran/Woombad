@@ -6,6 +6,7 @@ import {
   RECEIPT_UPLOAD_FAILED_ADMIN,
   RECEIPT_UPLOAD_FAILED_STAFF,
   saveExpense,
+  saveScannedExpenses,
   type ExpenseSaveRepo,
 } from './saveExpense'
 
@@ -208,5 +209,49 @@ describe('saveExpense', () => {
       expect(calls).toEqual(['update', 'list'])
       expect(files.has('org/shared.jpg')).toBe(true)
     })
+  })
+})
+
+// SPEC 7.16: the lines of a scan are written in one insert, sharing the scanned photo as their receipt.
+describe('saveScannedExpenses', () => {
+  const lines: ExpenseDraft[] = [
+    { ...draft, expense_date: '2026-10-17', amount: 30_000, description: 'Kantong sampah 3 bungkus', category: 'supplies' },
+    { ...draft, expense_date: '2026-10-20', amount: 500_000, description: 'Voucher listrik', category: 'utilities' },
+  ]
+
+  it('uploads the photo once and writes every line with it, in one insert', async () => {
+    const { repo, rows, files, calls } = fakeRepo()
+    const result = await saveScannedExpenses(repo, { drafts: lines, file: photo(), canEdit: false })
+    expect(result).toEqual({ count: 2, receiptWarning: null })
+    expect(calls).toEqual(['upload', 'insertMany'])
+    expect(files.size).toBe(1)
+    const [path] = [...files]
+    expect(rows.map((r) => [r.expense_date, r.amount, r.receipt_path])).toEqual([
+      ['2026-10-17', 30_000, path],
+      ['2026-10-20', 500_000, path],
+    ])
+  })
+
+  it('a failed upload still saves the lines, without the photo, and says so', async () => {
+    const { repo, rows } = fakeRepo({ failUpload: true })
+    const result = await saveScannedExpenses(repo, { drafts: lines, file: photo(), canEdit: false })
+    expect(result).toEqual({ count: 2, receiptWarning: RECEIPT_UPLOAD_FAILED_STAFF })
+    expect(rows.every((r) => r.receipt_path === null)).toBe(true)
+  })
+
+  it('a refused insert leaves no orphan photo behind', async () => {
+    const { repo, files, calls } = fakeRepo({ failInsert: true })
+    await expect(saveScannedExpenses(repo, { drafts: lines, file: photo(), canEdit: true })).rejects.toThrow(/row-level security/)
+    expect(calls).toEqual(['upload', 'insertMany', 'remove'])
+    expect(files.size).toBe(0)
+  })
+
+  it('without a photo (Mode Demo, or "simpan foto" unticked) nothing is uploaded; nothing ticked writes nothing', async () => {
+    const one = fakeRepo()
+    await saveScannedExpenses(one.repo, { drafts: lines, file: null, canEdit: true })
+    expect(one.calls).toEqual(['insertMany'])
+    const none = fakeRepo()
+    expect(await saveScannedExpenses(none.repo, { drafts: [], file: photo(), canEdit: true })).toEqual({ count: 0, receiptWarning: null })
+    expect(none.calls).toEqual([])
   })
 })
