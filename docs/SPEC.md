@@ -991,7 +991,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   kunci workspace; terjadi 7 Nov 2026) → 503 "Kunci API Claude harus milik sebuah workspace…", menyebut API key → 503,
   menyebut image → 400 "Foto ini tidak dapat diproses. Ambil ulang fotonya…", lainnya → 502 tanpa meminta foto ulang (hanya
   masalah foto yang meminta foto ulang); pesan pemilik menunjuk ke platform.claude.com. `stop_reason` refusal → 422,
-  max_tokens → 502. Setiap balasan Claude yang ditagih (terbaca, ditolak, terpotong, atau hasil tak terpakai) dicatat
+  max_tokens → 502. Setiap balasan Claude (terbaca, ditolak, terpotong, atau hasil tak terpakai) dicatat
   biayanya ke tabel `scan_usage` dan ke log fungsi (`scan-nota usage`; lihat 7.17). Dideploy dengan **`verify_jwt = false`**: proyek memakai
   kunci `sb_publishable_`, dan pemeriksaan JWT bawaan Edge Functions hanya mengenal kunci lama (dokumen Supabase); fungsi
   memeriksa sesi sendiri. Kunci publik dibaca dari `SUPABASE_PUBLISHABLE_KEYS.default`, lalu `SUPABASE_ANON_KEY`, lalu header
@@ -1053,7 +1053,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   mahal (`priced: false`). Penolakan sebelum keluaran apa pun hanya ditagih untuk kategori `bio`, `frontier_llm`,
   `reasoning_extraction`; yang sudah mengeluarkan teks selalu ditagih; kategori tak diketahui dianggap ditagih. Dibulatkan ke
   6 desimal (mikro-US$). Token keluar termasuk thinking.
-- **Tabel `scan_usage`**: satu baris per balasan Claude yang ditagih: `org_id` (cascade), `user_id` (pengguna yang scan; null
+- **Tabel `scan_usage`**: satu baris per balasan Claude (penolakan yang tidak ditagih tercatat US$0): `org_id` (cascade), `user_id` (pengguna yang scan; null
   bila akunnya dihapus), `created_at`, `model` (model yang menjawab), `input_tokens`, `output_tokens` (dijumlah semua
   percobaan yang ditagih), `cost_usd numeric(12,6)`, `outcome` (`ok` / `refused` / `max_tokens` / `invalid`), `kind` dan
   `lines` (hanya untuk `ok`, CHECK), `attempts jsonb` (rincian per percobaan). Indeks `(org_id, created_at desc)`.
@@ -1061,8 +1061,9 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   hanya punya SELECT, jadi anggota tidak bisa memalsukan atau menyembunyikan biaya. Fungsi menulis dengan kunci rahasia
   (`SUPABASE_SECRET_KEYS.default`, klien terpisah tanpa token pengguna) yang hanya punya SELECT + INSERT (`revoke all`
   dulu: default privilege proyek memberi `service_role` semua hak). Tidak masuk `audit_log` (tabelnya sendiri catatan
-  tambah-saja). Ikut `export_backup` dan cadangan JSON online (opsional seperti `audit_log`); tidak ikut impor Mode Demo atau
-  Pulihkan.
+  tambah-saja). Ikut `export_backup` dan cadangan JSON online (opsional seperti `audit_log`); tidak ikut impor Mode Demo,
+  Pulihkan di Riwayat perubahan, maupun Pulihkan dari JSON di Mode Demo (`backupToLocalDb` mengosongkannya: biaya nyata
+  dari cadangan online tidak boleh tampil sebagai contoh).
 - **Fungsi** (`index.ts`): setelah balasan apa pun dari Claude, sebelum setiap `return`: log `scan-nota usage` (outcome,
   model, token, `cost_usd`, `fell_back`, jenis, baris; tanpa foto atau isi) dan `EdgeRuntime.waitUntil` insert `scan_usage`
   (batas 5 dtk; gagal hanya dicatat di log, scan tetap berhasil). Balasan sukses menambah `cost: { cost_usd, fell_back }`.
@@ -1070,7 +1071,9 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Pengaturan** (kolom di `organizations`, bawaan untuk Claude Max): `claude_credit_monthly_usd numeric(10,2)` ≥ 0 (bawaan
   100) dan `claude_credit_renewal_day smallint` 1–31 (bawaan 1; 29–31 = hari terakhir bulan yang lebih pendek). Hanya
   pemilik/admin yang bisa mengubah (policy `org_update` yang sudah ada); setiap perubahan tercatat di Riwayat perubahan
-  ("Kredit Claude per bulan: US$100,00 → US$5,00").
+  ("Kredit Claude per bulan: US$100,00 → US$5,00"). Perkiraan menganggap kredit diperbarui tiap bulan; **0 = hanya kredit
+  prabayar** (tidak diperbarui): kartu menampilkan "Biaya scan siklus ini" tanpa sisa, batang, atau peringatan habis, dan
+  menunjuk ke Console untuk saldonya.
 - **Perkiraan** (`src/domain/scanCredit.ts`, diuji): siklus = tanggal pembaruan terakhir ≤ hari ini (tanggal lokal) s/d
   sebelum pembaruan berikutnya; scan masuk siklus menurut tanggal lokalnya; dijumlah dalam mikro-US$ (bulat). Sisa = kredit −
   biaya siklus ini (bisa negatif), rata-rata per scan, "cukup untuk sekitar N scan lagi", dan siklus sebelumnya.
@@ -1080,10 +1083,11 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   - **Pengaturan → Kredit Claude** (kartu setelah Anggota): "Sisa kredit (perkiraan)" (hijau; kuning < 10 %; merah ≤ 0 +
     peringatan "Perkiraan kredit habis…"), batang sisa, "dari US$100,00 · diperbarui tiap tgl N (berikutnya …)", "Sejak …: N
     scan · US$X · rata-rata …", siklus sebelumnya, tombol **Lihat saldo pasti di Claude Console** (tab baru), penjelasan bahwa
-    angkanya perkiraan, form **Pengaturan kredit** (Kredit per bulan US$ 0–9999, Tanggal pembaruan 1–31, Simpan), dan
+    angkanya perkiraan, form **Pengaturan kredit** (Kredit per bulan US$ 0–9999, Tanggal pembaruan 1–31, Simpan; hanya kolom yang berubah yang dikirim), dan
     **Scan terakhir** (dua siklus; jumlah baris + jenis atau Ditolak/Terlalu panjang/Hasil tidak terpakai, badge Model
     cadangan, biaya, siapa, kapan, model; 20 per halaman). Tabel/kolom belum ada di server → pesan "database server belum
-    diperbarui" (PGRST205/PGRST204).
+    diperbarui" (PGRST205/PGRST204). Biaya belum termuat (memuat, atau gagal dimuat: offline, sesi habis) → angka "…"/"–" abu-abu
+    tanpa batang, tanpa "Belum ada scan", dengan pesan merah; tidak pernah menampilkan seluruh kredit sebagai sisa.
 - **Mode Demo**: tidak ada server dan tidak ada kredit terpakai; setiap scan contoh mencatat baris contoh US$0,08 (2.500
   token masuk, 3.500 keluar) di data demo supaya alurnya bisa dicoba, dengan keterangan kuning di kartu.
 - **Uji**: `scan.test.ts` (biaya: satu percobaan, model bertanggal, fallback dijumlah per percobaan tanpa top-level, penolakan

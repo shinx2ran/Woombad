@@ -75,7 +75,7 @@ function secretKey(): string | null {
 /**
  * Append one scan_usage row (SPEC 7.17). A separate client that carries only the secret key: with the member's token
  * PostgREST would run the insert as `authenticated`, which may not insert. Never fails the scan: a missing key or a
- * refused insert is only logged (the "scan-nota ok" log line keeps the figures).
+ * refused insert is only logged (the "scan-nota usage" log line keeps the figures).
  */
 async function recordUsage(url: string, row: ReturnType<typeof scanUsageRow>): Promise<void> {
   const key = secretKey()
@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
     return fail(req, replyFor.status, replyFor.error, replyFor.message)
   }
 
-  // every reply that came back was billed (whatever it says), so its cost is recorded before any return below
+  // every reply that came back is recorded before any return below (a refusal that is not billed, at US$0)
   const cost = scanCost(response, MODEL)
   const userId = userData.user.id
   const record = (outcome: ScanOutcome, read: ScanResult | null = null) => {

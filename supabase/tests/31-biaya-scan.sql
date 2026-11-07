@@ -105,6 +105,14 @@ begin
     'insert into public.scan_usage (org_id, model, input_tokens, output_tokens, cost_usd, outcome) values (%L, %L, -1, 1, 0, %L)', org, 'claude-opus-5-5', 'refused')));
   perform zz.chk('B-checks', 'negative cost', '^err:23514', zz.bs_svc(format(
     'insert into public.scan_usage (org_id, model, input_tokens, output_tokens, cost_usd, outcome) values (%L, %L, 1, 1, -0.01, %L)', org, 'claude-opus-5-5', 'refused')));
+  perform zz.chk('B-checks', 'blank model', '^err:23514', zz.bs_svc(format(
+    'insert into public.scan_usage (org_id, model, input_tokens, output_tokens, cost_usd, outcome) values (%L, %L, 1, 1, 0, %L)', org, '  ', 'refused')));
+  perform zz.chk('B-checks', 'negative output tokens', '^err:23514', zz.bs_svc(format(
+    'insert into public.scan_usage (org_id, model, input_tokens, output_tokens, cost_usd, outcome) values (%L, %L, 1, -1, 0, %L)', org, 'claude-opus-5-5', 'refused')));
+  perform zz.chk('B-checks', 'unknown kind', '^err:23514', zz.bs_svc(format(
+    'insert into public.scan_usage (org_id, model, input_tokens, output_tokens, cost_usd, outcome, kind, lines) values (%L, %L, 1, 1, 0, %L, %L, 1)', org, 'claude-opus-5-5', 'ok', 'foo')));
+  perform zz.chk('B-checks', 'negative lines', '^err:23514', zz.bs_svc(format(
+    'insert into public.scan_usage (org_id, model, input_tokens, output_tokens, cost_usd, outcome, kind, lines) values (%L, %L, 1, 1, 0, %L, %L, -1)', org, 'claude-opus-5-5', 'ok', 'receipt')));
   perform zz.chk('B-checks', 'attempts must be an array', '^err:23514', zz.bs_svc(format(
     'insert into public.scan_usage (org_id, model, input_tokens, output_tokens, cost_usd, outcome, attempts) values (%L, %L, 1, 1, 0, %L, %L)', org, 'claude-opus-5-5', 'refused', '{}')));
   perform zz.chk('B-checks', 'an organisation that does not exist', '^err:23503', zz.bs_svc(format(

@@ -82,6 +82,12 @@ describe('parseBackupText', () => {
 })
 
 describe('backupToLocalDb', () => {
+  it('leaves scan costs out of Mode Demo: real billed scans must not show as samples (SPEC 7.17)', () => {
+    const parsed = parseBackupText(JSON.stringify({ organizations: [{ id: 'o1', name: 'Kos' }], scan_usage: [{ id: 's1', cost_usd: 0.092 }] }))
+    expect(parsed.tables.scan_usage).toHaveLength(1)
+    expect((backupToLocalDb(parsed) as unknown as Record<string, unknown[]>).scan_usage).toEqual([])
+  })
+
   it('refuses a backup without an organisation (the app would have nothing to open)', () => {
     const parsed = parseBackupText(JSON.stringify({ properties: [{ id: 'p1' }] }))
     expect(() => backupToLocalDb(parsed)).toThrow(MSG_NO_ORGANIZATION)

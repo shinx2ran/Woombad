@@ -170,7 +170,8 @@ langkah (aplikasi authenticator) di keduanya:
 
 Batasan ubah/hapus dijaga oleh database, bukan hanya oleh tampilan aplikasi. Staf tetap bisa **melihat** angka
 pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disembunyikan. Biaya Scan nota dan
-**Kredit Claude** hanya terlihat oleh pemilik/admin (database juga hanya mengizinkan mereka membaca biaya scan).
+**Kredit Claude** hanya ditampilkan untuk pemilik/admin; daftar biaya scan (tabel `scan_usage`) hanya bisa dibaca
+pemilik/admin di database.
 
 ### Mana yang rahasia?
 
@@ -389,9 +390,12 @@ Sebelum langkah 3, tombolnya menjawab "Scan nota belum aktif". Kunci salah atau 
 atau kredit habis: pesannya menyebut itu dan menunjuk ke platform.claude.com; hanya masalah pada foto itu sendiri yang
 meminta foto ulang.
 
-**Biaya & sisa kredit** (pemilik/admin): setelah scan, layar periksa menulis **Biaya scan ini: US$…**. Daftar semua scan
-dan **sisa kredit (perkiraan)** ada di **Pengaturan → Kredit Claude**. Isi di sana **Kredit per bulan** (Claude Max: 100) dan
-**Tanggal pembaruan** (lihat tanggal kedaluwarsa kredit bulanan di platform.claude.com → Billing). Anthropic tidak
+**Biaya & sisa kredit** (pemilik/admin): setelah scan, layar periksa menulis **Biaya scan ini: US$…**. Daftar scan
+siklus ini dan siklus sebelumnya (**Scan terakhir**) dan **sisa kredit (perkiraan)** ada di **Pengaturan → Kredit Claude**;
+biaya scan yang lebih lama tetap tersimpan dan ikut di cadangan lengkap (JSON, bagian *Biaya scan*). Isi di sana
+**Kredit per bulan** (Claude Max: 100) dan **Tanggal pembaruan** (lihat tanggal kedaluwarsa kredit bulanan di
+platform.claude.com → Billing). Perkiraannya menganggap kredit diperbarui tiap bulan; dengan **kredit prabayar saja**
+(tidak diperbarui) isi **0**: kartu lalu hanya menampilkan biaya scan, dan saldonya dilihat di Console. Anthropic tidak
 menyediakan saldo lewat API, jadi sisanya dihitung dari scan yang tercatat di Woombad; saldo pasti selalu di
 **Lihat saldo pasti di Claude Console**. Biaya juga tercatat di **Supabase → Edge Functions → scan-nota → Logs** (baris
 `scan-nota usage`; foto dan isinya tidak dicatat).

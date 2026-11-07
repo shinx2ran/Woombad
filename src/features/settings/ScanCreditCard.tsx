@@ -61,13 +61,21 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
   const emails = useMemo(() => memberEmails(members.data ?? []), [members.data])
   const summary = summarizeCredit({ monthlyUsd: savedCredit, renewalDay: savedDay }, rows, today)
   const notDeployed = usage.isError && isMissingTableError(usage.error)
+  // no costs loaded (still loading, or the first load failed): never show the whole credit as left, or "no scans"
+  const loaded = usage.data !== undefined
+  // credit 0 = prepaid credit only (it does not renew monthly): show only what the scans cost, the balance is in the Console
+  const spendOnly = summary.monthlyUsd === 0
 
   const changed = credit !== Math.round(savedCredit) || day !== savedDay
   const save = async (e: FormEvent) => {
     e.preventDefault()
     setSaving(true)
     try {
-      await repo.raw.update('organizations', org.id, { claude_credit_monthly_usd: credit, claude_credit_renewal_day: day })
+      // only what changed: an unchanged credit with cents (set by an operator) is never rounded on the way back
+      const patch: { claude_credit_monthly_usd?: number; claude_credit_renewal_day?: number } = {}
+      if (credit !== Math.round(savedCredit)) patch.claude_credit_monthly_usd = credit
+      if (day !== savedDay) patch.claude_credit_renewal_day = day
+      await repo.raw.update('organizations', org.id, patch)
       await qc.invalidateQueries({ queryKey: ['membership'] })
       setDraft(null)
       toast.success('Pengaturan kredit disimpan.')
@@ -79,7 +87,7 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
   }
 
   const used = summary.monthlyUsd > 0 ? Math.min(1, Math.max(0, summary.usedUsd / summary.monthlyUsd)) : 1
-  const tone = summary.remainingUsd <= 0 ? 'red' : summary.remainingUsd < summary.monthlyUsd * 0.1 ? 'amber' : 'emerald'
+  const tone = !loaded ? 'slate' : summary.remainingUsd <= 0 ? 'red' : summary.remainingUsd < summary.monthlyUsd * 0.1 ? 'amber' : 'emerald'
   const visible = rows.slice(0, shown)
 
   return (
@@ -110,39 +118,51 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
           </p>
         ) : (
           <>
-            <div className="space-y-2" data-testid="credit-remaining">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Sisa kredit (perkiraan)</p>
-              <p
-                className={clsx(
-                  'text-2xl font-semibold tabular-nums',
-                  tone === 'red' ? 'text-red-700' : tone === 'amber' ? 'text-amber-700' : 'text-emerald-700',
-                )}
-              >
-                {usage.isPending ? '…' : formatUsd(summary.remainingUsd)}
-              </p>
-              <div className="h-2 overflow-hidden rounded-full bg-slate-100" aria-hidden>
-                <div
-                  className={clsx('h-full rounded-full', tone === 'red' ? 'bg-red-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-emerald-500')}
-                  style={{ width: `${Math.round((1 - used) * 100)}%` }}
-                />
+            {spendOnly ? (
+              <div className="space-y-2" data-testid="credit-remaining">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Biaya scan siklus ini</p>
+                <p className="text-2xl font-semibold tabular-nums text-slate-900">{loaded ? formatUsd(summary.usedUsd, 4) : usage.isError ? '–' : '…'}</p>
+                <p className="text-sm text-slate-600">
+                  Kredit prabayar (tidak diperbarui tiap bulan): saldonya hanya terlihat di Claude Console.
+                </p>
               </div>
-              <p className="text-sm text-slate-600">
-                dari {formatUsd(summary.monthlyUsd)} · diperbarui tiap tgl {summary.renewalDay} (berikutnya {formatDate(cycle.next)})
-              </p>
-            </div>
+            ) : (
+              <div className="space-y-2" data-testid="credit-remaining">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Sisa kredit (perkiraan)</p>
+                <p
+                  className={clsx(
+                    'text-2xl font-semibold tabular-nums',
+                    tone === 'slate' ? 'text-slate-400' : tone === 'red' ? 'text-red-700' : tone === 'amber' ? 'text-amber-700' : 'text-emerald-700',
+                  )}
+                >
+                  {loaded ? formatUsd(summary.remainingUsd) : usage.isError ? '–' : '…'}
+                </p>
+                <div className="h-2 overflow-hidden rounded-full bg-slate-100" aria-hidden>
+                  {loaded && (
+                    <div
+                      className={clsx('h-full rounded-full', tone === 'red' ? 'bg-red-500' : tone === 'amber' ? 'bg-amber-500' : 'bg-emerald-500')}
+                      style={{ width: `${Math.round((1 - used) * 100)}%` }}
+                    />
+                  )}
+                </div>
+                <p className="text-sm text-slate-600">
+                  dari {formatUsd(summary.monthlyUsd)} · diperbarui tiap tgl {summary.renewalDay} (berikutnya {formatDate(cycle.next)})
+                </p>
+              </div>
+            )}
 
-            {usage.isError ? (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {usage.isError && !loaded ? (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="credit-load-error">
                 Biaya scan belum dapat dimuat. {usage.error instanceof Error ? usage.error.message : ''}
               </p>
             ) : (
-              !usage.isPending && (
+              loaded && (
                 <div className="space-y-1 text-sm text-slate-700">
                   <p data-testid="credit-cycle">
                     Sejak {formatDate(cycle.start)}: {summary.scans} scan · {formatUsd(summary.usedUsd, 4)}
                     {summary.averageUsd !== null && <> · rata-rata {formatUsd(summary.averageUsd, 4)} per scan</>}
                   </p>
-                  {summary.scansLeft !== null && summary.remainingUsd > 0 && (
+                  {!spendOnly && summary.scansLeft !== null && summary.remainingUsd > 0 && (
                     <p className="text-slate-600">Cukup untuk sekitar {summary.scansLeft.toLocaleString('id-ID')} scan lagi.</p>
                   )}
                   <p className="text-xs text-slate-500">
@@ -152,7 +172,7 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
               )
             )}
 
-            {summary.remainingUsd <= 0 && !usage.isPending && (
+            {loaded && !spendOnly && summary.remainingUsd <= 0 && (
               <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="credit-empty">
                 Perkiraan kredit habis. Scan berikutnya bisa ditolak sampai kredit diperbarui {formatDate(cycle.next)}, kecuali ada kredit lain di
                 Console.
@@ -179,7 +199,7 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
         <form onSubmit={save} className="space-y-3 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-900">Pengaturan kredit</p>
           <div className="grid gap-3 sm:grid-cols-2">
-            <CountInput label="Kredit per bulan (US$)" value={credit} onChange={(n) => setDraft({ credit: n, day })} min={0} max={9999} hint="Paket Claude Max: 100" />
+            <CountInput label="Kredit per bulan (US$)" value={credit} onChange={(n) => setDraft({ credit: n, day })} min={0} max={9999} hint="Claude Max: 100. Hanya kredit prabayar: 0" />
             <CountInput label="Tanggal pembaruan" value={day} onChange={(n) => setDraft({ credit, day: n })} min={1} max={31} hint="Tanggal kredit bulanan diperbarui" />
           </div>
           <p className="text-xs text-slate-500">
@@ -196,7 +216,7 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
             <p className="text-sm font-medium text-slate-900">Scan terakhir</p>
             {usage.isPending ? (
               <LoadingState />
-            ) : rows.length === 0 ? (
+            ) : !loaded ? null : rows.length === 0 ? (
               <p className="text-sm text-slate-500">Belum ada scan sejak {formatDate(cycle.previousStart)}.</p>
             ) : (
               <>

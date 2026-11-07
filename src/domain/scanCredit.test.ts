@@ -85,6 +85,12 @@ describe('summarizeCredit', () => {
     expect(s.scansLeft).toBe(0)
   })
 
+  it('scans left are counted in whole numbers (7 scans of US$0.0625 in all: exactly 11,193 more)', () => {
+    const seven = Array.from({ length: 7 }, (_, i) => ({ created_at: at(2026, 11, 2), cost_usd: i === 0 ? 0.0085 : 0.009 }))
+    // 0.0085 + 6 × 0.009 = 0.0625; 99.9375 / (0.0625 / 7) = 11,193 (a rounded average gives 11,192)
+    expect(summarizeCredit({ monthlyUsd: 100, renewalDay: 1 }, seven, '2026-11-07').scansLeft).toBe(11193)
+  })
+
   it('many small costs add up exactly', () => {
     const many = Array.from({ length: 1000 }, () => ({ created_at: at(2026, 11, 2), cost_usd: 0.000123 }))
     expect(summarizeCredit({ monthlyUsd: 100, renewalDay: 1 }, many, '2026-11-07').usedUsd).toBe(0.123)

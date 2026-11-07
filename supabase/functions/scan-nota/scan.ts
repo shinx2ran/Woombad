@@ -306,11 +306,11 @@ export function scanCost(res: CostInput, requestedModel: string): ScanCost {
   }
 }
 
-/** How a billed reply ended, as stored in scan_usage.outcome. */
+/** How a Claude reply ended, as stored in scan_usage.outcome. */
 export type ScanOutcome = 'ok' | 'refused' | 'max_tokens' | 'invalid'
 
 /**
- * The scan_usage row the function writes after a billed reply (the database CHECKs mirror this: kind and lines only for
+ * The scan_usage row the function writes after a Claude reply (the database CHECKs mirror this: kind and lines only for
  * a scan that was read).
  */
 export function scanUsageRow(

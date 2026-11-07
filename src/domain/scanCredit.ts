@@ -113,7 +113,8 @@ export function summarizeCredit(
     remainingUsd: remainingMicros / 1_000_000,
     scans,
     averageUsd: averageMicros === null ? null : averageMicros / 1_000_000,
-    scansLeft: averageMicros && averageMicros > 0 ? Math.max(0, Math.floor(remainingMicros / averageMicros)) : null,
+    // in whole micro-US$: remaining / (used / scans) = remaining × scans / used, without a rounded average
+    scansLeft: scans > 0 && used > 0 ? Math.max(0, Math.floor((remainingMicros * scans) / used)) : null,
     previousUsedUsd: previous / 1_000_000,
     previousScans,
   }
