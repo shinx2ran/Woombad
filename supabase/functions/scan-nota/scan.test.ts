@@ -96,12 +96,27 @@ describe('describeScanFailure (what the person scanning is told)', () => {
     expect(api(401, 'authentication_error')).toMatchObject({ status: 503, error: 'not_configured', message: expect.stringContaining('tidak valid') })
     expect(api(403, 'permission_error').error).toBe('not_configured')
     expect(api(404, 'not_found_error').message).toContain('Model Claude tidak tersedia')
+    for (const reply of [api(401), api(402), api(404)]) expect(reply.message).toContain('platform.claude.com')
   })
-  it('busy, too large, a refused photo, other failures', () => {
+  it('a personal key (not scoped to a workspace) asks the owner for a workspace key, never for a new photo', () => {
+    // the 400 Anthropic sent on 7 Nov 2026 for a key created as a personal key in the new Console
+    const personalKey =
+      'This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header with the ID of the workspace to use. Add the header, or use an API key that is scoped to a workspace.'
+    expect(api(400, 'invalid_request_error', personalKey)).toMatchObject({ status: 503, error: 'not_configured', message: expect.stringContaining('workspace') })
+    expect(api(400, 'invalid_request_error', 'Invalid API key format')).toMatchObject({ error: 'not_configured', message: expect.stringContaining('Kunci API Claude') })
+  })
+  it('only a 400 about the image asks for a new photo', () => {
+    expect(api(400, 'invalid_request_error', 'Could not process image')).toMatchObject({ status: 400, error: 'unreadable' })
+    expect(api(400, 'invalid_request_error', 'messages.0.content.0.image.source.base64: image exceeds 5 MB maximum')).toMatchObject({ error: 'unreadable' })
+    for (const other of [api(400, 'invalid_request_error', 'output_config.format: schema is too complex'), api(400)]) {
+      expect(other).toMatchObject({ status: 502, error: 'upstream' })
+      expect(other.message).not.toContain('Ambil ulang')
+    }
+  })
+  it('busy, too large, other failures', () => {
     expect(api(429, 'rate_limit_error')).toMatchObject({ status: 429, error: 'busy' })
     expect(api(529, 'overloaded_error').error).toBe('busy')
     expect(api(413, 'request_too_large').error).toBe('too_large')
-    expect(api(400, 'invalid_request_error', 'Could not process image')).toMatchObject({ status: 400, error: 'unreadable' })
     expect(api(500, 'api_error')).toMatchObject({ status: 502, error: 'upstream' })
     expect(describeScanFailure({ kind: 'timeout' })).toMatchObject({ status: 504, error: 'timeout' })
     expect(describeScanFailure({ kind: 'connection' })).toMatchObject({ status: 502, error: 'upstream' })

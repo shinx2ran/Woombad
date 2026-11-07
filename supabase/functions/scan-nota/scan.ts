@@ -185,28 +185,51 @@ export interface ScanFailureReply {
 }
 
 /**
- * The reply for a failed Claude call, in words the person scanning can act on. Running out of prepaid credit (the
- * README's spending cap) must say so, not "retake the photo": it arrives as 402 / billing_error, or on older accounts as
- * a 400 whose message mentions the credit balance.
+ * The reply for a failed Claude call, in words the person scanning can act on. Only a problem with the photo itself
+ * asks for a new photo; a setup problem (credit, key) points the owner to the Console, so nobody keeps retaking photos.
+ * - Credit used up arrives as 402 / billing_error, or as a 400 whose message mentions the credit balance.
+ * - A personal key from the Claude Console (not scoped to a workspace) is refused with a 400 that names the workspace
+ *   (seen live on 7 Nov 2026); the fix is a workspace key, not a new photo.
+ * - Any other 400 says so only when its message is about the image; otherwise it is a request the photo cannot fix.
  */
 export function describeScanFailure(f: ScanApiFailure): ScanFailureReply {
   if (f.kind === 'timeout') return { status: 504, error: 'timeout', message: 'Pembacaan terlalu lama. Coba lagi, atau foto per halaman.' }
   if (f.kind === 'connection') return { status: 502, error: 'upstream', message: 'Tidak dapat menghubungi layanan pembaca. Coba lagi.' }
   if (f.kind === 'other') return { status: 500, error: 'internal', message: 'Terjadi kesalahan. Coba lagi.' }
   const status = f.status ?? 0
-  if (status === 402 || f.type === 'billing_error' || (status === 400 && /credit balance/i.test(f.message ?? ''))) {
-    return { status: 503, error: 'not_configured', message: 'Kredit API Claude habis. Pemilik perlu mengisi kredit di console.anthropic.com.' }
+  const said = f.message ?? ''
+  if (status === 402 || f.type === 'billing_error' || (status === 400 && /credit balance/i.test(said))) {
+    return {
+      status: 503,
+      error: 'not_configured',
+      message: 'Kredit API Claude habis. Pemilik perlu menambah kredit di platform.claude.com, atau menunggu kredit bulan berikutnya.',
+    }
   }
   if (status === 401 || status === 403 || f.type === 'authentication_error' || f.type === 'permission_error') {
-    return { status: 503, error: 'not_configured', message: 'Kunci API Claude tidak valid. Pemilik perlu memeriksanya di console.anthropic.com.' }
+    return { status: 503, error: 'not_configured', message: 'Kunci API Claude tidak valid. Pemilik perlu memeriksanya di platform.claude.com.' }
   }
   if (status === 404 || f.type === 'not_found_error') {
-    return { status: 503, error: 'not_configured', message: 'Model Claude tidak tersedia untuk kunci ini. Pemilik perlu memeriksanya di console.anthropic.com.' }
+    return { status: 503, error: 'not_configured', message: 'Model Claude tidak tersedia untuk kunci ini. Pemilik perlu memeriksanya di platform.claude.com.' }
   }
   if (status === 429 || status === 529 || f.type === 'rate_limit_error' || f.type === 'overloaded_error') {
     return { status: 429, error: 'busy', message: 'Layanan pembaca sedang sibuk. Coba lagi sebentar lagi.' }
   }
   if (status === 413 || f.type === 'request_too_large') return { status: 413, error: 'too_large', message: 'Foto terlalu besar. Ambil ulang fotonya.' }
-  if (status === 400) return { status: 400, error: 'unreadable', message: 'Foto ini tidak dapat diproses. Ambil ulang fotonya (JPG, terang, satu halaman).' }
+  if (status === 400) {
+    if (/workspace/i.test(said)) {
+      return {
+        status: 503,
+        error: 'not_configured',
+        message: 'Kunci API Claude harus milik sebuah workspace. Pemilik perlu membuat kunci workspace di platform.claude.com, lalu menggantinya di Supabase.',
+      }
+    }
+    if (/api[ -]?key/i.test(said)) {
+      return { status: 503, error: 'not_configured', message: 'Kunci API Claude tidak dapat dipakai. Pemilik perlu memeriksanya di platform.claude.com.' }
+    }
+    if (/image/i.test(said)) {
+      return { status: 400, error: 'unreadable', message: 'Foto ini tidak dapat diproses. Ambil ulang fotonya (JPG, terang, satu halaman).' }
+    }
+    return { status: 502, error: 'upstream', message: 'Layanan pembaca menolak permintaan ini. Coba lagi; bila terus terjadi, beri tahu pemilik.' }
+  }
   return { status: 502, error: 'upstream', message: 'Layanan pembaca sedang bermasalah. Coba lagi.' }
 }

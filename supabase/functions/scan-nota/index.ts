@@ -150,6 +150,17 @@ Deno.serve(async (req) => {
   if (!textBlock || textBlock.type !== 'text') return fail(req, 502, 'upstream', 'Hasil baca kosong. Coba lagi.')
   try {
     const result = parseScanOutput(JSON.parse(textBlock.text))
+    // what the scan cost, for the owner's records: counts only, never the photo or what was read
+    console.log(
+      'scan-nota ok',
+      JSON.stringify({
+        model: response.model,
+        input_tokens: response.usage.input_tokens,
+        output_tokens: response.usage.output_tokens,
+        kind: result.kind,
+        lines: result.items.length,
+      }),
+    )
     return reply(req, 200, {
       result,
       model: response.model,

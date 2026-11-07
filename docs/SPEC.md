@@ -987,7 +987,12 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   lalu Claude (satu percobaan, batas waktu 130 dtk, di bawah batas 150 dtk platform). Galat Claude dipetakan ke pesan
   Indonesia oleh `describeScanFailure` (`scan.ts`, diuji): kredit habis (402 / `billing_error` / 400 "credit balance") →
   503 "Kredit API Claude habis…", kunci salah 401/403 → 503, model tidak tersedia 404 → 503, sibuk 429/529 → 429, terlalu besar
-  413, foto ditolak 400, waktu habis 504, koneksi 502; `stop_reason` refusal → 422, max_tokens → 502. Dideploy dengan **`verify_jwt = false`**: proyek memakai
+  413, waktu habis 504, koneksi 502; 400 dipilah menurut pesannya: menyebut workspace (kunci pribadi dari Console baru, bukan
+  kunci workspace; terjadi 7 Nov 2026) → 503 "Kunci API Claude harus milik sebuah workspace…", menyebut API key → 503,
+  menyebut image → 400 "Foto ini tidak dapat diproses. Ambil ulang fotonya…", lainnya → 502 tanpa meminta foto ulang (hanya
+  masalah foto yang meminta foto ulang); pesan pemilik menunjuk ke platform.claude.com. `stop_reason` refusal → 422,
+  max_tokens → 502. Scan berhasil mencatat ke log fungsi `scan-nota ok` + model, token masuk/keluar, jenis, jumlah baris
+  (tanpa foto atau isi), untuk menghitung biaya per scan. Dideploy dengan **`verify_jwt = false`**: proyek memakai
   kunci `sb_publishable_`, dan pemeriksaan JWT bawaan Edge Functions hanya mengenal kunci lama (dokumen Supabase); fungsi
   memeriksa sesi sendiri. Kunci publik dibaca dari `SUPABASE_PUBLISHABLE_KEYS.default`, lalu `SUPABASE_ANON_KEY`, lalu header
   `apikey`. Tidak menulis apa pun ke database.
@@ -1021,11 +1026,14 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Mode Demo**: tidak ada server: setelah memilih foto, layar periksa menampilkan **contoh rekaan** (`DEMO_SCAN_RESULT`,
   bukan data pemilik) dengan keterangan jelas, supaya alurnya bisa dicoba; foto tidak dikirim.
 - **Biaya & privasi**: berbayar per scan di akun API Anthropic pemilik (perkiraan US$0,05–0,15 per foto; harga Opus 5.5
-  $4 / $20 per juta token masuk/keluar). Kredit prabayar tanpa isi ulang otomatis menjadi batas belanja. Foto catatan
+  $4 / $20 per juta token masuk/keluar). Kredit API menjadi batas belanja: kredit bulanan paket Claude Max (US$100, organisasi
+  Console ditautkan di claude.ai → Settings → Billing), atau kredit prabayar tanpa isi ulang otomatis; habis → permintaan
+  ditolak, tidak ditagih. Kunci harus kunci **workspace** (kunci pribadi ditolak Anthropic dengan 400). Foto catatan
   pengeluaran dikirim ke Anthropic untuk dibaca.
 - **Uji**: `supabase/functions/scan-nota/scan.test.ts` (skema: semua objek tertutup dan semua properti wajib, tanpa batasan
   angka, tanpa kategori pengembalian; parse: daftar, nota, tanggal di luar kalender, kategori tak dikenal, total 0,
-  `unreadable`, angka berupa teks/pecahan/negatif ditolak), `scanNota.test.ts` (tanggal: tahun, Desember di Januari, 7 hari ke
+  `unreadable`, angka berupa teks/pecahan/negatif ditolak; galat: kredit habis dua bentuk, kunci pribadi tanpa workspace,
+  hanya 400 tentang gambar meminta foto ulang), `scanNota.test.ts` (tanggal: tahun, Desember di Januari, 7 hari ke
   depan, tanpa bulan, tanggal tidak ada; baris, duplikat, cek total, draf; pemanggilan fungsi, pesan galat fungsi, belum
   dideploy, tanpa koneksi, hasil rusak), `saveExpense.test.ts` (`saveScannedExpenses`: satu unggahan + satu insert, unggah
   gagal, insert ditolak tanpa foto tertinggal, tanpa foto), `e2e/scan-nota.spec.ts` (juga dengan gerak; HP 360 px, Mode Demo:
