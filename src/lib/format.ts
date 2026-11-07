@@ -16,6 +16,16 @@ export function formatRupiah(amount: number | null | undefined): string {
   return rupiah.format(Math.round(amount)).replace(/ /g, ' ')
 }
 
+/**
+ * US dollars in the app's number style (SPEC 7.17: Claude API credit and scan costs): 99.9 -> "US$99,90",
+ * 0.0875 -> "US$0,0875" with maxDecimals 4. Built from a decimal format so the "US$" prefix is the same in every browser.
+ */
+export function formatUsd(amount: number | null | undefined, maxDecimals = 2): string {
+  const n = amount == null || Number.isNaN(amount) ? 0 : amount
+  const digits = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: Math.max(2, maxDecimals) }).format(Math.abs(n))
+  return `${n < 0 ? '-' : ''}US$${digits}`
+}
+
 /** 1500000 -> "1.500.000" */
 export function formatNumber(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '0'

@@ -167,6 +167,187 @@ export function parseScanOutput(value: unknown): ScanResult {
   }
 }
 
+// ---------- what a scan cost (SPEC 7.17) ----------
+
+/** US$ per million tokens (platform.claude.com/docs/en/about-claude/pricing, checked 7 Nov 2026). */
+export interface ModelPrice {
+  input: number
+  cacheWrite5m: number
+  cacheWrite1h: number
+  cacheRead: number
+  output: number
+}
+
+/**
+ * The scan model and the models a server-side fallback (`fallbacks: "default"`) can re-run a refused scan on. A model
+ * missing here is priced at the dearest entry and marked priced: false, so the estimate errs toward less credit left.
+ */
+export const SCAN_PRICES: Readonly<Record<string, ModelPrice>> = {
+  'claude-opus-5-5': { input: 4, cacheWrite5m: 5, cacheWrite1h: 8, cacheRead: 0.2, output: 20 },
+  'claude-opus-5': { input: 5, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, output: 25 },
+  'claude-opus-4-8': { input: 5, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, output: 25 },
+}
+const DEAREST: ModelPrice = { input: 5, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, output: 25 }
+
+/** A refusal before any output is billed only in these categories (docs: refusals-and-fallback, "How refusals are billed"). */
+export const BILLED_PRE_OUTPUT_CATEGORIES: ReadonlyArray<string> = ['bio', 'frontier_llm', 'reasoning_extraction']
+
+interface TokenCounts {
+  input_tokens: number
+  output_tokens: number
+  cache_creation_input_tokens?: number | null
+  cache_read_input_tokens?: number | null
+  cache_creation?: { ephemeral_5m_input_tokens: number; ephemeral_1h_input_tokens: number } | null
+}
+interface IterationLike extends TokenCounts {
+  type: string
+  model?: string | null
+}
+
+/** The parts of a (beta) Messages API response the cost needs; the SDK's BetaMessage fits it. */
+export interface CostInput {
+  model: string
+  stop_reason: string | null
+  stop_details?: { category: string | null } | null
+  content: ReadonlyArray<{ type: string }>
+  usage: TokenCounts & { iterations?: ReadonlyArray<IterationLike> | null }
+}
+
+export interface ScanAttempt {
+  kind: 'message' | 'fallback_message'
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cache_write_tokens: number
+  cache_read_tokens: number
+  /** the refusal category when this attempt declined (null: declined without a category); absent when it did not */
+  declined?: string | null
+  billed: boolean
+  /** false when the model was missing from SCAN_PRICES (priced at the dearest entry) */
+  priced: boolean
+  cost_usd: number
+}
+
+export interface ScanCost {
+  attempts: ScanAttempt[]
+  /** every billed attempt, each at its own model's price, rounded to 6 decimals (micro-US$) */
+  cost_usd: number
+  /** summed over the billed attempts; output includes thinking */
+  input_tokens: number
+  output_tokens: number
+  /** the model that produced the reply */
+  model: string
+  fell_back: boolean
+}
+
+const baseModel = (m: string) => m.replace(/-\d{8}$/, '')
+const micro = (usd: number) => Math.round(usd * 1_000_000) / 1_000_000
+
+function priceOf(t: TokenCounts, p: ModelPrice): number {
+  const write = t.cache_creation_input_tokens ?? 0
+  const w1h = t.cache_creation?.ephemeral_1h_input_tokens ?? 0
+  const w5m = t.cache_creation ? t.cache_creation.ephemeral_5m_input_tokens : write
+  const perMillion =
+    t.input_tokens * p.input + w5m * p.cacheWrite5m + w1h * p.cacheWrite1h + (t.cache_read_input_tokens ?? 0) * p.cacheRead + t.output_tokens * p.output
+  return perMillion / 1_000_000
+}
+
+/**
+ * What one scan cost. usage.iterations is the per-attempt billing record when a server-side fallback ran (a declined hop
+ * is a "message" entry, the hop that served a "fallback_message"); the top-level usage covers only the attempt that
+ * produced the reply, so it is used only when there are no iterations, and the two are never added together. A hop that
+ * declined before any output is free unless its category is billed; a hop that produced output is always billed.
+ */
+export function scanCost(res: CostInput, requestedModel: string): ScanCost {
+  const entries = (res.usage.iterations ?? []).filter((e) => e.type === 'message' || e.type === 'fallback_message')
+  const list: IterationLike[] = entries.length > 0 ? entries : [{ ...res.usage, type: 'message', model: res.model }]
+  // one "fallback" content block per hop that declined, in order; its trigger.category says why
+  const declinedCategories = res.content
+    .filter((b) => b.type === 'fallback')
+    .map((b) => (b as { trigger?: { category?: string | null } }).trigger?.category ?? null)
+  const attempts = list.map((e, i): ScanAttempt => {
+    const isLast = i === list.length - 1
+    const declinedHop = !isLast || res.stop_reason === 'refusal'
+    // undefined = declined, category unknown (billed, to be safe)
+    const category: string | null | undefined = !isLast
+      ? i < declinedCategories.length
+        ? declinedCategories[i]
+        : undefined
+      : res.stop_reason === 'refusal'
+        ? (res.stop_details?.category ?? null)
+        : undefined
+    const billed =
+      !declinedHop || e.output_tokens > 0 || category === undefined || (category !== null && BILLED_PRE_OUTPUT_CATEGORIES.includes(category))
+    // a declined "message" hop can report model: null; it was the requested model
+    const model = baseModel(e.model ?? (e.type === 'message' && entries.length > 0 ? requestedModel : res.model))
+    const price = SCAN_PRICES[model]
+    const attempt: ScanAttempt = {
+      kind: e.type === 'fallback_message' ? 'fallback_message' : 'message',
+      model,
+      input_tokens: e.input_tokens,
+      output_tokens: e.output_tokens,
+      cache_write_tokens: e.cache_creation_input_tokens ?? 0,
+      cache_read_tokens: e.cache_read_input_tokens ?? 0,
+      billed,
+      priced: price !== undefined,
+      cost_usd: billed ? micro(priceOf(e, price ?? DEAREST)) : 0,
+    }
+    if (declinedHop) attempt.declined = category ?? null
+    return attempt
+  })
+  const billed = attempts.filter((a) => a.billed)
+  return {
+    attempts,
+    cost_usd: micro(billed.reduce((s, a) => s + a.cost_usd, 0)),
+    input_tokens: billed.reduce((s, a) => s + a.input_tokens + a.cache_write_tokens + a.cache_read_tokens, 0),
+    output_tokens: billed.reduce((s, a) => s + a.output_tokens, 0),
+    model: baseModel(res.model),
+    fell_back: attempts.some((a) => a.kind === 'fallback_message'),
+  }
+}
+
+/** How a Claude reply ended, as stored in scan_usage.outcome. */
+export type ScanOutcome = 'ok' | 'refused' | 'max_tokens' | 'invalid'
+
+/**
+ * The scan_usage row the function writes after a Claude reply (the database CHECKs mirror this: kind and lines only for
+ * a scan that was read).
+ */
+export function scanUsageRow(
+  orgId: string,
+  userId: string,
+  cost: ScanCost,
+  outcome: ScanOutcome,
+  read: Pick<ScanResult, 'kind' | 'items'> | null,
+) {
+  return {
+    org_id: orgId,
+    user_id: userId,
+    model: cost.model,
+    input_tokens: cost.input_tokens,
+    output_tokens: cost.output_tokens,
+    cost_usd: cost.cost_usd,
+    outcome,
+    kind: outcome === 'ok' && read ? read.kind : null,
+    lines: outcome === 'ok' && read ? read.items.length : null,
+    attempts: cost.attempts,
+  }
+}
+
+/** What a scan cost, as the app receives it (the function's reply field `cost`). */
+export interface ScanCostReply {
+  cost_usd: number
+  fell_back: boolean
+}
+
+/** The `cost` field of a reply, checked; null when it is missing (an older function) or malformed. Never throws. */
+export function parseScanCostReply(value: unknown): ScanCostReply | null {
+  if (!isRecord(value)) return null
+  const usd = value.cost_usd
+  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd < 0) return null
+  return { cost_usd: usd, fell_back: value.fell_back === true }
+}
+
 /** What went wrong calling Claude, reduced to what the mapping needs (SDK error classes stay in index.ts). */
 export interface ScanApiFailure {
   kind: 'timeout' | 'connection' | 'api' | 'other'

@@ -157,10 +157,17 @@ describe('requestScan (Edge Function "scan-nota")', () => {
   const image = { file: new File(['x'], 'nota.jpg', { type: 'image/jpeg' }), base64: 'eA==', mediaType: 'image/jpeg' as const }
   const okResult: ScanResult = { kind: 'receipt', items: [{ day: 3, month: 11, year: 2026, description: 'Semen', written_text: 'Semen 2 sak', amount: 130000, category: 'maintenance', vendor: 'TB Jaya', unclear: false }], written_total: 130000, notes: '' }
 
-  it('sends the organisation and the photo; returns the checked result', async () => {
-    invoke.mockResolvedValue({ data: { result: okResult, model: 'claude-opus-5-5' }, error: null })
-    await expect(requestScan('org-1', image)).resolves.toEqual(okResult)
+  it('sends the organisation and the photo; returns the checked result and what the scan cost (SPEC 7.17)', async () => {
+    invoke.mockResolvedValue({ data: { result: okResult, model: 'claude-opus-5-5', cost: { cost_usd: 0.092, fell_back: false } }, error: null })
+    await expect(requestScan('org-1', image)).resolves.toEqual({ result: okResult, cost: { cost_usd: 0.092, fell_back: false } })
     expect(invoke).toHaveBeenCalledWith('scan-nota', { body: { orgId: 'org-1', image: 'eA==', mediaType: 'image/jpeg' } })
+  })
+
+  it('an older function without a cost, or a malformed cost, still gives the result', async () => {
+    invoke.mockResolvedValue({ data: { result: okResult, model: 'claude-opus-5-5' }, error: null })
+    await expect(requestScan('org-1', image)).resolves.toEqual({ result: okResult, cost: null })
+    invoke.mockResolvedValue({ data: { result: okResult, cost: { cost_usd: 'lots' } }, error: null })
+    await expect(requestScan('org-1', image)).resolves.toEqual({ result: okResult, cost: null })
   })
 
   it("shows the function's own message (e.g. no key installed yet)", async () => {

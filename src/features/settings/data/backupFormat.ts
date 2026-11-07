@@ -31,6 +31,7 @@ export const TABLE_LABEL: Record<TableName, string> = {
   expenses: 'Pengeluaran',
   waitlist: 'Daftar tunggu',
   audit_log: 'Riwayat perubahan',
+  scan_usage: 'Biaya scan',
 }
 
 /** Thrown with a message that can be shown to the user as is. */
@@ -112,7 +113,9 @@ export function parseBackupText(text: string): ParsedBackup {
 /** Demo restore: the file must carry the organisation, otherwise the app has nothing to open after the restore. */
 export function backupToLocalDb(backup: ParsedBackup): LocalDb {
   if (backup.tables.organizations.length === 0) throw new BackupFileError(MSG_NO_ORGANIZATION)
-  return { ...backup.tables } as unknown as LocalDb
+  // scan costs (SPEC 7.17) stay out of Mode Demo: a full online backup carries real billed scans, which the demo card
+  // would show as samples
+  return { ...backup.tables, scan_usage: [] } as unknown as LocalDb
 }
 
 /** Short Indonesian summary, e.g. "2 kos, 10 kamar, 8 penyewa, 40 tagihan". */

@@ -102,7 +102,9 @@ Lewati langkah ini bila isinya hanya data contoh.
 5. **Edge Function `scan-nota`** (Scan nota): deploy isi `supabase/functions/scan-nota/` (`index.ts` + `scan.ts`) dengan
    **`verify_jwt = false`** (CLI: `supabase functions deploy scan-nota --no-verify-jwt`). Fungsi memeriksa sesi dan
    keanggotaan sendiri; pemeriksaan JWT bawaan Supabase tidak mengenal kunci `sb_publishable_`. Ulangi setiap kali isi
-   folder itu berubah, **sebelum** perubahan aplikasi di-push ke `master`. Kunci Claude dipasang pemilik sendiri
+   folder itu berubah, **sebelum** perubahan aplikasi di-push ke `master`, dan **sesudah** `schema.sql` dijalankan ulang
+   (fungsi menulis biaya tiap scan ke tabel `scan_usage` dengan kunci rahasia proyek, `SUPABASE_SECRET_KEYS`, yang sudah
+   tersedia otomatis; tanpa tabel itu scan tetap jalan, biayanya hanya tidak tercatat). Kunci Claude dipasang pemilik sendiri
    ([Scan nota](#scan-nota-pengeluaran-dari-foto)), tidak lewat operator.
 
 ### 3. Pemilik: atur login di Supabase
@@ -167,7 +169,9 @@ langkah (aplikasi authenticator) di keduanya:
 | **Staf** | Pegawai / penjaga kos | Tambah/ubah penyewa, sewa baru, pesan kamar & kelola daftar tunggu, perpanjangan, tagihan, catat pembayaran & pengeluaran. **Tidak bisa** mengubah harga kamar/sewa, tanggal mulai sewa, data kos & rekening, daftar add-on, atau pembayaran/pengeluaran yang sudah dicatat. Menu **Laporan** tidak ditampilkan. |
 
 Batasan ubah/hapus dijaga oleh database, bukan hanya oleh tampilan aplikasi. Staf tetap bisa **melihat** angka
-pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disembunyikan.
+pembayaran dan pengeluaran (mis. grafik di Dashboard); menu Laporan hanya disembunyikan. Biaya Scan nota dan
+**Kredit Claude** hanya ditampilkan untuk pemilik/admin; daftar biaya scan (tabel `scan_usage`) hanya bisa dibaca
+pemilik/admin di database.
 
 ### Mana yang rahasia?
 
@@ -384,8 +388,17 @@ otomatis (catatan Oktober yang di-scan November = tahun ini). Satu halaman atau 
 
 Sebelum langkah 3, tombolnya menjawab "Scan nota belum aktif". Kunci salah atau bukan kunci workspace, model tidak tersedia,
 atau kredit habis: pesannya menyebut itu dan menunjuk ke platform.claude.com; hanya masalah pada foto itu sendiri yang
-meminta foto ulang. Biaya tiap scan tercatat di **Supabase → Edge Functions → scan-nota → Logs** (baris `scan-nota ok`:
-model, token masuk/keluar, jumlah baris; foto dan isinya tidak dicatat).
+meminta foto ulang.
+
+**Biaya & sisa kredit** (pemilik/admin): setelah scan, layar periksa menulis **Biaya scan ini: US$…**. Daftar scan
+siklus ini dan siklus sebelumnya (**Scan terakhir**) dan **sisa kredit (perkiraan)** ada di **Pengaturan → Kredit Claude**;
+biaya scan yang lebih lama tetap tersimpan dan ikut di cadangan lengkap (JSON, bagian *Biaya scan*). Isi di sana
+**Kredit per bulan** (Claude Max: 100) dan **Tanggal pembaruan** (lihat tanggal kedaluwarsa kredit bulanan di
+platform.claude.com → Billing). Perkiraannya menganggap kredit diperbarui tiap bulan; dengan **kredit prabayar saja**
+(tidak diperbarui) isi **0**: kartu lalu hanya menampilkan biaya scan, dan saldonya dilihat di Console. Anthropic tidak
+menyediakan saldo lewat API, jadi sisanya dihitung dari scan yang tercatat di Woombad; saldo pasti selalu di
+**Lihat saldo pasti di Claude Console**. Biaya juga tercatat di **Supabase → Edge Functions → scan-nota → Logs** (baris
+`scan-nota usage`; foto dan isinya tidak dicatat).
 Foto catatan dikirim ke Anthropic untuk dibaca; jangan scan dokumen berisi data pribadi penyewa.
 
 ### Transisi halaman & jendela
@@ -410,7 +423,7 @@ menyala, logo tampil diam dan hilang begitu aplikasi siap.
 
 `supabase/tests/run.sh` memasang `schema.sql` ke PostgreSQL lokal dengan tiruan objek Supabase dan menjalankan
 pengujian fungsional (pendaftaran, kode undangan, RLS, pembatasan staf, trigger tagihan, penjaga pesanan dobel, daftar tunggu,
-rencana keluar, nomor kendaraan).
+rencana keluar, nomor kendaraan, biaya scan).
 Lihat komentar di dalam skrip.
 
 ## Install ke HP

@@ -32,8 +32,20 @@ create table if not exists public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   created_by uuid references auth.users(id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Biaya scan (SPEC 7.17): the owner's monthly Claude API credit in US$ and the day of the month it renews
+  claude_credit_monthly_usd numeric(10, 2) not null default 100 check (claude_credit_monthly_usd >= 0),
+  claude_credit_renewal_day smallint not null default 1 check (claude_credit_renewal_day between 1 and 31)
 );
+-- Biaya scan (SPEC 7.17, added after 7.16; the create above is a no-op on an existing installation): the monthly Claude API
+-- credit (Claude Max plan: US$100, no rollover) and its renewal day (29-31 = the last day of a shorter month), for the
+-- app's estimate of the credit left (Anthropic has no API for the balance). Only owners/admins may change them: org_update
+-- (is_org_admin) already limits every update of organizations, and audit_row_change records each change. Added without
+-- dropping anything; the inline checks come with the column, so a re-run adds no second copy.
+alter table public.organizations add column if not exists claude_credit_monthly_usd numeric(10, 2) not null default 100
+  check (claude_credit_monthly_usd >= 0);
+alter table public.organizations add column if not exists claude_credit_renewal_day smallint not null default 1
+  check (claude_credit_renewal_day between 1 and 31);
 
 create table if not exists public.organization_members (
   id uuid primary key default gen_random_uuid(),
@@ -1026,6 +1038,36 @@ begin
   end loop;
 end $$;
 
+-- ---------- scan cost (SPEC 7.17) ----------
+-- One row per Claude reply the scan-nota Edge Function was billed for (read, refused, cut off at max_tokens, or output not
+-- usable), written by the function with the project's secret key (service_role) after the call. Tokens are summed over
+-- every attempt (server-side fallback re-runs a refused request on another model: usage.iterations), and cost_usd prices
+-- each attempt at its own model's price at the time of the scan; attempts keeps the per-attempt figures. Never the photo
+-- or what was read. Owners/admins read it; no member can insert, change or delete a row through the API, so the cost
+-- history can be neither forged nor hidden. Not in audit_log: the table is itself an append-only log.
+create table if not exists public.scan_usage (
+  id uuid primary key default gen_random_uuid(),
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  -- who scanned (the function sets it: auth.uid() is null for the secret key); kept as null when the account is deleted
+  user_id uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  -- the model that produced the reply (response.model)
+  model text not null check (btrim(model) <> ''),
+  -- summed over every attempt; output tokens include thinking
+  input_tokens int not null check (input_tokens >= 0),
+  output_tokens int not null check (output_tokens >= 0),
+  cost_usd numeric(12, 6) not null check (cost_usd >= 0),
+  -- ok = read (kind/lines say what); refused; max_tokens = cut off; invalid = output not usable
+  outcome text not null check (outcome in ('ok', 'refused', 'max_tokens', 'invalid')),
+  kind text check (kind is null or kind in ('expense_list', 'receipt', 'unreadable')),
+  lines int check (lines is null or lines >= 0),
+  -- [{ "model", "input_tokens", "output_tokens", "cost_usd" }, ...] in order; one element without a fallback
+  attempts jsonb not null default '[]'::jsonb check (jsonb_typeof(attempts) = 'array'),
+  -- what was read is known only for a scan that was read
+  check (case when outcome = 'ok' then kind is not null and lines is not null else kind is null and lines is null end)
+);
+create index if not exists scan_usage_org_idx on public.scan_usage (org_id, created_at desc);
+
 -- ---------- storage cleanup ----------
 -- Supabase refuses direct deletes from storage.objects; the app deletes the row first, then the file
 -- through the Storage API.
@@ -1053,6 +1095,7 @@ alter table public.payments enable row level security;
 alter table public.expenses enable row level security;
 alter table public.audit_log enable row level security;
 alter table public.waitlist enable row level security;
+alter table public.scan_usage enable row level security;
 -- invitation_codes, app_settings, join_attempts: no policies (and no grants) on purpose
 
 -- organizations: created only by join_with_code() (security definer)
@@ -1080,6 +1123,10 @@ create policy invitations_delete on public.invitations for delete using (public.
 -- audit_log: owners/admins read; no insert/update/delete policy for anyone
 drop policy if exists audit_log_select on public.audit_log;
 create policy audit_log_select on public.audit_log for select using (public.is_org_admin(org_id));
+
+-- scan_usage (SPEC 7.17): owners/admins read; rows come only from the scan-nota Edge Function (secret key, bypasses RLS)
+drop policy if exists scan_usage_select on public.scan_usage;
+create policy scan_usage_select on public.scan_usage for select using (public.is_org_admin(org_id));
 
 -- business tables
 do $$
@@ -1218,7 +1265,7 @@ begin
   for o in select * from public.organizations order by created_at, id loop
     tables := jsonb_build_object('organizations', jsonb_build_array(to_jsonb(o)));
     foreach t in array array['organization_members', 'invitations', 'properties', 'rooms', 'addon_catalog', 'tenants',
-                             'leases', 'lease_addons', 'invoices', 'payments', 'expenses', 'waitlist'] loop
+                             'leases', 'lease_addons', 'invoices', 'payments', 'expenses', 'waitlist', 'scan_usage'] loop
       execute format('select coalesce(jsonb_agg(to_jsonb(x) order by x.created_at, x.id), ''[]'') from public.%I x where x.org_id = $1', t)
         into rows using o.id;
       tables := tables || jsonb_build_object(t, rows);
@@ -1251,6 +1298,10 @@ grant select, insert, update, delete on public.properties, public.rooms, public.
   public.leases, public.lease_addons, public.invoices, public.payments, public.expenses to authenticated;
 grant select, insert, update, delete on public.waitlist to authenticated;
 grant select on public.audit_log to authenticated;
+grant select on public.scan_usage to authenticated;
+-- the scan-nota Edge Function appends scan costs with the secret key (service_role); nothing else, even for that key
+revoke all on public.scan_usage from service_role;
+grant select, insert on public.scan_usage to service_role;
 -- RPCs
 grant execute on function public.ensure_membership() to authenticated;
 grant execute on function public.join_with_code(text) to authenticated;

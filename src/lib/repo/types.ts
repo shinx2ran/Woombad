@@ -78,6 +78,9 @@ export const PLANNED_CHECKOUT_BEFORE_START_MESSAGE = 'Rencana keluar harus sesud
  */
 export const VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE = 'No. kendaraan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya; check-in tanpa no. kendaraan tetap bisa disimpan.'
 
+/** Kredit Claude (SPEC 7.17): PGRST204 / 42703 naming organizations.claude_credit_*: the app went out before schema.sql was re-run. */
+export const SCAN_CREDIT_NOT_DEPLOYED_MESSAGE = 'Pengaturan kredit Claude belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya.'
+
 /** New dates of one invoice in a lease start correction. */
 export interface RedateInvoiceDates {
   id: string

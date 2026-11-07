@@ -2,14 +2,16 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { clsx } from 'clsx'
 import { AlertTriangle, Camera, CheckCircle2, Loader2, Pencil } from 'lucide-react'
 import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../components/ui'
+import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
-import { formatDate, formatRupiah, todayISO } from '../../lib/format'
+import { formatDate, formatRupiah, formatUsd, todayISO } from '../../lib/format'
 import { EXPENSE_CATEGORY_LABEL, type ExpenseCategory } from '../../types/db'
 import { ORDERED_CATEGORIES, SHARED_VALUE, canEditExpenses, isRefundCategory, saveErrorMessage } from './expenseUtils'
 import { saveScannedExpenses } from './saveExpense'
 import {
   DEMO_SCAN_RESULT,
+  DEMO_SCAN_USAGE,
   ScanRequestError,
   buildScanRows,
   prepareScanImage,
@@ -19,6 +21,8 @@ import {
   scannedExpenseDrafts,
   totalToCheck,
   type PreparedScanImage,
+  type ScanCostReply,
+  type ScanReply,
   type ScanResult,
   type ScanRow,
 } from './scanNota'
@@ -94,7 +98,8 @@ function ScanRowCard({ row, error, expanded, onToggle, onChange }: RowCardProps)
   )
 }
 
-const demoScan = () => new Promise<ScanResult>((resolve) => setTimeout(() => resolve(DEMO_SCAN_RESULT), 400))
+const demoScan = () =>
+  new Promise<ScanReply>((resolve) => setTimeout(() => resolve({ result: DEMO_SCAN_RESULT, cost: { cost_usd: DEMO_SCAN_USAGE.cost_usd, fell_back: false } }), 400))
 
 /**
  * Scan nota (SPEC 7.16): photograph a shop receipt or a handwritten page of expenses; the lines are read (Edge
@@ -104,6 +109,7 @@ const demoScan = () => new Promise<ScanResult>((resolve) => setTimeout(() => res
  */
 export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSaved?: (date: string) => void }) {
   const { org, repo, role, properties, selectedPropertyId, isLocalMode } = useOrg()
+  const { session } = useAuth()
   const invalidate = useInvalidate()
   const toast = useToast()
 
@@ -111,6 +117,8 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
   const [error, setError] = useState<string | null>(null)
   const [photo, setPhoto] = useState<PreparedScanImage | null>(null)
   const [result, setResult] = useState<ScanResult | null>(null)
+  /** what the scan shown cost (SPEC 7.17); null from an older function */
+  const [cost, setCost] = useState<ScanCostReply | null>(null)
   const [rows, setRows] = useState<ScanRow[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
   // the global kos filter when it is one kos, the only kos when there is one, else an explicit choice
@@ -146,8 +154,23 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
     try {
       const prepared = await prepareScanImage(picked)
       if (id !== attempt.current) return
-      const scanned = isLocalMode ? await demoScan() : await requestScan(org.id, prepared)
+      const reply = isLocalMode ? await demoScan() : await requestScan(org.id, prepared)
+      // a reading is billed even when its answer is no longer wanted: the server records it; Mode Demo writes a sample
+      if (isLocalMode) {
+        await repo
+          .insert('scan_usage', {
+            user_id: session?.user.id ?? null,
+            ...DEMO_SCAN_USAGE,
+            outcome: 'ok',
+            kind: reply.result.kind,
+            lines: reply.result.items.length,
+            attempts: [],
+          })
+          .catch(() => undefined)
+      }
+      void invalidate('scan_usage')
       if (id !== attempt.current) return
+      const scanned = reply.result
       // the expenses as recorded now (another phone may have saved some meanwhile), for "mungkin sudah tercatat"
       const existing = await repo.list('expenses').catch(() => null)
       if (id !== attempt.current) return
@@ -157,6 +180,7 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
       setDuplicatesUnchecked(existing === null)
       setTouched(false)
       setResult(scanned)
+      setCost(reply.cost)
       setRows(built)
       // what needs a look starts open
       setExpanded(new Set(built.filter((r) => r.unclear || scanRowError(r)).map((r) => r.key)))
@@ -318,6 +342,13 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
               )}
               {duplicatesUnchecked && (
                 <p className="text-xs text-amber-800">Daftar pengeluaran belum termuat: periksa sendiri apakah baris ini sudah tercatat.</p>
+              )}
+              {cost && canEditExpenses(role) && (
+                <p className="text-xs text-slate-500" data-testid="scan-cost">
+                  Biaya scan ini: {formatUsd(cost.cost_usd, 4)}
+                  {isLocalMode && ' (contoh)'}
+                  {cost.fell_back && ' · termasuk model cadangan'}
+                </p>
               )}
               {rows.length > 0 && (
                 <button type="button" onClick={() => setStep('pick')} disabled={saving} className="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline">

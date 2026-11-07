@@ -8,7 +8,9 @@ import { getSupabase } from '../../lib/supabase'
 import { REFUND_CATEGORIES, type Expense, type ExpenseCategory } from '../../types/db'
 import {
   SCAN_MEDIA_TYPES,
+  parseScanCostReply,
   parseScanOutput,
+  type ScanCostReply,
   type ScanItem,
   type ScanMediaType,
   type ScanResult,
@@ -16,7 +18,13 @@ import {
 import type { ExpenseDraft } from './expenseUtils'
 import { scaledSize } from './receiptImage'
 
-export type { ScanResult } from '../../../supabase/functions/scan-nota/scan.ts'
+export type { ScanCostReply, ScanResult } from '../../../supabase/functions/scan-nota/scan.ts'
+
+/** What a scan returned: the lines read and, from a function that reports it (SPEC 7.17), what the scan cost. */
+export interface ScanReply {
+  result: ScanResult
+  cost: ScanCostReply | null
+}
 
 /** Handwriting needs more pixels than a printed receipt; the same JPEG is kept as the receipt photo. */
 export const SCAN_MAX_EDGE = 2000
@@ -87,8 +95,11 @@ export async function prepareScanImage(file: File): Promise<PreparedScanImage> {
   return { file: chosen, base64: await toBase64(chosen), mediaType }
 }
 
-/** Ask the Edge Function to read the photo. Errors come back as ScanRequestError with a message to show as is. */
-export async function requestScan(orgId: string, image: PreparedScanImage): Promise<ScanResult> {
+/**
+ * Ask the Edge Function to read the photo. Errors come back as ScanRequestError with a message to show as is. The cost
+ * is null from an older function or when malformed; it never fails a scan.
+ */
+export async function requestScan(orgId: string, image: PreparedScanImage): Promise<ScanReply> {
   let data: unknown
   try {
     const res = await getSupabase().functions.invoke('scan-nota', { body: { orgId, image: image.base64, mediaType: image.mediaType } })
@@ -97,12 +108,14 @@ export async function requestScan(orgId: string, image: PreparedScanImage): Prom
   } catch (err) {
     throw await toScanError(err)
   }
-  const result = (data as { result?: unknown } | null)?.result
+  const reply = data as { result?: unknown; cost?: unknown } | null
+  let result: ScanResult
   try {
-    return parseScanOutput(result)
+    result = parseScanOutput(reply?.result)
   } catch {
     throw new ScanRequestError('upstream', 'Hasil baca tidak lengkap. Coba lagi atau ambil ulang fotonya.')
   }
+  return { result, cost: parseScanCostReply(reply?.cost) }
 }
 
 /**
@@ -145,6 +158,17 @@ export const DEMO_SCAN_RESULT: ScanResult = {
   written_total: 2098500,
   notes: 'Baris 18/10: angka jumlahnya kurang jelas, mohon diperiksa.',
 }
+
+/**
+ * Mode Demo's stand-in for what a scan costs (SPEC 7.17): Claude Opus 5.5 reading 2,500 tokens and writing 3,500 is
+ * 2,500 × $4 + 3,500 × $20 per million = US$0.08. Written as a scan_usage row in the demo data, labelled as a sample.
+ */
+export const DEMO_SCAN_USAGE = {
+  model: 'claude-opus-5-5',
+  input_tokens: 2500,
+  output_tokens: 3500,
+  cost_usd: 0.08,
+} as const
 
 // ---------- rows for the review screen ----------
 
