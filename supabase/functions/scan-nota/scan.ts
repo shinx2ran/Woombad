@@ -166,3 +166,47 @@ export function parseScanOutput(value: unknown): ScanResult {
     notes: typeof value.notes === 'string' ? value.notes.trim() : '',
   }
 }
+
+/** What went wrong calling Claude, reduced to what the mapping needs (SDK error classes stay in index.ts). */
+export interface ScanApiFailure {
+  kind: 'timeout' | 'connection' | 'api' | 'other'
+  /** HTTP status of an API error */
+  status?: number | null
+  /** error.type of an API error, e.g. 'billing_error' */
+  type?: string | null
+  /** error.message of an API error (wording can change: only a fallback signal) */
+  message?: string | null
+}
+
+export interface ScanFailureReply {
+  status: number
+  error: string
+  message: string
+}
+
+/**
+ * The reply for a failed Claude call, in words the person scanning can act on. Running out of prepaid credit (the
+ * README's spending cap) must say so, not "retake the photo": it arrives as 402 / billing_error, or on older accounts as
+ * a 400 whose message mentions the credit balance.
+ */
+export function describeScanFailure(f: ScanApiFailure): ScanFailureReply {
+  if (f.kind === 'timeout') return { status: 504, error: 'timeout', message: 'Pembacaan terlalu lama. Coba lagi, atau foto per halaman.' }
+  if (f.kind === 'connection') return { status: 502, error: 'upstream', message: 'Tidak dapat menghubungi layanan pembaca. Coba lagi.' }
+  if (f.kind === 'other') return { status: 500, error: 'internal', message: 'Terjadi kesalahan. Coba lagi.' }
+  const status = f.status ?? 0
+  if (status === 402 || f.type === 'billing_error' || (status === 400 && /credit balance/i.test(f.message ?? ''))) {
+    return { status: 503, error: 'not_configured', message: 'Kredit API Claude habis. Pemilik perlu mengisi kredit di console.anthropic.com.' }
+  }
+  if (status === 401 || status === 403 || f.type === 'authentication_error' || f.type === 'permission_error') {
+    return { status: 503, error: 'not_configured', message: 'Kunci API Claude tidak valid. Pemilik perlu memeriksanya di console.anthropic.com.' }
+  }
+  if (status === 404 || f.type === 'not_found_error') {
+    return { status: 503, error: 'not_configured', message: 'Model Claude tidak tersedia untuk kunci ini. Pemilik perlu memeriksanya di console.anthropic.com.' }
+  }
+  if (status === 429 || status === 529 || f.type === 'rate_limit_error' || f.type === 'overloaded_error') {
+    return { status: 429, error: 'busy', message: 'Layanan pembaca sedang sibuk. Coba lagi sebentar lagi.' }
+  }
+  if (status === 413 || f.type === 'request_too_large') return { status: 413, error: 'too_large', message: 'Foto terlalu besar. Ambil ulang fotonya.' }
+  if (status === 400) return { status: 400, error: 'unreadable', message: 'Foto ini tidak dapat diproses. Ambil ulang fotonya (JPG, terang, satu halaman).' }
+  return { status: 502, error: 'upstream', message: 'Layanan pembaca sedang bermasalah. Coba lagi.' }
+}

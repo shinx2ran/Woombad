@@ -5,7 +5,7 @@
  */
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js'
 import { getSupabase } from '../../lib/supabase'
-import type { Expense, ExpenseCategory } from '../../types/db'
+import { REFUND_CATEGORIES, type Expense, type ExpenseCategory } from '../../types/db'
 import {
   SCAN_MEDIA_TYPES,
   parseScanOutput,
@@ -105,17 +105,21 @@ export async function requestScan(orgId: string, image: PreparedScanImage): Prom
   }
 }
 
-/** The function's own message when it sent one; otherwise a plain explanation by kind of failure. */
+/**
+ * The function's own message when it sent one; otherwise a plain explanation by kind of failure. Only replies with the
+ * function's shape ({ error, message }) are shown as they are: the Supabase gateway answers with its own English JSON
+ * (e.g. 404 "Requested function was not found" before the function is deployed; the function itself never answers 404).
+ */
 export async function toScanError(err: unknown): Promise<ScanRequestError> {
   if (err instanceof ScanRequestError) return err
   if (err instanceof FunctionsHttpError) {
     const response = err.context as Response | undefined
+    if (response?.status === 404) return new ScanRequestError('not_deployed', 'Scan nota belum tersedia di server. Hubungi pemilik.')
     const payload = await response
       ?.clone()
       .json()
       .catch(() => null)
-    if (payload && typeof payload.message === 'string') return new ScanRequestError(String(payload.error ?? 'error'), payload.message)
-    if (response?.status === 404) return new ScanRequestError('not_deployed', 'Scan nota belum tersedia di server. Hubungi pemilik.')
+    if (payload && typeof payload.error === 'string' && typeof payload.message === 'string') return new ScanRequestError(payload.error, payload.message)
     return new ScanRequestError('upstream', 'Server tidak dapat membaca foto saat ini. Coba lagi.')
   }
   if (err instanceof FunctionsFetchError) return new ScanRequestError('offline', 'Tidak ada sambungan ke server. Periksa internet lalu coba lagi.')
@@ -166,7 +170,7 @@ export interface ScanRow {
 const pad = (n: number) => String(n).padStart(2, '0')
 const iso = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`
 const DAY_MS = 86_400_000
-/** a line dated a few days ahead (written in advance) keeps this year; further ahead it belongs to last year */
+/** a line dated up to a week ahead (written in advance) is taken as dated ahead; further ahead it belongs to an earlier year */
 const FUTURE_SLACK_DAYS = 7
 
 function isRealDate(y: number, m: number, d: number): boolean {
@@ -176,37 +180,68 @@ function isRealDate(y: number, m: number, d: number): boolean {
 
 /**
  * The date of a scanned line. Lists rarely carry a year: the latest year that does not put the line more than a week
- * in the future (October read on 7 Nov 2026 is 2026; December read in January is last year). A line without a month
- * takes this month, or last month when its day is still ahead. No day, or a day that does not exist, gives ''.
+ * in the future (October read on 7 Nov 2026 is 2026; December read in January is last year; 2 January read on 28
+ * December is next year). A line without a month takes `monthForUndated` (one month for the whole scan, see
+ * monthForUndatedLines), or on its own this month, or last month when its day is still ahead. No day, or a day that
+ * does not exist, gives ''.
  */
-export function resolveScanDate(item: Pick<ScanItem, 'day' | 'month' | 'year'>, today: string): { date: string; monthGuessed: boolean } {
+export function resolveScanDate(
+  item: Pick<ScanItem, 'day' | 'month' | 'year'>,
+  today: string,
+  monthForUndated: number | null = null,
+): { date: string; monthGuessed: boolean } {
   const [ty, tm, td] = today.split('-').map(Number)
-  if (!item.day) return { date: '', monthGuessed: false }
+  const day = item.day
+  if (!day) return { date: '', monthGuessed: false }
   let month = item.month
   let monthGuessed = false
-  let yearHint: number | null = item.year
   if (month === null) {
     monthGuessed = true
-    month = item.day > td ? (tm === 1 ? 12 : tm - 1) : tm
-    if (item.day > td && tm === 1 && yearHint === null) yearHint = ty - 1
+    month = monthForUndated ?? (day > td ? (tm === 1 ? 12 : tm - 1) : tm)
   }
-  let year = yearHint ?? ty
-  if (yearHint === null) {
-    const ahead = (Date.UTC(year, month - 1, item.day) - Date.UTC(ty, tm - 1, td)) / DAY_MS
-    if (ahead > FUTURE_SLACK_DAYS) year -= 1
+  let year = item.year
+  if (year === null) {
+    const now = Date.UTC(ty, tm - 1, td)
+    const m = month
+    const ahead = (y: number) => (Date.UTC(y, m - 1, day) - now) / DAY_MS
+    year = [ty + 1, ty, ty - 1].find((y) => ahead(y) <= FUTURE_SLACK_DAYS) ?? ty - 1
   }
-  if (!isRealDate(year, month, item.day)) return { date: '', monthGuessed }
-  return { date: iso(year, month, item.day), monthGuessed }
+  if (!isRealDate(year, month, day)) return { date: '', monthGuessed }
+  return { date: iso(year, month, day), monthGuessed }
+}
+
+/**
+ * One month for every line of a scan that carries no month, so a page is never split over two months: the month the
+ * other lines name most; with no month anywhere, last month when any of those days is still ahead this month, else this
+ * month. null when every line has a month (or no day).
+ */
+export function monthForUndatedLines(items: Pick<ScanItem, 'day' | 'month'>[], today: string): number | null {
+  const undated = items.filter((i) => i.day && i.month === null)
+  if (undated.length === 0) return null
+  const counts = new Map<number, number>()
+  for (const i of items) if (i.month !== null) counts.set(i.month, (counts.get(i.month) ?? 0) + 1)
+  if (counts.size > 0) return [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0]
+  const [, tm, td] = today.split('-').map(Number)
+  return undated.some((i) => (i.day ?? 0) > td) ? (tm === 1 ? 12 : tm - 1) : tm
 }
 
 /**
  * Rows for the review screen. A line with the same date and amount as an expense already recorded is shown but
- * unticked ("mungkin sudah tercatat"): scanning the same page twice must not double the costs.
+ * unticked ("mungkin sudah tercatat"): scanning the same page twice must not double the costs. Each recorded expense
+ * answers for one line only (two 30.000 lines on the same day, one recorded: one stays ticked), and refunds to a tenant
+ * are never taken for a scanned cost.
  */
-export function buildScanRows(result: ScanResult, today: string, existing: Pick<Expense, 'id' | 'expense_date' | 'amount'>[]): ScanRow[] {
+export function buildScanRows(
+  result: ScanResult,
+  today: string,
+  existing: (Pick<Expense, 'id' | 'expense_date' | 'amount'> & Partial<Pick<Expense, 'category'>>)[],
+): ScanRow[] {
+  const monthForUndated = monthForUndatedLines(result.items, today)
+  const unmatched = existing.filter((e) => !e.category || !REFUND_CATEGORIES.includes(e.category))
   return result.items.map((item, i) => {
-    const { date, monthGuessed } = resolveScanDate(item, today)
-    const duplicate = date ? existing.find((e) => e.expense_date === date && e.amount === item.amount) : undefined
+    const { date, monthGuessed } = resolveScanDate(item, today, monthForUndated)
+    const at = date ? unmatched.findIndex((e) => e.expense_date === date && e.amount === item.amount) : -1
+    const duplicate = at >= 0 ? unmatched.splice(at, 1)[0] : undefined
     return {
       key: `scan-${i}`,
       include: !duplicate,
@@ -239,6 +274,14 @@ export interface ScanTotalCheck {
   writtenTotal: number | null
   /** writtenTotal - sum (0 = matches) */
   difference: number
+}
+
+/**
+ * The total to check the lines against: a handwritten list's own total is an independent check; a receipt's total is
+ * the same number read once (it is the line), so it proves nothing and is not shown as a match.
+ */
+export function totalToCheck(result: Pick<ScanResult, 'kind' | 'written_total'>): number | null {
+  return result.kind === 'expense_list' ? result.written_total : null
 }
 
 export function scanTotalCheck(rows: Pick<ScanRow, 'amount'>[], writtenTotal: number | null): ScanTotalCheck {

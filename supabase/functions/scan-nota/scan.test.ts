@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SCAN_CATEGORIES, SCAN_SCHEMA, ScanOutputError, parseScanOutput } from './scan'
+import { SCAN_CATEGORIES, SCAN_SCHEMA, ScanOutputError, describeScanFailure, parseScanOutput } from './scan'
 
 // SPEC 7.16: what Claude must return for a scanned expense record, and the strict check of what came back.
 const line = (over: Record<string, unknown> = {}) => ({
@@ -83,5 +83,28 @@ describe('parseScanOutput', () => {
     expect(bad('nope')).toThrow(ScanOutputError)
     expect(bad([], 'menu')).toThrow(ScanOutputError)
     expect(() => parseScanOutput(null)).toThrow(ScanOutputError)
+  })
+})
+
+describe('describeScanFailure (what the person scanning is told)', () => {
+  const api = (status: number, type: string | null = null, message: string | null = null) => describeScanFailure({ kind: 'api', status, type, message })
+  it('credit used up says so, in both forms Anthropic sends it, so nobody keeps retaking photos', () => {
+    expect(api(402, 'billing_error')).toMatchObject({ status: 503, error: 'not_configured', message: expect.stringContaining('Kredit API Claude habis') })
+    expect(api(400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API.')).toMatchObject({ error: 'not_configured', message: expect.stringContaining('Kredit') })
+  })
+  it('a wrong key or a model the key cannot use points the owner to the console', () => {
+    expect(api(401, 'authentication_error')).toMatchObject({ status: 503, error: 'not_configured', message: expect.stringContaining('tidak valid') })
+    expect(api(403, 'permission_error').error).toBe('not_configured')
+    expect(api(404, 'not_found_error').message).toContain('Model Claude tidak tersedia')
+  })
+  it('busy, too large, a refused photo, other failures', () => {
+    expect(api(429, 'rate_limit_error')).toMatchObject({ status: 429, error: 'busy' })
+    expect(api(529, 'overloaded_error').error).toBe('busy')
+    expect(api(413, 'request_too_large').error).toBe('too_large')
+    expect(api(400, 'invalid_request_error', 'Could not process image')).toMatchObject({ status: 400, error: 'unreadable' })
+    expect(api(500, 'api_error')).toMatchObject({ status: 502, error: 'upstream' })
+    expect(describeScanFailure({ kind: 'timeout' })).toMatchObject({ status: 504, error: 'timeout' })
+    expect(describeScanFailure({ kind: 'connection' })).toMatchObject({ status: 502, error: 'upstream' })
+    expect(describeScanFailure({ kind: 'other' })).toMatchObject({ status: 500, error: 'internal' })
   })
 })

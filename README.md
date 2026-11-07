@@ -99,6 +99,11 @@ Lewati langkah ini bila isinya hanya data contoh.
    Jalankan `node scripts/check-public-config.mjs`, lalu commit ke `master` (setelah pemilik selesai langkah 1).
    Dalam ±2 menit GitHub Actions memublikasikan versi online. Secret GitHub `VITE_SUPABASE_URL` /
    `VITE_SUPABASE_ANON_KEY` tidak diperlukan; bila diisi, nilainya menggantikan `.env.production`.
+5. **Edge Function `scan-nota`** (Scan nota): deploy isi `supabase/functions/scan-nota/` (`index.ts` + `scan.ts`) dengan
+   **`verify_jwt = false`** (CLI: `supabase functions deploy scan-nota --no-verify-jwt`). Fungsi memeriksa sesi dan
+   keanggotaan sendiri; pemeriksaan JWT bawaan Supabase tidak mengenal kunci `sb_publishable_`. Ulangi setiap kali isi
+   folder itu berubah, **sebelum** perubahan aplikasi di-push ke `master`. Kunci Claude dipasang pemilik sendiri
+   ([Scan nota](#scan-nota-pengeluaran-dari-foto)), tidak lewat operator.
 
 ### 3. Pemilik: atur login di Supabase
 
@@ -371,7 +376,8 @@ otomatis (catatan Oktober yang di-scan November = tahun ini). Satu halaman atau 
 2. Di sana buat **API key** (Settings → API keys). Jangan dikirim lewat WhatsApp/email dan jangan ditempel di chat.
 3. Buka Supabase → **Edge Functions → Secrets** → *Add secret*: nama `ANTHROPIC_API_KEY`, isi kunci tadi → Save.
 
-Sebelum langkah 3, tombolnya menjawab "Scan nota belum aktif". Kunci salah atau kredit habis: pesannya menyebut itu.
+Sebelum langkah 3, tombolnya menjawab "Scan nota belum aktif". Kunci salah, model tidak tersedia, atau kredit habis: pesannya
+menyebut itu ("Kredit API Claude habis" berarti isi kredit di console.anthropic.com).
 Foto catatan dikirim ke Anthropic untuk dibaca; jangan scan dokumen berisi data pribadi penyewa.
 
 ### Transisi halaman & jendela

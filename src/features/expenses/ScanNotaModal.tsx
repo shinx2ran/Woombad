@@ -3,7 +3,7 @@ import { clsx } from 'clsx'
 import { AlertTriangle, Camera, CheckCircle2, Loader2, Pencil } from 'lucide-react'
 import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
-import { useInvalidate, useTable } from '../../hooks/useTable'
+import { useInvalidate } from '../../hooks/useTable'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
 import { EXPENSE_CATEGORY_LABEL, type ExpenseCategory } from '../../types/db'
 import { ORDERED_CATEGORIES, SHARED_VALUE, canEditExpenses, isRefundCategory, saveErrorMessage } from './expenseUtils'
@@ -17,6 +17,7 @@ import {
   scanRowError,
   scanTotalCheck,
   scannedExpenseDrafts,
+  totalToCheck,
   type PreparedScanImage,
   type ScanResult,
   type ScanRow,
@@ -80,7 +81,7 @@ function ScanRowCard({ row, error, expanded, onToggle, onChange }: RowCardProps)
             type="date"
             value={row.date}
             onChange={(e) => onChange({ date: e.target.value, monthGuessed: false })}
-            hint={row.monthGuessed ? 'Bulan tidak tertulis: diisi bulan ini. Periksa.' : undefined}
+            hint={row.monthGuessed ? `Bulan tidak tertulis: diisi ${row.date ? formatDate(row.date, 'MMMM yyyy') : 'perkiraan'}. Periksa.` : undefined}
           />
           <Input label="Keterangan" value={row.description} onChange={(e) => onChange({ description: e.target.value })} />
           <MoneyInput label="Jumlah" value={row.amount} onChange={(v) => onChange({ amount: v })} min={0} />
@@ -103,7 +104,6 @@ const demoScan = () => new Promise<ScanResult>((resolve) => setTimeout(() => res
  */
 export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSaved?: (date: string) => void }) {
   const { org, repo, role, properties, selectedPropertyId, isLocalMode } = useOrg()
-  const expensesQuery = useTable('expenses')
   const invalidate = useInvalidate()
   const toast = useToast()
 
@@ -116,6 +116,8 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
   // the global kos filter when it is one kos, the only kos when there is one, else an explicit choice
   const [property, setProperty] = useState(() => (selectedPropertyId !== 'all' ? selectedPropertyId : properties.length === 1 ? properties[0].id : ''))
   const [attachPhoto, setAttachPhoto] = useState(true)
+  /** the recorded expenses could not be read, so no line could be checked against them */
+  const [duplicatesUnchecked, setDuplicatesUnchecked] = useState(false)
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
   // a photo picked again, or the sheet closed, makes an earlier reading's late answer void
@@ -140,15 +142,20 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
     if (!picked) return
     const id = ++attempt.current
     setError(null)
-    setTouched(false)
     setStep('reading')
     try {
       const prepared = await prepareScanImage(picked)
       if (id !== attempt.current) return
-      setPhoto(prepared)
       const scanned = isLocalMode ? await demoScan() : await requestScan(org.id, prepared)
       if (id !== attempt.current) return
-      const built = buildScanRows(scanned, todayISO(), expensesQuery.data ?? [])
+      // the expenses as recorded now (another phone may have saved some meanwhile), for "mungkin sudah tercatat"
+      const existing = await repo.list('expenses').catch(() => null)
+      if (id !== attempt.current) return
+      const built = buildScanRows(scanned, todayISO(), existing ?? [])
+      // the earlier result stays until a new one is complete ("Kembali ke hasil" after a failed re-take)
+      setPhoto(prepared)
+      setDuplicatesUnchecked(existing === null)
+      setTouched(false)
       setResult(scanned)
       setRows(built)
       // what needs a look starts open
@@ -170,8 +177,10 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
       return next
     })
 
-  const check = scanTotalCheck(rows, result?.written_total ?? null)
+  // a handwritten list's own total is a real check; a receipt's total is the same number read once, so it proves nothing
+  const check = scanTotalCheck(rows, result ? totalToCheck(result) : null)
   const included = rows.filter((r) => r.include)
+  const includedSum = included.reduce((sum, r) => sum + r.amount, 0)
   const errorOf = (r: ScanRow) => (r.include && touched ? scanRowError(r) : null)
 
   const save = async () => {
@@ -241,6 +250,18 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
             <li>Satu halaman atau satu nota per foto.</li>
             <li>Foto lurus dari atas, terang, semua angka terlihat.</li>
           </ul>
+          {result && rows.length > 0 && (
+            <Button
+              variant="outline"
+              fullWidth
+              onClick={() => {
+                setError(null)
+                setStep('review')
+              }}
+            >
+              Kembali ke hasil sebelumnya
+            </Button>
+          )}
           {isLocalMode && (
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
               Mode Demo: foto tidak dikirim ke mana pun; yang tampil adalah contoh hasil scan.
@@ -288,7 +309,16 @@ export function ScanNotaModal({ onClose, onSaved }: { onClose: () => void; onSav
                     Periksa angka yang ditandai.
                   </p>
                 ))}
+              {result.kind === 'receipt' && rows.length > 0 && <p className="text-xs text-slate-600">Cocokkan jumlahnya dengan total di nota.</p>}
               {result.notes && <p className="text-xs text-slate-600">{result.notes}</p>}
+              {rows.length > 0 && (
+                <p className="text-slate-700" data-testid="scan-included">
+                  Dicentang: {included.length} baris · {formatRupiah(includedSum)}
+                </p>
+              )}
+              {duplicatesUnchecked && (
+                <p className="text-xs text-amber-800">Daftar pengeluaran belum termuat: periksa sendiri apakah baris ini sudah tercatat.</p>
+              )}
               {rows.length > 0 && (
                 <button type="button" onClick={() => setStep('pick')} disabled={saving} className="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline">
                   <Camera className="h-4 w-4" aria-hidden /> Foto ulang

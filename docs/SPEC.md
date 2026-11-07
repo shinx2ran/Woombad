@@ -984,8 +984,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Fungsi**: CORS untuk `https://shinx2ran.github.io` (+ localhost). Urutan: sesi pengguna (`auth.getUser(token)`; tanpa
   sesi → 401, sebelum apa pun), kunci API ada (503 `not_configured`), isi permintaan (org uuid, foto base64 ≤ 8 juta
   karakter, JPG/PNG/WebP), keanggotaan org dengan token pengguna sendiri (`organization_members`, RLS; bukan anggota → 403),
-  lalu Claude. Galat Claude dipetakan ke pesan Indonesia (kunci salah/kredit habis → 503, sibuk → 429, foto ditolak → 400,
-  koneksi → 502); `stop_reason` refusal → 422, max_tokens → 502. Dideploy dengan **`verify_jwt = false`**: proyek memakai
+  lalu Claude (satu percobaan, batas waktu 130 dtk, di bawah batas 150 dtk platform). Galat Claude dipetakan ke pesan
+  Indonesia oleh `describeScanFailure` (`scan.ts`, diuji): kredit habis (402 / `billing_error` / 400 "credit balance") →
+  503 "Kredit API Claude habis…", kunci salah 401/403 → 503, model tidak tersedia 404 → 503, sibuk 429/529 → 429, terlalu besar
+  413, foto ditolak 400, waktu habis 504, koneksi 502; `stop_reason` refusal → 422, max_tokens → 502. Dideploy dengan **`verify_jwt = false`**: proyek memakai
   kunci `sb_publishable_`, dan pemeriksaan JWT bawaan Edge Functions hanya mengenal kunci lama (dokumen Supabase); fungsi
   memeriksa sesi sendiri. Kunci publik dibaca dari `SUPABASE_PUBLISHABLE_KEYS.default`, lalu `SUPABASE_ANON_KEY`, lalu header
   `apikey`. Tidak menulis apa pun ke database.
@@ -993,19 +995,29 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   **Catat pengeluaran** (kotak di atas: menutup form, membuka scan), dan `/pengeluaran?scan=1`. Foto (kamera atau galeri)
   diperkecil ke JPEG ≤ 2000 px (cukup untuk tulisan tangan, biaya per scan terduga), dikirim, lalu **diperiksa sebelum
   disimpan**: ringkasan "N baris terbaca · jumlah Rp X" dan **cek total**: jumlah semua baris (dicentang atau tidak)
-  dibandingkan total di kertas ("Sama dengan total di kertas" atau "selisih Rp X: periksa angka yang ditandai"); catatan
-  pembaca; pilihan **Kos** untuk semua baris (bawaan: filter kos, atau satu-satunya kos; "Semua kos" → wajib dipilih;
+  dibandingkan total di kertas ("Sama dengan total di kertas" atau "selisih Rp X: periksa angka yang ditandai"), **hanya
+  untuk daftar tulisan tangan** (`totalToCheck`; total nota toko adalah angka baris itu sendiri, jadi ditulis "Cocokkan
+  jumlahnya dengan total di nota."); "Dicentang: N baris · Rp X"; catatan pembaca; pilihan **Kos** untuk semua baris (bawaan: filter kos, atau satu-satunya kos; "Semua kos" → wajib dipilih;
   "Bersama" boleh); per baris: centang simpan, tanggal, keterangan, jumlah, kategori, label "Periksa: tulisan kurang jelas",
   "Mungkin sudah tercatat", "Bulan diperkirakan", dan teks yang terbaca di foto. Baris tidak jelas atau tidak lengkap terbuka
-  otomatis. **Tanggal**: tahun yang tidak tertulis = tahun terbaru yang tidak lebih dari 7 hari ke depan (Oktober dibaca 7 Nov
-  2026 → 2026; Desember dibaca Januari → tahun lalu); tanpa bulan → bulan ini, atau bulan lalu bila harinya belum lewat;
-  tanggal yang tidak ada → kosong (wajib diisi). **Duplikat**: baris dengan tanggal dan jumlah sama dengan pengeluaran yang sudah
-  ada ditampilkan tetapi tidak dicentang (scan halaman yang sama dua kali tidak menggandakan biaya). **Simpan N pengeluaran**:
+  otomatis. **Tanggal**: tahun yang tidak tertulis = tahun terbaru (tahun depan, ini, atau lalu) yang tidak lebih dari 7 hari ke
+  depan (Oktober dibaca 7 Nov 2026 → 2026; Desember dibaca Januari → tahun lalu; 2 Januari dibaca 28 Desember → tahun
+  depan); baris tanpa bulan memakai **satu bulan untuk seluruh scan** (`monthForUndatedLines`: bulan yang paling sering ditulis
+  baris lain; tanpa bulan sama sekali: bulan lalu bila ada hari yang belum lewat bulan ini, selain itu bulan ini), dengan
+  petunjuk "Bulan tidak tertulis: diisi Oktober 2026. Periksa."; tanggal yang tidak ada → kosong (wajib diisi).
+  **Duplikat**: daftar pengeluaran dibaca ulang dari server setelah scan; baris dengan tanggal dan jumlah sama dengan
+  pengeluaran yang sudah ada ditampilkan tetapi tidak dicentang (scan halaman yang sama dua kali tidak menggandakan biaya);
+  satu pengeluaran tercatat hanya menjawab satu baris, dan pengembalian ke penyewa tidak pernah dianggap sama; daftar gagal
+  dibaca → semua baris dicentang dengan catatan "Daftar pengeluaran belum termuat: periksa sendiri…". **Foto ulang** dari
+  layar periksa: hasil sebelumnya tetap ada ("Kembali ke hasil sebelumnya") sampai foto baru selesai dibaca. **Simpan N pengeluaran**:
   baris dicentang wajib bertanggal, berjumlah > 0, berketerangan (merah + dibuka bila tidak); `saveScannedExpenses`
   mengunggah foto sekali ("Simpan foto ini sebagai bukti di setiap baris", bawaan aktif) dan menulis semua baris dalam satu
   `insertMany` dengan `receipt_path` yang sama (hapus satu baris kemudian tidak menghapus foto selama baris lain memakainya);
   unggah gagal → baris tetap tersimpan tanpa foto + peringatan; insert ditolak → foto dihapus lagi. Semua anggota (staf
   juga) boleh; riwayat perubahan mencatat setiap baris. Halaman pindah ke bulan baris yang disimpan.
+- **Pesan galat di aplikasi** (`toScanError`): hanya balasan fungsi sendiri (`{ error, message }`) ditampilkan apa adanya;
+  404 dari gateway → "Scan nota belum tersedia di server"; galat gateway lain (bahasa Inggris) → pesan umum Indonesia.
+- **Deploy**: README langkah 2.5 (`--no-verify-jwt`), sebelum perubahan aplikasi di-push ke `master`.
 - **Mode Demo**: tidak ada server: setelah memilih foto, layar periksa menampilkan **contoh rekaan** (`DEMO_SCAN_RESULT`,
   bukan data pemilik) dengan keterangan jelas, supaya alurnya bisa dicoba; foto tidak dikirim.
 - **Biaya & privasi**: berbayar per scan di akun API Anthropic pemilik (perkiraan US$0,05–0,15 per foto; harga Opus 5.5

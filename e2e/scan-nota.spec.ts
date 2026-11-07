@@ -56,6 +56,13 @@ test.describe('Scan nota (SPEC 7.16)', () => {
     await unclear.getByLabel('Jumlah').fill('175000')
     await expect(sheet.getByTestId('scan-total-ok')).toBeVisible()
 
+    await expect(sheet.getByTestId('scan-included')).toHaveText('Dicentang: 8 baris · Rp 2.098.500')
+
+    // "Foto ulang" by mistake: the result checked so far comes back
+    await sheet.getByRole('button', { name: 'Foto ulang' }).click()
+    await sheet.getByRole('button', { name: 'Kembali ke hasil sebelumnya' }).click()
+    await expect(rows).toHaveCount(8)
+
     // no kos chosen yet (filter is "Semua kos"): refused with the reason
     await sheet.getByRole('button', { name: 'Simpan 8 pengeluaran' }).click()
     await expect(page.getByText('Pilih kos untuk pengeluaran ini.')).toBeVisible()
@@ -63,6 +70,9 @@ test.describe('Scan nota (SPEC 7.16)', () => {
 
     // leave one line out
     await rows.filter({ hasText: 'Upah bersih selokan' }).getByRole('checkbox').uncheck()
+    // the ticked total follows; the paper's total still counts every line read
+    await expect(sheet.getByTestId('scan-included')).toHaveText('Dicentang: 7 baris · Rp 1.998.500')
+    await expect(sheet.getByTestId('scan-total-ok')).toBeVisible()
     await sheet.getByRole('button', { name: 'Simpan 7 pengeluaran' }).click()
     await expect(page.getByText('7 pengeluaran dicatat dari scan nota.')).toBeVisible()
     await expect(page.getByRole('dialog')).toHaveCount(0)

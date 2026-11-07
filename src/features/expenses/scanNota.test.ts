@@ -9,12 +9,14 @@ import {
   DEMO_SCAN_RESULT,
   ScanRequestError,
   buildScanRows,
+  monthForUndatedLines,
   requestScan,
   resolveScanDate,
   scanRowError,
   scanTotalCheck,
   scannedExpenseDrafts,
   toScanError,
+  totalToCheck,
 } from './scanNota'
 
 afterEach(() => invoke.mockReset())
@@ -36,6 +38,11 @@ describe('resolveScanDate', () => {
     expect(resolveScanDate({ day: 30, month: 11, year: null }, today).date).toBe('2025-11-30')
   })
 
+  it('a line just after New Year read in late December is next year', () => {
+    expect(resolveScanDate({ day: 2, month: 1, year: null }, '2026-12-28').date).toBe('2027-01-02')
+    expect(resolveScanDate({ day: 20, month: 12, year: null }, '2026-12-28').date).toBe('2026-12-20')
+  })
+
   it('a written year is kept', () => {
     expect(resolveScanDate({ day: 3, month: 1, year: 2027 }, today).date).toBe('2027-01-03')
   })
@@ -50,6 +57,23 @@ describe('resolveScanDate', () => {
     expect(resolveScanDate({ day: null, month: 10, year: null }, today).date).toBe('')
     expect(resolveScanDate({ day: 31, month: 9, year: null }, today).date).toBe('')
     expect(resolveScanDate({ day: 29, month: 2, year: 2026 }, today).date).toBe('')
+  })
+})
+
+describe('one month for the lines without a month (a page is never split)', () => {
+  const today = '2026-11-07'
+  const noMonth = (day: number) => ({ day, month: null, year: null })
+  it('a page with no month at all: last month for every line when any day is still ahead', () => {
+    const items = [noMonth(2), noMonth(5), noMonth(12), noMonth(29)]
+    expect(monthForUndatedLines(items, today)).toBe(10)
+    const result = { kind: 'expense_list' as const, items: items.map((d) => ({ ...DEMO_SCAN_RESULT.items[0], ...d })), written_total: null, notes: '' }
+    expect(buildScanRows(result, today, []).map((r) => r.date)).toEqual(['2026-10-02', '2026-10-05', '2026-10-12', '2026-10-29'])
+  })
+  it('the month the other lines name; null when every line has one', () => {
+    expect(monthForUndatedLines([{ day: 3, month: 10 }, { day: 9, month: 10 }, noMonth(4)], today)).toBe(10)
+    expect(monthForUndatedLines([{ day: 3, month: 10 }], today)).toBeNull()
+    // only days up to today: this month (a receipt from earlier this month)
+    expect(monthForUndatedLines([noMonth(4)], today)).toBe(11)
   })
 })
 
@@ -68,6 +92,17 @@ describe('buildScanRows', () => {
     const internet = rows.find((r) => r.date === '2026-10-12')!
     expect(internet).toMatchObject({ include: false, duplicateOf: 'x1' })
     expect(rows.filter((r) => r.include)).toHaveLength(7)
+  })
+
+  it('one recorded expense answers for one line only; a refund to a tenant is never taken for a scanned cost', () => {
+    const twice = { ...DEMO_SCAN_RESULT, items: [DEMO_SCAN_RESULT.items[3], DEMO_SCAN_RESULT.items[3]] }
+    const rows = buildScanRows(twice, today, [{ id: 'x1', expense_date: '2026-10-14', amount: 20000 }])
+    expect(rows.map((r) => [r.include, r.duplicateOf])).toEqual([
+      [false, 'x1'],
+      [true, null],
+    ])
+    const refund = buildScanRows(DEMO_SCAN_RESULT, today, [{ id: 'r1', expense_date: '2026-10-12', amount: 650000, category: 'deposit_refund' }])
+    expect(refund.every((r) => r.include)).toBe(true)
   })
 
   it('the same amount on another day is not a duplicate', () => {
@@ -90,6 +125,12 @@ describe('checks before saving', () => {
     rows[4].amount = 175900 // a misread
     expect(scanTotalCheck(rows, 2098500).difference).toBe(-900)
     expect(scanTotalCheck(rows, null).difference).toBe(0)
+  })
+
+  it('only a handwritten list is checked against its written total (a receipt total is the line itself)', () => {
+    expect(totalToCheck({ kind: 'expense_list', written_total: 2098500 })).toBe(2098500)
+    expect(totalToCheck({ kind: 'receipt', written_total: 130000 })).toBeNull()
+    expect(totalToCheck({ kind: 'unreadable', written_total: null })).toBeNull()
   })
 
   it('scannedExpenseDrafts: only ticked lines, one kos for all, operating costs without a lease', () => {
@@ -130,6 +171,11 @@ describe('requestScan (Edge Function "scan-nota")', () => {
 
   it('a function that is not deployed, no connection, or a broken answer each get a plain message', async () => {
     expect(await toScanError(new FunctionsHttpError(new Response('Not found', { status: 404 })))).toMatchObject({ code: 'not_deployed' })
+    // the gateway's own JSON (English) is never shown as it is
+    const gateway404 = new Response(JSON.stringify({ code: 'NOT_FOUND', message: 'Requested function was not found' }), { status: 404 })
+    expect(await toScanError(new FunctionsHttpError(gateway404))).toMatchObject({ code: 'not_deployed' })
+    const gateway546 = new Response(JSON.stringify({ code: 'WORKER_LIMIT', message: 'Function failed due to not having enough compute resources' }), { status: 546 })
+    expect(await toScanError(new FunctionsHttpError(gateway546))).toMatchObject({ code: 'upstream', message: 'Server tidak dapat membaca foto saat ini. Coba lagi.' })
     expect(await toScanError(new FunctionsFetchError(new TypeError('Failed to fetch')))).toMatchObject({ code: 'offline' })
     invoke.mockResolvedValue({ data: { result: { kind: 'receipt', items: [{ amount: 'lots' }] } }, error: null })
     const err = await requestScan('org-1', image).catch((e: unknown) => e)

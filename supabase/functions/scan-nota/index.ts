@@ -18,7 +18,9 @@ import {
   SCAN_SYSTEM_PROMPT,
   SCAN_USER_TEXT,
   ScanOutputError,
+  describeScanFailure,
   parseScanOutput,
+  type ScanApiFailure,
   type ScanMediaType,
 } from './scan.ts'
 
@@ -103,7 +105,9 @@ Deno.serve(async (req) => {
   if (!member) return fail(req, 403, 'forbidden', 'Anda bukan anggota kos ini.')
 
   // ---- read the photo ----
-  const client = new Anthropic({ apiKey, timeout: 120_000, maxRetries: 1 })
+  // one attempt that ends before the platform's 150 s request limit, so the person gets this function's own message
+  // (a retry inside the call would only run past the limit and be cut off without one)
+  const client = new Anthropic({ apiKey, timeout: 130_000, maxRetries: 0 })
   let response: Anthropic.Beta.Messages.BetaMessage
   try {
     response = await client.beta.messages.create({
@@ -124,23 +128,18 @@ Deno.serve(async (req) => {
       ],
     })
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-      return fail(req, 503, 'not_configured', 'Kunci API Claude tidak valid atau kreditnya habis. Pemilik perlu memeriksanya di console.anthropic.com.')
-    }
-    if (err instanceof Anthropic.RateLimitError || err instanceof Anthropic.OverloadedError) {
-      return fail(req, 429, 'busy', 'Layanan pembaca sedang sibuk. Coba lagi sebentar lagi.')
-    }
-    if (err instanceof Anthropic.BadRequestError) {
-      console.error('scan-nota bad request', err.message)
-      return fail(req, 400, 'unreadable', 'Foto ini tidak dapat diproses. Ambil ulang fotonya (JPG, terang, satu halaman).')
-    }
-    if (err instanceof Anthropic.APIConnectionError) return fail(req, 502, 'upstream', 'Tidak dapat menghubungi layanan pembaca. Coba lagi.')
-    if (err instanceof Anthropic.APIError) {
-      console.error('scan-nota api error', err.status, err.message)
-      return fail(req, 502, 'upstream', 'Layanan pembaca sedang bermasalah. Coba lagi.')
-    }
-    console.error('scan-nota unexpected', err)
-    return fail(req, 500, 'internal', 'Terjadi kesalahan. Coba lagi.')
+    const failure: ScanApiFailure =
+      err instanceof Anthropic.APIConnectionTimeoutError
+        ? { kind: 'timeout' }
+        : err instanceof Anthropic.APIConnectionError
+          ? { kind: 'connection' }
+          : err instanceof Anthropic.APIError
+            ? { kind: 'api', status: err.status ?? null, type: err.type, message: err.apiMessage }
+            : { kind: 'other' }
+    // never the image or the key: the SDK's own message, status and type only
+    console.error('scan-nota', failure.kind, failure.status ?? '', failure.type ?? '', err instanceof Error ? err.message : String(err))
+    const replyFor = describeScanFailure(failure)
+    return fail(req, replyFor.status, replyFor.error, replyFor.message)
   }
 
   // refusal before reading content: nothing usable came back
