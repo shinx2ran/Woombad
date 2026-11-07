@@ -1,7 +1,8 @@
 /**
  * Edge Function "scan-nota" (SPEC 7.16): reads a photo of an expense record (a handwritten monthly list or a shop
- * receipt) with Claude and returns the lines as data for the app's review screen. Nothing is saved here: the app
- * shows the lines, the person checks them, and the app writes the expenses with the member's own rights.
+ * receipt) with Claude and returns the lines as data for the app's review screen. No expense is saved here: the app
+ * shows the lines, the person checks them, and the app writes the expenses with the member's own rights. What each
+ * billed reply cost is recorded in scan_usage (SPEC 7.17) with the project's secret key, after the reply is sent.
  *
  * Who may call it: a signed-in member of the organisation named in the request (checked with the caller's own token
  * against organization_members, so RLS decides). Deployed with verify_jwt = false: the platform's check only knows the
@@ -20,8 +21,12 @@ import {
   ScanOutputError,
   describeScanFailure,
   parseScanOutput,
+  scanCost,
+  scanUsageRow,
   type ScanApiFailure,
   type ScanMediaType,
+  type ScanOutcome,
+  type ScanResult,
 } from './scan.ts'
 
 const MODEL = 'claude-opus-5-5'
@@ -55,6 +60,39 @@ function publicKey(req: Request): string {
     /* not set: fall through */
   }
   return Deno.env.get('SUPABASE_ANON_KEY') ?? req.headers.get('apikey') ?? ''
+}
+
+/** the project's default secret key (new key model): bypasses RLS, server-side only, never logged or returned */
+function secretKey(): string | null {
+  try {
+    const keys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}') as Record<string, string>
+    return keys.default || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Append one scan_usage row (SPEC 7.17). A separate client that carries only the secret key: with the member's token
+ * PostgREST would run the insert as `authenticated`, which may not insert. Never fails the scan: a missing key or a
+ * refused insert is only logged (the "scan-nota ok" log line keeps the figures).
+ */
+async function recordUsage(url: string, row: ReturnType<typeof scanUsageRow>): Promise<void> {
+  const key = secretKey()
+  if (!key) {
+    console.warn('scan-nota usage not recorded: SUPABASE_SECRET_KEYS has no default key')
+    return
+  }
+  const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
+  const { error } = await admin.from('scan_usage').insert(row).abortSignal(AbortSignal.timeout(5_000))
+  if (error) console.error('scan-nota usage not recorded', error.code ?? '', error.message)
+}
+
+/** run after the reply is sent; the runtime keeps the worker alive until the job settles (Supabase: background tasks) */
+function inBackground(job: Promise<void>): void {
+  const safe = job.catch((e) => console.error('scan-nota usage not recorded', e instanceof Error ? e.message : String(e)))
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime
+  if (runtime) runtime.waitUntil(safe)
 }
 
 Deno.serve(async (req) => {
@@ -142,32 +180,55 @@ Deno.serve(async (req) => {
     return fail(req, replyFor.status, replyFor.error, replyFor.message)
   }
 
-  // refusal before reading content: nothing usable came back
-  if (response.stop_reason === 'refusal') return fail(req, 422, 'refused', 'Foto ini tidak dapat dibaca. Pastikan isinya catatan pengeluaran atau nota.')
-  if (response.stop_reason === 'max_tokens') return fail(req, 502, 'upstream', 'Catatan terlalu panjang untuk sekali scan. Foto per halaman.')
-
-  const textBlock = response.content.find((b) => b.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') return fail(req, 502, 'upstream', 'Hasil baca kosong. Coba lagi.')
-  try {
-    const result = parseScanOutput(JSON.parse(textBlock.text))
+  // every reply that came back was billed (whatever it says), so its cost is recorded before any return below
+  const cost = scanCost(response, MODEL)
+  const userId = userData.user.id
+  const record = (outcome: ScanOutcome, read: ScanResult | null = null) => {
     // what the scan cost, for the owner's records: counts only, never the photo or what was read
     console.log(
-      'scan-nota ok',
+      'scan-nota usage',
       JSON.stringify({
-        model: response.model,
-        input_tokens: response.usage.input_tokens,
-        output_tokens: response.usage.output_tokens,
-        kind: result.kind,
-        lines: result.items.length,
+        outcome,
+        model: cost.model,
+        input_tokens: cost.input_tokens,
+        output_tokens: cost.output_tokens,
+        cost_usd: cost.cost_usd,
+        fell_back: cost.fell_back,
+        kind: read?.kind ?? null,
+        lines: read?.items.length ?? null,
       }),
     )
-    return reply(req, 200, {
-      result,
-      model: response.model,
-      usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
-    })
+    inBackground(recordUsage(supabaseUrl, scanUsageRow(orgId, userId, cost, outcome, read)))
+  }
+
+  // refusal before reading content: nothing usable came back
+  if (response.stop_reason === 'refusal') {
+    record('refused')
+    return fail(req, 422, 'refused', 'Foto ini tidak dapat dibaca. Pastikan isinya catatan pengeluaran atau nota.')
+  }
+  if (response.stop_reason === 'max_tokens') {
+    record('max_tokens')
+    return fail(req, 502, 'upstream', 'Catatan terlalu panjang untuk sekali scan. Foto per halaman.')
+  }
+
+  const textBlock = response.content.find((b) => b.type === 'text')
+  if (!textBlock || textBlock.type !== 'text') {
+    record('invalid')
+    return fail(req, 502, 'upstream', 'Hasil baca kosong. Coba lagi.')
+  }
+  let result: ScanResult
+  try {
+    result = parseScanOutput(JSON.parse(textBlock.text))
   } catch (err) {
     console.error('scan-nota output', err instanceof ScanOutputError ? err.message : err)
+    record('invalid')
     return fail(req, 502, 'upstream', 'Hasil baca tidak lengkap. Coba lagi atau ambil ulang fotonya.')
   }
+  record('ok', result)
+  return reply(req, 200, {
+    result,
+    model: response.model,
+    usage: { input_tokens: cost.input_tokens, output_tokens: cost.output_tokens },
+    cost: { cost_usd: cost.cost_usd, fell_back: cost.fell_back },
+  })
 })

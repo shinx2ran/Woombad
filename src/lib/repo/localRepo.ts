@@ -21,7 +21,7 @@ import {
   formatCode,
 } from './types'
 import type { Lease, MemberRole, WaitlistEntry } from '../../types/db'
-import { PERIOD_TYPES, WAITLIST_STATUSES } from '../../types/db'
+import { PERIOD_TYPES, SCAN_OUTCOMES, WAITLIST_STATUSES } from '../../types/db'
 import { guardedNights, leaseOverlaps, overlappingLease } from '../../domain/occupancy'
 import { todayISO } from '../format'
 
@@ -67,6 +67,7 @@ const COLUMN_DEFAULTS: Partial<Record<TableName, Record<string, unknown>>> = {
   expenses: { lease_id: null, created_by: null },
   properties: { payment_info: null, logo_path: null },
   leases: { planned_checkout_date: null, vehicle_plate: null },
+  organizations: { claude_credit_monthly_usd: 100, claude_credit_renewal_day: 1 },
 }
 
 function withColumnDefaults(table: TableName, row: Record<string, unknown>): Record<string, unknown> {
@@ -191,6 +192,7 @@ export class LocalRepo implements Repo {
       }
     }
     if (table === 'waitlist') for (const row of created as unknown as WaitlistEntry[]) assertWaitlistRow(row)
+    if (table === 'scan_usage') for (const row of created) assertScanUsageRow(rec(row))
     ;(this.db[table] as Row<T>[]).push(...created)
     saveDb(this.db)
     return created.map((r) => ({ ...r }))
@@ -210,6 +212,9 @@ export class LocalRepo implements Repo {
       this.assertNoDoubleBooking(rows[idx] as unknown as Lease, next as unknown as Lease, this.db.leases)
     }
     if (table === 'waitlist') assertWaitlistRow(next as unknown as WaitlistEntry)
+    if (table === 'organizations') assertOrganizationRow(next)
+    // scan_usage is append-only (online: no UPDATE right even for the secret key)
+    if (table === 'scan_usage') throw new Error(UPDATE_DENIED_MESSAGE)
     if (hasUpdatedAt(table)) next.updated_at = new Date().toISOString()
     rows[idx] = next as unknown as Row<T>
     saveDb(this.db)
@@ -428,6 +433,30 @@ function assertWaitlistRow(row: WaitlistEntry): void {
   if (row.max_price !== null && (!Number.isFinite(row.max_price) || row.max_price < 0)) throw new Error('Harga maksimal tidak boleh negatif.')
   if (!(WAITLIST_STATUSES as readonly string[]).includes(row.status)) throw new Error('Status daftar tunggu tidak valid.')
   if (row.wanted_from !== null && !isISODate(row.wanted_from)) throw new Error('Tanggal mulai tidak valid.')
+}
+
+/** The CHECK constraints of the Kredit Claude settings on public.organizations (SPEC 7.17). */
+function assertOrganizationRow(row: Record<string, unknown>): void {
+  const credit = row.claude_credit_monthly_usd
+  if (credit !== undefined && credit !== null && !(typeof credit === 'number' && Number.isFinite(credit) && credit >= 0)) {
+    throw new Error('Kredit per bulan tidak boleh negatif.')
+  }
+  const day = row.claude_credit_renewal_day
+  if (day !== undefined && day !== null && !(Number.isInteger(day) && (day as number) >= 1 && (day as number) <= 31)) {
+    throw new Error('Tanggal pembaruan harus 1–31.')
+  }
+}
+
+/** The CHECK constraints of public.scan_usage (SPEC 7.17). */
+function assertScanUsageRow(row: Record<string, unknown>): void {
+  const count = (v: unknown) => Number.isInteger(v) && (v as number) >= 0
+  if (typeof row.model !== 'string' || !row.model.trim()) throw new Error('Model tidak valid.')
+  if (!count(row.input_tokens) || !count(row.output_tokens)) throw new Error('Jumlah token tidak valid.')
+  if (!(Number(row.cost_usd) >= 0)) throw new Error('Biaya tidak valid.')
+  if (!(SCAN_OUTCOMES as readonly unknown[]).includes(row.outcome)) throw new Error('Hasil scan tidak valid.')
+  const read = row.outcome === 'ok'
+  if (read !== (row.kind !== null && row.kind !== undefined) || read !== (row.lines !== null && row.lines !== undefined)) throw new Error('Hasil scan tidak valid.')
+  if (read && !count(row.lines)) throw new Error('Jumlah baris tidak valid.')
 }
 
 function isISODate(value: unknown): value is string {

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { SCAN_CATEGORIES, SCAN_SCHEMA, ScanOutputError, describeScanFailure, parseScanOutput } from './scan'
+import {
+  SCAN_CATEGORIES,
+  SCAN_SCHEMA,
+  ScanOutputError,
+  describeScanFailure,
+  parseScanCostReply,
+  parseScanOutput,
+  scanCost,
+  scanUsageRow,
+  type CostInput,
+} from './scan'
 
 // SPEC 7.16: what Claude must return for a scanned expense record, and the strict check of what came back.
 const line = (over: Record<string, unknown> = {}) => ({
@@ -121,5 +131,134 @@ describe('describeScanFailure (what the person scanning is told)', () => {
     expect(describeScanFailure({ kind: 'timeout' })).toMatchObject({ status: 504, error: 'timeout' })
     expect(describeScanFailure({ kind: 'connection' })).toMatchObject({ status: 502, error: 'upstream' })
     expect(describeScanFailure({ kind: 'other' })).toMatchObject({ status: 500, error: 'internal' })
+  })
+})
+
+// SPEC 7.17: what a scan cost. Prices per million tokens: Opus 5.5 $4 in / $20 out; Opus 5 and Opus 4.8 $5 / $25.
+describe('scanCost', () => {
+  const text = { type: 'text' }
+  const reply = (over: Partial<CostInput> = {}): CostInput => ({
+    model: 'claude-opus-5-5',
+    stop_reason: 'end_turn',
+    stop_details: null,
+    content: [text],
+    usage: { input_tokens: 3000, output_tokens: 4000 },
+    ...over,
+  })
+  const fallbackBlock = (category: string | null) => ({ type: 'fallback', trigger: { type: 'refusal', category } })
+
+  it('one attempt on Opus 5.5: 3,000 in × $4 + 4,000 out × $20 per million = US$0.092', () => {
+    const cost = scanCost(reply(), 'claude-opus-5-5')
+    expect(cost).toMatchObject({ cost_usd: 0.092, input_tokens: 3000, output_tokens: 4000, model: 'claude-opus-5-5', fell_back: false })
+    expect(cost.attempts).toEqual([
+      { kind: 'message', model: 'claude-opus-5-5', input_tokens: 3000, output_tokens: 4000, cache_write_tokens: 0, cache_read_tokens: 0, billed: true, priced: true, cost_usd: 0.092 },
+    ])
+  })
+
+  it('a dated model id is priced as its base model', () => {
+    expect(scanCost(reply({ model: 'claude-opus-5-5-20261101' }), 'claude-opus-5-5')).toMatchObject({ cost_usd: 0.092, model: 'claude-opus-5-5' })
+  })
+
+  it('a fallback adds up every attempt at its own price; the top-level usage is not added on top', () => {
+    const res = reply({
+      model: 'claude-opus-5',
+      content: [fallbackBlock('bio'), text],
+      usage: {
+        input_tokens: 2500,
+        output_tokens: 3000,
+        iterations: [
+          { type: 'message', model: null, input_tokens: 2500, output_tokens: 0 },
+          { type: 'fallback_message', model: 'claude-opus-5', input_tokens: 2500, output_tokens: 3000 },
+        ],
+      },
+    })
+    // bio declines before output are billed: 2,500 × $4 = $0.01; Opus 5 serves: 2,500 × $5 + 3,000 × $25 = $0.0875
+    const cost = scanCost(res, 'claude-opus-5-5')
+    expect(cost).toMatchObject({ cost_usd: 0.0975, input_tokens: 5000, output_tokens: 3000, model: 'claude-opus-5', fell_back: true })
+    expect(cost.attempts.map((a) => [a.model, a.declined, a.billed, a.cost_usd])).toEqual([
+      ['claude-opus-5-5', 'bio', true, 0.01],
+      ['claude-opus-5', undefined, true, 0.0875],
+    ])
+  })
+
+  it('a decline before any output in an unbilled category costs nothing', () => {
+    const res = reply({
+      model: 'claude-opus-5',
+      content: [fallbackBlock('cyber'), text],
+      usage: {
+        input_tokens: 2500,
+        output_tokens: 3000,
+        iterations: [
+          { type: 'message', model: null, input_tokens: 2500, output_tokens: 0 },
+          { type: 'fallback_message', model: 'claude-opus-5', input_tokens: 2500, output_tokens: 3000 },
+        ],
+      },
+    })
+    expect(scanCost(res, 'claude-opus-5-5')).toMatchObject({ cost_usd: 0.0875, input_tokens: 2500, output_tokens: 3000 })
+  })
+
+  it('a decline after some output is billed whatever its category', () => {
+    const res = reply({
+      model: 'claude-opus-5',
+      content: [fallbackBlock('cyber'), text],
+      usage: {
+        input_tokens: 2500,
+        output_tokens: 3000,
+        iterations: [
+          { type: 'message', model: null, input_tokens: 2000, output_tokens: 500 },
+          { type: 'fallback_message', model: 'claude-opus-5', input_tokens: 2500, output_tokens: 3000 },
+        ],
+      },
+    })
+    // 2,000 × $4 + 500 × $20 = $0.018, plus $0.0875
+    expect(scanCost(res, 'claude-opus-5-5').cost_usd).toBe(0.1055)
+  })
+
+  it('a refusal with no fallback: free in an unbilled category, billed in a billed one or without a known reason', () => {
+    const refused = (category: string | null | undefined) =>
+      scanCost(reply({ stop_reason: 'refusal', stop_details: category === undefined ? null : { category }, content: [], usage: { input_tokens: 2500, output_tokens: 0 } }), 'claude-opus-5-5')
+    expect(refused('cyber').cost_usd).toBe(0)
+    expect(refused('bio').cost_usd).toBe(0.01)
+    expect(refused('cyber').attempts[0]).toMatchObject({ declined: 'cyber', billed: false })
+  })
+
+  it('a model missing from the price table is priced at the dearest entry and marked', () => {
+    const cost = scanCost(reply({ model: 'claude-future-9', usage: { input_tokens: 1000, output_tokens: 1000 } }), 'claude-opus-5-5')
+    // 1,000 × $5 + 1,000 × $25 = $0.03
+    expect(cost.cost_usd).toBe(0.03)
+    expect(cost.attempts[0].priced).toBe(false)
+  })
+
+  it('cache writes and reads are priced at their own rates', () => {
+    const cost = scanCost(
+      reply({ usage: { input_tokens: 1000, output_tokens: 0, cache_creation_input_tokens: 1000, cache_read_input_tokens: 10000 } }),
+      'claude-opus-5-5',
+    )
+    // 1,000 × $4 + 1,000 × $5 (5-minute write) + 10,000 × $0.20 = $0.011
+    expect(cost).toMatchObject({ cost_usd: 0.011, input_tokens: 12000 })
+  })
+})
+
+describe('scanUsageRow and parseScanCostReply', () => {
+  const cost = scanCost(
+    { model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text' }], usage: { input_tokens: 3000, output_tokens: 4000 } },
+    'claude-opus-5-5',
+  )
+  it('a scan that was read records what it read; a failed one records only its cost', () => {
+    expect(scanUsageRow('o1', 'u1', cost, 'ok', { kind: 'expense_list', items: [line(), line()] as never })).toMatchObject({
+      org_id: 'o1',
+      user_id: 'u1',
+      model: 'claude-opus-5-5',
+      cost_usd: 0.092,
+      outcome: 'ok',
+      kind: 'expense_list',
+      lines: 2,
+    })
+    expect(scanUsageRow('o1', 'u1', cost, 'refused', null)).toMatchObject({ outcome: 'refused', kind: null, lines: null, cost_usd: 0.092 })
+  })
+  it('the app trusts only a well-formed cost', () => {
+    expect(parseScanCostReply({ cost_usd: 0.092, fell_back: false })).toEqual({ cost_usd: 0.092, fell_back: false })
+    expect(parseScanCostReply({ cost_usd: 0 })).toEqual({ cost_usd: 0, fell_back: false })
+    for (const bad of [undefined, null, 'x', { cost_usd: -1 }, { cost_usd: Number.NaN }, { cost_usd: '0.09' }]) expect(parseScanCostReply(bad)).toBeNull()
   })
 })

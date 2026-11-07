@@ -256,6 +256,16 @@ begin
     (select string_agg(r.relname || ':' || coalesce(substring(pg_get_constraintdef(c.oid) from 'SET NULL \(property_id\)$'), pg_get_constraintdef(c.oid)), ',' order by r.relname)
        from pg_constraint c join pg_class r on r.oid = c.conrelid
       where c.contype = 'f' and c.confrelid = 'public.properties'::regclass and r.relname in ('tenants', 'expenses')));
+  -- scan_usage (SPEC 7.17): read-only for authenticated (admin-only select policy), append-only for the secret key, not audited
+  perform zz.ok(p_grp, 'scan_usage: authenticated may SELECT only', has_table_privilege('authenticated', 'public.scan_usage', 'SELECT')
+    and not has_table_privilege('authenticated', 'public.scan_usage', 'INSERT,UPDATE,DELETE'));
+  perform zz.chk(p_grp, 'scan_usage: only an admin select policy', '^SELECT:[^,]*is_org_admin\(org_id\)[^,]*$',
+    (select string_agg(cmd || ':' || qual, ',') from pg_policies where schemaname = 'public' and tablename = 'scan_usage'));
+  perform zz.ok(p_grp, 'scan_usage: service_role may SELECT, INSERT and nothing else',
+    has_table_privilege('service_role', 'public.scan_usage', 'SELECT') and has_table_privilege('service_role', 'public.scan_usage', 'INSERT')
+    and not has_table_privilege('service_role', 'public.scan_usage', 'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'));
+  perform zz.ok(p_grp, 'scan_usage is not audited', not exists (
+    select 1 from pg_trigger where tgrelid = 'public.scan_usage'::regclass and not tgisinternal));
   -- audit triggers on all thirteen tables (waitlist since SPEC 7.7)
   perform zz.chk(p_grp, 'audit trigger on every audited table', '^13$', (select count(*)::text from pg_trigger where tgname = 'audit_row_change'));
 end $$;

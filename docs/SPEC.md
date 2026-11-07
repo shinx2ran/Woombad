@@ -169,7 +169,7 @@ import dari `'write-excel-file'` default/browser) atau **CSV** (`toCsv`, pemisah
 Grafik harus terbaca di HP (tinggi ~220px, legend ringkas, tooltip Rupiah).
 
 **settings** (`/pengaturan`): nama organisasi (admin), daftar anggota + undang dengan kode (lihat 6.1; ubah peran oleh
-pemilik, admin hanya menghapus staf), info mode (Demo vs Online) + tombol **Reset data demo**
+pemilik, admin hanya menghapus staf), **Kredit Claude** (pemilik/admin: biaya tiap Scan nota dan perkiraan sisa kredit, 7.17), info mode (Demo vs Online) + tombol **Reset data demo**
 (mode lokal), petunjuk install PWA (Android: "Tambahkan ke layar utama"; iPhone: Safari → Bagikan → Tambahkan ke
 Layar Utama), tombol keluar, versi aplikasi.
 
@@ -991,11 +991,11 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   kunci workspace; terjadi 7 Nov 2026) → 503 "Kunci API Claude harus milik sebuah workspace…", menyebut API key → 503,
   menyebut image → 400 "Foto ini tidak dapat diproses. Ambil ulang fotonya…", lainnya → 502 tanpa meminta foto ulang (hanya
   masalah foto yang meminta foto ulang); pesan pemilik menunjuk ke platform.claude.com. `stop_reason` refusal → 422,
-  max_tokens → 502. Scan berhasil mencatat ke log fungsi `scan-nota ok` + model, token masuk/keluar, jenis, jumlah baris
-  (tanpa foto atau isi), untuk menghitung biaya per scan. Dideploy dengan **`verify_jwt = false`**: proyek memakai
+  max_tokens → 502. Setiap balasan Claude yang ditagih (terbaca, ditolak, terpotong, atau hasil tak terpakai) dicatat
+  biayanya ke tabel `scan_usage` dan ke log fungsi (`scan-nota usage`; lihat 7.17). Dideploy dengan **`verify_jwt = false`**: proyek memakai
   kunci `sb_publishable_`, dan pemeriksaan JWT bawaan Edge Functions hanya mengenal kunci lama (dokumen Supabase); fungsi
   memeriksa sesi sendiri. Kunci publik dibaca dari `SUPABASE_PUBLISHABLE_KEYS.default`, lalu `SUPABASE_ANON_KEY`, lalu header
-  `apikey`. Tidak menulis apa pun ke database.
+  `apikey`. Tidak menulis pengeluaran apa pun ke database; hanya baris biaya `scan_usage` (7.17), dengan kunci rahasia proyek.
 - **Aplikasi** (`ScanNotaModal`, `scanNota.ts`): tombol **Scan nota** di Pengeluaran (header dan saat kosong), di form
   **Catat pengeluaran** (kotak di atas: menutup form, membuka scan), dan `/pengeluaran?scan=1`. Foto (kamera atau galeri)
   diperkecil ke JPEG ≤ 2000 px (cukup untuk tulisan tangan, biaya per scan terduga), dikirim, lalu **diperiksa sebelum
@@ -1026,7 +1026,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Mode Demo**: tidak ada server: setelah memilih foto, layar periksa menampilkan **contoh rekaan** (`DEMO_SCAN_RESULT`,
   bukan data pemilik) dengan keterangan jelas, supaya alurnya bisa dicoba; foto tidak dikirim.
 - **Biaya & privasi**: berbayar per scan di akun API Anthropic pemilik (perkiraan US$0,05–0,15 per foto; harga Opus 5.5
-  $4 / $20 per juta token masuk/keluar). Kredit API menjadi batas belanja: kredit bulanan paket Claude Max (US$100, organisasi
+  $4 / $20 per juta token masuk/keluar; biaya tiap scan terlihat di aplikasi, 7.17). Kredit API menjadi batas belanja: kredit bulanan paket Claude Max (US$100, organisasi
   Console ditautkan di claude.ai → Settings → Billing), atau kredit prabayar tanpa isi ulang otomatis; habis → permintaan
   ditolak, tidak ditagih. Kunci harus kunci **workspace** (kunci pribadi ditolak Anthropic dengan 400). Foto catatan
   pengeluaran dikirim ke Anthropic untuk dibaca.
@@ -1039,3 +1039,58 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   gagal, insert ditolak tanpa foto tertinggal, tanpa foto), `e2e/scan-nota.spec.ts` (juga dengan gerak; HP 360 px, Mode Demo:
   8 baris, cek total, salah baca → selisih, kos wajib, simpan 7, pindah ke Oktober, scan ulang → 7 "Mungkin sudah tercatat";
   dari form Catat; tanggal kosong ditolak). Fungsi diperiksa dengan `deno check`.
+
+### 7.17 Kredit Claude (biaya tiap scan dan sisa kredit)
+- **Permintaan pemilik** (7 Nov 2026): melihat langsung di Woombad berapa biaya tiap Scan nota dan saldo/batas kredit
+  dalam US$. Anthropic **tidak menyediakan saldo kredit lewat API**, dan Admin API tidak tersedia untuk akun individu
+  (organisasi Console pemilik), jadi **biaya tiap scan tepat** (token × harga) tetapi **sisa kredit adalah perkiraan**:
+  kredit bulanan dikurangi biaya scan yang tercatat sejak kredit diperbarui, dengan tautan ke saldo pasti di
+  `platform.claude.com/settings/billing`.
+- **Biaya per scan** (`scanCost`, `scan.ts`, diuji): `usage.iterations` bila ada (fallback server: setiap percobaan dengan
+  harga modelnya sendiri; top-level `usage` hanya percobaan terakhir, tidak pernah dijumlahkan dengan iterations), selain
+  itu top-level `usage`. Harga per juta token (`SCAN_PRICES`, dicek 7 Nov 2026): Opus 5.5 $4 masuk / $20 keluar (tulis cache
+  5 m $5, 1 j $8, baca $0,20); Opus 5 dan Opus 4.8 $5 / $25 (cache $6,25 / $10 / $0,50). Model di luar tabel dihargai paling
+  mahal (`priced: false`). Penolakan sebelum keluaran apa pun hanya ditagih untuk kategori `bio`, `frontier_llm`,
+  `reasoning_extraction`; yang sudah mengeluarkan teks selalu ditagih; kategori tak diketahui dianggap ditagih. Dibulatkan ke
+  6 desimal (mikro-US$). Token keluar termasuk thinking.
+- **Tabel `scan_usage`**: satu baris per balasan Claude yang ditagih: `org_id` (cascade), `user_id` (pengguna yang scan; null
+  bila akunnya dihapus), `created_at`, `model` (model yang menjawab), `input_tokens`, `output_tokens` (dijumlah semua
+  percobaan yang ditagih), `cost_usd numeric(12,6)`, `outcome` (`ok` / `refused` / `max_tokens` / `invalid`), `kind` dan
+  `lines` (hanya untuk `ok`, CHECK), `attempts jsonb` (rincian per percobaan). Indeks `(org_id, created_at desc)`.
+  **RLS**: hanya pemilik/admin yang boleh SELECT (`is_org_admin`); tidak ada policy insert/update/delete, `authenticated`
+  hanya punya SELECT, jadi anggota tidak bisa memalsukan atau menyembunyikan biaya. Fungsi menulis dengan kunci rahasia
+  (`SUPABASE_SECRET_KEYS.default`, klien terpisah tanpa token pengguna) yang hanya punya SELECT + INSERT (`revoke all`
+  dulu: default privilege proyek memberi `service_role` semua hak). Tidak masuk `audit_log` (tabelnya sendiri catatan
+  tambah-saja). Ikut `export_backup` dan cadangan JSON online (opsional seperti `audit_log`); tidak ikut impor Mode Demo atau
+  Pulihkan.
+- **Fungsi** (`index.ts`): setelah balasan apa pun dari Claude, sebelum setiap `return`: log `scan-nota usage` (outcome,
+  model, token, `cost_usd`, `fell_back`, jenis, baris; tanpa foto atau isi) dan `EdgeRuntime.waitUntil` insert `scan_usage`
+  (batas 5 dtk; gagal hanya dicatat di log, scan tetap berhasil). Balasan sukses menambah `cost: { cost_usd, fell_back }`.
+  Waktu habis atau galat jaringan tidak menghasilkan baris (tidak ada `usage`), walau Anthropic mungkin tetap menagih.
+- **Pengaturan** (kolom di `organizations`, bawaan untuk Claude Max): `claude_credit_monthly_usd numeric(10,2)` ≥ 0 (bawaan
+  100) dan `claude_credit_renewal_day smallint` 1–31 (bawaan 1; 29–31 = hari terakhir bulan yang lebih pendek). Hanya
+  pemilik/admin yang bisa mengubah (policy `org_update` yang sudah ada); setiap perubahan tercatat di Riwayat perubahan
+  ("Kredit Claude per bulan: US$100,00 → US$5,00").
+- **Perkiraan** (`src/domain/scanCredit.ts`, diuji): siklus = tanggal pembaruan terakhir ≤ hari ini (tanggal lokal) s/d
+  sebelum pembaruan berikutnya; scan masuk siklus menurut tanggal lokalnya; dijumlah dalam mikro-US$ (bulat). Sisa = kredit −
+  biaya siklus ini (bisa negatif), rata-rata per scan, "cukup untuk sekitar N scan lagi", dan siklus sebelumnya.
+- **Tampilan** (pemilik/admin saja, seperti Laporan dan Riwayat; staf tidak melihatnya):
+  - Layar periksa Scan nota: "Biaya scan ini: US$0,092" di kotak ringkasan (Mode Demo: "(contoh)"; fallback: "· termasuk
+    model cadangan"). Disembunyikan bila fungsi lama tidak mengirim biaya.
+  - **Pengaturan → Kredit Claude** (kartu setelah Anggota): "Sisa kredit (perkiraan)" (hijau; kuning < 10 %; merah ≤ 0 +
+    peringatan "Perkiraan kredit habis…"), batang sisa, "dari US$100,00 · diperbarui tiap tgl N (berikutnya …)", "Sejak …: N
+    scan · US$X · rata-rata …", siklus sebelumnya, tombol **Lihat saldo pasti di Claude Console** (tab baru), penjelasan bahwa
+    angkanya perkiraan, form **Pengaturan kredit** (Kredit per bulan US$ 0–9999, Tanggal pembaruan 1–31, Simpan), dan
+    **Scan terakhir** (dua siklus; jumlah baris + jenis atau Ditolak/Terlalu panjang/Hasil tidak terpakai, badge Model
+    cadangan, biaya, siapa, kapan, model; 20 per halaman). Tabel/kolom belum ada di server → pesan "database server belum
+    diperbarui" (PGRST205/PGRST204).
+- **Mode Demo**: tidak ada server dan tidak ada kredit terpakai; setiap scan contoh mencatat baris contoh US$0,08 (2.500
+  token masuk, 3.500 keluar) di data demo supaya alurnya bisa dicoba, dengan keterangan kuning di kartu.
+- **Uji**: `scan.test.ts` (biaya: satu percobaan, model bertanggal, fallback dijumlah per percobaan tanpa top-level, penolakan
+  gratis/ditagih per kategori, keluaran parsial, model tak dikenal, cache; baris `scan_usage`; `parseScanCostReply`),
+  `scanCredit.test.ts` (siklus: tgl 1, pertengahan bulan, tahun baru, 29–31; mikro-US$; ringkasan, bawaan, hari pembaruan,
+  minus, penjumlahan tepat), `scanNota.test.ts` (balasan dengan/ tanpa biaya), `supabase/tests/31-biaya-scan.sql` (70
+  pemeriksaan: struktur, hak kunci rahasia tambah-saja, anggota tidak bisa menulis, hanya pemilik/admin membaca, pengaturan
+  hanya pemilik/admin + CHECK, riwayat, akun dihapus, `export_backup`), `e2e/scan-nota.spec.ts` (biaya di layar periksa, kartu
+  Kredit Claude: sisa, siklus, daftar, tautan Console, ubah kredit & tanggal, tetap setelah muat ulang; staf tidak melihat
+  biaya maupun kartu).

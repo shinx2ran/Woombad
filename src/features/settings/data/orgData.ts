@@ -30,7 +30,7 @@ export function isMissingTableError(err: unknown): boolean {
 }
 
 /** Tables added after v0.4: missing on a server whose schema was not re-run yet. */
-const LATER_TABLES: ReadonlySet<OrgTableName> = new Set<OrgTableName>(['waitlist'])
+const LATER_TABLES: ReadonlySet<OrgTableName> = new Set<OrgTableName>(['waitlist', 'scan_usage'])
 
 function listOrdered<T extends OrgTableName>(repo: OrgRepo, table: T, column: string): Promise<Row<T>[]> {
   const rows = repo.list(table, { orderBy: { column, ascending: true } } as ListOptions<Row<T>>)
@@ -48,6 +48,12 @@ export async function fetchOrgBackup(repo: OrgRepo, now: Date = new Date()): Pro
   try {
     // audit_log has no created_at; it is optional in a backup, so a failure here does not block the rest
     tables.audit_log = await listOrdered(repo, 'audit_log', 'changed_at')
+  } catch {
+    /* left out */
+  }
+  try {
+    // what each scan cost (SPEC 7.17): owner/admin only and written by the server, so optional like audit_log
+    tables.scan_usage = await listOrdered(repo, 'scan_usage', 'created_at')
   } catch {
     /* left out */
   }

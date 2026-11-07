@@ -114,4 +114,79 @@ test.describe('Scan nota (SPEC 7.16)', () => {
     await sheet.getByRole('button', { name: 'Simpan 7 pengeluaran' }).click()
     await expect(page.getByText('7 pengeluaran dicatat dari scan nota.')).toBeVisible()
   })
+
+  // SPEC 7.17 Kredit Claude: what each scan cost, and an estimate of the credit left (Anthropic has no balance API)
+  test('the owner sees what each scan cost and the credit left, and sets the monthly credit and renewal day', async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(e.message))
+
+    await page.getByRole('button', { name: 'Scan nota' }).first().click()
+    const sheet = page.getByRole('dialog')
+    await sheet.getByTestId('scan-input').setInputFiles(PHOTO)
+    await expect(sheet.getByTestId('scan-row')).toHaveCount(8)
+    // 2,500 tokens in × $4 + 3,500 out × $20 per million = US$0.08, a labelled sample in Mode Demo
+    await expect(sheet.getByTestId('scan-cost')).toHaveText('Biaya scan ini: US$0,08 (contoh)')
+    // a second reading is a second cost, even when nothing is saved
+    await sheet.getByRole('button', { name: 'Foto ulang' }).click()
+    await sheet.getByTestId('scan-input').setInputFiles(PHOTO)
+    await expect(sheet.getByTestId('scan-row')).toHaveCount(8)
+    await sheet.getByRole('button', { name: 'Batal' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    await page.goto('/pengaturan')
+    await expect(page.getByRole('heading', { name: 'Kredit Claude' })).toBeVisible()
+    await expect(page.getByTestId('credit-demo-note')).toBeVisible()
+    // Claude Max by default: US$100 renewing on the 1st; 2 scans of US$0.08 since 1 Nov
+    const remaining = page.getByTestId('credit-remaining')
+    await expect(remaining).toContainText('US$99,84')
+    await expect(remaining).toContainText('dari US$100,00 · diperbarui tiap tgl 1 (berikutnya 1 Des 2026)')
+    await expect(page.getByTestId('credit-cycle')).toHaveText('Sejak 1 Nov 2026: 2 scan · US$0,16 · rata-rata US$0,08 per scan')
+    const scans = page.getByTestId('scan-usage-row')
+    await expect(scans).toHaveCount(2)
+    await expect(scans.first()).toContainText('8 baris · catatan tulisan tangan')
+    await expect(scans.first()).toContainText('US$0,08')
+    await expect(scans.first()).toContainText('demo@woombad.local · 7 Nov 2026, 10.00 · claude-opus-5-5')
+    const link = page.getByTestId('credit-console-link')
+    await expect(link).toHaveAttribute('href', 'https://platform.claude.com/settings/billing')
+    await expect(link).toHaveAttribute('target', '_blank')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+
+    // the owner's real renewal day and a smaller credit
+    const save = page.locator('form').filter({ hasText: 'Pengaturan kredit' }).getByRole('button', { name: 'Simpan' })
+    await expect(save).toBeDisabled()
+    await page.getByLabel('Tanggal pembaruan').fill('15')
+    await page.getByLabel('Kredit per bulan (US$)').fill('5')
+    await save.click()
+    await expect(page.getByText('Pengaturan kredit disimpan.')).toBeVisible()
+    await expect(remaining).toContainText('US$4,84')
+    await expect(remaining).toContainText('dari US$5,00 · diperbarui tiap tgl 15 (berikutnya 15 Nov 2026)')
+    await expect(page.getByTestId('credit-cycle')).toContainText('Sejak 15 Okt 2026: 2 scan')
+
+    // kept after a reload
+    await page.reload()
+    await expect(page.getByTestId('credit-remaining')).toContainText('US$4,84')
+    await expect(page.getByLabel('Tanggal pembaruan')).toHaveValue('15')
+    expect(errors).toEqual([])
+  })
+
+  test('staff see neither the cost of a scan nor the Kredit Claude card', async ({ page }) => {
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('woombad.local.db.v1')
+      if (!raw) return
+      const db = JSON.parse(raw)
+      for (const m of db.organization_members) if (m.user_id === 'local-user') m.role = 'staff'
+      localStorage.setItem('woombad.local.db.v1', JSON.stringify(db))
+    })
+    await page.reload()
+    await expect(page.getByRole('link', { name: 'Laporan' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Scan nota' }).first().click()
+    const sheet = page.getByRole('dialog')
+    await sheet.getByTestId('scan-input').setInputFiles(PHOTO)
+    await expect(sheet.getByTestId('scan-row')).toHaveCount(8)
+    await expect(sheet.getByTestId('scan-cost')).toHaveCount(0)
+    await sheet.getByRole('button', { name: 'Batal' }).click()
+    await page.goto('/pengaturan')
+    await expect(page.getByRole('heading', { name: 'Pengaturan', level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Kredit Claude' })).toHaveCount(0)
+  })
 })

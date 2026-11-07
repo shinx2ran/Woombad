@@ -84,6 +84,11 @@ begin
     org, zz.id('prop1'), 'Rina', 'daily'), true));
 end $$;
 
+-- one scan cost row (SPEC 7.17), written as the scan-nota Edge Function does (secret key), so 30-reapply has one to keep
+insert into public.scan_usage (org_id, user_id, model, input_tokens, output_tokens, cost_usd, outcome, kind, lines, attempts)
+values (zz.id('org1'), zz.id('staff'), 'claude-opus-5-5', 3000, 4000, 0.092, 'ok', 'expense_list', 8,
+        '[{"model": "claude-opus-5-5", "input_tokens": 3000, "output_tokens": 4000, "cost_usd": 0.092}]');
+
 -- storage objects
 insert into storage.objects (id, bucket_id, name) values
   ('c0000000-0000-0000-0000-000000000001', 'ktp', zz.id('org1') || '/budi.jpg'),

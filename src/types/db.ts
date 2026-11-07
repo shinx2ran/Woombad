@@ -88,6 +88,13 @@ export interface Organization {
   name: string
   created_by: string
   created_at: string
+  /**
+   * Kredit Claude (SPEC 7.17): the owner's monthly Claude API credit in US$ (Claude Max: 100) and the day of the month
+   * it renews (29-31 = the last day of a shorter month). Optional: absent on a server whose schema was not re-run yet,
+   * in older backups and in older demo data (read as 100 and 1).
+   */
+  claude_credit_monthly_usd?: number | null
+  claude_credit_renewal_day?: number | null
 }
 
 export interface OrganizationMember extends BaseRow {
@@ -127,6 +134,34 @@ export interface AuditLogEntry {
   changed_at: string
   old_data: Record<string, unknown> | null
   new_data: Record<string, unknown> | null
+}
+
+export const SCAN_OUTCOMES = ['ok', 'refused', 'max_tokens', 'invalid'] as const
+/** How a billed Scan nota reply ended: read, refused, cut off (too long), or output that could not be used. */
+export type ScanOutcome = (typeof SCAN_OUTCOMES)[number]
+
+/**
+ * What one Scan nota reply cost (SPEC 7.17). Written only by the scan-nota Edge Function with the project's secret key;
+ * owners/admins read it; no member can insert, change or delete a row online. In Mode Demo the app writes sample rows.
+ */
+export interface ScanUsage {
+  id: string
+  org_id: string
+  /** who scanned; null once that account is deleted */
+  user_id: string | null
+  created_at: string
+  /** the model that produced the reply */
+  model: string
+  /** summed over every attempt; output includes thinking */
+  input_tokens: number
+  output_tokens: number
+  /** US$, every billed attempt at its own model's price (Postgres numeric(12,6); may arrive as a string) */
+  cost_usd: number | string
+  outcome: ScanOutcome
+  kind: 'expense_list' | 'receipt' | 'unreadable' | null
+  lines: number | null
+  /** per-attempt figures (one element without a fallback) */
+  attempts: unknown[]
 }
 
 export interface Property extends TimestampedRow {
@@ -326,6 +361,7 @@ export interface Tables {
   expenses: Expense
   waitlist: WaitlistEntry
   audit_log: AuditLogEntry
+  scan_usage: ScanUsage
 }
 
 export type TableName = keyof Tables
@@ -361,6 +397,7 @@ export const TABLE_NAMES: TableName[] = [
   'expenses',
   'waitlist',
   'audit_log',
+  'scan_usage',
 ]
 
 // ---------- Indonesian labels (shared vocabulary) ----------

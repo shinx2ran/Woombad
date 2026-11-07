@@ -31,6 +31,7 @@ export const TABLE_LABEL: Record<TableName, string> = {
   expenses: 'Pengeluaran',
   waitlist: 'Daftar tunggu',
   audit_log: 'Riwayat perubahan',
+  scan_usage: 'Biaya scan',
 }
 
 /** Thrown with a message that can be shown to the user as is. */

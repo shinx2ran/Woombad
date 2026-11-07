@@ -4,7 +4,7 @@
  */
 import { differenceInCalendarDays } from 'date-fns'
 import { isCancelledWithoutStay } from '../../../domain/occupancy'
-import { formatCheckout, formatDate, formatDateTime, formatNumber, formatRupiah, parseDate } from '../../../lib/format'
+import { formatCheckout, formatDate, formatDateTime, formatNumber, formatRupiah, formatUsd, parseDate } from '../../../lib/format'
 import {
   ADDON_BILLING_LABEL,
   EXPENSE_CATEGORY_LABEL,
@@ -154,6 +154,9 @@ const COLUMN_LABEL: Record<string, string> = {
   logo_path: 'Logo kos',
   // SPEC 7.11
   vehicle_plate: 'No. kendaraan',
+  // SPEC 7.17
+  claude_credit_monthly_usd: 'Kredit Claude per bulan',
+  claude_credit_renewal_day: 'Tanggal pembaruan kredit',
   notes: 'Catatan',
 }
 
@@ -247,6 +250,11 @@ export function formatAuditValue(table: string, column: string, value: unknown, 
   if (MONEY_COLUMNS.has(column)) {
     const n = asMoney(value)
     if (n !== null) return formatRupiah(n)
+  }
+  // SPEC 7.17: the monthly Claude credit is in US$, not Rupiah
+  if (column === 'claude_credit_monthly_usd') {
+    const n = Number(value)
+    if (Number.isFinite(n)) return formatUsd(n)
   }
   if (typeof value === 'string') {
     if (column === 'status') return STATUS_LABELS[table]?.[value] ?? value
