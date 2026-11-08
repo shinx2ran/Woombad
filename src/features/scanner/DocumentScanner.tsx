@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
-import { BookUser, Camera, Check, FileQuestionMark, IdCard, Keyboard, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Upload } from 'lucide-react'
+import { BookUser, Camera, Check, FileQuestionMark, IdCard, Keyboard, RefreshCw, ScanLine, ShieldAlert, ShieldCheck, Smartphone, Sparkles, Upload, WifiOff } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Badge, Button, useToast } from '../../components/ui'
+import { formatUsd } from '../../lib/format'
 import { ID_TYPE_LABEL } from '../../types/db'
+import { demoClaudeScan, recognizeDocumentWithClaude } from './claudeScan'
+import { effectiveEngine, OFFLINE_ENGINE_NOTICE, SCAN_ENGINE_DESCRIPTION, SCAN_ENGINE_LABEL, SCAN_ENGINES, type ScanEngine } from './engine'
 import { hasOcrDataCached, recognizeDocument, ScanAbortedError, type DocumentScanResult, type OcrProgress } from './ocr'
 import { diffScanPrefill, displayPrefillValue, idTypeChange, lockIdentityRows, selectedPrefill, type IdTypeChange, type PrefillDiff } from './prefill'
 import { DOCUMENT_KIND_LABEL, type ScanPrefill, type ScanPrefillKey } from './types'
+import { useScanEngine } from './useScanEngine'
 
 type ScanState =
   | { status: 'idle' }
@@ -18,6 +22,11 @@ export const UNKNOWN_DOCUMENT_NOTICE = 'Dokumen tidak dikenali, coba foto lebih 
 export const PASSPORT_NUMBER_OK = 'Nomor paspor terverifikasi'
 export const PASSPORT_NUMBER_CHECK = 'Periksa nomor paspor'
 export const PASSPORT_NUMBER_MISMATCH = 'Digit kontrol tidak cocok, bandingkan dengan paspor.'
+/** SPEC 7.19: Mode Demo has no server, the review shows a made-up card */
+export const CLAUDE_DEMO_NOTICE = 'Mode Demo: contoh hasil Claude, foto tidak dibaca.'
+/** on a review row Claude marked as unsure */
+export const UNSURE_NOTICE = 'Claude kurang yakin, periksa.'
+const ENGINE_ICON: Record<ScanEngine, typeof Sparkles> = { claude: Sparkles, tesseract: Smartphone }
 
 /** 'KTP → Paspor (NIK 3273… akan dihapus)' */
 export function describeIdTypeChange(change: IdTypeChange): string {
@@ -36,13 +45,14 @@ export interface DocumentScannerProps {
   current?: Partial<ScanPrefill>
 }
 
-function ConfidenceBadge({ kind, confidence, ocr }: { kind: DocumentScanResult['kind']; confidence: number; ocr: number }) {
+function ConfidenceBadge({ kind, confidence, ocr, engine }: { kind: DocumentScanResult['kind']; confidence: number; ocr: number | null; engine: ScanEngine }) {
   const pct = Math.round(confidence * 100)
   const tone = confidence >= 0.8 ? 'success' : confidence >= 0.4 ? 'warning' : 'danger'
   const label = confidence >= 0.8 ? 'Keyakinan tinggi' : confidence >= 0.4 ? 'Keyakinan sedang' : 'Keyakinan rendah'
-  const detail = kind === 'passport' ? `${pct}% digit kontrol MRZ cocok` : `${pct}% data utama terbaca`
+  // Claude reports which fields it was unsure of, not MRZ check digits
+  const detail = engine === 'claude' ? `${pct}% data utama terbaca dengan yakin` : kind === 'passport' ? `${pct}% digit kontrol MRZ cocok` : `${pct}% data utama terbaca`
   return (
-    <span title={`${detail}; akurasi teks OCR ${ocr}%`}>
+    <span title={ocr === null ? detail : `${detail}; akurasi teks OCR ${ocr}%`}>
       <Badge tone={tone}>
         {label} · {pct}%
       </Badge>
@@ -62,14 +72,22 @@ function KindBadge({ kind }: { kind: DocumentScanResult['kind'] }) {
 
 /**
  * Shared "Scan KTP / Paspor" panel (SPEC 5.3). Picks a photo (camera on phones, drag & drop on desktop),
- * runs OCR with a progress bar, auto-detects KTP vs passport and shows the detected fields as a checklist
- * so the user decides which values to apply. Never overwrites typed data silently: fields that already hold
- * a different value start unchecked. The diff is derived from the *latest* `current` values (also text
- * typed while OCR was running), while the user's manual check/uncheck choices are kept separately.
+ * reads it with Claude (the scan-ktp function) or on the device (tesseract.js) per the organisation's default and a
+ * per-scan switch (SPEC 7.19; offline always on the device, except Mode Demo's Claude sample, which needs no network),
+ * auto-detects KTP vs passport and shows the detected
+ * fields as a checklist so the user decides which values to apply. Never overwrites typed data silently: fields that
+ * already hold a different value start unchecked. The diff is derived from the *latest* `current` values (also text
+ * typed while the scan was running), while the user's manual check/uncheck choices are kept separately.
  */
 export function DocumentScanner({ onApply, onCancel, autoStart = false, current }: DocumentScannerProps) {
   const toast = useToast()
+  const ctx = useScanEngine()
   const [state, setState] = useState<ScanState>({ status: 'idle' })
+  /** the reader picked for this panel; null = the organisation's default */
+  const [chosenEngine, setChosenEngine] = useState<ScanEngine | null>(null)
+  const chosen = chosenEngine ?? ctx.defaultEngine
+  // Mode Demo's Claude is a sample that needs no network (the on-device reader would need its download)
+  const { engine, fallback } = effectiveEngine(chosen, ctx.online || ctx.isLocalMode)
   const [dragging, setDragging] = useState(false)
   /** manual checkbox overrides, keyed by field; anything not here follows the diff default */
   const [overrides, setOverrides] = useState<Partial<Record<ScanPrefillKey, boolean>>>({})
@@ -80,7 +98,7 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
   const previewRef = useRef<string | null>(null)
   /** the running scan; aborted on unmount or when a new scan starts so the OCR worker stops */
   const scanRef = useRef<AbortController | null>(null)
-  const firstRun = !hasOcrDataCached()
+  const firstRun = engine === 'tesseract' && !hasOcrDataCached()
 
   // On unmount: stop a running OCR (worker + downloads) and release the preview object URL.
   useEffect(
@@ -110,16 +128,19 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
     setOverrides({})
     setTypeOverride(undefined)
     setState({ status: 'running', progress: { phase: 'preprocess', percent: 0, status: 'Memulai…', downloading: false } })
+    const onProgress = (progress: OcrProgress) => {
+      if (!controller.signal.aborted) setState({ status: 'running', progress })
+    }
     try {
-      const result = await recognizeDocument(
-        file,
-        (progress) => {
-          if (!controller.signal.aborted) setState({ status: 'running', progress })
-        },
-        controller.signal,
-      )
-      // Closed (unmounted) or superseded while OCR ran: no preview URL, no state update.
+      const result =
+        engine === 'claude'
+          ? ctx.isLocalMode
+            ? await demoClaudeScan(file, onProgress, controller.signal)
+            : await recognizeDocumentWithClaude(file, ctx.orgId, onProgress, controller.signal)
+          : await recognizeDocument(file, onProgress, controller.signal)
+      // Closed (unmounted) or superseded while the scan ran: no preview URL, no state update.
       if (controller.signal.aborted) return
+      if (result.engine === 'claude') void ctx.recordClaudeScan(result)
       const previewUrl = URL.createObjectURL(result.image)
       previewRef.current = previewUrl
       setState({ status: 'review', result, previewUrl })
@@ -217,6 +238,41 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
               Di komputer, seret gambar ke sini.
             </p>
           </div>
+          <div className="w-full space-y-1.5 text-left">
+            <div role="radiogroup" aria-label="Pembaca dokumen" className="grid grid-cols-2 rounded-lg border border-slate-200 bg-white p-1 text-sm" data-testid="scanner-engine">
+              {SCAN_ENGINES.map((e) => {
+                const Icon = ENGINE_ICON[e]
+                const selected = e === chosen
+                return (
+                  <button
+                    key={e}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setChosenEngine(e)}
+                    className={clsx(
+                      'inline-flex min-h-10 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 font-medium transition-colors',
+                      selected ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-slate-100',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" aria-hidden />
+                    {SCAN_ENGINE_LABEL[e]}
+                  </button>
+                )
+              })}
+            </div>
+            {fallback === 'offline' ? (
+              <p className="flex items-start gap-1.5 text-xs text-amber-700" data-testid="scanner-engine-note">
+                <WifiOff className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                {OFFLINE_ENGINE_NOTICE}
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500" data-testid="scanner-engine-note">
+                {SCAN_ENGINE_DESCRIPTION[engine]}
+                {engine === 'claude' && ctx.isLocalMode && ' Mode Demo: contoh hasil, foto tidak dikirim.'}
+              </p>
+            )}
+          </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button type="button" icon={<Camera className="h-4 w-4" />} onClick={() => cameraRef.current?.click()}>
               Ambil foto
@@ -248,7 +304,7 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
           </div>
           <progress className="sr-only" max={100} value={Math.round(state.progress.percent)} aria-label="Progres scan dokumen" />
           {state.progress.downloading && <p className="text-xs text-amber-700">{DOWNLOAD_NOTICE} Tunggu sebentar…</p>}
-          <p className="text-xs text-slate-500">Membaca teks bisa memakan waktu 10–30 detik di HP.</p>
+          <p className="text-xs text-slate-500">{engine === 'claude' ? 'Claude biasanya selesai dalam 5–20 detik.' : 'Membaca teks bisa memakan waktu 10–30 detik di HP.'}</p>
         </div>
       )}
 
@@ -260,7 +316,13 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
               <p className="font-medium text-slate-900">Hasil scan</p>
               <div className="flex flex-wrap items-center gap-1.5">
                 <KindBadge kind={state.result.kind} />
-                {state.result.kind !== 'unknown' && <ConfidenceBadge kind={state.result.kind} confidence={state.result.confidence} ocr={state.result.ocrConfidence} />}
+                <Badge tone={state.result.engine === 'claude' ? 'info' : 'neutral'} title={SCAN_ENGINE_DESCRIPTION[state.result.engine]}>
+                  {state.result.engine === 'claude' ? <Sparkles className="mr-1 h-3 w-3" aria-hidden /> : <Smartphone className="mr-1 h-3 w-3" aria-hidden />}
+                  {state.result.engine === 'claude' ? 'Dibaca Claude' : 'Dibaca di HP'}
+                </Badge>
+                {state.result.kind !== 'unknown' && (
+                  <ConfidenceBadge kind={state.result.kind} confidence={state.result.confidence} ocr={state.result.ocrConfidence} engine={state.result.engine} />
+                )}
                 {state.result.passport &&
                   (state.result.passport.checks.number ? (
                     <Badge tone="success">
@@ -275,16 +337,32 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
                   ))}
               </div>
               {state.result.kind !== 'unknown' && (
-                <p className="text-xs text-slate-500">Centang data yang ingin dimasukkan ke formulir, lalu tekan Terapkan. Periksa ejaan, OCR bisa salah baca.</p>
+                <p className="text-xs text-slate-500">
+                  Centang data yang ingin dimasukkan ke formulir, lalu tekan Terapkan.{' '}
+                  {state.result.engine === 'claude' ? 'Periksa ejaan dan angkanya sebelum disimpan.' : 'Periksa ejaan, OCR bisa salah baca.'}
+                </p>
               )}
             </div>
           </div>
+
+          {state.result.engine === 'claude' && ctx.isLocalMode && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" data-testid="scanner-demo-note">
+              {CLAUDE_DEMO_NOTICE}
+            </p>
+          )}
+          {state.result.notes && (
+            <p className="rounded-lg bg-white px-3 py-2 text-xs text-slate-700" data-testid="scanner-notes">
+              <span className="font-medium">Catatan Claude:</span> {state.result.notes}
+            </p>
+          )}
 
           {state.result.kind === 'unknown' ? (
             <div className="rounded-lg bg-white p-3 text-slate-700">
               <p className="font-medium text-slate-900">{UNKNOWN_DOCUMENT_NOTICE}</p>
               <p className="mt-1 text-xs text-slate-500">
-                Tidak ditemukan NIK maupun kode MRZ paspor. Pastikan seluruh dokumen terfoto tanpa pantulan, atau isi data secara manual.
+                {state.result.engine === 'claude'
+                  ? 'Claude tidak mengenali KTP maupun paspor di foto ini. Pastikan seluruh dokumen terfoto tanpa pantulan, atau isi data secara manual.'
+                  : 'Tidak ditemukan NIK maupun kode MRZ paspor. Pastikan seluruh dokumen terfoto tanpa pantulan, atau isi data secara manual.'}
               </p>
             </div>
           ) : diff.length === 0 && !typeChange ? (
@@ -330,6 +408,7 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
                       {d.key === 'id_number' && state.result.passport && !state.result.passport.checks.number && (
                         <span className="block text-xs text-amber-700">{PASSPORT_NUMBER_MISMATCH}</span>
                       )}
+                      {state.result.unclear.includes(d.key) && <span className="block text-xs text-amber-700">{UNSURE_NOTICE}</span>}
                       {d.locked ? (
                         <span className="block text-xs text-slate-500">Centang &quot;Jenis identitas&quot; untuk memakai data ini.</span>
                       ) : (
@@ -346,9 +425,16 @@ export function DocumentScanner({ onApply, onCancel, autoStart = false, current 
           )}
 
           <p className="text-xs text-slate-500">{PHONE_NOTICE}</p>
+          {state.result.cost && ctx.showsCost && (
+            <p className="text-xs text-slate-500" data-testid="scan-cost">
+              Biaya scan ini: {formatUsd(state.result.cost.cost_usd, 4)}
+              {ctx.isLocalMode && ' (contoh)'}
+              {state.result.cost.fell_back && ' · termasuk model cadangan'}
+            </p>
+          )}
 
           <details className="text-xs text-slate-600">
-            <summary className="cursor-pointer select-none font-medium">Lihat teks hasil OCR</summary>
+            <summary className="cursor-pointer select-none font-medium">{state.result.engine === 'claude' ? 'Lihat data yang terbaca' : 'Lihat teks hasil OCR'}</summary>
             <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-2 text-[11px] text-slate-100">{state.result.lines.join('\n') || '(kosong)'}</pre>
           </details>
 

@@ -296,7 +296,7 @@ export function TenantFormModal({
                 value={values.id_number}
                 onChange={(e) => set('id_number', e.target.value)}
                 error={errors.id_number}
-                hint={isPassport ? 'Tertera di halaman data paspor; hasil scan MRZ diverifikasi digit kontrol.' : 'SIM, KITAS, kartu pelajar, dsb.'}
+                hint={isPassport ? 'Tertera di halaman data paspor; periksa nomornya setelah scan.' : 'SIM, KITAS, kartu pelajar, dsb.'}
                 placeholder={isPassport ? 'Mis. N1234567' : 'Nomor dokumen'}
               />
             )}

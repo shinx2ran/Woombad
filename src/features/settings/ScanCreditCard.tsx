@@ -21,6 +21,19 @@ const KIND_LABEL: Record<NonNullable<ScanUsage['kind']>, string> = {
   expense_list: 'catatan tulisan tangan',
   receipt: 'nota toko',
   unreadable: 'tidak terbaca',
+  // Scan KTP (SPEC 7.19): "lines" are the fields read
+  ktp: 'KTP',
+  passport: 'paspor',
+  unknown: 'dokumen tidak dikenali',
+}
+/** what `lines` counts for each kind */
+const KIND_UNIT: Record<NonNullable<ScanUsage['kind']>, string> = {
+  expense_list: 'baris',
+  receipt: 'baris',
+  unreadable: 'baris',
+  ktp: 'data',
+  passport: 'data',
+  unknown: 'data',
 }
 const OUTCOME_LABEL: Record<Exclude<ScanOutcome, 'ok'>, string> = {
   refused: 'Ditolak',
@@ -94,7 +107,7 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
     <Card className="lg:col-span-2">
       <CardHeader
         title="Kredit Claude"
-        subtitle="Biaya tiap Scan nota dan perkiraan sisa kredit API"
+        subtitle="Biaya tiap Scan nota dan Scan KTP, dan perkiraan sisa kredit API"
         action={
           isLocalMode ? (
             <Sparkles className="h-5 w-5 text-slate-400" />
@@ -227,7 +240,7 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
                         <span className="min-w-0 text-sm text-slate-800">
                           {row.outcome === 'ok' ? (
                             <>
-                              {row.lines ?? 0} baris · {row.kind ? KIND_LABEL[row.kind] : '–'}
+                              {row.lines ?? 0} {row.kind ? KIND_UNIT[row.kind] : 'baris'} · {row.kind ? KIND_LABEL[row.kind] : '–'}
                             </>
                           ) : (
                             <Badge tone="warning">{OUTCOME_LABEL[row.outcome]}</Badge>

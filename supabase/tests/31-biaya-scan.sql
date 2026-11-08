@@ -209,4 +209,32 @@ begin
     (ours -> 'tables' -> 'organizations' -> 0 ->> 'claude_credit_monthly_usd') || '|' || (ours -> 'tables' -> 'organizations' -> 0 ->> 'claude_credit_renewal_day'));
 end $$;
 
+-- H. Scan KTP (SPEC 7.19): identity documents in the usage log (the widened kind check), and the reader setting
+do $$
+declare
+  org uuid := zz.id('org');
+  s uuid := zz.id('staff');
+  row_sql text := 'insert into public.scan_usage (org_id, user_id, model, input_tokens, output_tokens, cost_usd, outcome, kind, lines) values (%L, %L, %L, 3000, 900, 0.03, %L, %L, %s)';
+begin
+  perform zz.eq('H-ktp', 'a KTP scan is recorded with the number of fields read', 'ok:1', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'ktp', 14), true));
+  perform zz.eq('H-ktp', 'a passport too', 'ok:1', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'passport', 7), true));
+  perform zz.eq('H-ktp', 'and a photo of something else (no fields)', 'ok:1', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'unknown', 0), true));
+  perform zz.chk('H-ktp', 'the kind list is still closed', '^err:23514', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'sim', 1)));
+  perform zz.eq('H-ktp', 'exactly one kind check, under its own name', 'scan_usage_kind_check',
+    (select string_agg(conname, ',') from pg_constraint where conrelid = 'public.scan_usage'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%expense_list%'));
+  perform zz.eq('H-ktp', 'the owner sees them in the list', 'val:3', zz.val(zz.id('owner'), format('select count(*) from public.scan_usage where org_id = %L and kind in (''ktp'', ''passport'', ''unknown'')', org)));
+
+  perform zz.eq('H-engine', 'the reader defaults to Claude', 'claude', (select ktp_scan_engine from public.organizations where id = org));
+  perform zz.eq('H-engine', 'the owner picks the on-device reader', 'ok:1', zz.att(zz.id('owner'), format('update public.organizations set ktp_scan_engine = %L where id = %L', 'tesseract', org), true));
+  perform zz.eq('H-engine', '... stored', 'tesseract', (select ktp_scan_engine from public.organizations where id = org));
+  perform zz.eq('H-engine', 'staff cannot change it (org_update: no row)', 'ok:0', zz.att(s, format('update public.organizations set ktp_scan_engine = %L where id = %L', 'claude', org)));
+  perform zz.eq('H-engine', 'staff read it (every member: the scanner follows it)', 'val:tesseract', zz.val(s, format('select ktp_scan_engine from public.organizations where id = %L', org)));
+  perform zz.eq('H-engine', 'org2''s owner cannot change ours', 'ok:0', zz.att(zz.id('o2owner'), format('update public.organizations set ktp_scan_engine = %L where id = %L', 'claude', org)));
+  perform zz.chk('H-engine', 'an unknown reader is refused', '^err:23514', zz.att(zz.id('owner'), format('update public.organizations set ktp_scan_engine = %L where id = %L', 'gemini', org)));
+  perform zz.chk('H-engine', 'no reader (null) is refused', '^err:23502', zz.att(zz.id('owner'), format('update public.organizations set ktp_scan_engine = null where id = %L', org)));
+  perform zz.eq('H-engine', 'the pick is in the change history, by the owner', 'owner:tesseract',
+    (select k.k || ':' || (a.new_data ->> 'ktp_scan_engine') from public.audit_log a join zz.ids k on k.v = a.changed_by
+      where a.table_name = 'organizations' and a.row_id = org and a.action = 'update' order by a.changed_at desc limit 1));
+end $$;
+
 drop function zz.bs_svc(text, boolean), zz.bs_row(uuid, uuid, text, numeric, text);

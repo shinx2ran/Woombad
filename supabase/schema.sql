@@ -35,7 +35,10 @@ create table if not exists public.organizations (
   created_at timestamptz not null default now(),
   -- Biaya scan (SPEC 7.17): the owner's monthly Claude API credit in US$ and the day of the month it renews
   claude_credit_monthly_usd numeric(10, 2) not null default 100 check (claude_credit_monthly_usd >= 0),
-  claude_credit_renewal_day smallint not null default 1 check (claude_credit_renewal_day between 1 and 31)
+  claude_credit_renewal_day smallint not null default 1 check (claude_credit_renewal_day between 1 and 31),
+  -- Scan KTP (SPEC 7.19): which reader the document scanner uses: 'claude' (the scan-ktp Edge Function) or 'tesseract'
+  -- (on the device, the photo never leaves the phone). Owner/admin only, like the credit settings.
+  ktp_scan_engine text not null default 'claude' check (ktp_scan_engine in ('claude', 'tesseract'))
 );
 -- Biaya scan (SPEC 7.17, added after 7.16; the create above is a no-op on an existing installation): the monthly Claude API
 -- credit (Claude Max plan: US$100, no rollover) and its renewal day (29-31 = the last day of a shorter month), for the
@@ -46,6 +49,8 @@ alter table public.organizations add column if not exists claude_credit_monthly_
   check (claude_credit_monthly_usd >= 0);
 alter table public.organizations add column if not exists claude_credit_renewal_day smallint not null default 1
   check (claude_credit_renewal_day between 1 and 31);
+alter table public.organizations add column if not exists ktp_scan_engine text not null default 'claude'
+  check (ktp_scan_engine in ('claude', 'tesseract'));
 
 create table if not exists public.organization_members (
   id uuid primary key default gen_random_uuid(),
@@ -1059,7 +1064,8 @@ create table if not exists public.scan_usage (
   cost_usd numeric(12, 6) not null check (cost_usd >= 0),
   -- ok = read (kind/lines say what); refused; max_tokens = cut off; invalid = output not usable
   outcome text not null check (outcome in ('ok', 'refused', 'max_tokens', 'invalid')),
-  kind text check (kind is null or kind in ('expense_list', 'receipt', 'unreadable')),
+  -- what was read: an expense record (Scan nota) or an identity document (Scan KTP, 7.19)
+  kind text constraint scan_usage_kind_check check (kind is null or kind in ('expense_list', 'receipt', 'unreadable', 'ktp', 'passport', 'unknown')),
   lines int check (lines is null or lines >= 0),
   -- [{ "model", "input_tokens", "output_tokens", "cost_usd" }, ...] in order; one element without a fallback
   attempts jsonb not null default '[]'::jsonb check (jsonb_typeof(attempts) = 'array'),
@@ -1067,6 +1073,23 @@ create table if not exists public.scan_usage (
   check (case when outcome = 'ok' then kind is not null and lines is not null else kind is null and lines is null end)
 );
 create index if not exists scan_usage_org_idx on public.scan_usage (org_id, created_at desc);
+-- Scan KTP (SPEC 7.19, added after 7.17): identity documents join the kinds. On an installation that already has the
+-- table, the check carries the old list under the same name (or Postgres's generated one), so it is replaced in place.
+do $$
+declare c record;
+begin
+  for c in
+    select con.conname from pg_constraint con
+     where con.conrelid = 'public.scan_usage'::regclass and con.contype = 'c'
+       and pg_get_constraintdef(con.oid) like '%expense_list%' and pg_get_constraintdef(con.oid) not like '%passport%'
+  loop
+    execute format('alter table public.scan_usage drop constraint %I', c.conname);
+  end loop;
+  if not exists (select 1 from pg_constraint where conrelid = 'public.scan_usage'::regclass and conname = 'scan_usage_kind_check') then
+    alter table public.scan_usage add constraint scan_usage_kind_check
+      check (kind is null or kind in ('expense_list', 'receipt', 'unreadable', 'ktp', 'passport', 'unknown'));
+  end if;
+end $$;
 
 -- ---------- storage cleanup ----------
 -- Supabase refuses direct deletes from storage.objects; the app deletes the row first, then the file

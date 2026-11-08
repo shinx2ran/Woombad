@@ -17,7 +17,8 @@ import { formatRupiah } from '../../lib/format'
 import type { Invoice, Lease, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
 import { PERIOD_UNIT_LABEL } from '../../types/db'
 import { ROOM_AVAILABILITY_LABEL, roomAvailability } from '../leases/leaseUtils'
-import { EMPTY_TENANT_FORM, formToTenantPayload, validateTenantForm } from '../tenants/tenantUtils'
+import type { ScanPrefill } from '../scanner/types'
+import { EMPTY_TENANT_FORM, applyScanPrefill, formToTenantPayload, validateTenantForm } from '../tenants/tenantUtils'
 
 export interface QuickCheckInInput {
   room: Room
@@ -156,6 +157,95 @@ export function tenantsNamed(tenants: Tenant[], name: string): Tenant[] {
 }
 
 /**
+ * One document's values from several scans (SPEC 7.19: "Scan ulang" in check-in cepat): what the latest scan applied
+ * wins, what it left unticked stays from the earlier one. When the latest scan switched the identity type (KTP ->
+ * Paspor or back), the other type's number goes, so a dropped NIK never comes back with a passport.
+ */
+export function mergeScanPrefill(previous: ScanPrefill | null, next: ScanPrefill): ScanPrefill {
+  if (!previous) return next
+  const merged: ScanPrefill = { ...previous, ...next }
+  if (next.id_type !== previous.id_type) {
+    if (next.id_type === 'ktp') {
+      if (next.id_number === undefined) delete merged.id_number
+      if (next.nationality === undefined) delete merged.nationality
+    } else if (next.nik === undefined) {
+      delete merged.nik
+    }
+  }
+  return merged
+}
+
+/** tenant columns a scan may fill on an existing tenant, besides the identity ones */
+const SCAN_FILL_COLUMNS = ['gender', 'birth_place', 'birth_date', 'address', 'religion', 'marital_status', 'occupation'] as const
+export type ScanFillColumn = (typeof SCAN_FILL_COLUMNS)[number] | 'id_type' | 'nik' | 'id_number' | 'nationality'
+
+/**
+ * What a scan adds to an existing tenant the stay is booked for (SPEC 7.19): only the columns that are still empty on
+ * his record; nothing he has is changed (the name never). The identity (type, NIK or passport number) is set only when
+ * he has no NIK and no document number yet; a passport keeps the nationality on file when the scan read none, a KTP has
+ * no nationality (as the tenant form stores it). Values are normalised as the tenant form saves them.
+ */
+export function scanFillsTenant(tenant: Tenant, prefill: ScanPrefill): Partial<Pick<Tenant, ScanFillColumn>> {
+  const scanned = formToTenantPayload(applyScanPrefill(EMPTY_TENANT_FORM, prefill))
+  const patch: Partial<Pick<Tenant, ScanFillColumn>> = {}
+  for (const column of SCAN_FILL_COLUMNS) {
+    const value = scanned[column]
+    if ((tenant[column] === null || tenant[column] === '') && value !== null && value !== undefined) Object.assign(patch, { [column]: value })
+  }
+  if (!tenant.nik && !tenant.id_number && (scanned.nik || scanned.id_number)) {
+    patch.id_type = scanned.id_type
+    patch.nik = scanned.nik ?? null
+    patch.id_number = scanned.id_number ?? null
+    patch.nationality = scanned.id_type === 'passport' ? (scanned.nationality ?? tenant.nationality) : null
+  }
+  return patch
+}
+
+const normalNumber = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, '').toUpperCase()
+
+/**
+ * The document number a scan carries, as the tenant row stores it: the NIK of a KTP, or the passport (other document)
+ * number upper-cased without spaces; null when the scan has none (unreadable, or unticked in the review).
+ */
+export function scannedDocument(prefill: ScanPrefill | null): { column: 'nik' | 'id_number'; value: string } | null {
+  if (!prefill) return null
+  const column = prefill.id_type === 'ktp' ? 'nik' : 'id_number'
+  const value = normalNumber(prefill[column])
+  return value ? { column, value } : null
+}
+
+/** The tenant who already carries the scanned document's number (SPEC 7.19: NIK or passport number), or null. */
+export function tenantByDocument(tenants: Tenant[], prefill: ScanPrefill | null): Tenant | null {
+  const doc = scannedDocument(prefill)
+  return doc ? tenants.find((t) => normalNumber(t[doc.column]) === doc.value) ?? null : null
+}
+
+/**
+ * The same-name tenants a scanned card can still be (SPEC 7.19): one whose number of the same kind (NIK, or passport
+ * number) is known and differs from the scanned one is another person and is not offered; one without it, or with the
+ * same, is. Without a scanned number: everyone with that name.
+ */
+export function sameNameCandidates(tenants: Tenant[], name: string, prefill: ScanPrefill | null): Tenant[] {
+  const named = tenantsNamed(tenants, name)
+  const doc = scannedDocument(prefill)
+  return doc ? named.filter((t) => !normalNumber(t[doc.column]) || normalNumber(t[doc.column]) === doc.value) : named
+}
+
+/**
+ * Who the stay in check-in cepat goes to (SPEC 7.4, 7.19). Without a scan: the tenant picked among the same-name ones,
+ * or the only one (resolveTenantChoice). With a scan, nobody is picked by name alone, so the card's data never lands on
+ * the wrong record: the tenant who carries the scanned number, else a same-name tenant picked by hand, else a new
+ * tenant. `newChoice` (the "Orang lain" / "Bukan dia?" choice) always means a new tenant.
+ */
+export function resolveScanTenant(input: { sameName: Tenant[]; byDocument: Tenant | null; choice: string; newChoice: string; scanned: ScanPrefill | null }): string | null {
+  const { sameName, byDocument, choice, newChoice, scanned } = input
+  if (choice === newChoice) return null
+  if (!scanned) return resolveTenantChoice(sameName, choice, newChoice)
+  if (byDocument) return byDocument.id
+  return sameName.find((t) => t.id === choice)?.id ?? null
+}
+
+/**
  * Which existing tenant the stay goes to: the one picked among the same-name tenants, or the only one when nothing was
  * picked; null for a new tenant. A pick made for an earlier spelling of the name no longer counts once the name changed.
  */
@@ -213,12 +303,19 @@ export interface StayBookingInput {
   bonusQuantity?: number
   /** uang jaminan agreed for the lease; paidNow records it as received today with `method` */
   deposit?: { amount: number; paidNow: boolean } | null
+  /**
+   * the values read from the tenant's KTP / passport (SPEC 7.19), saved on the tenant that is created (identity type
+   * and number, gender, birth place and date, address, ...); `name` still decides the name. Ignored for an existing tenant.
+   */
+  tenantPrefill?: ScanPrefill | null
 }
 
 export interface StayBookingResult {
   lease: Lease
   invoice: Invoice
   tenantId: string
+  /** the tenant this booking created, or null when an existing one was used */
+  createdTenant: Tenant | null
   payment: Payment | null
   depositPayment: Payment | null
 }
@@ -240,7 +337,8 @@ export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckI
   try {
     let tenantId = input.tenantId
     if (!tenantId) {
-      createdTenant = await repo.insert('tenants', formToTenantPayload({ ...EMPTY_TENANT_FORM, full_name: input.name, phone: input.phone, property_id: input.room.property_id }))
+      const scanned = input.tenantPrefill ? applyScanPrefill(EMPTY_TENANT_FORM, input.tenantPrefill) : EMPTY_TENANT_FORM
+      createdTenant = await repo.insert('tenants', formToTenantPayload({ ...scanned, full_name: input.name, phone: input.phone, property_id: input.room.property_id }))
       tenantId = createdTenant.id
     }
     lease = await repo.insert('leases', {
@@ -298,7 +396,7 @@ export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckI
         notes: 'Uang jaminan',
       })
     }
-    return { lease, invoice, tenantId, payment, depositPayment }
+    return { lease, invoice, tenantId, createdTenant, payment, depositPayment }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Gagal menyimpan check-in.'
     throw new QuickCheckInError(msg, createdTenant, lease)

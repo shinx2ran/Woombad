@@ -9,6 +9,7 @@ import { InstallCard } from './InstallCard'
 import { AboutCard } from './AboutCard'
 import { KosShortcutCard } from './KosShortcutCard'
 import { ScanCreditCard } from './ScanCreditCard'
+import { KtpScanCard } from './KtpScanCard'
 
 export function SettingsPage() {
   const { org, role, repo, isLocalMode } = useOrg()
@@ -22,6 +23,7 @@ export function SettingsPage() {
         <KosShortcutCard isAdmin={isAdmin} />
         <OrganizationCard orgId={org.id} orgName={org.name} role={role} isAdmin={isAdmin} isLocalMode={isLocalMode} />
         <MembersCard isAdmin={isAdmin} currentUserId={session?.user.id ?? ''} />
+        {isAdmin && <KtpScanCard isLocalMode={isLocalMode} />}
         {isAdmin && <ScanCreditCard isLocalMode={isLocalMode} />}
         <DataCard isLocalMode={isLocalMode} isAdmin={isAdmin} />
         <InstallCard />

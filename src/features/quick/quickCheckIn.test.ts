@@ -13,7 +13,13 @@ import {
   QuickCheckInError,
   resolveTenantChoice,
   saveQuickCheckIn,
+  mergeScanPrefill,
+  resolveScanTenant,
+  sameNameCandidates,
   saveStayBooking,
+  scanFillsTenant,
+  scannedDocument,
+  tenantByDocument,
   tenantsNamed,
   validateQuickCheckIn,
   validateStayBooking,
@@ -118,6 +124,140 @@ describe('resolveTenantChoice', () => {
   })
 })
 
+describe('scanned document and same-name candidates (SPEC 7.19)', () => {
+  const tenant = (id: string, full_name: string, nik: string | null, id_number: string | null = null): Tenant => ({ id, full_name, nik, id_number } as Tenant)
+  const tenants = [
+    tenant('a', 'Budi Santoso', null),
+    tenant('b', 'Budi Santoso', '3273012505900002'),
+    tenant('c', 'Budi Santoso', '3273010101800001'),
+    tenant('d', 'Siti', null),
+    tenant('e', 'John Smith', null, 'N111'),
+    tenant('f', 'John Smith', null, null),
+  ]
+  const ktp = (nik?: string) => ({ id_type: 'ktp' as const, nik })
+  const passport = (id_number?: string) => ({ id_type: 'passport' as const, id_number })
+
+  it('the number a scan carries: the NIK of a KTP, the passport number upper-cased without spaces; none when unread', () => {
+    expect(scannedDocument(ktp('3273012505900002'))).toEqual({ column: 'nik', value: '3273012505900002' })
+    expect(scannedDocument(passport(' n 111 '))).toEqual({ column: 'id_number', value: 'N111' })
+    expect(scannedDocument(ktp())).toBeNull()
+    expect(scannedDocument(null)).toBeNull()
+  })
+
+  it('the tenant who carries that number', () => {
+    expect(tenantByDocument(tenants, ktp('3273012505900002'))?.id).toBe('b')
+    expect(tenantByDocument(tenants, passport('n111'))?.id).toBe('e')
+    expect(tenantByDocument(tenants, passport('N222'))).toBeNull()
+    expect(tenantByDocument(tenants, ktp())).toBeNull()
+  })
+
+  it('without a scanned number: everyone with that name', () => {
+    expect(sameNameCandidates(tenants, 'budi santoso', null).map((t) => t.id)).toEqual(['a', 'b', 'c'])
+    expect(sameNameCandidates(tenants, 'budi santoso', ktp()).map((t) => t.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('with a scanned number: the one with that number and those without one; a different known number is another person', () => {
+    expect(sameNameCandidates(tenants, 'Budi Santoso', ktp('3273012505900002')).map((t) => t.id)).toEqual(['a', 'b'])
+    expect(sameNameCandidates(tenants, 'Budi Santoso', ktp('9999999999999999')).map((t) => t.id)).toEqual(['a'])
+    expect(sameNameCandidates(tenants, 'John Smith', passport('N222')).map((t) => t.id)).toEqual(['f'])
+  })
+})
+
+describe('resolveScanTenant (SPEC 7.19: with a scan, never a pick by name alone)', () => {
+  const t = (id: string): Tenant => ({ id, full_name: 'Budi Santoso' } as Tenant)
+  const scan = { id_type: 'ktp' as const, nik: '3273012505900002' }
+  const base = { sameName: [t('a')], byDocument: null, choice: '', newChoice: 'baru', scanned: scan }
+
+  it('without a scan: as before, the only same-name tenant is taken', () => {
+    expect(resolveScanTenant({ ...base, scanned: null })).toBe('a')
+  })
+
+  it('with a scan: a new tenant unless the number matches or a same-name tenant is picked by hand', () => {
+    expect(resolveScanTenant(base)).toBeNull()
+    expect(resolveScanTenant({ ...base, scanned: { id_type: 'ktp' } })).toBeNull()
+    expect(resolveScanTenant({ ...base, byDocument: t('z') })).toBe('z')
+    expect(resolveScanTenant({ ...base, choice: 'a' })).toBe('a')
+  })
+
+  it('a pick that no longer fits the name (the name was edited) is not replaced by an automatic pick', () => {
+    expect(resolveScanTenant({ ...base, sameName: [t('b')], choice: 'a' })).toBeNull()
+  })
+
+  it('"Orang lain" / "Bukan dia?" always means a new tenant', () => {
+    expect(resolveScanTenant({ ...base, byDocument: t('z'), choice: 'baru' })).toBeNull()
+    expect(resolveScanTenant({ ...base, scanned: null, choice: 'baru' })).toBeNull()
+  })
+})
+
+describe('mergeScanPrefill (SPEC 7.19: Scan ulang)', () => {
+  const ktpScan = { id_type: 'ktp' as const, full_name: 'Budi Santoso', nik: '3273012505900002', birth_date: '1990-05-25', address: 'Jl. Melati No. 12' }
+
+  it('the first scan is taken as it is', () => {
+    expect(mergeScanPrefill(null, ktpScan)).toBe(ktpScan)
+  })
+
+  it('a rescan of the same document: what was ticked wins, what was left unticked stays', () => {
+    expect(mergeScanPrefill(ktpScan, { id_type: 'ktp', address: 'Jl. Melati No. 21' })).toEqual({ ...ktpScan, address: 'Jl. Melati No. 21' })
+  })
+
+  it('a rescan that switched to a passport drops the NIK; one that kept the KTP keeps it and takes no passport number', () => {
+    const passport = { id_type: 'passport' as const, id_number: 'N1234567', nationality: 'AUS' }
+    const switched = mergeScanPrefill(ktpScan, passport)
+    expect(switched).toMatchObject({ id_type: 'passport', id_number: 'N1234567', nationality: 'AUS', full_name: 'Budi Santoso' })
+    expect(switched.nik).toBeUndefined()
+    // the switch declined in the review: the scanner hands back the KTP type and none of the passport's numbers
+    expect(mergeScanPrefill(ktpScan, { id_type: 'ktp', gender: 'L' })).toEqual({ ...ktpScan, gender: 'L' })
+    // and back from a passport to a KTP: the passport number and nationality go
+    const back = mergeScanPrefill({ ...passport, full_name: 'X' }, { id_type: 'ktp', nik: '3273012505900002' })
+    expect(back).toEqual({ id_type: 'ktp', full_name: 'X', nik: '3273012505900002' })
+  })
+})
+
+describe('scanFillsTenant (SPEC 7.19: an existing tenant gets only what his record lacks)', () => {
+  const old = (over: Partial<Tenant> = {}): Tenant =>
+    ({
+      id: 't1', full_name: 'Budi Santoso', id_type: 'ktp', nik: null, id_number: null, nationality: null, phone: '+6281234567801', gender: 'L',
+      birth_place: null, birth_date: null, address: null, religion: null, marital_status: null, occupation: 'Karyawan swasta', ...over,
+    }) as Tenant
+  const scan = { id_type: 'ktp' as const, full_name: 'BUDI SANTOSO X', nik: '3273012505900002', gender: 'P' as const, birth_place: 'Bandung', birth_date: '1990-05-25', address: 'Jl. Melati No. 12', occupation: 'Pelajar' }
+
+  it('fills the empty columns and the identity; never the name, never what he has', () => {
+    expect(scanFillsTenant(old(), scan)).toEqual({ id_type: 'ktp', nik: '3273012505900002', id_number: null, nationality: null, birth_place: 'Bandung', birth_date: '1990-05-25', address: 'Jl. Melati No. 12' })
+  })
+
+  it('a tenant who already has a document number keeps his identity', () => {
+    expect(scanFillsTenant(old({ nik: '3273010101800001' }), scan)).not.toHaveProperty('nik')
+    expect(scanFillsTenant(old({ id_type: 'passport', id_number: 'N1234567' }), scan)).not.toHaveProperty('id_type')
+  })
+
+  it('a passport scan on a tenant without any number sets the passport identity', () => {
+    expect(scanFillsTenant(old(), { id_type: 'passport', id_number: 'n1234567', nationality: 'aus' })).toMatchObject({ id_type: 'passport', nik: null, id_number: 'N1234567', nationality: 'AUS' })
+  })
+
+  it('a passport scan that read no nationality keeps the one on file', () => {
+    expect(scanFillsTenant(old({ id_type: 'passport', nationality: 'AUS' }), { id_type: 'passport', id_number: 'N1' })).toMatchObject({ id_number: 'N1', nationality: 'AUS' })
+  })
+
+  it('nothing to add: an empty patch', () => {
+    expect(scanFillsTenant(old({ nik: '3273012505900002', birth_place: 'Bandung', birth_date: '1990-05-25', address: 'x' }), scan)).toEqual({})
+  })
+})
+
+/** a one-night stay paid in full, for a new tenant (SPEC 7.19 tests vary the document) */
+const yearlyLike = (): StayBookingInput => ({
+  room: ROOM,
+  periodType: 'daily',
+  startDate: '2026-10-20',
+  quantity: 1,
+  total: 180_000,
+  paidAmount: 180_000,
+  method: 'cash',
+  tenantId: null,
+  name: 'Tamu',
+  phone: '',
+  notes: null,
+})
+
 describe('saveQuickCheckIn: the same rows as the Sewa baru wizard', () => {
   let repo: OrgRepo
   let deps: QuickCheckInDeps
@@ -158,6 +298,41 @@ describe('saveQuickCheckIn: the same rows as the Sewa baru wizard', () => {
     expect(lease.end_date).toBe('2026-10-17')
     expect(invoice).toMatchObject({ quantity: 3, base_amount: 350_000, total_amount: 350_000, status: 'unpaid' })
     expect(await repo.list('payments')).toHaveLength(0)
+  })
+
+  // SPEC 7.19: a scanned document fills the new tenant; the typed name still decides the name
+  it('a scanned KTP goes onto the tenant that is created, under the typed name; the created tenant is handed back', async () => {
+    const result = await saveStayBooking(
+      {
+        room: ROOM,
+        periodType: 'daily',
+        startDate: '2026-10-15',
+        quantity: 1,
+        total: 180_000,
+        paidAmount: 180_000,
+        method: 'cash',
+        tenantId: null,
+        name: 'Pak Budi',
+        phone: '',
+        notes: null,
+        tenantPrefill: { id_type: 'ktp', full_name: 'Budi Santoso', nik: '3273012505900002', gender: 'L', birth_place: 'Bandung', birth_date: '1990-05-25', address: 'Jl. Melati No. 12, Bandung', religion: 'Islam' },
+      },
+      deps,
+    )
+    expect(result.createdTenant).not.toBeNull()
+    expect(result.createdTenant).toMatchObject({ id: result.tenantId, full_name: 'Pak Budi', id_type: 'ktp', nik: '3273012505900002', gender: 'L', birth_place: 'Bandung', birth_date: '1990-05-25', address: 'Jl. Melati No. 12, Bandung', religion: 'Islam', phone: null })
+    expect(await repo.list('tenants')).toHaveLength(1)
+  })
+
+  it('a scanned passport sets the identity type and number; an existing tenant is left as he is', async () => {
+    const passport = { id_type: 'passport' as const, full_name: 'John Andrew Smith', id_number: 'N1234567', nationality: 'AUS', gender: 'L' as const }
+    const created = await saveStayBooking({ ...yearlyLike(), tenantPrefill: passport }, deps)
+    expect(created.createdTenant).toMatchObject({ id_type: 'passport', id_number: 'N1234567', nationality: 'AUS', nik: null, gender: 'L' })
+    const t = await repo.insert('tenants', { property_id: 'P1', full_name: 'Taufik Kusnadi', phone: '+6281234567890', id_type: 'ktp', nik: '3273010101800001' } as never)
+    const reused = await saveStayBooking({ ...yearlyLike(), startDate: '2026-11-01', tenantId: t.id, tenantPrefill: passport }, deps)
+    expect(reused.createdTenant).toBeNull()
+    expect(reused.tenantId).toBe(t.id)
+    expect(await repo.get('tenants', t.id)).toMatchObject({ id_type: 'ktp', nik: '3273010101800001', full_name: 'Taufik Kusnadi' })
   })
 
   it('reports what was already written when a later step fails', async () => {

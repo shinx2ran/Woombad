@@ -95,7 +95,16 @@ export interface Organization {
    */
   claude_credit_monthly_usd?: number | null
   claude_credit_renewal_day?: number | null
+  /**
+   * Scan KTP (SPEC 7.19): the reader the document scanner uses. 'claude': the scan-ktp Edge Function (the photo goes to
+   * Anthropic; needs the API key). 'tesseract': on the device. Optional for the same reasons as the credit settings.
+   */
+  ktp_scan_engine?: KtpScanEngine | null
 }
+
+/** the readers of the document scanner (SPEC 7.19); labels and descriptions live in src/features/scanner/engine.ts */
+export const KTP_SCAN_ENGINES = ['claude', 'tesseract'] as const
+export type KtpScanEngine = (typeof KTP_SCAN_ENGINES)[number]
 
 export interface OrganizationMember extends BaseRow {
   user_id: string
@@ -158,7 +167,8 @@ export interface ScanUsage {
   /** US$, every billed attempt at its own model's price (Postgres numeric(12,6); may arrive as a string) */
   cost_usd: number | string
   outcome: ScanOutcome
-  kind: 'expense_list' | 'receipt' | 'unreadable' | null
+  /** what was read: an expense record (Scan nota) or an identity document (Scan KTP, SPEC 7.19) */
+  kind: 'expense_list' | 'receipt' | 'unreadable' | 'ktp' | 'passport' | 'unknown' | null
   lines: number | null
   /** per-attempt figures (one element without a fallback) */
   attempts: unknown[]

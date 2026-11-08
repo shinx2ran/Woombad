@@ -23,6 +23,7 @@ import {
   type AuditLogEntry,
   type OrganizationMember,
 } from '../../../types/db'
+import { SCAN_ENGINE_LABEL } from '../../scanner/engine'
 
 export const AUDIT_TABLE_LABEL: Record<string, string> = {
   payments: 'Pembayaran',
@@ -157,6 +158,8 @@ const COLUMN_LABEL: Record<string, string> = {
   // SPEC 7.17
   claude_credit_monthly_usd: 'Kredit Claude per bulan',
   claude_credit_renewal_day: 'Tanggal pembaruan kredit',
+  // SPEC 7.19
+  ktp_scan_engine: 'Pembaca Scan KTP',
   notes: 'Catatan',
 }
 
@@ -195,6 +198,7 @@ const ENUM_LABELS: Record<string, Record<string, string>> = {
   role: MEMBER_ROLE_LABEL,
   gender: GENDER_LABEL,
   id_type: ID_TYPE_LABEL,
+  ktp_scan_engine: SCAN_ENGINE_LABEL,
 }
 
 const STATUS_LABELS: Record<string, Record<string, string>> = {

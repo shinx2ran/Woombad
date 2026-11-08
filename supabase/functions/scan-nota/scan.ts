@@ -310,16 +310,11 @@ export function scanCost(res: CostInput, requestedModel: string): ScanCost {
 export type ScanOutcome = 'ok' | 'refused' | 'max_tokens' | 'invalid'
 
 /**
- * The scan_usage row the function writes after a Claude reply (the database CHECKs mirror this: kind and lines only for
- * a scan that was read).
+ * The scan_usage row a scan function writes after a Claude reply (the database CHECKs mirror this: kind and lines only
+ * for a scan that was read). `read` is what was read, by kind and size: the expense lines of a Scan nota, or the fields
+ * of an identity document (Scan KTP, SPEC 7.19), never the values themselves.
  */
-export function scanUsageRow(
-  orgId: string,
-  userId: string,
-  cost: ScanCost,
-  outcome: ScanOutcome,
-  read: Pick<ScanResult, 'kind' | 'items'> | null,
-) {
+export function usageRow(orgId: string, userId: string, cost: ScanCost, outcome: ScanOutcome, read: { kind: string; lines: number } | null) {
   return {
     org_id: orgId,
     user_id: userId,
@@ -329,9 +324,20 @@ export function scanUsageRow(
     cost_usd: cost.cost_usd,
     outcome,
     kind: outcome === 'ok' && read ? read.kind : null,
-    lines: outcome === 'ok' && read ? read.items.length : null,
+    lines: outcome === 'ok' && read ? read.lines : null,
     attempts: cost.attempts,
   }
+}
+
+/** The scan_usage row of a Scan nota: one line per expense read. */
+export function scanUsageRow(
+  orgId: string,
+  userId: string,
+  cost: ScanCost,
+  outcome: ScanOutcome,
+  read: Pick<ScanResult, 'kind' | 'items'> | null,
+) {
+  return usageRow(orgId, userId, cost, outcome, read ? { kind: read.kind, lines: read.items.length } : null)
 }
 
 /** What a scan cost, as the app receives it (the function's reply field `cost`). */
