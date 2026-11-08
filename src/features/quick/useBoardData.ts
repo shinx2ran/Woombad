@@ -32,7 +32,8 @@ export function useBoardData(): BoardData {
 
   const queries = [leases, rooms, tenants, invoices, payments, leaseAddons]
   const isPending = queries.some((q) => q.isPending)
-  const error = queries.find((q) => q.isError)?.error
+  // fatal only without data: a failed background refresh keeps the board (and an open sheet) as it is, like useOrg
+  const error = queries.find((q) => q.isError && q.data === undefined)?.error
 
   const tenantById = useMemo(() => new Map((tenants.data ?? []).map((t) => [t.id, t])), [tenants.data])
   const propertyById = useMemo(() => new Map(properties.map((p) => [p.id, p])), [properties])

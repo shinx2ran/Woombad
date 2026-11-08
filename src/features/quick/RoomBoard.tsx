@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { clsx } from 'clsx'
-import { AlertTriangle, CalendarPlus, CalendarSearch, Car, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Wallet, Zap } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, CalendarSearch, Car, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Send, Wallet, Zap } from 'lucide-react'
 import { Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { splitPlates } from '../../domain/plate'
@@ -13,6 +13,8 @@ import { BOARD_TONES, BOARD_TONE_META, boardStatusText, buildBoard, countTones, 
 import { PlateList } from '../leases/PlateInput'
 import { QuickCheckInModal } from './QuickCheckInModal'
 import { useBoardData } from './useBoardData'
+import { BoardSummarySheet } from './BoardSummarySheet'
+import { boardSummaryText } from './boardSummary'
 import { plannerSearch } from '../rencana/rencanaParams'
 
 const TILE_CLASS: Record<BoardTone, string> = {
@@ -43,11 +45,13 @@ const DOT_CLASS: Record<BoardTone, string> = {
  * save still goes through the existing, tested dialogs. Empty rooms offer Check-in cepat or the full form.
  */
 export function RoomBoard() {
-  const { properties, propertyFilterIds } = useOrg()
+  const { org, properties, propertyFilterIds } = useOrg()
   const data = useBoardData()
   const today = todayISO()
   const [openRoomId, setOpenRoomId] = useState<string | null>(null)
   const [checkInRoom, setCheckInRoom] = useState<Room | null>(null)
+  /** Ringkasan WhatsApp (SPEC 7.18): the message as built when the sheet opened */
+  const [summary, setSummary] = useState<string | null>(null)
 
   const groups = useMemo(
     () => buildBoard(properties, propertyFilterIds, data.rooms, data.leases, data.tenantById, data.invoices, data.payments, today),
@@ -85,6 +89,21 @@ export function RoomBoard() {
           </span>
         }
         subtitle="Ketuk kamar untuk aksi cepat"
+        action={
+          <button
+            type="button"
+            onClick={() => {
+              // a board left open over midnight has not re-rendered since yesterday: rebuild for the day it is tapped
+              const now = todayISO()
+              const board = now === today ? groups : buildBoard(properties, propertyFilterIds, data.rooms, data.leases, data.tenantById, data.invoices, data.payments, now)
+              setSummary(boardSummaryText(board, now, org.name))
+            }}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-green-600 px-2.5 text-xs font-medium text-green-700 hover:bg-green-50"
+            data-testid="board-summary-open"
+          >
+            <Send className="h-4 w-4" aria-hidden /> Ringkasan WA
+          </button>
+        }
       />
       <div className="space-y-3 px-4 py-3">
         <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600" aria-label="Keterangan warna">
@@ -153,6 +172,7 @@ export function RoomBoard() {
         />
       )}
       {checkInRoom && <QuickCheckInModal room={checkInRoom} onClose={() => setCheckInRoom(null)} />}
+      {summary !== null && <BoardSummarySheet text={summary} onClose={() => setSummary(null)} />}
     </Card>
   )
 }

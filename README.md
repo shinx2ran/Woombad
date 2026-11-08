@@ -299,6 +299,13 @@ sisa tagihan), **Perpanjang** (tagihan saja), atau **Check-out** (membuka dialog
 isi nama, lamanya, dan total (terisi otomatis dari tarif kamar); lunas, DP, atau belum bayar; untuk bulanan/tahunan bisa isi
 **uang jaminan**, dan tahunan bisa diberi **bonus bulan gratis** (bayar 12, dapat 13). Nomor HP dan nomor kendaraan boleh diisi nanti.
 
+**Ringkasan WA** (tombol hijau di pojok Papan kamar): pesan siap kirim untuk istri atau grup WhatsApp staf, berisi kamar yang
+perlu perhatian sesuai kos yang dipilih: **Telat bayar** ("Kamar 5D (Pak Beni) telat 2 hari (bulanan)"), **Hari ini**
+(habis sewa / jatuh tempo, rencana keluar, check-in hari ini) dan **Segera** (jatuh tempo dalam 7 hari). Pesannya bisa diubah dulu,
+lalu **Buka WhatsApp** dan pilih kontak atau grupnya; **Bagikan…** memakai menu bagikan HP (di iPhone yang punya WhatsApp dan
+WhatsApp Business, tombol Buka WhatsApp selalu membuka satu aplikasi yang sama: pakai Bagikan… lalu pilih WhatsApp Business),
+**Salin** untuk tempat lain. Pesannya ditutup "Mohon ditindaklanjuti."; tidak ada yang perlu dikabarkan: "Semua kamar aman hari ini ✅".
+
 ### Nomor kendaraan (plat)
 
 Isi **No. kendaraan** saat Check-in cepat atau Sewa baru (tidak wajib), atau nanti di halaman sewa: kartu **Info sewa** → ikon
