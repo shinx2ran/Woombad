@@ -6,3 +6,6 @@ export { countPrefillFields, diffScanPrefill, displayPrefillValue, idTypeChange,
 export type { IdTypeChange, PrefillDiff } from './prefill'
 export { interpretOcrText, recognizeDocument, ScanAbortedError } from './ocr'
 export type { DocumentScanResult, OcrProgress } from './ocr'
+export { DEFAULT_SCAN_ENGINE, SCAN_ENGINE_DESCRIPTION, SCAN_ENGINE_LABEL, SCAN_ENGINES, effectiveEngine, orgScanEngine } from './engine'
+export type { ScanEngine } from './engine'
+export { DEMO_KTP_SCAN_RESULT, interpretClaudeScan, recognizeDocumentWithClaude } from './claudeScan'

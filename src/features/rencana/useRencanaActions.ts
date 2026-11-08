@@ -13,6 +13,7 @@ import { todayISO } from '../../lib/format'
 import { LEASE_OVERLAP_MESSAGE } from '../../lib/repo/types'
 import type { Invoice, Lease, Payment, PaymentMethod, PeriodType, Room, Tenant, WaitlistEntry } from '../../types/db'
 import { QuickCheckInError, saveStayBooking } from '../quick/quickCheckIn'
+import type { ScanPrefill } from '../scanner/types'
 import { useLeaseActions } from '../leases/useLeaseActions'
 import { plannedStay, stayConflict } from './availability'
 import { formToWaitlistInsert, formToWaitlistPatch, type WaitlistForm } from './waitlist'
@@ -48,11 +49,15 @@ export interface BookStayInput {
   bonusQuantity?: number
   /** uang jaminan agreed; paidNow records it as received with `method` */
   deposit?: { amount: number; paidNow: boolean } | null
+  /** the values read from the tenant's document (SPEC 7.19), for the tenant that is created */
+  tenantPrefill?: ScanPrefill | null
 }
 
 export interface BookStayResult {
   lease: Lease
   invoice: Invoice
+  /** the tenant this booking created (the document photo can be attached to it), or null */
+  createdTenant: Tenant | null
   payment: Payment | null
   depositPayment: Payment | null
   /** the booking is saved but the daftar tunggu entry could not be marked (shown as a warning) */
@@ -116,6 +121,7 @@ export function useRencanaActions() {
               vehiclePlate: input.vehiclePlate ?? null,
               bonusQuantity: input.bonusQuantity ?? 0,
               deposit: input.deposit ?? null,
+              tenantPrefill: input.tenantPrefill ?? null,
             },
             { repo, insertFromDraft: actions.insertFromDraft, canWriteInvoiceStatus: actions.canWriteInvoiceStatus, orgInvoices: input.orgInvoices, todayISO: today },
           )
@@ -135,7 +141,7 @@ export function useRencanaActions() {
             waitlistError = err instanceof Error ? err.message : 'Daftar tunggu gagal diperbarui.'
           }
         }
-        return { lease: saved.lease, invoice: saved.invoice, payment: saved.payment, depositPayment: saved.depositPayment, waitlistError }
+        return { lease: saved.lease, invoice: saved.invoice, createdTenant: saved.createdTenant, payment: saved.payment, depositPayment: saved.depositPayment, waitlistError }
       } finally {
         // also after a refusal, so the planner shows the room as it is now
         await invalidate('leases', 'invoices', 'payments', 'tenants', 'waitlist')

@@ -1,5 +1,5 @@
 import type { Insert, Row, TableName, Update } from '../../types/db'
-import { TABLE_NAMES } from '../../types/db'
+import { KTP_SCAN_ENGINES, TABLE_NAMES } from '../../types/db'
 import { newId } from '../ids'
 import type { CreatedInvitation, ListOptions, RedateLeaseInput, Repo, StorageBucket } from './types'
 import {
@@ -67,7 +67,7 @@ const COLUMN_DEFAULTS: Partial<Record<TableName, Record<string, unknown>>> = {
   expenses: { lease_id: null, created_by: null },
   properties: { payment_info: null, logo_path: null },
   leases: { planned_checkout_date: null, vehicle_plate: null },
-  organizations: { claude_credit_monthly_usd: 100, claude_credit_renewal_day: 1 },
+  organizations: { claude_credit_monthly_usd: 100, claude_credit_renewal_day: 1, ktp_scan_engine: 'claude' },
 }
 
 function withColumnDefaults(table: TableName, row: Record<string, unknown>): Record<string, unknown> {
@@ -435,8 +435,12 @@ function assertWaitlistRow(row: WaitlistEntry): void {
   if (row.wanted_from !== null && !isISODate(row.wanted_from)) throw new Error('Tanggal mulai tidak valid.')
 }
 
-/** The CHECK constraints of the Kredit Claude settings on public.organizations (SPEC 7.17). */
+/** The CHECK constraints of the Kredit Claude settings (SPEC 7.17) and the Scan KTP reader (SPEC 7.19) on public.organizations. */
 function assertOrganizationRow(row: Record<string, unknown>): void {
+  const engine = row.ktp_scan_engine
+  if (engine !== undefined && engine !== null && !(KTP_SCAN_ENGINES as readonly unknown[]).includes(engine)) {
+    throw new Error('Pembaca Scan KTP tidak dikenal.')
+  }
   const credit = row.claude_credit_monthly_usd
   if (credit !== undefined && credit !== null && !(typeof credit === 'number' && Number.isFinite(credit) && credit >= 0)) {
     throw new Error('Kredit per bulan tidak boleh negatif.')

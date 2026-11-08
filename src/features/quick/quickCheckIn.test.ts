@@ -13,6 +13,7 @@ import {
   QuickCheckInError,
   resolveTenantChoice,
   saveQuickCheckIn,
+  sameNameCandidates,
   saveStayBooking,
   tenantsNamed,
   validateQuickCheckIn,
@@ -118,6 +119,35 @@ describe('resolveTenantChoice', () => {
   })
 })
 
+describe('sameNameCandidates (SPEC 7.19)', () => {
+  const tenant = (id: string, full_name: string, nik: string | null): Tenant => ({ id, full_name, nik } as Tenant)
+  const tenants = [tenant('a', 'Budi Santoso', null), tenant('b', 'Budi Santoso', '3273012505900002'), tenant('c', 'Budi Santoso', '3273010101800001'), tenant('d', 'Siti', null)]
+
+  it('without a scanned NIK: everyone with that name', () => {
+    expect(sameNameCandidates(tenants, 'budi santoso', undefined).map((t) => t.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('with a scanned NIK: the one with that NIK and those without a NIK; a different known NIK is another person', () => {
+    expect(sameNameCandidates(tenants, 'Budi Santoso', '3273012505900002').map((t) => t.id)).toEqual(['a', 'b'])
+    expect(sameNameCandidates(tenants, 'Budi Santoso', '9999999999999999').map((t) => t.id)).toEqual(['a'])
+  })
+})
+
+/** a one-night stay paid in full, for a new tenant (SPEC 7.19 tests vary the document) */
+const yearlyLike = (): StayBookingInput => ({
+  room: ROOM,
+  periodType: 'daily',
+  startDate: '2026-10-20',
+  quantity: 1,
+  total: 180_000,
+  paidAmount: 180_000,
+  method: 'cash',
+  tenantId: null,
+  name: 'Tamu',
+  phone: '',
+  notes: null,
+})
+
 describe('saveQuickCheckIn: the same rows as the Sewa baru wizard', () => {
   let repo: OrgRepo
   let deps: QuickCheckInDeps
@@ -158,6 +188,41 @@ describe('saveQuickCheckIn: the same rows as the Sewa baru wizard', () => {
     expect(lease.end_date).toBe('2026-10-17')
     expect(invoice).toMatchObject({ quantity: 3, base_amount: 350_000, total_amount: 350_000, status: 'unpaid' })
     expect(await repo.list('payments')).toHaveLength(0)
+  })
+
+  // SPEC 7.19: a scanned document fills the new tenant; the typed name still decides the name
+  it('a scanned KTP goes onto the tenant that is created, under the typed name; the created tenant is handed back', async () => {
+    const result = await saveStayBooking(
+      {
+        room: ROOM,
+        periodType: 'daily',
+        startDate: '2026-10-15',
+        quantity: 1,
+        total: 180_000,
+        paidAmount: 180_000,
+        method: 'cash',
+        tenantId: null,
+        name: 'Pak Budi',
+        phone: '',
+        notes: null,
+        tenantPrefill: { id_type: 'ktp', full_name: 'Budi Santoso', nik: '3273012505900002', gender: 'L', birth_place: 'Bandung', birth_date: '1990-05-25', address: 'Jl. Melati No. 12, Bandung', religion: 'Islam' },
+      },
+      deps,
+    )
+    expect(result.createdTenant).not.toBeNull()
+    expect(result.createdTenant).toMatchObject({ id: result.tenantId, full_name: 'Pak Budi', id_type: 'ktp', nik: '3273012505900002', gender: 'L', birth_place: 'Bandung', birth_date: '1990-05-25', address: 'Jl. Melati No. 12, Bandung', religion: 'Islam', phone: null })
+    expect(await repo.list('tenants')).toHaveLength(1)
+  })
+
+  it('a scanned passport sets the identity type and number; an existing tenant is left as he is', async () => {
+    const passport = { id_type: 'passport' as const, full_name: 'John Andrew Smith', id_number: 'N1234567', nationality: 'AUS', gender: 'L' as const }
+    const created = await saveStayBooking({ ...yearlyLike(), tenantPrefill: passport }, deps)
+    expect(created.createdTenant).toMatchObject({ id_type: 'passport', id_number: 'N1234567', nationality: 'AUS', nik: null, gender: 'L' })
+    const t = await repo.insert('tenants', { property_id: 'P1', full_name: 'Taufik Kusnadi', phone: '+6281234567890', id_type: 'ktp', nik: '3273010101800001' } as never)
+    const reused = await saveStayBooking({ ...yearlyLike(), startDate: '2026-11-01', tenantId: t.id, tenantPrefill: passport }, deps)
+    expect(reused.createdTenant).toBeNull()
+    expect(reused.tenantId).toBe(t.id)
+    expect(await repo.get('tenants', t.id)).toMatchObject({ id_type: 'ktp', nik: '3273010101800001', full_name: 'Taufik Kusnadi' })
   })
 
   it('reports what was already written when a later step fails', async () => {

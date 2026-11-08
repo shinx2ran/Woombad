@@ -8,6 +8,7 @@ import {
   NotMemberError,
   PLANNED_CHECKOUT_BEFORE_START_MESSAGE,
   REDATE_NOT_DEPLOYED_MESSAGE,
+  KTP_SCAN_ENGINE_NOT_DEPLOYED_MESSAGE,
   SCAN_CREDIT_NOT_DEPLOYED_MESSAGE,
   VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE,
   StaleWriteError,
@@ -47,6 +48,9 @@ export function translateDbError(error: string | DbError): string {
   if (/claude_credit_/.test(message) && (code === 'PGRST204' || /schema cache|does not exist/i.test(message))) return SCAN_CREDIT_NOT_DEPLOYED_MESSAGE
   if (/organizations_claude_credit_monthly_usd_check/.test(message)) return 'Kredit per bulan tidak boleh negatif.'
   if (/organizations_claude_credit_renewal_day_check/.test(message)) return 'Tanggal pembaruan harus 1–31.'
+  // Scan KTP (SPEC 7.19): the reader column is not on the server yet, or a value breaks its CHECK
+  if (/ktp_scan_engine/.test(message) && (code === 'PGRST204' || /schema cache|does not exist/i.test(message))) return KTP_SCAN_ENGINE_NOT_DEPLOYED_MESSAGE
+  if (/organizations_ktp_scan_engine_check/.test(message)) return 'Pembaca Scan KTP tidak dikenal.'
   if (/Failed to fetch|Load failed|NetworkError|network/i.test(message)) return 'Tidak dapat terhubung ke server. Periksa koneksi internet.'
   if (/Signups not allowed|signup.*disabled/i.test(message)) return 'Pendaftaran akun baru sedang ditutup. Minta pemilik kos membuatkan akun.'
   return message

@@ -1138,3 +1138,61 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   berita, nama kamar, tautan), `e2e/ringkasan-wa.spec.ts` (HP 360 px, Mode Demo 15 Okt: judul, blok kos, 102 habis sewa hari ini,
   satu baris per ubin merah, tautan api.whatsapp.com = isi kotak, ubah pesan, kosong → nonaktif (juga sebagai link); satu kos →
   judul kos tanpa blok).
+
+### 7.19 Scan KTP lewat Claude (pilihan pembaca) dan Scan KTP di check-in cepat
+- **Permintaan pemilik** (8 Nov 2026): Scan KTP memakai Claude, bukan tesseract, atau setidaknya bisa memilih; dan Scan KTP
+  tersedia di check-in. Latar: pada 24 kartu uji sintetis Claude membaca 100 % kartu benar, tesseract di browser ±79 %
+  (lihat riset 7 Nov 2026); tesseract tetap ada untuk yang tidak mau mengirim foto keluar HP dan untuk offline.
+- **Edge Function `scan-ktp`** (`supabase/functions/scan-ktp/`, `index.ts` + `ktp.ts`; `verify_jwt = false`, bentuk yang sama
+  dengan `scan-nota`: sesi + keanggotaan diperiksa sendiri, `ANTHROPIC_API_KEY`, batas foto, pemetaan galat
+  `describeScanFailure`, biaya `scanCost`, baris `scan_usage` lewat `usageRow` dari `scan-nota/scan.ts`). Claude Opus 5.5,
+  structured outputs `KTP_SCAN_SCHEMA`: `kind` (`ktp` / `passport` / `unknown`), `ktp` (16 kolom e-KTP seperti tercetak,
+  huruf besar; NIK 16 digit; `tanggal_lahir` YYYY-MM-DD; `jenis_kelamin` L/P; `gol_darah` null untuk "-"; `rt_rw` NNN/NNN;
+  `kota`: "KOTA X" → "X", "KABUPATEN X" → "KAB. X"; tempat/tanggal penerbitan diabaikan), `passport` (7 kolom MRZ: nama
+  belakang, nama depan, nomor, kewarganegaraan alpha-3, tgl lahir, L/P, kedaluwarsa), `unclear` (nama kolom yang diragukan)
+  dan `notes` (bahasa Indonesia). `parseKtpScanOutput` memeriksa ulang: NIK bukan 16 digit, tanggal tidak ada di kalender,
+  jenis kelamin bukan L/P, gol. darah di luar A/B/AB/O → null (tidak pernah menebak); teks dirapikan huruf besar satu spasi.
+  Balasan 200: `{ result, model, usage, cost }`. Penolakan: 422 "Pastikan isinya KTP atau halaman data paspor".
+  Log hanya hitungan (`scan-ktp usage`), tidak pernah isi kartu.
+- **`scan_usage.kind`** diperluas: `ktp` / `passport` / `unknown` (CHECK bernama `scan_usage_kind_check`; pada instalasi
+  yang sudah punya tabel, blok `do` di `schema.sql` menjatuhkan CHECK lama dan memasang yang baru; `lines` = jumlah kolom
+  terbaca). Kartu **Kredit Claude** menulis "16 data · KTP" dan subjudulnya menyebut Scan KTP.
+- **Pengaturan organisasi** `organizations.ktp_scan_engine text not null default 'claude' check in ('claude','tesseract')`
+  (hanya pemilik/admin yang boleh mengubah: `org_update`; semua anggota membaca). Kartu **Pengaturan → Scan KTP**
+  (`KtpScanCard`, pemilik/admin): dua pilihan radio **Claude (lebih akurat)** / **Di HP saja (gratis)**, tersimpan saat
+  dipilih (`repo.raw.update('organizations')` + invalidasi `membership`), masuk riwayat perubahan ("Pembaca Scan KTP:
+  Claude → Di HP"). Server lama tanpa kolom: pesan `KTP_SCAN_ENGINE_NOT_DEPLOYED_MESSAGE`; Mode Demo: kolom berdefault
+  `claude` (`COLUMN_DEFAULTS`), nilai lain ditolak.
+- **Panel scanner** (`DocumentScanner`, dipakai form penyewa, wizard Sewa baru dan check-in cepat): saklar **Pembaca
+  dokumen** Claude / Di HP di panel awal, mulai dari default organisasi, bisa diganti per scan oleh siapa pun (biaya ±US$0,03–
+  0,06 per foto, tertulis di bawah saklar bersama persetujuan "Foto dikirim ke Anthropic (Claude)"). Offline: selalu Di HP
+  dengan catatan (`effectiveEngine`). Jalur Claude (`recognizeDocumentWithClaude`, `src/features/scanner/claudeScan.ts`):
+  foto diskalakan ke JPEG 2000 px (`prepareScanImage`, JPEG yang sama jadi foto dokumen) → fungsi → `interpretClaudeScan`:
+  KTP lewat `ktpFieldsToTenant` yang sama dengan pembaca HP (nama Title Case, alamat digabung), paspor langsung ke
+  `id_type 'passport'` + nomor + kewarganegaraan + jenis kelamin + tgl lahir (tanpa lencana digit kontrol MRZ: Claude tidak
+  memverifikasinya), `unknown` → prefill kosong. Keyakinan = bagian kolom kunci yang terbaca dan tidak diragukan. Hasil
+  `DocumentScanResult` membawa `engine`, `unclear` (baris formulir yang diragukan, ditandai "Claude kurang yakin, periksa"),
+  `notes` ("Catatan Claude: …") dan `cost` ("Biaya scan ini: US$…", hanya pemilik/admin). Lencana **Dibaca Claude** /
+  **Dibaca di HP**; panel "Lihat data yang terbaca" menampilkan kolom apa adanya. Mode Demo: Claude menampilkan kartu contoh
+  sintetis (`DEMO_KTP_SCAN_RESULT`, "Budi Santoso", NIK 3273012505900002 yang digit 7–12-nya cocok dengan tanggal lahir
+  dan jenis kelamin) dengan biaya contoh US$0,03 (3.000 token masuk × $4 + 900 keluar × $20 per juta), tercatat sebagai
+  baris `scan_usage` contoh. Galat fungsi ditampilkan apa adanya; fungsi belum di-deploy: "Scan KTP lewat Claude belum
+  tersedia di server. Hubungi pemilik, atau pilih \"Di HP\"".
+- **Check-in cepat** (`QuickCheckInModal`): tombol **Scan KTP / Paspor** membuka panel scanner (kamera langsung); Terapkan
+  mengisi **Nama penyewa** dan menyimpan seluruh hasil scan untuk penyewa baru yang dibuat (`StayBookingInput.tenantPrefill`
+  → `applyScanPrefill(EMPTY_TENANT_FORM, …)` lalu `formToTenantPayload`; nama yang diketik tetap menentukan). Mode Online:
+  foto dokumen diunggah ke bucket `ktp` untuk penyewa yang baru dibuat (`BookStayResult.createdTenant`), gagal unggah tidak
+  membatalkan check-in. NIK hasil scan yang sudah dimiliki penyewa lama memilih penyewa itu ("NIK ini milik penyewa lama …",
+  tombol **Bukan dia?** untuk tetap membuat penyewa baru); penyewa lama tidak diubah. Ringkasan menulis "Dokumen KTP · NIK …
+  · data penyewa diisi dari scan".
+- **Uji**: `supabase/functions/scan-ktp/ktp.test.ts` (skema, pembersihan, paspor, bentuk salah), `scanner/claudeScan.test.ts`
+  (interpretasi KTP/paspor/unknown, keyakinan, tanda ragu, kartu contoh konsisten), `scanner/engine.test.ts`,
+  `DocumentScanner.test.tsx` (saklar, jalur Claude, offline, Mode Demo, staf tanpa biaya, galat), `KtpScanCard.test.tsx`,
+  `quickCheckIn.test.ts` (prefill ke penyewa baru, paspor, penyewa lama tak diubah), `supabase/tests/31-biaya-scan.sql` blok H
+  (jenis baru, CHECK tunggal bernama, pengaturan pembaca: pemilik ya, staf/org lain tidak, nilai lain ditolak, riwayat),
+  `e2e/scan-ktp.spec.ts` (HP 360 px, Mode Demo: saklar, review Claude, Terapkan ke form, kartu Pengaturan, kartu Kredit,
+  check-in cepat dengan dan tanpa penyewa lama ber-NIK sama).
+- **Peluncuran**: deploy `scan-ktp` (`index.ts`, `ktp.ts`, dan `../scan-nota/scan.ts` yang diimpornya) dengan
+  `verify_jwt = false`; jalankan ulang `schema.sql` (kolom `ktp_scan_engine`, CHECK `scan_usage_kind_check` yang baru:
+  langkah ini berisi `drop constraint`, jadi dijalankan pemilik di SQL Editor, bukan lewat operator). Sebelum CHECK diperluas,
+  Scan KTP tetap jalan, hanya biayanya ditolak database dan tinggal di log fungsi.

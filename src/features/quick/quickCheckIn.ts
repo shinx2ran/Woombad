@@ -17,7 +17,8 @@ import { formatRupiah } from '../../lib/format'
 import type { Invoice, Lease, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
 import { PERIOD_UNIT_LABEL } from '../../types/db'
 import { ROOM_AVAILABILITY_LABEL, roomAvailability } from '../leases/leaseUtils'
-import { EMPTY_TENANT_FORM, formToTenantPayload, validateTenantForm } from '../tenants/tenantUtils'
+import type { ScanPrefill } from '../scanner/types'
+import { EMPTY_TENANT_FORM, applyScanPrefill, formToTenantPayload, validateTenantForm } from '../tenants/tenantUtils'
 
 export interface QuickCheckInInput {
   room: Room
@@ -155,6 +156,21 @@ export function tenantsNamed(tenants: Tenant[], name: string): Tenant[] {
   return tenants.filter((t) => t.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === key)
 }
 
+/** The tenant who already carries this scanned NIK (SPEC 7.19), or null. */
+export function tenantByNik(tenants: Tenant[], nik: string | undefined): Tenant | null {
+  return nik ? tenants.find((t) => t.nik === nik) ?? null : null
+}
+
+/**
+ * The same-name tenants a scanned card can still be (SPEC 7.19): one whose NIK is known and differs from the scanned
+ * NIK is another person and is not offered; one without a NIK, or with the same NIK, is. Without a scanned NIK: everyone
+ * with that name.
+ */
+export function sameNameCandidates(tenants: Tenant[], name: string, scannedNik: string | undefined): Tenant[] {
+  const named = tenantsNamed(tenants, name)
+  return scannedNik ? named.filter((t) => !t.nik || t.nik === scannedNik) : named
+}
+
 /**
  * Which existing tenant the stay goes to: the one picked among the same-name tenants, or the only one when nothing was
  * picked; null for a new tenant. A pick made for an earlier spelling of the name no longer counts once the name changed.
@@ -213,12 +229,19 @@ export interface StayBookingInput {
   bonusQuantity?: number
   /** uang jaminan agreed for the lease; paidNow records it as received today with `method` */
   deposit?: { amount: number; paidNow: boolean } | null
+  /**
+   * the values read from the tenant's KTP / passport (SPEC 7.19), saved on the tenant that is created (identity type
+   * and number, gender, birth place and date, address, ...); `name` still decides the name. Ignored for an existing tenant.
+   */
+  tenantPrefill?: ScanPrefill | null
 }
 
 export interface StayBookingResult {
   lease: Lease
   invoice: Invoice
   tenantId: string
+  /** the tenant this booking created, or null when an existing one was used */
+  createdTenant: Tenant | null
   payment: Payment | null
   depositPayment: Payment | null
 }
@@ -240,7 +263,8 @@ export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckI
   try {
     let tenantId = input.tenantId
     if (!tenantId) {
-      createdTenant = await repo.insert('tenants', formToTenantPayload({ ...EMPTY_TENANT_FORM, full_name: input.name, phone: input.phone, property_id: input.room.property_id }))
+      const scanned = input.tenantPrefill ? applyScanPrefill(EMPTY_TENANT_FORM, input.tenantPrefill) : EMPTY_TENANT_FORM
+      createdTenant = await repo.insert('tenants', formToTenantPayload({ ...scanned, full_name: input.name, phone: input.phone, property_id: input.room.property_id }))
       tenantId = createdTenant.id
     }
     lease = await repo.insert('leases', {
@@ -298,7 +322,7 @@ export async function saveStayBooking(input: StayBookingInput, deps: QuickCheckI
         notes: 'Uang jaminan',
       })
     }
-    return { lease, invoice, tenantId, payment, depositPayment }
+    return { lease, invoice, tenantId, createdTenant, payment, depositPayment }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Gagal menyimpan check-in.'
     throw new QuickCheckInError(msg, createdTenant, lease)

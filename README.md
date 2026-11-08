@@ -21,7 +21,7 @@ Woombad adalah aplikasi web progresif (PWA) untuk mengelola satu atau banyak kos
 |---|---|---|
 | Database, login, penyimpanan foto | Supabase Free | Rp 0 (500 MB DB, 1 GB storage, 50.000 pengguna aktif/bulan) |
 | Hosting web (PWA) | GitHub Pages (atau Cloudflare Pages / Vercel / Netlify) | Rp 0 |
-| Scan KTP | tesseract.js di browser | Rp 0 (tanpa API) |
+| Scan KTP / paspor | **Claude** (bawaan) lewat Edge Function Supabase, atau **Di HP** (tesseract.js di browser) | Claude: kira-kira US$0,03–0,06 per foto dari kredit API yang sama dengan Scan nota; Di HP: Rp 0 ([lihat di bawah](#scan-ktp--paspor)) |
 | Scan nota (pengeluaran dari foto) | Claude API (Anthropic), lewat Edge Function Supabase | Per scan, kira-kira US$0,05–0,15 per foto, dari kredit API (paket Claude Max: US$100/bulan sudah termasuk; atau kredit prabayar) yang menjadi batas belanja ([lihat di bawah](#scan-nota-pengeluaran-dari-foto)) |
 
 Catatan jujur: paket gratis Supabase **tidak membuat cadangan otomatis**, dan proyek **dijeda bila sepekan terlalu
@@ -106,6 +106,13 @@ Lewati langkah ini bila isinya hanya data contoh.
    (fungsi menulis biaya tiap scan ke tabel `scan_usage` dengan kunci rahasia proyek, `SUPABASE_SECRET_KEYS`, yang sudah
    tersedia otomatis; tanpa tabel itu scan tetap jalan, biayanya hanya tidak tercatat). Kunci Claude dipasang pemilik sendiri
    ([Scan nota](#scan-nota-pengeluaran-dari-foto)), tidak lewat operator.
+6. **Edge Function `scan-ktp`** (Scan KTP lewat Claude): deploy isi `supabase/functions/scan-ktp/` (`index.ts` + `ktp.ts`)
+   **bersama `supabase/functions/scan-nota/scan.ts`** yang diimpornya (`../scan-nota/scan.ts`), juga dengan
+   **`verify_jwt = false`** (CLI: `supabase functions deploy scan-ktp --no-verify-jwt`). Memakai kunci Claude yang sama
+   (`ANTHROPIC_API_KEY`). Biayanya masuk tabel `scan_usage` dengan jenis `ktp` / `passport`: itu butuh `schema.sql` versi ini
+   dijalankan ulang (kolom `ktp_scan_engine`, daftar jenis yang diperluas). Blok yang memperluas daftar jenis mengganti
+   CHECK lama (`drop constraint`), jadi bagian itu dijalankan **pemilik sendiri** di Supabase → SQL Editor, bukan oleh
+   operator (aturan keamanan data); sebelum itu scan tetap jalan, biayanya hanya tertinggal di log fungsi.
 
 ### 3. Pemilik: atur login di Supabase
 
@@ -261,7 +268,7 @@ Emails → SMTP Settings**. Untuk beberapa pengguna saja, cara di atas sudah cuk
 |---|---|
 | Tamu harian/mingguan mau datang tanggal X | **Dashboard → Cek kamar kosong**: pilih Harian/Mingguan/Bulanan, tanggal check-in dan jumlahnya; kamar yang kosong tampil paling pas dulu, ketuk **Pesan** ([lihat di bawah](#rencana-check-in--daftar-tunggu)). |
 | "Belum ada kamar" | Di halaman yang sama ketuk **Masukkan ke daftar tunggu**; **Sewa → Daftar tunggu** menunjukkan kapan ada kamar cocok, lalu **Kabari** lewat WhatsApp dan **Pesan**. |
-| Penyewa baru datang | **Sewa → Sewa Baru**: pilih/buat penyewa (bisa **Scan KTP / Paspor**), kos & kamar kosong, periode & harga, deposit, add-on, lalu catat pembayaran pertama (boleh DP). |
+| Penyewa baru datang | **Sewa → Sewa Baru**: pilih/buat penyewa (bisa **Scan KTP / Paspor**, [lihat di bawah](#scan-ktp--paspor)), kos & kamar kosong, periode & harga, deposit, add-on, lalu catat pembayaran pertama (boleh DP). Tamu harian di kamar kosong: ketuk kamarnya di **Papan kamar → Check-in cepat**, juga dengan **Scan KTP / Paspor**. |
 | Penyewa membayar | **Dashboard → Bayar** (atau buka sewa → **Catat pembayaran**). Status otomatis **DP / Sebagian** atau **Lunas**. Bisa kirim kwitansi ke WhatsApp. Salah ketik? **✏️ Ubah pembayaran** ([lihat di bawah](#salah-catat-pembayaran-atau-tagihan)). |
 | Penyewa bayar untuk periode berikutnya (lanjut sewa) | Ketuk kamarnya di **Papan kamar** → **Bayar & perpanjang** (juga di baris **Perlu perhatian** dan di halaman sewa bila belum ada tagihan terbuka). Satu lembar: periode, harga, **Sudah dibayar lunas** (tercentang), metode dan tanggal bayar (boleh mundur), lalu **Simpan & perpanjang**: tagihan dibuat, pembayaran dicatat, sewa diperpanjang, dan kwitansi LUNAS siap dikirim. Bayar sebagian? Hapus centangnya, lalu **Catat pembayaran**. |
 | Mendekati jatuh tempo | Dashboard menampilkan **Perlu perhatian** (terlambat / jatuh tempo ≤3 hari). Tombol **Tagih** membuat tagihan periode berikutnya dan memperpanjang sewa; ikon WhatsApp mengirim pengingat berisi nomor rekening. Ikon oranye bertanda **+** berarti nomor HP penyewa belum diisi: ketuk untuk langsung mengisinya. |
@@ -371,6 +378,27 @@ Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik
 - **Logo kos**: **Kos → Ubah kos → Logo kos → Pilih logo** (PNG transparan paling bagus; hanya tersimpan di mode online).
   Logo tampil di gambar tagihan dan di halaman kos.
 
+### Scan KTP / paspor
+
+**Scan KTP / Paspor** ada di form penyewa, wizard **Sewa Baru**, dan **Check-in cepat** di papan kamar: foto kartunya, lalu
+hasil bacaan tampil untuk **diperiksa dan dicentang** sebelum masuk ke formulir (nama, NIK, tempat/tanggal lahir, jenis
+kelamin, alamat, agama, status, pekerjaan; untuk paspor: nomor, kewarganegaraan, nama, jenis kelamin, tanggal lahir).
+Nomor HP tidak ada di KTP, tetap diisi manual.
+
+Ada dua **pembaca**, dipilih di **Pengaturan → Scan KTP** (pemilik/admin) sebagai bawaan untuk semua anggota, dan bisa
+diganti untuk satu scan di panelnya:
+
+| Pembaca | Akurasi | Biaya | Foto |
+|---|---|---|---|
+| **Claude** (bawaan) | Tinggi (pada 24 kartu uji sintetis: 100 % kartu benar); kolom yang diragukan ditandai "Claude kurang yakin, periksa" | kira-kira US$0,03–0,06 per foto, dari kredit Claude yang sama dengan Scan nota; biayanya tampil di layar (pemilik/admin) dan di **Kredit Claude** | dikirim ke Anthropic untuk dibaca |
+| **Di HP** | Sedang (±8 dari 10 kartu benar seluruhnya; sering perlu koreksi ejaan) | Rp 0 | tidak keluar dari HP; unduh data OCR ±15 MB sekali |
+
+Tanpa internet, foto selalu dibaca di HP. Di Mode Demo, Claude menampilkan **kartu contoh** (bukan hasil foto Anda) supaya
+alurnya bisa dicoba. Claude lewat fungsi `scan-ktp` memakai kunci API yang sama dengan Scan nota (langkah sekali-saja di
+bawah); sebelum kunci terpasang, panel menjawab "Scan KTP lewat Claude belum aktif" dan **Di HP** tetap bisa dipakai.
+Di **Check-in cepat**, hasil scan mengisi nama dan seluruh data KTP ikut tersimpan pada penyewa baru (dan fotonya, di Mode
+Online); NIK yang sudah dimiliki penyewa lama otomatis memilih penyewa itu.
+
 ### Scan nota (pengeluaran dari foto)
 
 **Pengeluaran → Scan nota** (juga di form **Catat pengeluaran**): foto halaman catatan pengeluaran (tanggal, keterangan,
@@ -405,8 +433,10 @@ platform.claude.com → Billing). Perkiraannya menganggap kredit diperbarui tiap
 (tidak diperbarui) isi **0**: kartu lalu hanya menampilkan biaya scan, dan saldonya dilihat di Console. Anthropic tidak
 menyediakan saldo lewat API, jadi sisanya dihitung dari scan yang tercatat di Woombad; saldo pasti selalu di
 **Lihat saldo pasti di Claude Console**. Biaya juga tercatat di **Supabase → Edge Functions → scan-nota → Logs** (baris
-`scan-nota usage`; foto dan isinya tidak dicatat).
-Foto catatan dikirim ke Anthropic untuk dibaca; jangan scan dokumen berisi data pribadi penyewa.
+`scan-nota usage`; foto dan isinya tidak dicatat). Scan KTP lewat Claude tercatat di kartu yang sama ("16 data · KTP") dan di
+log fungsi `scan-ktp`.
+Foto catatan dikirim ke Anthropic untuk dibaca. Scan KTP lewat Claude juga mengirim foto kartu identitas ke Anthropic; yang
+tidak menghendaki itu memilih pembaca **Di HP** ([lihat di atas](#scan-ktp--paspor)).
 
 ### Transisi halaman & jendela
 

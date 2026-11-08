@@ -12,7 +12,9 @@
  */
 import { ktpFieldsToTenant, parseKtpText, splitKtpLines, type KtpParseResult } from '../../domain/ktp'
 import { detectDocument, parsePassportMrz, passportToTenant, type DocumentKind, type PassportParseResult } from '../../domain/passport'
-import type { ScanPrefill } from './types'
+import type { ScanCostReply } from '../../../supabase/functions/scan-nota/scan.ts'
+import type { ScanEngine } from './engine'
+import type { ScanPrefill, ScanPrefillKey } from './types'
 
 export const MAX_IMAGE_WIDTH = 1600
 export const OCR_LANGS = ['ind', 'eng']
@@ -47,12 +49,20 @@ export interface OcrInterpretation {
 }
 
 export interface DocumentScanResult extends OcrInterpretation {
-  /** raw OCR text */
+  /** raw OCR text; from Claude the fields as read, one per line */
   text: string
-  /** tesseract's own mean confidence, 0..100 */
-  ocrConfidence: number
-  /** the preprocessed JPEG that was recognised (also what gets uploaded as the document photo) */
+  /** tesseract's own mean confidence, 0..100; null from Claude, which reports no such figure */
+  ocrConfidence: number | null
+  /** the JPEG that was read (also what gets uploaded as the document photo) */
   image: Blob
+  /** which reader produced it (SPEC 7.19) */
+  engine: ScanEngine
+  /** the review rows Claude was not sure of (SPEC 7.19); empty from the on-device reader */
+  unclear: ScanPrefillKey[]
+  /** Claude's short note for the person checking, or '' */
+  notes: string
+  /** what a Claude scan cost, for owner/admin (SPEC 7.17); null from the on-device reader or an older function */
+  cost: ScanCostReply | null
 }
 
 /** Scale (width, height) down so width <= maxWidth, keeping the aspect ratio; never upscales. */
@@ -311,12 +321,12 @@ export class ScanAbortedError extends Error {
   }
 }
 
-function throwIfAborted(signal: AbortSignal | undefined): void {
+export function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new ScanAbortedError()
 }
 
 /** Settle with `promise`, or reject with ScanAbortedError as soon as `signal` aborts. */
-function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+export function untilAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
   if (!signal) return promise
   if (signal.aborted) return Promise.reject(new ScanAbortedError())
   return new Promise<T>((resolve, reject) => {
@@ -378,7 +388,7 @@ export async function recognizeDocument(file: Blob, onProgress: (p: OcrProgress)
     const { data } = await untilAborted(worker.recognize(image), signal)
     markOcrDataCached()
     report({ phase: 'parse', percent: 100, status: 'Selesai', downloading: false })
-    return { text: data.text, ocrConfidence: Math.round(data.confidence ?? 0), image, ...interpretOcrText(data.text) }
+    return { text: data.text, ocrConfidence: Math.round(data.confidence ?? 0), image, engine: 'tesseract', unclear: [], notes: '', cost: null, ...interpretOcrText(data.text) }
   } catch (err) {
     if (err instanceof ScanAbortedError || signal?.aborted) throw new ScanAbortedError()
     const detail = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
