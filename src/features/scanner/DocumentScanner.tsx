@@ -73,7 +73,8 @@ function KindBadge({ kind }: { kind: DocumentScanResult['kind'] }) {
 /**
  * Shared "Scan KTP / Paspor" panel (SPEC 5.3). Picks a photo (camera on phones, drag & drop on desktop),
  * reads it with Claude (the scan-ktp function) or on the device (tesseract.js) per the organisation's default and a
- * per-scan switch (SPEC 7.19; offline always on the device), auto-detects KTP vs passport and shows the detected
+ * per-scan switch (SPEC 7.19; offline always on the device, except Mode Demo's Claude sample, which needs no network),
+ * auto-detects KTP vs passport and shows the detected
  * fields as a checklist so the user decides which values to apply. Never overwrites typed data silently: fields that
  * already hold a different value start unchecked. The diff is derived from the *latest* `current` values (also text
  * typed while the scan was running), while the user's manual check/uncheck choices are kept separately.

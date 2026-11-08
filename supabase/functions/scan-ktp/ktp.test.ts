@@ -73,6 +73,28 @@ describe('parseKtpScanOutput', () => {
     expect(parseKtpScanOutput(reply('ktp', card({ tanggal_lahir: '31-02-1990' }))).ktp?.tanggal_lahir).toBeNull()
   })
 
+  it('every unambiguous way of writing a date becomes YYYY-MM-DD; anything else is null', () => {
+    const date = (tanggal_lahir: string) => parseKtpScanOutput(reply('ktp', card({ tanggal_lahir }))).ktp?.tanggal_lahir
+    for (const written of ['1990-05-25', '1990-5-25', '1990/05/25', '1990.5.25', '25-05-1990', '25-5-1990', '25/5/1990', '25.05.1990']) {
+      expect(date(written), written).toBe('1990-05-25')
+    }
+    expect(date('5-3-1990')).toBe('1990-03-05')
+    for (const written of ['1990-13-01', '90-05-25', '25 MEI 1990', '1990-05-25T00:00', '']) expect(date(written), written).toBeNull()
+  })
+
+  it('RT/RW as printed, with spaces or with the labels; a third number or other words are refused', () => {
+    const rtRw = (rt_rw: string) => parseKtpScanOutput(reply('ktp', card({ rt_rw }))).ktp?.rt_rw
+    for (const written of ['003/005', '3/5', '003 / 005', 'RT 003 RW 005', 'RT. 003/RW. 005', 'rt 3 rw 5']) expect(rtRw(written), written).toBe('003/005')
+    for (const written of ['003/005/007', '0003/005', 'DUSUN 3/5', '003', '-']) expect(rtRw(written), written).toBeNull()
+  })
+
+  it('a passport copied from the machine-readable lines: the fillers become spaces in names and go from the nationality', () => {
+    const out = parseKtpScanOutput(
+      reply('passport', null, { surname: 'MUSTERMANN', given_names: 'ERIKA<<MARIA<', passport_number: 'C01X00T47', nationality: 'D<<', birth_date: '1964-08-12', sex: '<', expiry_date: '2030-01-31' }),
+    )
+    expect(out.passport).toMatchObject({ surname: 'MUSTERMANN', given_names: 'ERIKA MARIA', nationality: 'D', sex: null })
+  })
+
   it('a passport: the machine-readable fields, the number stripped of fillers', () => {
     const out = parseKtpScanOutput(
       reply('passport', null, { surname: 'SMITH', given_names: 'JOHN ANDREW', passport_number: 'N1234567<', nationality: 'AUS', birth_date: '1985-07-04', sex: 'M', expiry_date: '2030-01-31' }),

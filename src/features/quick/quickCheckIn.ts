@@ -156,6 +156,50 @@ export function tenantsNamed(tenants: Tenant[], name: string): Tenant[] {
   return tenants.filter((t) => t.full_name.trim().replace(/\s+/g, ' ').toLowerCase() === key)
 }
 
+/**
+ * One document's values from several scans (SPEC 7.19: "Scan ulang" in check-in cepat): what the latest scan applied
+ * wins, what it left unticked stays from the earlier one. When the latest scan switched the identity type (KTP ->
+ * Paspor or back), the other type's number goes, so a dropped NIK never comes back with a passport.
+ */
+export function mergeScanPrefill(previous: ScanPrefill | null, next: ScanPrefill): ScanPrefill {
+  if (!previous) return next
+  const merged: ScanPrefill = { ...previous, ...next }
+  if (next.id_type !== previous.id_type) {
+    if (next.id_type === 'ktp') {
+      if (next.id_number === undefined) delete merged.id_number
+      if (next.nationality === undefined) delete merged.nationality
+    } else if (next.nik === undefined) {
+      delete merged.nik
+    }
+  }
+  return merged
+}
+
+/** tenant columns a scan may fill on an existing tenant, besides the identity ones */
+const SCAN_FILL_COLUMNS = ['gender', 'birth_place', 'birth_date', 'address', 'religion', 'marital_status', 'occupation'] as const
+export type ScanFillColumn = (typeof SCAN_FILL_COLUMNS)[number] | 'id_type' | 'nik' | 'id_number' | 'nationality'
+
+/**
+ * What a scan adds to an existing tenant the stay is booked for (SPEC 7.19): only the columns that are still empty on
+ * his record; nothing he has is changed (the name never). The identity (type, NIK or passport number, nationality) is
+ * set only when he has no NIK and no document number yet. Values are normalised as the tenant form saves them.
+ */
+export function scanFillsTenant(tenant: Tenant, prefill: ScanPrefill): Partial<Pick<Tenant, ScanFillColumn>> {
+  const scanned = formToTenantPayload(applyScanPrefill(EMPTY_TENANT_FORM, prefill))
+  const patch: Partial<Pick<Tenant, ScanFillColumn>> = {}
+  for (const column of SCAN_FILL_COLUMNS) {
+    const value = scanned[column]
+    if ((tenant[column] === null || tenant[column] === '') && value !== null && value !== undefined) Object.assign(patch, { [column]: value })
+  }
+  if (!tenant.nik && !tenant.id_number && (scanned.nik || scanned.id_number)) {
+    patch.id_type = scanned.id_type
+    patch.nik = scanned.nik ?? null
+    patch.id_number = scanned.id_number ?? null
+    patch.nationality = scanned.nationality ?? null
+  }
+  return patch
+}
+
 /** The tenant who already carries this scanned NIK (SPEC 7.19), or null. */
 export function tenantByNik(tenants: Tenant[], nik: string | undefined): Tenant | null {
   return nik ? tenants.find((t) => t.nik === nik) ?? null : null

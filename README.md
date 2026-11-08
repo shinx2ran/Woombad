@@ -393,11 +393,13 @@ diganti untuk satu scan di panelnya:
 | **Claude** (bawaan) | Tinggi (pada 24 kartu uji sintetis: 100 % kartu benar); kolom yang diragukan ditandai "Claude kurang yakin, periksa" | kira-kira US$0,03–0,06 per foto, dari kredit Claude yang sama dengan Scan nota; biayanya tampil di layar (pemilik/admin) dan di **Kredit Claude** | dikirim ke Anthropic untuk dibaca |
 | **Di HP** | Sedang (±8 dari 10 kartu benar seluruhnya; sering perlu koreksi ejaan) | Rp 0 | tidak keluar dari HP; unduh data OCR ±15 MB sekali |
 
-Tanpa internet, foto selalu dibaca di HP. Di Mode Demo, Claude menampilkan **kartu contoh** (bukan hasil foto Anda) supaya
-alurnya bisa dicoba. Claude lewat fungsi `scan-ktp` memakai kunci API yang sama dengan Scan nota (langkah sekali-saja di
+Tanpa internet, foto selalu dibaca di HP. Di Mode Demo, Claude menampilkan **kartu contoh** (bukan hasil foto Anda, juga
+tanpa internet) supaya alurnya bisa dicoba. Claude lewat fungsi `scan-ktp` memakai kunci API yang sama dengan Scan nota (langkah sekali-saja di
 bawah); sebelum kunci terpasang, panel menjawab "Scan KTP lewat Claude belum aktif" dan **Di HP** tetap bisa dipakai.
 Di **Check-in cepat**, hasil scan mengisi nama dan seluruh data KTP ikut tersimpan pada penyewa baru (dan fotonya, di Mode
-Online); NIK yang sudah dimiliki penyewa lama otomatis memilih penyewa itu.
+Online). NIK yang sudah dimiliki penyewa lama otomatis memilih penyewa itu; NIK yang belum tercatat dianggap penyewa baru,
+kecuali Anda memilih penyewa lama bernama sama. Penyewa lama hanya dilengkapi: data yang masih kosong diisi dari scan, yang
+sudah ada tidak diubah. Salah scan? **Hapus hasil scan**.
 
 ### Scan nota (pengeluaran dari foto)
 

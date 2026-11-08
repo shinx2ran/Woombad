@@ -118,9 +118,10 @@ export class KtpScanOutputError extends Error {
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-/** the card's own form, DD-MM-YYYY (or with slashes), in case the model copies it instead of converting */
-const PRINTED_DATE_RE = /^(\d{2})[-/.](\d{2})[-/.](\d{4})$/
+/** year first, '-', '/' or '.' between, day and month with or without a leading zero ('1990-5-25') */
+const YEAR_FIRST_RE = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/
+/** the card's own form, DD-MM-YYYY, in case the model copies it instead of converting ('5-3-1990' too) */
+const PRINTED_DATE_RE = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/
 
 /** A trimmed, single-spaced, upper-cased string, or null when empty or not a string. */
 function clean(v: unknown): string | null {
@@ -129,16 +130,37 @@ function clean(v: unknown): string | null {
   return t === '' || t === '-' ? null : t
 }
 
-/** 'YYYY-MM-DD' that exists in the calendar (a printed 'DD-MM-YYYY' is turned around first), else null. */
+/**
+ * 'YYYY-MM-DD' that exists in the calendar, else null. The prompt asks for that form; a date the model wrote another
+ * unambiguous way (the card's DD-MM-YYYY, no leading zeros, '/' or '.') is turned into it rather than lost.
+ */
 function cleanDate(v: unknown): string | null {
-  let t = clean(v)
+  const t = clean(v)
   if (!t) return null
-  const printed = PRINTED_DATE_RE.exec(t)
-  if (printed) t = `${printed[3]}-${printed[2]}-${printed[1]}`
-  if (!ISO_DATE_RE.test(t)) return null
-  const [y, m, d] = t.split('-').map(Number)
+  const yearFirst = YEAR_FIRST_RE.exec(t)
+  const printed = yearFirst ? null : PRINTED_DATE_RE.exec(t)
+  const parts = yearFirst ? [yearFirst[1], yearFirst[2], yearFirst[3]] : printed ? [printed[3], printed[2], printed[1]] : null
+  if (!parts) return null
+  const [y, m, d] = parts.map(Number)
   const date = new Date(Date.UTC(y, m - 1, d))
-  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d ? t : null
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null
+  return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+}
+
+/** 'NNN/NNN' from '003/005', '3/5', '003 / 005' or 'RT 003 RW 005'; anything else (a third number, other words) null */
+function cleanRtRw(v: unknown): string | null {
+  const t = clean(v)
+  if (!t) return null
+  const numbers = t.match(/\d+/g)
+  if (!numbers || numbers.length !== 2 || numbers.some((n) => n.length > 3)) return null
+  if (t.replace(/\d+/g, '').replace(/RT|RW|[\s./]/g, '') !== '') return null
+  return numbers.map((n) => n.padStart(3, '0')).join('/')
+}
+
+/** a name from the machine-readable lines: the '<' fillers are spaces ('ERIKA<<MARIA' -> 'ERIKA MARIA') */
+function cleanMrzName(v: unknown): string | null {
+  const t = clean(v)
+  return t ? clean(t.replace(/</g, ' ')) : null
 }
 
 function cleanGender(v: unknown): string | null {
@@ -168,7 +190,6 @@ export function parseKtpScanOutput(value: unknown): KtpScanResult {
     if (!isRecord(value.ktp)) throw new KtpScanOutputError('data KTP tidak ada')
     const k = value.ktp
     const nik = clean(k.nik)?.replace(/\s/g, '') ?? null
-    const rtRw = clean(k.rt_rw)
     ktp = {
       nik: nik && /^\d{16}$/.test(nik) ? nik : null,
       nama: clean(k.nama),
@@ -180,7 +201,7 @@ export function parseKtpScanOutput(value: unknown): KtpScanResult {
         return g && ['A', 'B', 'AB', 'O'].includes(g) ? g : null
       })(),
       alamat: clean(k.alamat),
-      rt_rw: rtRw && /^\d{1,3}\/\d{1,3}$/.test(rtRw) ? rtRw.split('/').map((p) => p.padStart(3, '0')).join('/') : null,
+      rt_rw: cleanRtRw(k.rt_rw),
       kel_desa: clean(k.kel_desa),
       kecamatan: clean(k.kecamatan),
       kota: clean(k.kota),
@@ -193,10 +214,10 @@ export function parseKtpScanOutput(value: unknown): KtpScanResult {
   } else if (kind === 'passport') {
     if (!isRecord(value.passport)) throw new KtpScanOutputError('data paspor tidak ada')
     const p = value.passport
-    const nat = clean(p.nationality)
+    const nat = clean(p.nationality)?.replace(/</g, '') || null
     passport = {
-      surname: clean(p.surname),
-      given_names: clean(p.given_names),
+      surname: cleanMrzName(p.surname),
+      given_names: cleanMrzName(p.given_names),
       passport_number: clean(p.passport_number)?.replace(/[^A-Z0-9]/g, '') || null,
       nationality: nat && /^[A-Z]{1,3}$/.test(nat) ? nat : null,
       birth_date: cleanDate(p.birth_date),

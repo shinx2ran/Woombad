@@ -1152,6 +1152,9 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   belakang, nama depan, nomor, kewarganegaraan alpha-3, tgl lahir, L/P, kedaluwarsa), `unclear` (nama kolom yang diragukan)
   dan `notes` (bahasa Indonesia). `parseKtpScanOutput` memeriksa ulang: NIK bukan 16 digit, tanggal tidak ada di kalender,
   jenis kelamin bukan L/P, gol. darah di luar A/B/AB/O → null (tidak pernah menebak); teks dirapikan huruf besar satu spasi.
+  Bentuk lain yang tidak ambigu dirapikan, bukan dibuang: tanggal tanpa nol di depan, dengan `/` atau `.`, atau dalam urutan
+  kartu (DD-MM-YYYY) → YYYY-MM-DD; RT/RW "003 / 005" atau "RT 003 RW 005" → "003/005"; pengisi `<` dari baris MRZ menjadi
+  spasi di nama dan hilang dari kewarganegaraan ("ERIKA<<MARIA" → "ERIKA MARIA", "D<<" → "D").
   Balasan 200: `{ result, model, usage, cost }`. Penolakan: 422 "Pastikan isinya KTP atau halaman data paspor".
   Log hanya hitungan (`scan-ktp usage`), tidak pernah isi kartu.
 - **`scan_usage.kind`** diperluas: `ktp` / `passport` / `unknown` (CHECK bernama `scan_usage_kind_check`; pada instalasi
@@ -1166,7 +1169,7 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Panel scanner** (`DocumentScanner`, dipakai form penyewa, wizard Sewa baru dan check-in cepat): saklar **Pembaca
   dokumen** Claude / Di HP di panel awal, mulai dari default organisasi, bisa diganti per scan oleh siapa pun (biaya ±US$0,03–
   0,06 per foto, tertulis di bawah saklar bersama persetujuan "Foto dikirim ke Anthropic (Claude)"). Offline: selalu Di HP
-  dengan catatan (`effectiveEngine`). Jalur Claude (`recognizeDocumentWithClaude`, `src/features/scanner/claudeScan.ts`):
+  dengan catatan (`effectiveEngine`), kecuali contoh Claude di Mode Demo, yang tidak butuh jaringan. Jalur Claude (`recognizeDocumentWithClaude`, `src/features/scanner/claudeScan.ts`):
   foto diskalakan ke JPEG 2000 px (`prepareScanImage`, JPEG yang sama jadi foto dokumen) → fungsi → `interpretClaudeScan`:
   KTP lewat `ktpFieldsToTenant` yang sama dengan pembaca HP (nama Title Case, alamat digabung), paspor langsung ke
   `id_type 'passport'` + nomor + kewarganegaraan + jenis kelamin + tgl lahir (tanpa lencana digit kontrol MRZ: Claude tidak
@@ -1183,8 +1186,17 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   → `applyScanPrefill(EMPTY_TENANT_FORM, …)` lalu `formToTenantPayload`; nama yang diketik tetap menentukan). Mode Online:
   foto dokumen diunggah ke bucket `ktp` untuk penyewa yang baru dibuat (`BookStayResult.createdTenant`), gagal unggah tidak
   membatalkan check-in. NIK hasil scan yang sudah dimiliki penyewa lama memilih penyewa itu ("NIK ini milik penyewa lama …",
-  tombol **Bukan dia?** untuk tetap membuat penyewa baru); penyewa lama tidak diubah. Ringkasan menulis "Dokumen KTP · NIK …
-  · data penyewa diisi dari scan".
+  tombol **Bukan dia?** untuk tetap membuat penyewa baru). NIK hasil scan yang belum dimiliki siapa pun berarti **penyewa
+  baru**: penyewa lama bernama sama (tanpa NIK, atau dengan NIK yang sama; yang NIK-nya lain tidak ditawarkan,
+  `sameNameCandidates`) tidak lagi dipilih otomatis, pilihan "Nama ini sudah ada" mulai di "Orang lain (penyewa baru)" dengan
+  petunjuknya. Penyewa lama yang dipilih (otomatis lewat NIK atau dengan tangan) hanya **dilengkapi**: kolom yang masih kosong
+  di datanya diisi dari scan (`scanFillsTenant`: jenis kelamin, tempat/tanggal lahir, alamat, agama, status, pekerjaan;
+  identitas hanya bila belum ada NIK maupun nomor dokumen; nama dan isi yang sudah ada tidak pernah diubah), foto diunggah
+  bila ia belum punya; ringkasan menulis "Dari scan melengkapi NIK, tempat lahir, …". Ringkasan penyewa baru menulis
+  "Dokumen KTP · NIK … · data penyewa diisi dari scan". **Scan ulang** menambah ke hasil sebelumnya (`mergeScanPrefill`:
+  yang dicentang menang, yang tidak dicentang tetap; ganti jenis identitas membuang nomor jenis lama), dan panel scanner
+  diberi isi scan sebelumnya sehingga peringatan "… akan dihapus" muncul. **Hapus hasil scan** (di bawah tombol scan)
+  membuang hasil scan dan fotonya; nama yang diketik tetap.
 - **Uji**: `supabase/functions/scan-ktp/ktp.test.ts` (skema, pembersihan, paspor, bentuk salah), `scanner/claudeScan.test.ts`
   (interpretasi KTP/paspor/unknown, keyakinan, tanda ragu, kartu contoh konsisten), `scanner/engine.test.ts`,
   `DocumentScanner.test.tsx` (saklar, jalur Claude, offline, Mode Demo, staf tanpa biaya, galat), `KtpScanCard.test.tsx`,

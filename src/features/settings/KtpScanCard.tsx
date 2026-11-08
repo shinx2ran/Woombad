@@ -15,7 +15,8 @@ const ICON: Record<ScanEngine, typeof Sparkles> = { claude: Sparkles, tesseract:
  * Which reader the document scanner uses by default for every member: Claude through the scan-ktp function (the photo
  * goes to Anthropic, a few cents per scan from the Claude credit) or tesseract.js on the device (free, the photo never
  * leaves the phone, more corrections). Saved on the organisation as soon as it is picked; anyone may still switch for
- * one scan in the scanner panel, and offline the photo is always read on the device.
+ * one scan in the scanner panel, and offline the photo is always read on the device (Mode Demo's Claude sample needs no
+ * network and stays).
  */
 export function KtpScanCard({ isLocalMode }: { isLocalMode: boolean }) {
   const { org, repo } = useOrg()
@@ -76,7 +77,7 @@ export function KtpScanCard({ isLocalMode }: { isLocalMode: boolean }) {
         </div>
         <p className="text-xs text-slate-500">
           Siapa pun bisa mengganti pembacanya untuk satu scan di panel scan. Tanpa internet, foto selalu dibaca di HP.
-          {isLocalMode && ' Mode Demo: Claude menampilkan contoh hasil, foto tidak dikirim.'}
+          {isLocalMode && ' Mode Demo: Claude menampilkan contoh hasil (juga tanpa internet), foto tidak dikirim.'}
         </p>
       </CardBody>
     </Card>

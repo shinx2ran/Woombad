@@ -13,8 +13,10 @@ import {
   QuickCheckInError,
   resolveTenantChoice,
   saveQuickCheckIn,
+  mergeScanPrefill,
   sameNameCandidates,
   saveStayBooking,
+  scanFillsTenant,
   tenantsNamed,
   validateQuickCheckIn,
   validateStayBooking,
@@ -130,6 +132,56 @@ describe('sameNameCandidates (SPEC 7.19)', () => {
   it('with a scanned NIK: the one with that NIK and those without a NIK; a different known NIK is another person', () => {
     expect(sameNameCandidates(tenants, 'Budi Santoso', '3273012505900002').map((t) => t.id)).toEqual(['a', 'b'])
     expect(sameNameCandidates(tenants, 'Budi Santoso', '9999999999999999').map((t) => t.id)).toEqual(['a'])
+  })
+})
+
+describe('mergeScanPrefill (SPEC 7.19: Scan ulang)', () => {
+  const ktpScan = { id_type: 'ktp' as const, full_name: 'Budi Santoso', nik: '3273012505900002', birth_date: '1990-05-25', address: 'Jl. Melati No. 12' }
+
+  it('the first scan is taken as it is', () => {
+    expect(mergeScanPrefill(null, ktpScan)).toBe(ktpScan)
+  })
+
+  it('a rescan of the same document: what was ticked wins, what was left unticked stays', () => {
+    expect(mergeScanPrefill(ktpScan, { id_type: 'ktp', address: 'Jl. Melati No. 21' })).toEqual({ ...ktpScan, address: 'Jl. Melati No. 21' })
+  })
+
+  it('a rescan that switched to a passport drops the NIK; one that kept the KTP keeps it and takes no passport number', () => {
+    const passport = { id_type: 'passport' as const, id_number: 'N1234567', nationality: 'AUS' }
+    const switched = mergeScanPrefill(ktpScan, passport)
+    expect(switched).toMatchObject({ id_type: 'passport', id_number: 'N1234567', nationality: 'AUS', full_name: 'Budi Santoso' })
+    expect(switched.nik).toBeUndefined()
+    // the switch declined in the review: the scanner hands back the KTP type and none of the passport's numbers
+    expect(mergeScanPrefill(ktpScan, { id_type: 'ktp', gender: 'L' })).toEqual({ ...ktpScan, gender: 'L' })
+    // and back from a passport to a KTP: the passport number and nationality go
+    const back = mergeScanPrefill({ ...passport, full_name: 'X' }, { id_type: 'ktp', nik: '3273012505900002' })
+    expect(back).toEqual({ id_type: 'ktp', full_name: 'X', nik: '3273012505900002' })
+  })
+})
+
+describe('scanFillsTenant (SPEC 7.19: an existing tenant gets only what his record lacks)', () => {
+  const old = (over: Partial<Tenant> = {}): Tenant =>
+    ({
+      id: 't1', full_name: 'Budi Santoso', id_type: 'ktp', nik: null, id_number: null, nationality: null, phone: '+6281234567801', gender: 'L',
+      birth_place: null, birth_date: null, address: null, religion: null, marital_status: null, occupation: 'Karyawan swasta', ...over,
+    }) as Tenant
+  const scan = { id_type: 'ktp' as const, full_name: 'BUDI SANTOSO X', nik: '3273012505900002', gender: 'P' as const, birth_place: 'Bandung', birth_date: '1990-05-25', address: 'Jl. Melati No. 12', occupation: 'Pelajar' }
+
+  it('fills the empty columns and the identity; never the name, never what he has', () => {
+    expect(scanFillsTenant(old(), scan)).toEqual({ id_type: 'ktp', nik: '3273012505900002', id_number: null, nationality: null, birth_place: 'Bandung', birth_date: '1990-05-25', address: 'Jl. Melati No. 12' })
+  })
+
+  it('a tenant who already has a document number keeps his identity', () => {
+    expect(scanFillsTenant(old({ nik: '3273010101800001' }), scan)).not.toHaveProperty('nik')
+    expect(scanFillsTenant(old({ id_type: 'passport', id_number: 'N1234567' }), scan)).not.toHaveProperty('id_type')
+  })
+
+  it('a passport scan on a tenant without any number sets the passport identity', () => {
+    expect(scanFillsTenant(old(), { id_type: 'passport', id_number: 'n1234567', nationality: 'aus' })).toMatchObject({ id_type: 'passport', nik: null, id_number: 'N1234567', nationality: 'AUS' })
+  })
+
+  it('nothing to add: an empty patch', () => {
+    expect(scanFillsTenant(old({ nik: '3273012505900002', birth_place: 'Bandung', birth_date: '1990-05-25', address: 'x' }), scan)).toEqual({})
   })
 })
 
