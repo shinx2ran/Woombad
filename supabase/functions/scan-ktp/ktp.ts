@@ -147,14 +147,24 @@ function cleanDate(v: unknown): string | null {
   return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
 }
 
-/** 'NNN/NNN' from '003/005', '3/5', '003 / 005' or 'RT 003 RW 005'; anything else (a third number, other words) null */
+/** what may stand around the two RT/RW numbers once spaces and separators are gone */
+const RT_RW_SEPARATORS = /[\s./:,]/g
+/**
+ * 'NNN/NNN' from '003/005', '3/5', '003 / 005', 'RT 003 RW 005' or the card's own 'RT/RW : 003/005'. The RT comes
+ * first, as on the card: an 'RW' before the first number ('RW 005 RT 003') or any word after the last is refused rather
+ * than read the wrong way round, and so is a third number or any other word.
+ */
 function cleanRtRw(v: unknown): string | null {
   const t = clean(v)
   if (!t) return null
-  const numbers = t.match(/\d+/g)
-  if (!numbers || numbers.length !== 2 || numbers.some((n) => n.length > 3)) return null
-  if (t.replace(/\d+/g, '').replace(/RT|RW|[\s./]/g, '') !== '') return null
-  return numbers.map((n) => n.padStart(3, '0')).join('/')
+  // something must stand between the numbers, or '003' would read as RT 00, RW 3
+  const m = /^(\D*)(\d{1,3})(\D+)(\d{1,3})(\D*)$/.exec(t)
+  if (!m) return null
+  const [, before, rt, between, rw, after] = m
+  if (!['', 'RT', 'RTRW'].includes(before.replace(RT_RW_SEPARATORS, ''))) return null
+  if (!['', 'RW'].includes(between.replace(RT_RW_SEPARATORS, ''))) return null
+  if (after.replace(RT_RW_SEPARATORS, '') !== '') return null
+  return `${rt.padStart(3, '0')}/${rw.padStart(3, '0')}`
 }
 
 /** a name from the machine-readable lines: the '<' fillers are spaces ('ERIKA<<MARIA' -> 'ERIKA MARIA') */

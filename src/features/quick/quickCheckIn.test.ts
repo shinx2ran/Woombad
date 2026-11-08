@@ -14,9 +14,12 @@ import {
   resolveTenantChoice,
   saveQuickCheckIn,
   mergeScanPrefill,
+  resolveScanTenant,
   sameNameCandidates,
   saveStayBooking,
   scanFillsTenant,
+  scannedDocument,
+  tenantByDocument,
   tenantsNamed,
   validateQuickCheckIn,
   validateStayBooking,
@@ -121,17 +124,68 @@ describe('resolveTenantChoice', () => {
   })
 })
 
-describe('sameNameCandidates (SPEC 7.19)', () => {
-  const tenant = (id: string, full_name: string, nik: string | null): Tenant => ({ id, full_name, nik } as Tenant)
-  const tenants = [tenant('a', 'Budi Santoso', null), tenant('b', 'Budi Santoso', '3273012505900002'), tenant('c', 'Budi Santoso', '3273010101800001'), tenant('d', 'Siti', null)]
+describe('scanned document and same-name candidates (SPEC 7.19)', () => {
+  const tenant = (id: string, full_name: string, nik: string | null, id_number: string | null = null): Tenant => ({ id, full_name, nik, id_number } as Tenant)
+  const tenants = [
+    tenant('a', 'Budi Santoso', null),
+    tenant('b', 'Budi Santoso', '3273012505900002'),
+    tenant('c', 'Budi Santoso', '3273010101800001'),
+    tenant('d', 'Siti', null),
+    tenant('e', 'John Smith', null, 'N111'),
+    tenant('f', 'John Smith', null, null),
+  ]
+  const ktp = (nik?: string) => ({ id_type: 'ktp' as const, nik })
+  const passport = (id_number?: string) => ({ id_type: 'passport' as const, id_number })
 
-  it('without a scanned NIK: everyone with that name', () => {
-    expect(sameNameCandidates(tenants, 'budi santoso', undefined).map((t) => t.id)).toEqual(['a', 'b', 'c'])
+  it('the number a scan carries: the NIK of a KTP, the passport number upper-cased without spaces; none when unread', () => {
+    expect(scannedDocument(ktp('3273012505900002'))).toEqual({ column: 'nik', value: '3273012505900002' })
+    expect(scannedDocument(passport(' n 111 '))).toEqual({ column: 'id_number', value: 'N111' })
+    expect(scannedDocument(ktp())).toBeNull()
+    expect(scannedDocument(null)).toBeNull()
   })
 
-  it('with a scanned NIK: the one with that NIK and those without a NIK; a different known NIK is another person', () => {
-    expect(sameNameCandidates(tenants, 'Budi Santoso', '3273012505900002').map((t) => t.id)).toEqual(['a', 'b'])
-    expect(sameNameCandidates(tenants, 'Budi Santoso', '9999999999999999').map((t) => t.id)).toEqual(['a'])
+  it('the tenant who carries that number', () => {
+    expect(tenantByDocument(tenants, ktp('3273012505900002'))?.id).toBe('b')
+    expect(tenantByDocument(tenants, passport('n111'))?.id).toBe('e')
+    expect(tenantByDocument(tenants, passport('N222'))).toBeNull()
+    expect(tenantByDocument(tenants, ktp())).toBeNull()
+  })
+
+  it('without a scanned number: everyone with that name', () => {
+    expect(sameNameCandidates(tenants, 'budi santoso', null).map((t) => t.id)).toEqual(['a', 'b', 'c'])
+    expect(sameNameCandidates(tenants, 'budi santoso', ktp()).map((t) => t.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('with a scanned number: the one with that number and those without one; a different known number is another person', () => {
+    expect(sameNameCandidates(tenants, 'Budi Santoso', ktp('3273012505900002')).map((t) => t.id)).toEqual(['a', 'b'])
+    expect(sameNameCandidates(tenants, 'Budi Santoso', ktp('9999999999999999')).map((t) => t.id)).toEqual(['a'])
+    expect(sameNameCandidates(tenants, 'John Smith', passport('N222')).map((t) => t.id)).toEqual(['f'])
+  })
+})
+
+describe('resolveScanTenant (SPEC 7.19: with a scan, never a pick by name alone)', () => {
+  const t = (id: string): Tenant => ({ id, full_name: 'Budi Santoso' } as Tenant)
+  const scan = { id_type: 'ktp' as const, nik: '3273012505900002' }
+  const base = { sameName: [t('a')], byDocument: null, choice: '', newChoice: 'baru', scanned: scan }
+
+  it('without a scan: as before, the only same-name tenant is taken', () => {
+    expect(resolveScanTenant({ ...base, scanned: null })).toBe('a')
+  })
+
+  it('with a scan: a new tenant unless the number matches or a same-name tenant is picked by hand', () => {
+    expect(resolveScanTenant(base)).toBeNull()
+    expect(resolveScanTenant({ ...base, scanned: { id_type: 'ktp' } })).toBeNull()
+    expect(resolveScanTenant({ ...base, byDocument: t('z') })).toBe('z')
+    expect(resolveScanTenant({ ...base, choice: 'a' })).toBe('a')
+  })
+
+  it('a pick that no longer fits the name (the name was edited) is not replaced by an automatic pick', () => {
+    expect(resolveScanTenant({ ...base, sameName: [t('b')], choice: 'a' })).toBeNull()
+  })
+
+  it('"Orang lain" / "Bukan dia?" always means a new tenant', () => {
+    expect(resolveScanTenant({ ...base, byDocument: t('z'), choice: 'baru' })).toBeNull()
+    expect(resolveScanTenant({ ...base, scanned: null, choice: 'baru' })).toBeNull()
   })
 })
 
@@ -178,6 +232,10 @@ describe('scanFillsTenant (SPEC 7.19: an existing tenant gets only what his reco
 
   it('a passport scan on a tenant without any number sets the passport identity', () => {
     expect(scanFillsTenant(old(), { id_type: 'passport', id_number: 'n1234567', nationality: 'aus' })).toMatchObject({ id_type: 'passport', nik: null, id_number: 'N1234567', nationality: 'AUS' })
+  })
+
+  it('a passport scan that read no nationality keeps the one on file', () => {
+    expect(scanFillsTenant(old({ id_type: 'passport', nationality: 'AUS' }), { id_type: 'passport', id_number: 'N1' })).toMatchObject({ id_number: 'N1', nationality: 'AUS' })
   })
 
   it('nothing to add: an empty patch', () => {

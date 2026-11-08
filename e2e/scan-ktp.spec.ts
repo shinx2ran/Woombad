@@ -115,7 +115,7 @@ test.describe('Scan KTP via Claude (SPEC 7.19)', () => {
     // the demo data has a Budi Santoso without a NIK: he is offered, but a scanned NIK nobody has is a new person by default
     const sameName = form.getByLabel('Nama ini sudah ada')
     await expect(sameName).toHaveValue('baru')
-    await expect(form.getByText('NIK hasil scan belum tercatat: dianggap penyewa baru.', { exact: false })).toBeVisible()
+    await expect(form.getByText('Hasil scan dianggap penyewa baru.', { exact: false })).toBeVisible()
     await expect(form.getByTestId('quick-checkin-scan-result')).toContainText('Hasil scan KTP · NIK 3273012505900002')
     await form.getByLabel('Jumlah malam').click()
     await page.keyboard.type('2')

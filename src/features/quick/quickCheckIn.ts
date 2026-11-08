@@ -181,8 +181,9 @@ export type ScanFillColumn = (typeof SCAN_FILL_COLUMNS)[number] | 'id_type' | 'n
 
 /**
  * What a scan adds to an existing tenant the stay is booked for (SPEC 7.19): only the columns that are still empty on
- * his record; nothing he has is changed (the name never). The identity (type, NIK or passport number, nationality) is
- * set only when he has no NIK and no document number yet. Values are normalised as the tenant form saves them.
+ * his record; nothing he has is changed (the name never). The identity (type, NIK or passport number) is set only when
+ * he has no NIK and no document number yet; a passport keeps the nationality on file when the scan read none, a KTP has
+ * no nationality (as the tenant form stores it). Values are normalised as the tenant form saves them.
  */
 export function scanFillsTenant(tenant: Tenant, prefill: ScanPrefill): Partial<Pick<Tenant, ScanFillColumn>> {
   const scanned = formToTenantPayload(applyScanPrefill(EMPTY_TENANT_FORM, prefill))
@@ -195,24 +196,53 @@ export function scanFillsTenant(tenant: Tenant, prefill: ScanPrefill): Partial<P
     patch.id_type = scanned.id_type
     patch.nik = scanned.nik ?? null
     patch.id_number = scanned.id_number ?? null
-    patch.nationality = scanned.nationality ?? null
+    patch.nationality = scanned.id_type === 'passport' ? (scanned.nationality ?? tenant.nationality) : null
   }
   return patch
 }
 
-/** The tenant who already carries this scanned NIK (SPEC 7.19), or null. */
-export function tenantByNik(tenants: Tenant[], nik: string | undefined): Tenant | null {
-  return nik ? tenants.find((t) => t.nik === nik) ?? null : null
+const normalNumber = (value: string | null | undefined) => (value ?? '').replace(/\s+/g, '').toUpperCase()
+
+/**
+ * The document number a scan carries, as the tenant row stores it: the NIK of a KTP, or the passport (other document)
+ * number upper-cased without spaces; null when the scan has none (unreadable, or unticked in the review).
+ */
+export function scannedDocument(prefill: ScanPrefill | null): { column: 'nik' | 'id_number'; value: string } | null {
+  if (!prefill) return null
+  const column = prefill.id_type === 'ktp' ? 'nik' : 'id_number'
+  const value = normalNumber(prefill[column])
+  return value ? { column, value } : null
+}
+
+/** The tenant who already carries the scanned document's number (SPEC 7.19: NIK or passport number), or null. */
+export function tenantByDocument(tenants: Tenant[], prefill: ScanPrefill | null): Tenant | null {
+  const doc = scannedDocument(prefill)
+  return doc ? tenants.find((t) => normalNumber(t[doc.column]) === doc.value) ?? null : null
 }
 
 /**
- * The same-name tenants a scanned card can still be (SPEC 7.19): one whose NIK is known and differs from the scanned
- * NIK is another person and is not offered; one without a NIK, or with the same NIK, is. Without a scanned NIK: everyone
- * with that name.
+ * The same-name tenants a scanned card can still be (SPEC 7.19): one whose number of the same kind (NIK, or passport
+ * number) is known and differs from the scanned one is another person and is not offered; one without it, or with the
+ * same, is. Without a scanned number: everyone with that name.
  */
-export function sameNameCandidates(tenants: Tenant[], name: string, scannedNik: string | undefined): Tenant[] {
+export function sameNameCandidates(tenants: Tenant[], name: string, prefill: ScanPrefill | null): Tenant[] {
   const named = tenantsNamed(tenants, name)
-  return scannedNik ? named.filter((t) => !t.nik || t.nik === scannedNik) : named
+  const doc = scannedDocument(prefill)
+  return doc ? named.filter((t) => !normalNumber(t[doc.column]) || normalNumber(t[doc.column]) === doc.value) : named
+}
+
+/**
+ * Who the stay in check-in cepat goes to (SPEC 7.4, 7.19). Without a scan: the tenant picked among the same-name ones,
+ * or the only one (resolveTenantChoice). With a scan, nobody is picked by name alone, so the card's data never lands on
+ * the wrong record: the tenant who carries the scanned number, else a same-name tenant picked by hand, else a new
+ * tenant. `newChoice` (the "Orang lain" / "Bukan dia?" choice) always means a new tenant.
+ */
+export function resolveScanTenant(input: { sameName: Tenant[]; byDocument: Tenant | null; choice: string; newChoice: string; scanned: ScanPrefill | null }): string | null {
+  const { sameName, byDocument, choice, newChoice, scanned } = input
+  if (choice === newChoice) return null
+  if (!scanned) return resolveTenantChoice(sameName, choice, newChoice)
+  if (byDocument) return byDocument.id
+  return sameName.find((t) => t.id === choice)?.id ?? null
 }
 
 /**

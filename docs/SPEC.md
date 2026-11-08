@@ -1153,8 +1153,9 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   dan `notes` (bahasa Indonesia). `parseKtpScanOutput` memeriksa ulang: NIK bukan 16 digit, tanggal tidak ada di kalender,
   jenis kelamin bukan L/P, gol. darah di luar A/B/AB/O → null (tidak pernah menebak); teks dirapikan huruf besar satu spasi.
   Bentuk lain yang tidak ambigu dirapikan, bukan dibuang: tanggal tanpa nol di depan, dengan `/` atau `.`, atau dalam urutan
-  kartu (DD-MM-YYYY) → YYYY-MM-DD; RT/RW "003 / 005" atau "RT 003 RW 005" → "003/005"; pengisi `<` dari baris MRZ menjadi
-  spasi di nama dan hilang dari kewarganegaraan ("ERIKA<<MARIA" → "ERIKA MARIA", "D<<" → "D").
+  kartu (DD-MM-YYYY) → YYYY-MM-DD; RT/RW "003 / 005", "RT 003 RW 005" atau "RT/RW : 003/005" → "003/005" (RW lebih dulu,
+  mis. "RW 005 RT 003", ditolak, bukan ditukar); pengisi `<` dari baris MRZ menjadi spasi di nama dan hilang dari
+  kewarganegaraan ("ERIKA<<MARIA" → "ERIKA MARIA", "D<<" → "D").
   Balasan 200: `{ result, model, usage, cost }`. Penolakan: 422 "Pastikan isinya KTP atau halaman data paspor".
   Log hanya hitungan (`scan-ktp usage`), tidak pernah isi kartu.
 - **`scan_usage.kind`** diperluas: `ktp` / `passport` / `unknown` (CHECK bernama `scan_usage_kind_check`; pada instalasi
@@ -1186,17 +1187,20 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   → `applyScanPrefill(EMPTY_TENANT_FORM, …)` lalu `formToTenantPayload`; nama yang diketik tetap menentukan). Mode Online:
   foto dokumen diunggah ke bucket `ktp` untuk penyewa yang baru dibuat (`BookStayResult.createdTenant`), gagal unggah tidak
   membatalkan check-in. NIK hasil scan yang sudah dimiliki penyewa lama memilih penyewa itu ("NIK ini milik penyewa lama …",
-  tombol **Bukan dia?** untuk tetap membuat penyewa baru). NIK hasil scan yang belum dimiliki siapa pun berarti **penyewa
-  baru**: penyewa lama bernama sama (tanpa NIK, atau dengan NIK yang sama; yang NIK-nya lain tidak ditawarkan,
-  `sameNameCandidates`) tidak lagi dipilih otomatis, pilihan "Nama ini sudah ada" mulai di "Orang lain (penyewa baru)" dengan
-  petunjuknya. Penyewa lama yang dipilih (otomatis lewat NIK atau dengan tangan) hanya **dilengkapi**: kolom yang masih kosong
-  di datanya diisi dari scan (`scanFillsTenant`: jenis kelamin, tempat/tanggal lahir, alamat, agama, status, pekerjaan;
-  identitas hanya bila belum ada NIK maupun nomor dokumen; nama dan isi yang sudah ada tidak pernah diubah), foto diunggah
-  bila ia belum punya; ringkasan menulis "Dari scan melengkapi NIK, tempat lahir, …". Ringkasan penyewa baru menulis
-  "Dokumen KTP · NIK … · data penyewa diisi dari scan". **Scan ulang** menambah ke hasil sebelumnya (`mergeScanPrefill`:
-  yang dicentang menang, yang tidak dicentang tetap; ganti jenis identitas membuang nomor jenis lama), dan panel scanner
-  diberi isi scan sebelumnya sehingga peringatan "… akan dihapus" muncul. **Hapus hasil scan** (di bawah tombol scan)
-  membuang hasil scan dan fotonya; nama yang diketik tetap.
+  tombol **Bukan dia?** untuk tetap membuat penyewa baru); nomor paspor hasil scan berlaku sama (`tenantByDocument`).
+  Selama ada hasil scan, **tidak ada pemilihan otomatis menurut nama** (`resolveScanTenant`): sewa jatuh ke pemilik nomor
+  itu, ke penyewa lama bernama sama yang dipilih dengan tangan, atau ke **penyewa baru**; pilihan "Nama ini sudah ada" mulai
+  di "Orang lain (penyewa baru)" dengan petunjuknya, juga setelah nama diubah. Penyewa lama bernama sama dengan nomor sejenis
+  (NIK, atau nomor paspor) yang lain tidak ditawarkan (`sameNameCandidates`). Tanpa scan, aturannya tetap seperti 7.4. Penyewa
+  lama yang dipilih (lewat nomor atau dengan tangan) hanya **dilengkapi**: kolom yang masih kosong di datanya diisi dari scan
+  (`scanFillsTenant`: jenis kelamin, tempat/tanggal lahir, alamat, agama, status, pekerjaan; identitas hanya bila belum ada
+  NIK maupun nomor dokumen, paspor tanpa kewarganegaraan terbaca mempertahankan yang tercatat; nama dan isi yang sudah ada
+  tidak pernah diubah), foto diunggah bila ia belum punya; ringkasan menulis "Dari scan melengkapi NIK, tempat lahir, …".
+  Ini juga dijalankan bila sewa sudah tersimpan tetapi langkah berikutnya gagal. Ringkasan penyewa baru menulis "Dokumen KTP
+  · NIK … · data penyewa diisi dari scan". **Scan ulang** menambah ke hasil sebelumnya (`mergeScanPrefill`: yang dicentang
+  menang, yang tidak dicentang tetap; ganti jenis identitas membuang nomor jenis lama) dan mempertahankan pilihan penyewa
+  selama nomornya sama; panel scanner diberi isi scan sebelumnya sehingga peringatan "… akan dihapus" muncul. **Hapus hasil
+  scan** (di bawah tombol scan) membuang hasil scan dan fotonya; nama yang diketik dan pilihan penyewa tetap.
 - **Uji**: `supabase/functions/scan-ktp/ktp.test.ts` (skema, pembersihan, paspor, bentuk salah), `scanner/claudeScan.test.ts`
   (interpretasi KTP/paspor/unknown, keyakinan, tanda ragu, kartu contoh konsisten), `scanner/engine.test.ts`,
   `DocumentScanner.test.tsx` (saklar, jalur Claude, offline, Mode Demo, staf tanpa biaya, galat), `KtpScanCard.test.tsx`,

@@ -84,7 +84,11 @@ describe('parseKtpScanOutput', () => {
 
   it('RT/RW as printed, with spaces or with the labels; a third number or other words are refused', () => {
     const rtRw = (rt_rw: string) => parseKtpScanOutput(reply('ktp', card({ rt_rw }))).ktp?.rt_rw
-    for (const written of ['003/005', '3/5', '003 / 005', 'RT 003 RW 005', 'RT. 003/RW. 005', 'rt 3 rw 5']) expect(rtRw(written), written).toBe('003/005')
+    for (const written of ['003/005', '3/5', '003 / 005', 'RT 003 RW 005', 'RT. 003/RW. 005', 'rt 3 rw 5', 'RT/RW : 003/005', 'RT/RW: 003/005', '003, 005']) {
+      expect(rtRw(written), written).toBe('003/005')
+    }
+    // RW first would put the numbers the wrong way round: refused, not swapped
+    for (const written of ['RW 005 RT 003', 'RW005/RT003', 'RW/RT 005/003', '005 RW 003 RT', '003/005 RW']) expect(rtRw(written), written).toBeNull()
     for (const written of ['003/005/007', '0003/005', 'DUSUN 3/5', '003', '-']) expect(rtRw(written), written).toBeNull()
   })
 

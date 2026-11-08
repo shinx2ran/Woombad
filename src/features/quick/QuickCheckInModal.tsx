@@ -7,7 +7,7 @@ import { normalizePlate } from '../../domain/plate'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
 import { formatCheckout, formatRupiah, formatStay, todayISO } from '../../lib/format'
-import { ID_TYPE_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_UNIT_LABEL, type PaymentMethod, type PeriodType, type Room } from '../../types/db'
+import { ID_TYPE_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_UNIT_LABEL, type PaymentMethod, type PeriodType, type Room, type Tenant } from '../../types/db'
 import { PlateInput } from '../leases/PlateInput'
 import { usePriceConfirm } from '../leases/usePriceConfirm'
 import { PriceConfirm } from '../leases/PriceConfirm'
@@ -20,10 +20,11 @@ import {
   planStayBooking,
   QuickCheckInError,
   quantityText,
-  resolveTenantChoice,
+  resolveScanTenant,
   sameNameCandidates,
   scanFillsTenant,
-  tenantByNik,
+  scannedDocument,
+  tenantByDocument,
   validateStayBooking,
   type StayBookingInput,
 } from './quickCheckIn'
@@ -95,16 +96,14 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const paidAmount = paidFull ? total : dp
   const withDeposit = kind === 'monthly' || kind === 'yearly'
   const deposit = withDeposit && depositAmount > 0 ? { amount: depositAmount, paidNow: depositNow } : null
-  // a same-name tenant whose known NIK differs from the scanned one is another person (SPEC 7.19)
-  const sameName = useMemo(() => sameNameCandidates(data.tenants, name, scanned?.nik), [data.tenants, name, scanned])
-  // a scanned NIK that an existing tenant already has: that tenant, whatever the name was typed as
-  const byNik = useMemo(() => tenantByNik(data.tenants, scanned?.nik), [data.tenants, scanned])
-  // a scanned NIK nobody has is a new person until someone picks a same-name tenant by hand: never an automatic pick
-  // that would leave the card's data unsaved
-  const choice = tenantChoice === '' && scanned?.nik && !byNik ? NEW_TENANT : tenantChoice
-  const tenantId = choice === NEW_TENANT ? null : (byNik?.id ?? resolveTenantChoice(sameName, choice, NEW_TENANT))
+  // a same-name tenant whose known NIK / passport number differs from the scanned one is another person (SPEC 7.19)
+  const sameName = useMemo(() => sameNameCandidates(data.tenants, name, scanned), [data.tenants, name, scanned])
+  // a scanned number an existing tenant already has: that tenant, whatever the name was typed as
+  const byDocument = useMemo(() => tenantByDocument(data.tenants, scanned), [data.tenants, scanned])
+  // with a scan, never a pick by name alone: the number's owner, a tenant picked by hand, or a new tenant
+  const tenantId = resolveScanTenant({ sameName, byDocument, choice: tenantChoice, newChoice: NEW_TENANT, scanned })
   const existing = tenantId ? data.tenantById.get(tenantId) ?? null : null
-  // what the scan adds to an existing tenant: only what his record still lacks
+  // what the scan adds to that tenant (matched by number or picked by hand): only what his record still lacks
   const fill = existing && scanned ? scanFillsTenant(existing, scanned) : null
   const fillLabels = fill
     ? SCAN_PREFILL_ORDER.filter((k) => k in fill && fill[k as keyof typeof fill] != null).map((k) => (k === 'nik' ? 'NIK' : SCAN_FIELD_LABEL[k].toLowerCase()))
@@ -113,18 +112,47 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const applyScan = (prefill: ScanPrefill, image: Blob | null) => {
     if (prefill.full_name) setName(prefill.full_name)
     const merged = mergeScanPrefill(scanned, prefill)
+    // a rescan of the same document keeps the tenant picked by hand; another document starts the choice over
+    const before = scannedDocument(scanned)
+    const after = scannedDocument(merged)
+    if (scanned && (before?.column !== after?.column || before?.value !== after?.value)) setTenantChoice('')
     setScanned(merged)
     if (image) setScanImage(image)
-    setTenantChoice('')
     setScannerOpen(false)
-    const match = tenantByNik(data.tenants, merged.nik)
-    if (match) toast.success(`NIK ini milik penyewa lama ${match.full_name}: sewa dicatat atas namanya.`)
+    const match = tenantByDocument(data.tenants, merged)
+    if (match) toast.success(`${after?.column === 'nik' ? 'NIK' : 'Nomor paspor'} ini milik penyewa lama ${match.full_name}: sewa dicatat atas namanya.`)
   }
 
+  // the tenant picked by hand stays picked (also one this form created before a failed save)
   const dropScan = () => {
     setScanned(null)
     setScanImage(null)
-    setTenantChoice('')
+  }
+
+  /**
+   * After the stay is saved, and never failing it: the tenant matched or picked gets what his record lacks, and the
+   * document photo goes with the tenant (Mode Online) unless he already has one, as in the Sewa baru wizard.
+   */
+  const saveScanExtras = async (created: Tenant | null) => {
+    if (!scanned) return
+    if (existing && fill && Object.keys(fill).length > 0) {
+      try {
+        await repo.update('tenants', existing.id, fill)
+      } catch (err) {
+        toast.error(`Data penyewa lama gagal dilengkapi dari scan: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'}. Check-in tetap tersimpan.`)
+      }
+    }
+    const photoFor = created ?? (existing && !existing.ktp_image_path ? existing : null)
+    if (photoFor && scanImage && !isLocalMode) {
+      try {
+        const path = await repo.uploadFile('ktp', `${photoFor.id}.jpg`, scanImage, 'image/jpeg')
+        if (path) await repo.update('tenants', photoFor.id, { ktp_image_path: path })
+      } catch (err) {
+        toast.error(`Foto dokumen gagal diunggah: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'}. Check-in tetap tersimpan.`)
+      }
+    }
+    // bookStay refreshed the tenants before these were written
+    await invalidate('tenants').catch(() => undefined)
   }
 
   const input: StayBookingInput = {
@@ -169,26 +197,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
     setSaving(true)
     try {
       const { lease, invoice, createdTenant } = await actions.bookStay({ ...input, orgInvoices: data.invoices, today })
-      // after the check-in is saved, and never failing it: an existing tenant gets what his record lacks, and the
-      // document photo goes with the tenant (Mode Online) unless he already has one, as in the Sewa baru wizard
-      const photoFor = createdTenant ?? (existing && !existing.ktp_image_path ? existing : null)
-      if (existing && fill && Object.keys(fill).length > 0) {
-        try {
-          await repo.update('tenants', existing.id, fill)
-        } catch (err) {
-          toast.error(`Data penyewa lama gagal dilengkapi dari scan: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'}. Check-in tetap tersimpan.`)
-        }
-      }
-      if (photoFor && scanImage && !isLocalMode) {
-        try {
-          const path = await repo.uploadFile('ktp', `${photoFor.id}.jpg`, scanImage, 'image/jpeg')
-          if (path) await repo.update('tenants', photoFor.id, { ktp_image_path: path })
-        } catch (err) {
-          toast.error(`Foto dokumen gagal diunggah: ${err instanceof Error ? err.message : 'kesalahan tak dikenal'}. Check-in tetap tersimpan.`)
-        }
-      }
-      // bookStay refreshed the tenants before these were written
-      if (scanned) await invalidate('tenants')
+      await saveScanExtras(createdTenant)
       const noPhone = !existing && !phone.trim() ? ' HP penyewa belum diisi: lengkapi di halaman penyewa.' : ''
       const paid = paidAmount <= 0 ? ' belum dibayar' : paidAmount >= invoice.total_amount ? ' lunas' : ` DP ${formatRupiah(paidAmount)}`
       toast.success(`Check-in kamar ${room.name} tersimpan. Tagihan ${invoice.invoice_number}${paid}.${noPhone}`)
@@ -199,6 +208,8 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
       const friendly = /violates foreign key constraint/i.test(msg) ? 'Data yang dirujuk tidak ditemukan. Muat ulang lalu coba lagi.' : msg
       if (err instanceof QuickCheckInError && err.lease) {
         toast.error(`Sewa tersimpan, tetapi langkah berikutnya gagal: ${friendly} Periksa tagihan & pembayaran di halaman sewa.`)
+        // the stay exists: the scan's data and photo go with its tenant all the same
+        await saveScanExtras(err.createdTenant)
         onClose()
         navigate(`/sewa/${err.lease.id}`)
       } else if (err instanceof QuickCheckInError && err.createdTenant) {
@@ -271,15 +282,16 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
             </p>
           )}
           <Input label="Nama penyewa" value={name} onChange={(e) => setName(e.target.value)} required autoFocus autoComplete="off" error={touched ? errors.name : undefined} />
-          {byNik && tenantChoice !== NEW_TENANT && (
+          {byDocument && tenantChoice !== NEW_TENANT && (
             <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" data-testid="quick-checkin-nik-match">
-              NIK dari scan milik penyewa lama <strong>{byNik.full_name}</strong>{byNik.phone ? ` · ${byNik.phone}` : ''}.{' '}
+              {scannedDocument(scanned)?.column === 'nik' ? 'NIK' : 'Nomor paspor'} dari scan milik penyewa lama <strong>{byDocument.full_name}</strong>
+              {byDocument.phone ? ` · ${byDocument.phone}` : ''}.{' '}
               <button type="button" className="font-medium underline" onClick={() => setTenantChoice(NEW_TENANT)}>
                 Bukan dia?
               </button>
             </p>
           )}
-          {!byNik && sameName.length > 0 && (
+          {!byDocument && sameName.length > 0 && (
             <Select
               label="Nama ini sudah ada"
               value={tenantId ?? NEW_TENANT}
@@ -289,8 +301,8 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
                 { value: NEW_TENANT, label: 'Orang lain (penyewa baru)' },
               ]}
               hint={
-                scanned?.nik
-                  ? 'NIK hasil scan belum tercatat: dianggap penyewa baru. Pilih penyewa lama bila orangnya sama; data yang masih kosong dilengkapi dari scan.'
+                scanned
+                  ? 'Hasil scan dianggap penyewa baru. Pilih penyewa lama bila orangnya sama; data yang masih kosong dilengkapi dari scan.'
                   : 'Pilih penyewa lama supaya datanya tidak dobel.'
               }
             />

@@ -397,9 +397,9 @@ Tanpa internet, foto selalu dibaca di HP. Di Mode Demo, Claude menampilkan **kar
 tanpa internet) supaya alurnya bisa dicoba. Claude lewat fungsi `scan-ktp` memakai kunci API yang sama dengan Scan nota (langkah sekali-saja di
 bawah); sebelum kunci terpasang, panel menjawab "Scan KTP lewat Claude belum aktif" dan **Di HP** tetap bisa dipakai.
 Di **Check-in cepat**, hasil scan mengisi nama dan seluruh data KTP ikut tersimpan pada penyewa baru (dan fotonya, di Mode
-Online). NIK yang sudah dimiliki penyewa lama otomatis memilih penyewa itu; NIK yang belum tercatat dianggap penyewa baru,
-kecuali Anda memilih penyewa lama bernama sama. Penyewa lama hanya dilengkapi: data yang masih kosong diisi dari scan, yang
-sudah ada tidak diubah. Salah scan? **Hapus hasil scan**.
+Online). NIK atau nomor paspor yang sudah dimiliki penyewa lama otomatis memilih penyewa itu; selain itu hasil scan
+dianggap penyewa baru, kecuali Anda memilih penyewa lama bernama sama di **Nama ini sudah ada**. Penyewa lama hanya
+dilengkapi: data yang masih kosong diisi dari scan, yang sudah ada tidak diubah. Salah scan? **Hapus hasil scan**.
 
 ### Scan nota (pengeluaran dari foto)
 
