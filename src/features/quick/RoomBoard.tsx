@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { clsx } from 'clsx'
-import { AlertTriangle, CalendarPlus, CalendarSearch, Car, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Send, Wallet, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarPlus, CalendarSearch, Car, DoorOpen, ExternalLink, FilePlus2, KeyRound, MessageCircle, Send, Wallet, Zap } from 'lucide-react'
 import { Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { splitPlates } from '../../domain/plate'
@@ -338,6 +338,10 @@ function RoomActionSheet({
             </ActionLink>
             <ActionLink to={leaseActionLink(lease.id, 'checkout')} icon={<DoorOpen className="h-4 w-4" aria-hidden />}>
               Check-out
+            </ActionLink>
+            {/* SPEC 7.22: move to another room, with or without a change of harian / mingguan / bulanan */}
+            <ActionLink to={leaseActionLink(lease.id, 'pindah')} className="col-span-2" icon={<ArrowLeftRight className="h-4 w-4" aria-hidden />}>
+              Pindah kamar
             </ActionLink>
           </div>
         )}

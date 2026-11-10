@@ -1259,3 +1259,19 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   dan penyewanya, di setiap ubin. Lembar kamar: kamar terisi berlabel **Penyewa sekarang** di atas nama; kamar dipesan menulis
   **Sekarang kosong**; kotak ungu **Dipesan oleh** (kamar dipesan) / **Pesanan berikutnya** (kamar terisi) dengan nama pemesan,
   "Mulai 15 Nov 2026 · 15 Nov – 17 Nov 2026 (harian)" dan tautan **Lihat pesanan**. Uji: `e2e/kamar-dipesan.spec.ts`.
+
+### 7.22 Pindah kamar dari papan, juga sambil ganti jenis sewa
+- **Permintaan pemilik** (10 Nov 2026): fitur pindah kamar, mis. tamu harian 3 hari di B3 lalu pindah **mingguan** ke A10, atau
+  pindah selama masa sewa masih ada dari B3 ke A10.
+- **Pindah biasa** (jenis sewa tetap) sudah ada sejak 2b.9 (`MoveRoomModal`, `useLeaseActions.moveRoom`: `room_id` sewa yang sama
+  berubah, catatan otomatis, tagihan tidak berubah) tetapi hanya di menu Lainnya halaman sewa. Sekarang lembar kamar terisi di
+  **Papan kamar** punya tombol **Pindah kamar** (`/sewa/:id?action=pindah`).
+- **Pindah sambil ganti jenis sewa**: sebuah sewa tidak bisa berganti `period_type`, jadi dialog Pindah kamar punya pilihan
+  **Jenis sewa di kamar baru** (Harian / Mingguan / Bulanan, jenis sewa sekarang bertanda "(tetap)"). Memilih jenis lain
+  menampilkan penjelasan dan tombol **Lanjut: check-out**, lalu dua langkah berurutan memakai dialog yang sudah ada (tidak ada
+  logika uang baru): (1) **Checkout penyewa** sewa lama dengan tanggal = tanggal pindah (`CheckoutModal.initialDate`; jaminan dan
+  tagihan diselesaikan seperti checkout biasa); (2) setelah berhasil (`onDone`) form **Sewa Baru** terbuka dengan penyewa, kamar
+  tujuan, jenis sewa dan tanggal check-in terisi (`/sewa/baru?tenant=&room=&jenis=&mulai=`). Di mode ini kamar tujuan cukup kosong
+  pada tanggal pindah (pesanan sesudahnya tidak menghalangi, 7.20); lamanya diperiksa form Sewa Baru. Batal di langkah 1 tidak
+  mengubah apa pun; bila langkah 2 ditinggalkan, sewa lama sudah selesai dan sewa baru bisa dibuat kapan saja dari Sewa Baru.
+- **Uji**: `e2e/pindah-kamar.spec.ts` (HP 360 px: pindah biasa dari papan; ganti ke mingguan → checkout → Sewa Baru terisi).
