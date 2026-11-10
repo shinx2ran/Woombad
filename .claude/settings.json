@@ -95,6 +95,9 @@
       "mcp__Supabase__pause_project",
       "mcp__Supabase__restore_project",
       "mcp__Supabase__create_project"
+    ],
+    "deny": [
+      "Agent(fork)"
     ]
   }
 }
