@@ -70,6 +70,26 @@ export function occupiedRoomIds(leases: Lease[], dateISO: string): Set<string> {
 }
 
 /**
+ * The lease that holds the room's next night after the date (SPEC 7.20): of the room's leases that start later than the
+ * date and hold at least one night (an active booking, or one already checked out ahead of time that still holds nights
+ * up to its checkout, as the overlap guard counts it), the one that starts first; null when none. The room is free until
+ * that lease's start_date: a stay that checks out on or before that day may be let.
+ */
+export function nextReservation(leases: readonly Lease[], roomId: string, dateISO: string): Lease | null {
+  const after = day(dateISO)
+  let next: Lease | null = null
+  for (const lease of leases) {
+    if (lease.room_id !== roomId || lease.status === 'cancelled') continue
+    const start = day(lease.start_date)
+    if (start <= after) continue
+    const until = leaseOccupiedUntil(lease)
+    if (until !== null && until < start) continue
+    if (!next || start < day(next.start_date)) next = lease
+  }
+  return next
+}
+
+/**
  * Room ids with a status 'active' lease whose start_date > date ("Dipesan"), regardless of whether the
  * room is also occupied on the date by another lease (e.g. the current tenant checks out 2026-03-31 and
  * the next lease starts 2026-04-01: on 2026-03-15 the room is both occupied and reserved). Callers that

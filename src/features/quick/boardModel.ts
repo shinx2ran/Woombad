@@ -6,7 +6,7 @@
  */
 import { summarizeLeaseBilling, type LeaseBillingSummary } from '../../domain/billing'
 import { daysBetween } from '../../domain/period'
-import { plannedCheckoutOf } from '../../domain/occupancy'
+import { nextReservation, plannedCheckoutOf } from '../../domain/occupancy'
 import { formatDate } from '../../lib/format'
 import type { Invoice, Lease, Payment, Property, Room, Tenant } from '../../types/db'
 import { roomDisplayState, sortRoomsNatural } from '../properties/roomUtils'
@@ -48,6 +48,15 @@ export interface BoardTile {
   plannedCheckout: string | null
   /** '24 Nov': the tile says 'Keluar 24 Nov' instead of its caption while that day is ahead and nothing is due before it (boardLeavingOn) */
   leavingOn: string | null
+  /**
+   * SPEC 7.20, a room booked for later ('reserved'): '15 Nov', the booked guest's first night (the tile says 'Dipesan 15
+   * Nov'); the first night anyone holds after today ('YYYY-MM-DD', usually that day; earlier when a lease checked out
+   * ahead of time still holds nights) and the nights the room can still be let before it (check-out on that day); null
+   * on any other tile
+   */
+  bookedFrom: string | null
+  freeUntil: string | null
+  freeNights: number | null
 }
 
 export interface BoardGroup {
@@ -143,7 +152,12 @@ export function buildBoard(
       const plannedCheckout = summary && state.lease ? plannedCheckoutOf(state.lease) : null
       const leavingOn = boardLeavingOn(tone, plannedCheckout, summary, todayISO)
       const name = state.tenant ? shortTenantName(state.tenant.full_name) : null
-      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, name, summary, plannedCheckout, leavingOn }
+      const booked = tone === 'reserved' && state.lease ? state.lease.start_date.slice(0, 10) : null
+      const bookedFrom = booked ? formatDate(booked, 'd MMM') : null
+      const held = booked ? nextReservation(leases, room.id, todayISO) : null
+      const freeUntil = held ? held.start_date.slice(0, 10) : null
+      const freeNights = freeUntil ? daysBetween(todayISO, freeUntil) : null
+      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, name, summary, plannedCheckout, leavingOn, bookedFrom, freeUntil, freeNights }
     })
     groups.push({ property, tiles })
   }

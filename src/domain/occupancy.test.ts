@@ -10,6 +10,7 @@ import {
   isLeaseReservedOn,
   leaseOccupiedUntil,
   leaseOverlaps,
+  nextReservation,
   occupancySeries,
   occupiedRoomIds,
   reservedRoomIds,
@@ -494,5 +495,28 @@ describe('compareRoomNames / compareRooms (SPEC 5.1)', () => {
   it('vacantRooms uses the same comparator (A1 < A2 < A10, case-insensitive)', () => {
     const rooms = [makeRoom({ id: 'r10', name: 'a10' }), makeRoom({ id: 'r2', name: 'A2' }), makeRoom({ id: 'r1', name: 'A1' })]
     expect(vacantRooms(rooms, [], '2026-03-15').map((r) => r.id)).toEqual(['r1', 'r2', 'r10'])
+  })
+})
+
+describe('nextReservation (SPEC 7.20)', () => {
+  const early = makeLease({ id: 'early', room_id: 'r1', start_date: '2026-11-15', end_date: '2026-11-17' })
+  const later = makeLease({ id: 'later', room_id: 'r1', start_date: '2026-11-25', end_date: '2026-11-26' })
+  const other = makeLease({ id: 'other', room_id: 'r2', start_date: '2026-11-12', end_date: '2026-11-13' })
+
+  it('the earliest booking of the room that starts after the date', () => {
+    expect(nextReservation([later, early, other], 'r1', '2026-11-10')?.id).toBe('early')
+    expect(nextReservation([later, early, other], 'r1', '2026-11-15')?.id).toBe('later')
+    expect(nextReservation([later, early, other], 'r1', '2026-11-25')).toBeNull()
+  })
+
+  it('a cancelled lease, another room, or a lease checked out on its first day hold no night', () => {
+    expect(nextReservation([{ ...early, status: 'cancelled' }], 'r1', '2026-11-10')).toBeNull()
+    expect(nextReservation([{ ...early, status: 'ended', checkout_date: '2026-11-15' }], 'r1', '2026-11-10')).toBeNull()
+    expect(nextReservation([other], 'r1', '2026-11-10')).toBeNull()
+  })
+
+  it('a booking checked out ahead of time still holds its nights up to the checkout, so it comes first', () => {
+    const checkedOutEarly = { ...early, status: 'ended' as const, checkout_date: '2026-11-17' }
+    expect(nextReservation([later, checkedOutEarly], 'r1', '2026-11-10')?.id).toBe('early')
   })
 })

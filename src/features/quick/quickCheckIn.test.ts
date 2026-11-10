@@ -95,6 +95,43 @@ describe('validateQuickCheckIn', () => {
     expect(validateQuickCheckIn({ ...base, room: { ...ROOM, status: 'maintenance' } }, []).room).toBe('Kamar D4 perbaikan pada tanggal ini.')
     expect(validateQuickCheckIn({ ...base, total: 0 }, []).total).toBe('Isi total yang dibayar.')
   })
+
+  // SPEC 7.20: a room booked for later is let until that guest arrives
+  it('a room booked for later: nights before the booking are fine, a night of the booking is refused with the date', () => {
+    const booked: Lease = {
+      id: 'B1',
+      property_id: 'P1',
+      room_id: 'R4',
+      tenant_id: 'T2',
+      period_type: 'daily',
+      price_per_period: 180_000,
+      deposit_amount: 0,
+      start_date: '2026-10-20',
+      end_date: '2026-10-21',
+      status: 'active',
+      checkout_date: null,
+      notes: null,
+      ...ts,
+    }
+    // 15 Okt + 5 nights: last night 19 Okt, check-out 20 Okt, the day the booked guest arrives
+    expect(validateQuickCheckIn({ ...base, nights: 5, total: 900_000 }, [booked], TODAY)).toEqual({})
+    expect(validateQuickCheckIn({ ...base, nights: 6, total: 1_080_000 }, [booked], TODAY).room).toBe(
+      'Kamar D4 dipesan mulai 20 Okt 2026: check-out paling lambat 20 Okt 2026. Kurangi lamanya, atau pilih kamar lain.',
+    )
+    // the stay-booking rule behind it, also for a month
+    const month = validateStayBooking(
+      { room: ROOM, periodType: 'monthly', startDate: TODAY, quantity: 1, total: 1_500_000, paidAmount: 0, method: 'cash', tenantId: null, name: 'Tamu', phone: '', notes: null },
+      [booked],
+      TODAY,
+    )
+    expect(month.room).toMatch(/^Kamar D4 dipesan mulai 20 Okt 2026/)
+    // a booking checked out ahead of time (18 Okt to check-out 19 Okt) still holds the night of 18 Okt: named as the limit
+    const early: Lease = { ...booked, id: 'E1', start_date: '2026-10-18', end_date: '2026-10-18', status: 'ended', checkout_date: '2026-10-19' }
+    expect(validateQuickCheckIn({ ...base, nights: 5, total: 900_000 }, [booked, early], TODAY).room).toBe(
+      'Kamar D4 dipesan mulai 18 Okt 2026: check-out paling lambat 18 Okt 2026. Kurangi lamanya, atau pilih kamar lain.',
+    )
+    expect(validateQuickCheckIn({ ...base, nights: 3, total: 540_000 }, [booked, early], TODAY)).toEqual({})
+  })
 })
 
 describe('tenantsNamed', () => {

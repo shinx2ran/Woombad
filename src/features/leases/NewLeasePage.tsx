@@ -11,6 +11,7 @@ import { computeAddonsAmount, deriveInvoiceStatus } from '../../domain/billing'
 import { periodBounds } from '../../domain/period'
 import { plateColumn } from '../../domain/plate'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
+import { nextReservation } from '../../domain/occupancy'
 import { DocumentScanner } from '../scanner/DocumentScanner'
 import type { ScanPrefill } from '../scanner/types'
 import {
@@ -171,9 +172,15 @@ export function NewLeasePage() {
     () =>
       data.rooms
         .filter((r) => r.property_id === propertyId)
-        .map((r) => ({ room: r, availability: roomAvailability(r, data.leases, startDate, stayEnd) }))
+        // SPEC 7.20: a room booked for later can be let until that booking starts; only with a valid check-in date (else
+        // the old rule), and a booking is one ahead of today (a tenant already living there is not one)
+        .map((r) => ({
+          room: r,
+          availability: roomAvailability(r, data.leases, startDate, stayEnd, undefined, periodPreview ? today : undefined),
+          booking: periodPreview ? nextReservation(data.leases, r.id, startDate > today ? startDate : today) : null,
+        }))
         .sort((a, b) => a.room.name.localeCompare(b.room.name, undefined, { numeric: true })),
-    [data.rooms, data.leases, propertyId, startDate, stayEnd],
+    [data.rooms, data.leases, propertyId, startDate, stayEnd, periodPreview, today],
   )
   const roomState = roomsOfKos.find((r) => r.room.id === roomId)?.availability
 
@@ -236,7 +243,13 @@ export function NewLeasePage() {
   if (!roomId) errors.room = 'Pilih kamar.'
   else if (!room) errors.room = 'Kamar tidak ditemukan. Pilih kamar lain.'
   else if (room.property_id !== propertyId) errors.room = 'Kamar tidak termasuk kos yang dipilih.'
-  else if (roomState && roomState !== 'kosong') errors.room = `Kamar ${ROOM_AVAILABILITY_LABEL[roomState].toLowerCase()} pada periode ini.`
+  else if (roomState && roomState !== 'kosong') {
+    // SPEC 7.20: a booking that starts during the stay is named, with the last day the stay may end
+    const booking = roomState === 'dipesan' ? roomsOfKos.find((r) => r.room.id === roomId)?.booking : null
+    errors.room = booking
+      ? `Kamar dipesan mulai ${formatDate(booking.start_date)}: check-out paling lambat ${formatDate(booking.start_date)}. Kurangi lamanya, atau pilih kamar lain.`
+      : `Kamar ${ROOM_AVAILABILITY_LABEL[roomState].toLowerCase()} pada periode ini.`
+  }
   if (!startDate) errors.start = 'Tanggal check-in wajib diisi.'
   if (room && price <= 0) errors.price = `Harga per ${PERIOD_UNIT_LABEL[periodType]} harus lebih dari 0.`
   else if (!priceCheck.ok) errors.priceConfirm = 'Harga perlu dicek: centang “Harga ini memang benar” di Jenis sewa, atau perbaiki harganya.'
@@ -582,7 +595,7 @@ export function NewLeasePage() {
             </div>
             {propertyId && roomsOfKos.length === 0 && <p className="text-sm text-slate-500">Kos ini belum punya kamar.</p>}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-              {roomsOfKos.map(({ room: r, availability }) => {
+              {roomsOfKos.map(({ room: r, availability, booking }) => {
                 const selectable = availability === 'kosong'
                 const selected = r.id === roomId
                 const rate = roomPriceFor(r, periodType)
@@ -603,6 +616,11 @@ export function NewLeasePage() {
                       {selected && <Check className="h-4 w-4 text-brand-700" />}
                     </span>
                     <span className="text-xs">{ROOM_AVAILABILITY_LABEL[availability]}</span>
+                    {booking && (availability === 'kosong' || availability === 'dipesan') && (
+                      <span className="text-xs text-violet-700" data-testid="room-booked-from">
+                        Dipesan mulai {formatDate(booking.start_date, 'd MMM')}
+                      </span>
+                    )}
                     {rate != null && (
                       <span className="text-xs text-slate-500">
                         {formatRupiah(rate)}/{unit}

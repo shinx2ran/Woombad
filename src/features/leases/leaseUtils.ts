@@ -801,15 +801,32 @@ export const ROOM_AVAILABILITY_LABEL: Record<RoomAvailability, string> = {
 }
 
 /**
- * State of a room for a planned stay [startISO, endISO]: maintenance rooms are 'perbaikan'; a room occupied
- * on the start date is 'terisi'; one booked by a future lease is 'dipesan'; a free room whose planned stay
- * still collides with another lease (leaseOverlaps) is 'bentrok'; otherwise 'kosong'.
+ * State of a room for a planned stay [startISO, endISO] (endISO = its last night): maintenance rooms are 'perbaikan'; a
+ * room occupied on the start date is 'terisi'; one booked by a future lease is 'dipesan'; a free room whose planned
+ * stay still collides with another lease (leaseOverlaps) is 'bentrok'; otherwise 'kosong'.
+ *
+ * `fixedEndToday` (SPEC 7.20), today's date for a new stay with a known last night (Check-in cepat, Sewa baru): a booking
+ * that starts after both that last night and today does not block it; the room is let until the booked guest arrives
+ * (check-out on the day he checks in), as the database's overlap guard allows. A lease that has already started by today
+ * (its tenant lives in the room, a back-dated stay notwithstanding) still blocks, and so does every booking while the
+ * stay has no valid last night. Without it (a room move: the tenant stays on and extends) any later booking keeps the
+ * room 'dipesan'.
  */
-export function roomAvailability(room: Room, leases: Lease[], startISO: string, endISO: string, excludeLeaseId?: string): RoomAvailability {
+export function roomAvailability(
+  room: Room,
+  leases: Lease[],
+  startISO: string,
+  endISO: string,
+  excludeLeaseId?: string,
+  fixedEndToday?: string,
+): RoomAvailability {
   if (room.status === 'maintenance') return 'perbaikan'
   const own = leases.filter((l) => l.room_id === room.id && l.id !== excludeLeaseId)
   if (own.some((l) => isLeaseActiveOn(l, startISO))) return 'terisi'
-  if (own.some((l) => isLeaseReservedOn(l, startISO))) return 'dipesan'
+  const lastNight = endISO.slice(0, 10)
+  const letBefore = (l: Lease) =>
+    fixedEndToday !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(lastNight) && l.start_date.slice(0, 10) > lastNight && l.start_date.slice(0, 10) > fixedEndToday.slice(0, 10)
+  if (own.some((l) => isLeaseReservedOn(l, startISO) && !letBefore(l))) return 'dipesan'
   if (leaseOverlaps(leases, room.id, startISO, endISO, excludeLeaseId)) return 'bentrok'
   return 'kosong'
 }

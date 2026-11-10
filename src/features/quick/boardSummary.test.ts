@@ -27,6 +27,9 @@ function tile(
     summary: living && lease ? ({ outstanding: tone === 'today' || tone === 'overdue' ? 130_000 : 0, paidThrough: null } as BoardTile['summary']) : null,
     plannedCheckout: opts.planned ?? null,
     leavingOn: opts.leavingOn ?? null,
+    bookedFrom: null,
+    freeUntil: null,
+    freeNights: null,
   }
 }
 const group = (name: string, tiles: BoardTile[]): BoardGroup => ({ property: property(name), tiles })

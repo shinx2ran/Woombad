@@ -125,7 +125,7 @@ export function RoomBoard() {
                   data-testid="board-tile"
                   data-room={t.room.name}
                   data-tone={t.tone}
-                  aria-label={`Kamar ${t.room.name}${t.tenant ? ` (${t.tenant.full_name})` : ''}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}${t.lease?.vehicle_plate ? `, kendaraan ${t.lease.vehicle_plate}` : ''}`}
+                  aria-label={`Kamar ${t.room.name}${t.tenant ? ` (${t.tenant.full_name})` : ''}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.bookedFrom ? ` mulai ${t.bookedFrom}, kosong sampai itu` : ''}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}${t.lease?.vehicle_plate ? `, kendaraan ${t.lease.vehicle_plate}` : ''}`}
                   onClick={() => setOpenRoomId(t.room.id)}
                   className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0 py-1 text-center', TILE_CLASS[t.tone])}
                 >
@@ -142,6 +142,11 @@ export function RoomBoard() {
                     // two short lines on a 360 px phone: 'Keluar' / '24 Nov'
                     <span className="max-w-full text-[10px] font-semibold leading-tight" data-testid="board-tile-leaving">
                       Keluar <span className="whitespace-nowrap">{t.leavingOn}</span>
+                    </span>
+                  ) : t.bookedFrom ? (
+                    // SPEC 7.20: when the booked guest arrives; the room is free (and can be let) until then
+                    <span className="max-w-full text-[10px] leading-tight" data-testid="board-tile-booked">
+                      Dipesan <span className="whitespace-nowrap">{t.bookedFrom}</span>
                     </span>
                   ) : (
                     <span className={clsx('max-w-full truncate text-[10px] leading-tight', t.tone === 'overdue' && 'font-bold uppercase tracking-wide', t.tone === 'today' && 'font-bold')}>{t.caption}</span>
@@ -210,7 +215,9 @@ function RoomActionSheet({
   onClose: () => void
   onCheckIn: () => void
 }) {
-  const { room, lease, tenant, summary, tone, plannedCheckout } = tile
+  const { room, lease, tenant, summary, tone, plannedCheckout, freeNights, freeUntil } = tile
+  // SPEC 7.20: a room booked for later is empty until the booked guest arrives, and can be let for those nights
+  const letBeforeBooking = tone === 'reserved' && freeNights !== null && freeNights > 0
   const living = Boolean(lease && summary)
   const status = boardStatusText(summary, today)
   const leaving = plannedCheckout ? plannedCheckoutBadge(plannedCheckout, today) : null
@@ -255,6 +262,12 @@ function RoomActionSheet({
             </>
           )}
           {tone === 'reserved' && lease && <p>Mulai {formatDate(lease.start_date)}</p>}
+          {letBeforeBooking && freeUntil && (
+            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800" data-testid="board-free-until">
+              Kosong sampai {formatDate(freeUntil, 'd MMM')}: bisa disewakan maks {freeNights} malam (check-out paling lambat{' '}
+              {formatDate(freeUntil, 'd MMM')}).
+            </p>
+          )}
           {tone === 'vacant' && (
             <p>
               {[
@@ -312,6 +325,13 @@ function RoomActionSheet({
             <ActionLink to={`/sewa/baru?room=${room.id}`} icon={<FilePlus2 className="h-4 w-4" aria-hidden />}>
               Form lengkap
             </ActionLink>
+          </div>
+        )}
+        {letBeforeBooking && (
+          <div className="grid">
+            <button type="button" onClick={onCheckIn} className={ACTION_PRIMARY}>
+              <KeyRound className="h-4 w-4" aria-hidden /> Check-in cepat (sebelum pesanan)
+            </button>
           </div>
         )}
         {/* Rencana check-in (SPEC 7.7): plan a later stay in this room; the planner shows when it is free */}

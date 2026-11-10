@@ -10,10 +10,11 @@
  * through it too; saveQuickCheckIn is that call for a daily stay paid in full or not at all.
  */
 import { deriveInvoiceStatus, type InvoiceDraftInput, type InvoiceDraft } from '../../domain/billing'
+import { nextReservation } from '../../domain/occupancy'
 import { periodBounds } from '../../domain/period'
 import { plateColumn } from '../../domain/plate'
 import type { OrgRepo } from '../../lib/repo/types'
-import { formatRupiah } from '../../lib/format'
+import { formatDate, formatRupiah, todayISO } from '../../lib/format'
 import type { Invoice, Lease, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
 import { PERIOD_UNIT_LABEL } from '../../types/db'
 import { ROOM_AVAILABILITY_LABEL, roomAvailability } from '../leases/leaseUtils'
@@ -103,7 +104,7 @@ export function perPeriodText(plan: Pick<StayBookingPlan, 'pricePerPeriod' | 'ba
 
 export type QuickCheckInErrors = Partial<Record<'name' | 'phone' | 'startDate' | 'nights' | 'total' | 'room', string>>
 
-export function validateQuickCheckIn(input: QuickCheckInInput, leases: Lease[]): QuickCheckInErrors {
+export function validateQuickCheckIn(input: QuickCheckInInput, leases: Lease[], today: string = todayISO()): QuickCheckInErrors {
   const { quantity, ...rest } = validateStayBooking(
     {
       room: input.room,
@@ -119,6 +120,7 @@ export function validateQuickCheckIn(input: QuickCheckInInput, leases: Lease[]):
       notes: null,
     },
     leases,
+    today,
   )
   return quantity ? { ...rest, nights: quantity } : rest
 }
@@ -126,7 +128,7 @@ export function validateQuickCheckIn(input: QuickCheckInInput, leases: Lease[]):
 export type StayBookingErrors = Partial<Record<'name' | 'phone' | 'startDate' | 'quantity' | 'bonus' | 'total' | 'paid' | 'deposit' | 'room', string>>
 
 /** The Check-in cepat form's errors (any period type): who, when, how long, the money, and whether the room is free. */
-export function validateStayBooking(input: StayBookingInput, leases: Lease[]): StayBookingErrors {
+export function validateStayBooking(input: StayBookingInput, leases: Lease[], today: string = todayISO()): StayBookingErrors {
   const errors: StayBookingErrors = {}
   const unit = PERIOD_UNIT_LABEL[input.periodType]
   if (!input.tenantId) {
@@ -143,8 +145,17 @@ export function validateStayBooking(input: StayBookingInput, leases: Lease[]): S
   if (input.deposit && input.deposit.amount < 0) errors.deposit = 'Tidak boleh negatif.'
   const plan = planStayBooking(input.startDate, input.periodType, input.quantity, input.total, input.bonusQuantity ?? 0)
   if (plan) {
-    const availability = roomAvailability(input.room, leases, input.startDate, plan.end)
-    if (availability !== 'kosong') errors.room = `Kamar ${input.room.name} ${ROOM_AVAILABILITY_LABEL[availability].toLowerCase()} pada tanggal ini.`
+    // SPEC 7.20: a room booked for later is let until that guest arrives; only a stay that reaches his first night is refused
+    const availability = roomAvailability(input.room, leases, input.startDate, plan.end, undefined, today)
+    // the night that stops it, when it lies ahead (not a tenant already living there): named with the last check-out day
+    const held = availability === 'dipesan' || availability === 'bentrok' ? nextReservation(leases, input.room.id, input.startDate > today ? input.startDate : today) : null
+    const booking = held && held.start_date.slice(0, 10) <= plan.end ? held : null
+    if (booking) {
+      const arrives = formatDate(booking.start_date)
+      errors.room = `Kamar ${input.room.name} dipesan mulai ${arrives}: check-out paling lambat ${arrives}. Kurangi lamanya, atau pilih kamar lain.`
+    } else if (availability !== 'kosong') {
+      errors.room = `Kamar ${input.room.name} ${ROOM_AVAILABILITY_LABEL[availability].toLowerCase()} pada tanggal ini.`
+    }
   }
   return errors
 }

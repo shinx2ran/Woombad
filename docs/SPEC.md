@@ -1212,3 +1212,39 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   `verify_jwt = false`; jalankan ulang `schema.sql` (kolom `ktp_scan_engine`, CHECK `scan_usage_kind_check` yang baru:
   langkah ini berisi `drop constraint`, jadi dijalankan pemilik di SQL Editor, bukan lewat operator). Sebelum CHECK diperluas,
   Scan KTP tetap jalan, hanya biayanya ditolak database dan tinggal di log fungsi.
+
+### 7.20 Kamar yang dipesan tetap bisa disewakan sampai tamunya datang
+- **Permintaan pemilik** (10 Nov 2026): "kamar yang dipesan jauh hari seharusnya masih bisa disewakan untuk orang lain", contoh:
+  kamar 10A dipesan tanggal 15, saat ini kosong, harus tetap bisa dipesan/di-check-in dari papan.
+- **Penyebab**: `roomAvailability` (Check-in cepat, Sewa baru) menganggap kamar dengan sewa aktif yang mulai di masa depan
+  "Dipesan" untuk tanggal mana pun sebelum mulainya, walau masa tinggal baru selesai sebelum tamu pemesan datang. Perencana
+  Rencana (7.7, `stayConflict`/`roomHolds`) dan trigger database `leases_overlap_guard` sudah menghitung per malam dan tidak berubah.
+- **Aturan baru** (`roomAvailability(…, fixedEndToday)`, `src/features/leases/leaseUtils.ts`): untuk masa tinggal baru yang
+  malam terakhirnya diketahui, pesanan yang mulai **sesudah** malam terakhir itu **dan sesudah hari ini** tidak menghalangi:
+  kamar disewakan sampai tamu pemesan datang (check-out di hari tamu itu check-in, sama seperti trigger database). Sewa yang
+  sudah mulai per hari ini (penyewanya sudah tinggal di kamar) tetap menghalangi, juga untuk masa tinggal yang tanggalnya
+  dimundurkan; tanpa tanggal check-in yang sah (dikosongkan) aturan lama berlaku. Masa tinggal yang mengambil malam
+  pertama pesanan tetap "Dipesan", dengan alasan bertanggal: "Kamar 10A dipesan mulai 15 Nov 2026: check-out paling lambat
+  15 Nov 2026. Kurangi lamanya, atau pilih kamar lain." Sewa aktif lain yang belum di-check-out tetap memegang kamar (celah di
+  antara dua pesanan baru terbuka setelah tamu pertama dicatat check-out). **Pindah kamar** (2b.9, `LifecycleModals`,
+  `useLeaseActions.moveRoom`) tetap memakai aturan lama (`fixedEnd` mati): penyewa yang pindah biasanya terus memperpanjang.
+- `nextReservation(leases, roomId, date)` (`src/domain/occupancy.ts`): sewa yang memegang malam berikutnya kamar itu sesudah
+  tanggal: dari sewa yang mulai sesudah tanggal itu dan memegang minimal satu malam (pesanan aktif, atau pesanan yang sudah
+  di-check-out lebih dulu tetapi masih memegang malam sampai checkout-nya, seperti trigger menghitungnya), yang mulai paling
+  awal. Dipakai dengan tanggal = yang lebih akhir dari tanggal check-in dan hari ini, jadi penyewa yang sudah tinggal bukan
+  "pesanan".
+- **Papan kamar**: ubin ungu menulis "Dipesan 15 Nov" (`BoardTile.bookedFrom`; label pembaca layar "Dipesan mulai 15 Nov, kosong
+  sampai itu"); lembar kamarnya menulis "Kosong sampai 15 Nov: bisa disewakan maks 5 malam (check-out paling lambat 15 Nov)."
+  (`freeUntil` = malam berikutnya yang dipegang siapa pun, `nextReservation`, biasanya hari tamu pemesan datang; `freeNights` =
+  hari dari hari ini sampai itu) dan tombol **Check-in cepat (sebelum pesanan)**, di samping
+  **Pesan tanggal lain**. Pesanan yang mulai hari ini tetap ubin terisi (7.18), jadi tombolnya hanya ada selama minimal satu
+  malam masih bebas.
+- **Check-in cepat**: di bawah jumlah malam dan tanggal tertulis "Kamar ini dipesan mulai 15 Nov 2026: check-out paling lambat
+  15 Nov (maks 5 malam)." selama masa tinggalnya muat; yang tidak muat ditolak dengan alasan bertanggal di atas.
+- **Sewa baru**: kartu kamar menulis "Dipesan mulai 15 Nov" di bawah status (Kosong bila masa tinggal muat, Dipesan bila tidak),
+  dan galat kamar memakai alasan bertanggal yang sama.
+- **Uji**: `leaseUtils.test.ts` (muat / tidak muat / check-out di hari tamu datang / dua pesanan / pindah kamar tetap lama /
+  pesanan batal), `occupancy.test.ts` (`nextReservation`), `quickCheckIn.test.ts` (5 malam boleh, 6 malam ditolak dengan
+  tanggal, bulanan), `boardModel.test.ts` (`bookedFrom`, `freeNights`), `e2e/kamar-dipesan.spec.ts` (HP 360 px, Mode Demo 10 Nov:
+  kamar dipesan 15 Nov → ubin "Dipesan 15 Nov", lembar "maks 5 malam", 6 malam ditolak, 5 malam tersimpan dengan check-out 15 Nov;
+  pesanan besok → "maks 1 malam"; Sewa baru: bulanan Dipesan, harian Kosong, keduanya "Dipesan mulai 11 Nov").
