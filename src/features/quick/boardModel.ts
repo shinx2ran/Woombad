@@ -57,6 +57,11 @@ export interface BoardTile {
   bookedFrom: string | null
   freeUntil: string | null
   freeNights: number | null
+  /**
+   * SPEC 7.21: the room's next booking (an active lease that starts after today) and who booked it, on every tile: the
+   * sheet names the current tenant and the booked guest apart. On a 'reserved' tile it is the tile's own lease.
+   */
+  upcoming: { lease: Lease; tenant: Tenant | null } | null
 }
 
 export interface BoardGroup {
@@ -157,7 +162,9 @@ export function buildBoard(
       const held = booked ? nextReservation(leases, room.id, todayISO) : null
       const freeUntil = held ? held.start_date.slice(0, 10) : null
       const freeNights = freeUntil ? daysBetween(todayISO, freeUntil) : null
-      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, name, summary, plannedCheckout, leavingOn, bookedFrom, freeUntil, freeNights }
+      const next = nextReservation(leases, room.id, todayISO)
+      const upcoming = next && next.status === 'active' ? { lease: next, tenant: tenantsById.get(next.tenant_id) ?? null } : null
+      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, name, summary, plannedCheckout, leavingOn, bookedFrom, freeUntil, freeNights, upcoming }
     })
     groups.push({ property, tiles })
   }

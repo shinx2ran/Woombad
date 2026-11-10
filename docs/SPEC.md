@@ -1252,3 +1252,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   tanggal, bulanan), `boardModel.test.ts` (`bookedFrom`, `freeNights`), `e2e/kamar-dipesan.spec.ts` (HP 360 px, Mode Demo 10 Nov:
   kamar dipesan 15 Nov → ubin "Dipesan 15 Nov", lembar "maks 5 malam", 6 malam ditolak, 5 malam tersimpan dengan check-out 15 Nov;
   pesanan besok → "maks 1 malam"; Sewa baru: bulanan Dipesan, harian Kosong, keduanya "Dipesan mulai 11 Nov").
+
+### 7.21 Lembar kamar: penyewa sekarang dan pemesan dibedakan
+- **Permintaan pemilik** (10 Nov 2026): saat nomor kamar diketuk, jelas siapa yang memesan dan siapa penyewa saat ini.
+- `BoardTile.upcoming` (`buildBoard`): pesanan berikutnya kamar itu (sewa aktif yang mulai sesudah hari ini, `nextReservation`)
+  dan penyewanya, di setiap ubin. Lembar kamar: kamar terisi berlabel **Penyewa sekarang** di atas nama; kamar dipesan menulis
+  **Sekarang kosong**; kotak ungu **Dipesan oleh** (kamar dipesan) / **Pesanan berikutnya** (kamar terisi) dengan nama pemesan,
+  "Mulai 15 Nov 2026 · 15 Nov – 17 Nov 2026 (harian)" dan tautan **Lihat pesanan**. Uji: `e2e/kamar-dipesan.spec.ts`.

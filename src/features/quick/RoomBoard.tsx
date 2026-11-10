@@ -5,8 +5,8 @@ import { AlertTriangle, CalendarPlus, CalendarSearch, Car, DoorOpen, ExternalLin
 import { Card, CardHeader, Modal } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { splitPlates } from '../../domain/plate'
-import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
-import type { Room } from '../../types/db'
+import { formatDate, formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
+import { PERIOD_TYPE_LABEL, type Room } from '../../types/db'
 import { leaseReminderText, plannedCheckoutBadge } from '../leases/leaseUtils'
 import { paidThroughText } from '../properties/roomUtils'
 import { BOARD_TONES, BOARD_TONE_META, boardStatusText, buildBoard, countTones, leaseActionLink, type BoardTile, type BoardTone } from './boardModel'
@@ -215,7 +215,7 @@ function RoomActionSheet({
   onClose: () => void
   onCheckIn: () => void
 }) {
-  const { room, lease, tenant, summary, tone, plannedCheckout, freeNights, freeUntil } = tile
+  const { room, lease, tenant, summary, tone, plannedCheckout, freeNights, freeUntil, upcoming } = tile
   // SPEC 7.20: a room booked for later is empty until the booked guest arrives, and can be let for those nights
   const letBeforeBooking = tone === 'reserved' && freeNights !== null && freeNights > 0
   const living = Boolean(lease && summary)
@@ -230,7 +230,18 @@ function RoomActionSheet({
             <span className={clsx('h-2.5 w-2.5 rounded-full', DOT_CLASS[tone])} aria-hidden />
             {BOARD_TONE_META[tone].legend}
           </p>
-          {tenant && <p className="text-base font-semibold text-slate-900">{tenant.full_name}</p>}
+          {/* SPEC 7.21: who is in the room now, apart from who booked it for later */}
+          {tone === 'reserved' && (
+            <p data-testid="board-now">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Sekarang</span> <span className="font-medium text-slate-900">kosong</span>
+            </p>
+          )}
+          {tenant && tone !== 'reserved' && (
+            <div data-testid="board-current-tenant">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Penyewa sekarang</p>
+              <p className="text-base font-semibold text-slate-900">{tenant.full_name}</p>
+            </div>
+          )}
           {lease?.vehicle_plate && (
             <p className="flex items-start gap-1.5 font-medium text-slate-900" data-testid="board-vehicle-plate">
               <Car className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
@@ -261,7 +272,20 @@ function RoomActionSheet({
               )}
             </>
           )}
-          {tone === 'reserved' && lease && <p>Mulai {formatDate(lease.start_date)}</p>}
+          {upcoming && (
+            <div className="rounded-lg bg-violet-50 px-3 py-2 text-violet-900" data-testid="board-upcoming">
+              <p className="text-xs font-medium uppercase tracking-wide text-violet-700">{tone === 'reserved' ? 'Dipesan oleh' : 'Pesanan berikutnya'}</p>
+              <p className="text-base font-semibold">{upcoming.tenant?.full_name ?? 'Penyewa tidak ditemukan'}</p>
+              <p>
+                Mulai {formatDate(upcoming.lease.start_date)} · {formatStay(upcoming.lease.start_date, upcoming.lease.end_date)} ({PERIOD_TYPE_LABEL[upcoming.lease.period_type].toLowerCase()})
+              </p>
+              {upcoming.lease.id !== lease?.id && (
+                <Link to={`/sewa/${upcoming.lease.id}`} className="inline-flex items-center gap-1 text-sm font-medium underline">
+                  Lihat pesanan <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              )}
+            </div>
+          )}
           {letBeforeBooking && freeUntil && (
             <p className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800" data-testid="board-free-until">
               Kosong sampai {formatDate(freeUntil, 'd MMM')}: bisa disewakan maks {freeNights} malam (check-out paling lambat{' '}
@@ -344,7 +368,7 @@ function RoomActionSheet({
         )}
         {lease ? (
           <Link to={`/sewa/${lease.id}`} className="inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline">
-            Lihat detail sewa <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+            {tone === 'reserved' ? 'Lihat pesanan' : 'Lihat detail sewa'} <ExternalLink className="h-3.5 w-3.5" aria-hidden />
           </Link>
         ) : (
           tone === 'maintenance' && (
