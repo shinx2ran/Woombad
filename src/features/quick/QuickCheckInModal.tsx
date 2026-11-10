@@ -174,9 +174,13 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
     deposit,
     tenantPrefill: existing ? null : scanned,
   }
-  const errors = validateStayBooking(input, data.leases)
-  // SPEC 7.20: the room may be booked for later: it is let until that guest arrives
-  const booking = useMemo(() => (startDate ? nextReservation(data.leases, room.id, startDate) : null), [data.leases, room.id, startDate])
+  const errors = validateStayBooking(input, data.leases, today)
+  // SPEC 7.20: the room may be booked for later: it is let until that guest arrives (a booking ahead of today, not a
+  // tenant already living there)
+  const booking = useMemo(
+    () => (startDate ? nextReservation(data.leases, room.id, startDate > today ? startDate : today) : null),
+    [data.leases, room.id, startDate, today],
+  )
   const nightsBeforeBooking = booking && startDate ? daysBetween(startDate, booking.start_date.slice(0, 10)) : null
   const plan = planStayBooking(startDate, periodType, quantity, total, input.bonusQuantity)
   const hasErrors = Object.keys(errors).length > 0

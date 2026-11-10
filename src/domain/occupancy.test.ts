@@ -509,9 +509,14 @@ describe('nextReservation (SPEC 7.20)', () => {
     expect(nextReservation([later, early, other], 'r1', '2026-11-25')).toBeNull()
   })
 
-  it('cancelled or ended leases, and other rooms, are not bookings', () => {
+  it('a cancelled lease, another room, or a lease checked out on its first day hold no night', () => {
     expect(nextReservation([{ ...early, status: 'cancelled' }], 'r1', '2026-11-10')).toBeNull()
-    expect(nextReservation([{ ...early, status: 'ended', checkout_date: '2026-11-16' }], 'r1', '2026-11-10')).toBeNull()
+    expect(nextReservation([{ ...early, status: 'ended', checkout_date: '2026-11-15' }], 'r1', '2026-11-10')).toBeNull()
     expect(nextReservation([other], 'r1', '2026-11-10')).toBeNull()
+  })
+
+  it('a booking checked out ahead of time still holds its nights up to the checkout, so it comes first', () => {
+    const checkedOutEarly = { ...early, status: 'ended' as const, checkout_date: '2026-11-17' }
+    expect(nextReservation([later, checkedOutEarly], 'r1', '2026-11-10')?.id).toBe('early')
   })
 })

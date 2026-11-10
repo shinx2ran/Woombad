@@ -1219,18 +1219,24 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Penyebab**: `roomAvailability` (Check-in cepat, Sewa baru) menganggap kamar dengan sewa aktif yang mulai di masa depan
   "Dipesan" untuk tanggal mana pun sebelum mulainya, walau masa tinggal baru selesai sebelum tamu pemesan datang. Perencana
   Rencana (7.7, `stayConflict`/`roomHolds`) dan trigger database `leases_overlap_guard` sudah menghitung per malam dan tidak berubah.
-- **Aturan baru** (`roomAvailability(…, fixedEnd = true)`, `src/features/leases/leaseUtils.ts`): untuk masa tinggal baru yang
-  malam terakhirnya diketahui, pesanan yang mulai **sesudah** malam terakhir itu tidak menghalangi: kamar disewakan sampai
-  tamu pemesan datang (check-out di hari tamu itu check-in, sama seperti trigger database). Masa tinggal yang mengambil malam
+- **Aturan baru** (`roomAvailability(…, fixedEndToday)`, `src/features/leases/leaseUtils.ts`): untuk masa tinggal baru yang
+  malam terakhirnya diketahui, pesanan yang mulai **sesudah** malam terakhir itu **dan sesudah hari ini** tidak menghalangi:
+  kamar disewakan sampai tamu pemesan datang (check-out di hari tamu itu check-in, sama seperti trigger database). Sewa yang
+  sudah mulai per hari ini (penyewanya sudah tinggal di kamar) tetap menghalangi, juga untuk masa tinggal yang tanggalnya
+  dimundurkan; tanpa tanggal check-in yang sah (dikosongkan) aturan lama berlaku. Masa tinggal yang mengambil malam
   pertama pesanan tetap "Dipesan", dengan alasan bertanggal: "Kamar 10A dipesan mulai 15 Nov 2026: check-out paling lambat
   15 Nov 2026. Kurangi lamanya, atau pilih kamar lain." Sewa aktif lain yang belum di-check-out tetap memegang kamar (celah di
   antara dua pesanan baru terbuka setelah tamu pertama dicatat check-out). **Pindah kamar** (2b.9, `LifecycleModals`,
   `useLeaseActions.moveRoom`) tetap memakai aturan lama (`fixedEnd` mati): penyewa yang pindah biasanya terus memperpanjang.
-- `nextReservation(leases, roomId, date)` (`src/domain/occupancy.ts`): pesanan berikutnya kamar itu sesudah tanggal (sewa aktif
-  dengan `start_date` paling awal yang lebih besar).
+- `nextReservation(leases, roomId, date)` (`src/domain/occupancy.ts`): sewa yang memegang malam berikutnya kamar itu sesudah
+  tanggal: dari sewa yang mulai sesudah tanggal itu dan memegang minimal satu malam (pesanan aktif, atau pesanan yang sudah
+  di-check-out lebih dulu tetapi masih memegang malam sampai checkout-nya, seperti trigger menghitungnya), yang mulai paling
+  awal. Dipakai dengan tanggal = yang lebih akhir dari tanggal check-in dan hari ini, jadi penyewa yang sudah tinggal bukan
+  "pesanan".
 - **Papan kamar**: ubin ungu menulis "Dipesan 15 Nov" (`BoardTile.bookedFrom`; label pembaca layar "Dipesan mulai 15 Nov, kosong
   sampai itu"); lembar kamarnya menulis "Kosong sampai 15 Nov: bisa disewakan maks 5 malam (check-out paling lambat 15 Nov)."
-  (`freeNights` = hari dari hari ini sampai tamu pemesan datang) dan tombol **Check-in cepat (sebelum pesanan)**, di samping
+  (`freeUntil` = malam berikutnya yang dipegang siapa pun, `nextReservation`, biasanya hari tamu pemesan datang; `freeNights` =
+  hari dari hari ini sampai itu) dan tombol **Check-in cepat (sebelum pesanan)**, di samping
   **Pesan tanggal lain**. Pesanan yang mulai hari ini tetap ubin terisi (7.18), jadi tombolnya hanya ada selama minimal satu
   malam masih bebas.
 - **Check-in cepat**: di bawah jumlah malam dan tanggal tertulis "Kamar ini dipesan mulai 15 Nov 2026: check-out paling lambat

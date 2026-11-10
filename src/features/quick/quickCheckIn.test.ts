@@ -114,16 +114,23 @@ describe('validateQuickCheckIn', () => {
       ...ts,
     }
     // 15 Okt + 5 nights: last night 19 Okt, check-out 20 Okt, the day the booked guest arrives
-    expect(validateQuickCheckIn({ ...base, nights: 5, total: 900_000 }, [booked])).toEqual({})
-    expect(validateQuickCheckIn({ ...base, nights: 6, total: 1_080_000 }, [booked]).room).toBe(
+    expect(validateQuickCheckIn({ ...base, nights: 5, total: 900_000 }, [booked], TODAY)).toEqual({})
+    expect(validateQuickCheckIn({ ...base, nights: 6, total: 1_080_000 }, [booked], TODAY).room).toBe(
       'Kamar D4 dipesan mulai 20 Okt 2026: check-out paling lambat 20 Okt 2026. Kurangi lamanya, atau pilih kamar lain.',
     )
     // the stay-booking rule behind it, also for a month
     const month = validateStayBooking(
       { room: ROOM, periodType: 'monthly', startDate: TODAY, quantity: 1, total: 1_500_000, paidAmount: 0, method: 'cash', tenantId: null, name: 'Tamu', phone: '', notes: null },
       [booked],
+      TODAY,
     )
     expect(month.room).toMatch(/^Kamar D4 dipesan mulai 20 Okt 2026/)
+    // a booking checked out ahead of time (18 Okt to check-out 19 Okt) still holds the night of 18 Okt: named as the limit
+    const early: Lease = { ...booked, id: 'E1', start_date: '2026-10-18', end_date: '2026-10-18', status: 'ended', checkout_date: '2026-10-19' }
+    expect(validateQuickCheckIn({ ...base, nights: 5, total: 900_000 }, [booked, early], TODAY).room).toBe(
+      'Kamar D4 dipesan mulai 18 Okt 2026: check-out paling lambat 18 Okt 2026. Kurangi lamanya, atau pilih kamar lain.',
+    )
+    expect(validateQuickCheckIn({ ...base, nights: 3, total: 540_000 }, [booked, early], TODAY)).toEqual({})
   })
 })
 

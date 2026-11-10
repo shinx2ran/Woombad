@@ -172,10 +172,15 @@ export function NewLeasePage() {
     () =>
       data.rooms
         .filter((r) => r.property_id === propertyId)
-        // SPEC 7.20: a room booked for later can be let until that booking starts
-        .map((r) => ({ room: r, availability: roomAvailability(r, data.leases, startDate, stayEnd, undefined, true), booking: nextReservation(data.leases, r.id, startDate) }))
+        // SPEC 7.20: a room booked for later can be let until that booking starts; only with a valid check-in date (else
+        // the old rule), and a booking is one ahead of today (a tenant already living there is not one)
+        .map((r) => ({
+          room: r,
+          availability: roomAvailability(r, data.leases, startDate, stayEnd, undefined, periodPreview ? today : undefined),
+          booking: periodPreview ? nextReservation(data.leases, r.id, startDate > today ? startDate : today) : null,
+        }))
         .sort((a, b) => a.room.name.localeCompare(b.room.name, undefined, { numeric: true })),
-    [data.rooms, data.leases, propertyId, startDate, stayEnd],
+    [data.rooms, data.leases, propertyId, startDate, stayEnd, periodPreview, today],
   )
   const roomState = roomsOfKos.find((r) => r.room.id === roomId)?.availability
 

@@ -28,6 +28,7 @@ function tile(
     plannedCheckout: opts.planned ?? null,
     leavingOn: opts.leavingOn ?? null,
     bookedFrom: null,
+    freeUntil: null,
     freeNights: null,
   }
 }

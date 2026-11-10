@@ -215,7 +215,7 @@ function RoomActionSheet({
   onClose: () => void
   onCheckIn: () => void
 }) {
-  const { room, lease, tenant, summary, tone, plannedCheckout, freeNights } = tile
+  const { room, lease, tenant, summary, tone, plannedCheckout, freeNights, freeUntil } = tile
   // SPEC 7.20: a room booked for later is empty until the booked guest arrives, and can be let for those nights
   const letBeforeBooking = tone === 'reserved' && freeNights !== null && freeNights > 0
   const living = Boolean(lease && summary)
@@ -262,10 +262,10 @@ function RoomActionSheet({
             </>
           )}
           {tone === 'reserved' && lease && <p>Mulai {formatDate(lease.start_date)}</p>}
-          {letBeforeBooking && lease && (
+          {letBeforeBooking && freeUntil && (
             <p className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-800" data-testid="board-free-until">
-              Kosong sampai {formatDate(lease.start_date, 'd MMM')}: bisa disewakan maks {freeNights} malam (check-out paling lambat{' '}
-              {formatDate(lease.start_date, 'd MMM')}).
+              Kosong sampai {formatDate(freeUntil, 'd MMM')}: bisa disewakan maks {freeNights} malam (check-out paling lambat{' '}
+              {formatDate(freeUntil, 'd MMM')}).
             </p>
           )}
           {tone === 'vacant' && (

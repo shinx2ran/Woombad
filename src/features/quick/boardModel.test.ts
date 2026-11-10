@@ -174,11 +174,19 @@ describe('Papan kamar (SPEC 7.4)', () => {
     const c1 = board[0].tiles.find((t) => t.room.name === 'C1')!
     // booked from 20 Okt, today 15 Okt: 5 nights, check-out 20 Okt
     expect(c1.bookedFrom).toBe('20 Okt')
+    expect(c1.freeUntil).toBe('2026-10-20')
     expect(c1.freeNights).toBe(5)
     for (const name of ['A1', 'A2', 'A10', 'B1', 'D1']) {
       const t = board[0].tiles.find((x) => x.room.name === name)!
-      expect([t.bookedFrom, t.freeNights], name).toEqual([null, null])
+      expect([t.bookedFrom, t.freeUntil, t.freeNights], name).toEqual([null, null, null])
     }
+  })
+
+  it('a booking checked out ahead of time that still holds nights shortens the free nights', () => {
+    const early = lease('lC1x', 'rC1', { period_type: 'daily', start_date: '2026-10-17', end_date: '2026-10-17', status: 'ended', checkout_date: '2026-10-18' })
+    const withEarly = buildBoard(properties, ['p1'], rooms, [...leases, early], tenants, invoices, payments, TODAY)
+    const c1 = withEarly[0].tiles.find((t) => t.room.name === 'C1')!
+    expect([c1.tone, c1.bookedFrom, c1.freeUntil, c1.freeNights]).toEqual(['reserved', '20 Okt', '2026-10-17', 2])
   })
 
   it('names the tenant on the tile; an empty room has no name', () => {
