@@ -21,7 +21,7 @@ import {
   useToast,
   type Column,
 } from '../../components/ui'
-import type { Invoice, LeaseAddon, Payment, PeriodType, Room } from '../../types/db'
+import type { Invoice, LeaseAddon, Payment } from '../../types/db'
 import { PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
@@ -45,7 +45,7 @@ import { isLeaseReservedOn, plannedCheckoutOf } from '../../domain/occupancy'
 import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
 import { EditPaymentModal } from './EditPaymentModal'
-import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAddon } from './LifecycleModals'
+import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAddon, type MoveWithNewType } from './LifecycleModals'
 import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
 import { RedateLeaseModal } from './RedateLeaseModal'
 import { PlannedCheckoutModal } from './PlannedCheckoutModal'
@@ -71,7 +71,7 @@ export function LeaseDetailPage() {
 
   const [modal, setModal] = useState<ModalKind | null>(null)
   /** SPEC 7.22: a move that changes the kind of stay, between its check-out and the new lease */
-  const [pendingMove, setPendingMove] = useState<{ room: Room; periodType: PeriodType; date: string } | null>(null)
+  const [pendingMove, setPendingMove] = useState<MoveWithNewType | null>(null)
   /** SPEC 7.13: the next-invoice sheet opens as "Bayar & perpanjang" (the rent is recorded with it) */
   const [payNow, setPayNow] = useState(false)
   /** SPEC 7.15: "Catat deposit diterima" was opened from the checkout sheet, which comes back when it closes */
@@ -643,12 +643,14 @@ export function LeaseDetailPage() {
           setModal(null)
           setPendingMove(null)
         }}
-        initialDate={pendingMove?.date}
+        initialDate={pendingMove?.newStart}
         // SPEC 7.22: the second step of a move that changes the kind of stay: the new lease, in the Sewa baru form
         onDone={(checkoutDate) => {
           if (!pendingMove) return
           toast.success(`Langkah 2: buat sewa ${PERIOD_TYPE_LABEL[pendingMove.periodType].toLowerCase()} di kamar ${pendingMove.room.name}.`)
-          navigate(`/sewa/baru?tenant=${lease.tenant_id}&room=${pendingMove.room.id}&jenis=${pendingMove.periodType}&mulai=${checkoutDate}`)
+          // SPEC 7.24: 'credit' takes the unused paid nights off the new stay's first invoice
+          const credit = pendingMove.mode === 'credit' && pendingMove.credit > 0 ? `&potong=${pendingMove.credit}&malam=${pendingMove.unusedNights}` : ''
+          navigate(`/sewa/baru?tenant=${lease.tenant_id}&room=${pendingMove.room.id}&jenis=${pendingMove.periodType}&mulai=${checkoutDate}${credit}`)
         }}
         lease={lease}
         invoices={leaseInvoices}
@@ -669,7 +671,20 @@ export function LeaseDetailPage() {
         leases={data.leases}
         currentRoom={room}
         actions={actions}
-        onChangeType={(move) => {
+        invoices={leaseInvoices}
+        payments={data.payments}
+        onChangeType={async (move) => {
+          // SPEC 7.24 "Pakai dulu": the tenant changes rooms now on this lease and uses up the paid nights there; the
+          // check-out that follows is dated the day after the last paid night
+          if (move.mode === 'useFirst') {
+            try {
+              await actions.moveRoom(lease, room, move.room, null, move.date)
+              toast.success(`Pindah ke kamar ${move.room.name} dicatat. Lanjut: check-out ${formatDate(move.newStart, 'd MMM')}, lalu sewa baru.`)
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : 'Gagal memindahkan kamar.')
+              return
+            }
+          }
           setPendingMove(move)
           setModal('checkout')
         }}

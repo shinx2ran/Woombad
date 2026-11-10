@@ -310,6 +310,9 @@ isi nama, lamanya, dan total (terisi otomatis dari tarif kamar); lunas, DP, atau
 harian): sewanya pindah ke kamar baru, tagihan tidak berubah. Ganti jenis sewa (mis. harian di B3 lalu **mingguan** di A10):
 pilih jenisnya di **Jenis sewa di kamar baru**, lalu aplikasi memandu dua langkah: **check-out** sewa lama, kemudian form
 **Sewa Baru** yang sudah terisi penyewa, kamar, jenis sewa dan tanggalnya.
+Masih ada malam yang sudah dibayar di sewa lama (mis. bayar 3 malam, pindah setelah 2)? Dialognya menulis sisanya ("Sisa 1 malam
+sudah dibayar (Rp 150.000)") dan memberi dua tombol: **Pakai dulu** (tamu pindah sekarang, sewa baru mulai setelah malam itu habis,
+harga penuh) atau **Potong dari harga** (sewa baru mulai hari ini, tagihan pertamanya dipotong senilai sisa itu).
 
 Kamar ungu **"Dipesan 15 Nov"** masih kosong sampai tamu pemesannya datang, dan tetap bisa disewakan sampai hari itu: ketuk
 kamarnya, lembarnya menulis berapa malam masih bisa disewakan ("maks 5 malam, check-out paling lambat 15 Nov"), lalu **Check-in
