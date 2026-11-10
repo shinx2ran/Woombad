@@ -6,7 +6,7 @@ import { Badge, Button, Card, CardBody, CardHeader, CountInput, ErrorState, Inpu
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
 import type { AddonBilling, Lease, LeaseAddon, PaymentMethod, PeriodType, Tenant } from '../../types/db'
-import { ADDON_BILLINGS, ADDON_BILLING_LABEL, ID_TYPES, ID_TYPE_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
+import { ADDON_BILLINGS, ADDON_BILLING_LABEL, ID_TYPES, ID_TYPE_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPES, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { computeAddonsAmount, deriveInvoiceStatus } from '../../domain/billing'
 import { periodBounds } from '../../domain/period'
 import { plateColumn } from '../../domain/plate'
@@ -96,6 +96,9 @@ export function NewLeasePage() {
   const presetRoom = params.get('room')
   const presetTenant = params.get('tenant')
   const autoScan = params.get('scan') === '1'
+  // SPEC 7.22 (pindah & ganti jenis sewa): the kind of stay and the check-in day, preset by the lease page
+  const presetType = PERIOD_TYPES.find((t) => t === params.get('jenis'))
+  const presetStart = /^\d{4}-\d{2}-\d{2}$/.test(params.get('mulai') ?? '') ? (params.get('mulai') as string) : null
 
   // 1) penyewa
   const [tenantMode, setTenantMode] = useState<TenantMode>(() => (presetTenant ? 'existing' : autoScan ? 'scan' : 'choose'))
@@ -111,9 +114,9 @@ export function NewLeasePage() {
     return selectedPropertyId !== 'all' ? selectedPropertyId : properties.length === 1 ? properties[0].id : ''
   })
   const [roomId, setRoomId] = useState(presetRoom ?? '')
-  const [startDate, setStartDate] = useState(today)
+  const [startDate, setStartDate] = useState(presetStart ?? today)
   // 3) jenis sewa
-  const [periodType, setPeriodType] = useState<PeriodType>('monthly')
+  const [periodType, setPeriodType] = useState<PeriodType>(presetType ?? 'monthly')
   const [price, setPrice] = useState(0)
   const [quantity, setQuantity] = useState(1)
   // 4) add-on

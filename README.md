@@ -306,6 +306,11 @@ sisa tagihan), **Perpanjang** (tagihan saja), atau **Check-out** (membuka dialog
 isi nama, lamanya, dan total (terisi otomatis dari tarif kamar); lunas, DP, atau belum bayar; untuk bulanan/tahunan bisa isi
 **uang jaminan**, dan tahunan bisa diberi **bonus bulan gratis** (bayar 12, dapat 13). Nomor HP dan nomor kendaraan boleh diisi nanti.
 
+**Pindah kamar**: ketuk kamar terisi → **Pindah kamar**, pilih tanggal dan kamar tujuan. Jenis sewa tetap (mis. masih
+harian): sewanya pindah ke kamar baru, tagihan tidak berubah. Ganti jenis sewa (mis. harian di B3 lalu **mingguan** di A10):
+pilih jenisnya di **Jenis sewa di kamar baru**, lalu aplikasi memandu dua langkah: **check-out** sewa lama, kemudian form
+**Sewa Baru** yang sudah terisi penyewa, kamar, jenis sewa dan tanggalnya.
+
 Kamar ungu **"Dipesan 15 Nov"** masih kosong sampai tamu pemesannya datang, dan tetap bisa disewakan sampai hari itu: ketuk
 kamarnya, lembarnya menulis berapa malam masih bisa disewakan ("maks 5 malam, check-out paling lambat 15 Nov"), lalu **Check-in
 cepat (sebelum pesanan)**. Check-out di hari tamu pemesan datang boleh; masa tinggal yang lebih panjang ditolak dengan tanggalnya.

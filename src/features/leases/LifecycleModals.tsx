@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
+import { clsx } from 'clsx'
 import { Button, Input, Modal, MoneyInput, Select, useToast } from '../../components/ui'
-import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddon, Payment, Room } from '../../types/db'
-import { ADDON_BILLINGS, ADDON_BILLING_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
+import type { AddonBilling, AddonCatalogItem, Expense, Invoice, Lease, LeaseAddon, Payment, PeriodType, Room } from '../../types/db'
+import { ADDON_BILLINGS, ADDON_BILLING_LABEL, PERIOD_TYPES, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { depositBalance, outstandingFor, paidAmountFor } from '../../domain/billing'
 import { isCancelledWithoutStay, plannedCheckoutOf } from '../../domain/occupancy'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
@@ -94,6 +95,10 @@ export interface CheckoutModalProps {
    * warning about an agreed deposit that was never recorded as received only says where to record it.
    */
   onRecordDeposit?: () => void
+  /** SPEC 7.22 (pindah & ganti jenis sewa): the day the sheet starts on instead of the plan / today */
+  initialDate?: string
+  /** called after a successful checkout with its date, before onClose */
+  onDone?: (checkoutDate: string) => void
 }
 
 /**
@@ -103,11 +108,11 @@ export interface CheckoutModalProps {
  * starts at the tenant's Rencana keluar when one is recorded (SPEC 7.8), else today. An agreed deposit that was never
  * recorded as received is pointed out above the settlement, which only returns what was received (SPEC 7.15).
  */
-export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions, onRecordDeposit }: CheckoutModalProps) {
+export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions, onRecordDeposit, initialDate, onDone }: CheckoutModalProps) {
   const toast = useToast()
   const balance = useMemo(() => depositBalance(lease, payments, expenses), [lease, payments, expenses])
   const planned = plannedCheckoutOf(lease)
-  const [date, setDate] = useState(planned ?? todayISO())
+  const [date, setDate] = useState(initialDate ?? planned ?? todayISO())
   const [decisions, setDecisions] = useState<Record<string, PartialDecision>>({})
   const [settlement, setSettlement] = useState<DepositSettlement>(emptySettlement(balance.held))
   const [saving, setSaving] = useState(false)
@@ -122,7 +127,7 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
       setSettlement((s) => (s.rent + s.damage > 0 && s.rent + s.damage <= balance.held ? { ...s, refund: balance.held - s.rent - s.damage } : emptySettlement(balance.held)))
       return
     }
-    setDate(planned ?? todayISO())
+    setDate(initialDate ?? planned ?? todayISO())
     setDecisions({})
     setSettlement(emptySettlement(balance.held))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -155,6 +160,7 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
         partialDecisions: decisions,
       })
       toast.success('Checkout dicatat. Sewa selesai.')
+      onDone?.(date)
       onClose()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gagal mencatat checkout.')
@@ -359,12 +365,24 @@ export interface MoveRoomModalProps {
   leases: Lease[]
   currentRoom: Room | undefined
   actions: LeaseActions
+  /**
+   * SPEC 7.22: the tenant moves AND changes the kind of stay (harian in B3 -> mingguan in A10). A lease keeps its
+   * period type, so this is a check-out of this lease on the move day followed by a new lease in the target room; the
+   * lease page runs both with its existing dialogs.
+   */
+  onChangeType?: (move: { room: Room; periodType: PeriodType; date: string }) => void
 }
 
-/** SPEC 2b.9: same kos -> change room (and price), note appended; other kos -> checkout + new lease. */
-export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom, actions }: MoveRoomModalProps) {
+/**
+ * SPEC 2b.9: same kos, same kind of stay -> change room (and price) on this lease, note appended. SPEC 7.22: another
+ * kind of stay in the new room -> check-out + new lease (onChangeType).
+ */
+export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom, actions, onChangeType }: MoveRoomModalProps) {
   const toast = useToast()
   const [roomId, setRoomId] = useState('')
+  /** the kind of stay in the new room; the lease's own = an ordinary move */
+  const [newType, setNewType] = useState<PeriodType>(lease.period_type)
+  const changesType = newType !== lease.period_type
   const [date, setDate] = useState(todayISO())
   const [price, setPrice] = useState(lease.price_per_period)
   const [saving, setSaving] = useState(false)
@@ -373,6 +391,7 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
   useEffect(() => {
     if (!open) return
     setRoomId('')
+    setNewType(lease.period_type)
     setDate(todayISO())
     setPrice(lease.price_per_period)
     priceCheck.reset()
@@ -385,14 +404,16 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
     () =>
       rooms
         .filter((r) => r.property_id === lease.property_id && r.id !== lease.room_id)
-        .map((r) => ({ room: r, availability: roomAvailability(r, leases, date, stayEnd, lease.id) }))
+        // a new lease (another kind of stay) has its own length, checked by the Sewa baru form: here the room only has to
+        // be free on the move day (SPEC 7.20: a later booking does not block it)
+        .map((r) => ({ room: r, availability: changesType ? roomAvailability(r, leases, date, date, lease.id, todayISO()) : roomAvailability(r, leases, date, stayEnd, lease.id) }))
         .sort((a, b) => a.room.name.localeCompare(b.room.name, undefined, { numeric: true })),
-    [rooms, leases, lease, date, stayEnd],
+    [rooms, leases, lease, date, stayEnd, changesType],
   )
   const target = candidates.find((c) => c.room.id === roomId)
   const unit = PERIOD_UNIT_LABEL[lease.period_type]
   // SPEC 7.14: only a NEW price is questioned (the price the lease already has is not this dialog's business)
-  const newPrice = Boolean(target) && actions.canEditLeaseTerms && price !== lease.price_per_period
+  const newPrice = Boolean(target) && !changesType && actions.canEditLeaseTerms && price !== lease.price_per_period
   const priceCheck = usePriceConfirm(price, roomPriceFor(target?.room, lease.period_type), unit, newPrice)
   // a cleared price field is 0: never written as the lease's new price (a lease already at 0 still moves)
   const priceZero = newPrice && price <= 0
@@ -408,6 +429,10 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
 
   const submit = async () => {
     if (!target || target.availability !== 'kosong') return
+    if (changesType) {
+      onChangeType?.({ room: target.room, periodType: newType, date })
+      return
+    }
     setTouched(true)
     if (priceZero) return
     if (!priceCheck.ok) {
@@ -436,8 +461,8 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
           <Button variant="ghost" onClick={onClose}>
             Batal
           </Button>
-          <Button onClick={submit} loading={saving} disabled={!target || target.availability !== 'kosong'}>
-            Pindahkan
+          <Button onClick={submit} loading={saving} disabled={!date || !target || target.availability !== 'kosong'}>
+            {changesType ? 'Lanjut: check-out' : 'Pindahkan'}
           </Button>
         </>
       }
@@ -451,6 +476,32 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
           di kos tujuan.
         </p>
         <Input label="Tanggal pindah" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        {onChangeType && (
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-slate-700">Jenis sewa di kamar baru</span>
+            <div role="radiogroup" aria-label="Jenis sewa di kamar baru" className="grid grid-cols-3 rounded-lg border border-slate-200 bg-white p-1 text-sm">
+              {PERIOD_TYPES.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={t === newType}
+                  onClick={() => setNewType(t)}
+                  className={clsx('min-h-11 rounded-md px-1 py-2 font-medium transition-colors sm:min-h-0 sm:py-1.5', t === newType ? 'bg-brand-700 text-white' : 'text-slate-600 hover:bg-slate-100')}
+                >
+                  {PERIOD_TYPE_LABEL[t]}
+                  {t === lease.period_type && ' (tetap)'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {changesType && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="move-change-type-note">
+            Ganti dari {PERIOD_TYPE_LABEL[lease.period_type].toLowerCase()} ke {PERIOD_TYPE_LABEL[newType].toLowerCase()}: sewa ini di-<strong>check-out</strong> pada tanggal pindah, lalu{' '}
+            <strong>sewa {PERIOD_TYPE_LABEL[newType].toLowerCase()} baru</strong> dibuat di kamar tujuan untuk penyewa yang sama. Dua langkah, dipandu berurutan.
+          </p>
+        )}
         <Select
           label="Kamar tujuan"
           value={roomId}
@@ -464,12 +515,12 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
           }))}
           hint={candidates.length === 0 ? 'Tidak ada kamar lain di kos ini.' : 'Hanya kamar kosong tanpa jadwal bentrok yang bisa dipilih.'}
         />
-        {target && !actions.canEditLeaseTerms && (
+        {target && !changesType && !actions.canEditLeaseTerms && (
           <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
             Harga sewa tetap {formatRupiah(lease.price_per_period)} / {PERIOD_UNIT_LABEL[lease.period_type]}. Hanya pemilik/admin yang dapat mengubah harga sewa.
           </p>
         )}
-        {target && actions.canEditLeaseTerms && (
+        {target && !changesType && actions.canEditLeaseTerms && (
           <PriceField
             label={`Harga baru per ${PERIOD_UNIT_LABEL[lease.period_type]} (${PERIOD_TYPE_LABEL[lease.period_type]})`}
             value={price}

@@ -21,7 +21,7 @@ import {
   useToast,
   type Column,
 } from '../../components/ui'
-import type { Invoice, LeaseAddon, Payment } from '../../types/db'
+import type { Invoice, LeaseAddon, Payment, PeriodType, Room } from '../../types/db'
 import { PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
 import { depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
@@ -70,6 +70,8 @@ export function LeaseDetailPage() {
   const today = todayISO()
 
   const [modal, setModal] = useState<ModalKind | null>(null)
+  /** SPEC 7.22: a move that changes the kind of stay, between its check-out and the new lease */
+  const [pendingMove, setPendingMove] = useState<{ room: Room; periodType: PeriodType; date: string } | null>(null)
   /** SPEC 7.13: the next-invoice sheet opens as "Bayar & perpanjang" (the rent is recorded with it) */
   const [payNow, setPayNow] = useState(false)
   /** SPEC 7.15: "Catat deposit diterima" was opened from the checkout sheet, which comes back when it closes */
@@ -110,6 +112,7 @@ export function LeaseDetailPage() {
       setPayNow(true)
       setModal('invoice')
     } else if (action === 'checkout' && lease.status === 'active') setModal('checkout')
+    else if (action === 'pindah' && lease.status === 'active') setModal('move')
     const next = new URLSearchParams(params)
     next.delete('action')
     setParams(next, { replace: true })
@@ -194,7 +197,7 @@ export function LeaseDetailPage() {
   if (isActive) {
     menuItems.push({ label: 'Perpanjang', hint: 'Buat tagihan periode berikutnya', icon: <CalendarPlus className="h-4 w-4" />, onClick: () => openNextInvoice(false) })
     menuItems.push({ label: 'Bayar & perpanjang', hint: 'Tagihan periode berikutnya, langsung lunas', icon: <Wallet className="h-4 w-4" />, onClick: () => openNextInvoice(true) })
-    menuItems.push({ label: 'Pindah kamar', hint: 'Dalam kos yang sama', icon: <ArrowLeftRight className="h-4 w-4" />, onClick: () => setModal('move') })
+    menuItems.push({ label: 'Pindah kamar', hint: 'Juga pindah sambil ganti harian/mingguan/bulanan', icon: <ArrowLeftRight className="h-4 w-4" />, onClick: () => setModal('move') })
     // SPEC 7.6: moves the whole billing schedule; owner/admin only (the hook and the database refuse staff too)
     if (isAdmin) {
       menuItems.push({
@@ -636,7 +639,17 @@ export function LeaseDetailPage() {
       />
       <CheckoutModal
         open={modal === 'checkout'}
-        onClose={() => setModal(null)}
+        onClose={() => {
+          setModal(null)
+          setPendingMove(null)
+        }}
+        initialDate={pendingMove?.date}
+        // SPEC 7.22: the second step of a move that changes the kind of stay: the new lease, in the Sewa baru form
+        onDone={(checkoutDate) => {
+          if (!pendingMove) return
+          toast.success(`Langkah 2: buat sewa ${PERIOD_TYPE_LABEL[pendingMove.periodType].toLowerCase()} di kamar ${pendingMove.room.name}.`)
+          navigate(`/sewa/baru?tenant=${lease.tenant_id}&room=${pendingMove.room.id}&jenis=${pendingMove.periodType}&mulai=${checkoutDate}`)
+        }}
         lease={lease}
         invoices={leaseInvoices}
         payments={data.payments}
@@ -648,7 +661,19 @@ export function LeaseDetailPage() {
         }}
       />
       <CancelLeaseModal open={modal === 'cancel'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
-      <MoveRoomModal open={modal === 'move'} onClose={() => setModal(null)} lease={lease} rooms={data.rooms} leases={data.leases} currentRoom={room} actions={actions} />
+      <MoveRoomModal
+        open={modal === 'move'}
+        onClose={() => setModal(null)}
+        lease={lease}
+        rooms={data.rooms}
+        leases={data.leases}
+        currentRoom={room}
+        actions={actions}
+        onChangeType={(move) => {
+          setPendingMove(move)
+          setModal('checkout')
+        }}
+      />
       <AddonModal open={modal === 'addon'} onClose={() => setModal(null)} lease={lease} catalog={data.addonCatalog} actions={actions} />
       {modal === 'keluar' && isActive && (
         <PlannedCheckoutModal lease={lease} tenantName={tenant?.full_name ?? 'Penyewa'} roomName={room?.name ?? '?'} actions={actions} onClose={() => setModal(null)} />
