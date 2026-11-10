@@ -801,15 +801,20 @@ export const ROOM_AVAILABILITY_LABEL: Record<RoomAvailability, string> = {
 }
 
 /**
- * State of a room for a planned stay [startISO, endISO]: maintenance rooms are 'perbaikan'; a room occupied
- * on the start date is 'terisi'; one booked by a future lease is 'dipesan'; a free room whose planned stay
- * still collides with another lease (leaseOverlaps) is 'bentrok'; otherwise 'kosong'.
+ * State of a room for a planned stay [startISO, endISO] (endISO = its last night): maintenance rooms are 'perbaikan'; a
+ * room occupied on the start date is 'terisi'; one booked by a future lease is 'dipesan'; a free room whose planned
+ * stay still collides with another lease (leaseOverlaps) is 'bentrok'; otherwise 'kosong'.
+ *
+ * `fixedEnd` (SPEC 7.20): a new stay with a known last night (Check-in cepat, Sewa baru) is not blocked by a booking
+ * that starts after it: the room is let until the booked guest arrives (check-out on the day he checks in), as the
+ * database's overlap guard allows. Without it (a room move: the tenant stays on and extends) any later booking keeps
+ * the room 'dipesan'.
  */
-export function roomAvailability(room: Room, leases: Lease[], startISO: string, endISO: string, excludeLeaseId?: string): RoomAvailability {
+export function roomAvailability(room: Room, leases: Lease[], startISO: string, endISO: string, excludeLeaseId?: string, fixedEnd = false): RoomAvailability {
   if (room.status === 'maintenance') return 'perbaikan'
   const own = leases.filter((l) => l.room_id === room.id && l.id !== excludeLeaseId)
   if (own.some((l) => isLeaseActiveOn(l, startISO))) return 'terisi'
-  if (own.some((l) => isLeaseReservedOn(l, startISO))) return 'dipesan'
+  if (own.some((l) => isLeaseReservedOn(l, startISO) && (!fixedEnd || l.start_date.slice(0, 10) <= endISO.slice(0, 10)))) return 'dipesan'
   if (leaseOverlaps(leases, room.id, startISO, endISO, excludeLeaseId)) return 'bentrok'
   return 'kosong'
 }

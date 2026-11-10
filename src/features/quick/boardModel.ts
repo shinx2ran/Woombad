@@ -48,6 +48,12 @@ export interface BoardTile {
   plannedCheckout: string | null
   /** '24 Nov': the tile says 'Keluar 24 Nov' instead of its caption while that day is ahead and nothing is due before it (boardLeavingOn) */
   leavingOn: string | null
+  /**
+   * SPEC 7.20, a room booked for later ('reserved'): '15 Nov', the booked guest's first night (the tile says 'Dipesan 15
+   * Nov'), and the nights it can still be let before then (check-out on that day); null on any other tile
+   */
+  bookedFrom: string | null
+  freeNights: number | null
 }
 
 export interface BoardGroup {
@@ -143,7 +149,10 @@ export function buildBoard(
       const plannedCheckout = summary && state.lease ? plannedCheckoutOf(state.lease) : null
       const leavingOn = boardLeavingOn(tone, plannedCheckout, summary, todayISO)
       const name = state.tenant ? shortTenantName(state.tenant.full_name) : null
-      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, name, summary, plannedCheckout, leavingOn }
+      const booked = tone === 'reserved' && state.lease ? state.lease.start_date.slice(0, 10) : null
+      const bookedFrom = booked ? formatDate(booked, 'd MMM') : null
+      const freeNights = booked ? daysBetween(todayISO, booked) : null
+      return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, name, summary, plannedCheckout, leavingOn, bookedFrom, freeNights }
     })
     groups.push({ property, tiles })
   }

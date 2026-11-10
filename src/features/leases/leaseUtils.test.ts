@@ -366,6 +366,32 @@ describe('roomAvailability', () => {
     expect(roomAvailability(room, [occupying], '2026-01-15', '2026-02-14', 'L9')).toBe('kosong')
   })
 
+  // SPEC 7.20: a room booked for later is let until the booked guest arrives (a stay with a known last night)
+  it('a new stay that ends before a booking starts is kosong; one that reaches its first night is dipesan', () => {
+    const booking: Lease = { ...occupying, id: 'B1', start_date: '2026-11-15', end_date: '2026-11-17' }
+    // last night 14 Nov, check-out 15 Nov: the booked guest arrives the same day
+    expect(roomAvailability(room, [booking], '2026-11-10', '2026-11-14', undefined, true)).toBe('kosong')
+    expect(roomAvailability(room, [booking], '2026-11-10', '2026-11-10', undefined, true)).toBe('kosong')
+    // a night of 15 Nov or later is the booked guest's
+    expect(roomAvailability(room, [booking], '2026-11-10', '2026-11-15', undefined, true)).toBe('dipesan')
+    expect(roomAvailability(room, [booking], '2026-11-10', '2026-12-09', undefined, true)).toBe('dipesan')
+    // after the booking (a stay from its last night on) is not this rule's: the guest is there that day
+    expect(roomAvailability(room, [booking], '2026-11-16', '2026-11-20', undefined, true)).toBe('terisi')
+    // a room move (no fixed end: the tenant stays on and extends) keeps any later booking as dipesan
+    expect(roomAvailability(room, [booking], '2026-11-10', '2026-11-14')).toBe('dipesan')
+    // two bookings: the stay must end before the earlier one
+    const later: Lease = { ...booking, id: 'B2', start_date: '2026-11-25', end_date: '2026-11-26' }
+    expect(roomAvailability(room, [later, booking], '2026-11-10', '2026-11-14', undefined, true)).toBe('kosong')
+    expect(roomAvailability(room, [later, booking], '2026-11-10', '2026-11-15', undefined, true)).toBe('dipesan')
+    // between them only once the first guest is checked out (an active lease holds the room until its check-out)
+    expect(roomAvailability(room, [later, booking], '2026-11-18', '2026-11-24', undefined, true)).toBe('terisi')
+    const left: Lease = { ...booking, status: 'ended', checkout_date: '2026-11-18' }
+    expect(roomAvailability(room, [later, left], '2026-11-18', '2026-11-24', undefined, true)).toBe('kosong')
+    expect(roomAvailability(room, [later, left], '2026-11-18', '2026-11-25', undefined, true)).toBe('dipesan')
+    // a cancelled booking holds nothing
+    expect(roomAvailability(room, [{ ...booking, status: 'cancelled' }], '2026-11-10', '2026-11-20', undefined, true)).toBe('kosong')
+  })
+
   it('reads the room price for a period type', () => {
     expect(roomPriceFor(room, 'daily')).toBe(90_000)
     expect(roomPriceFor(room, 'monthly')).toBe(1_200_000)

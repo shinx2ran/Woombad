@@ -10,10 +10,11 @@
  * through it too; saveQuickCheckIn is that call for a daily stay paid in full or not at all.
  */
 import { deriveInvoiceStatus, type InvoiceDraftInput, type InvoiceDraft } from '../../domain/billing'
+import { nextReservation } from '../../domain/occupancy'
 import { periodBounds } from '../../domain/period'
 import { plateColumn } from '../../domain/plate'
 import type { OrgRepo } from '../../lib/repo/types'
-import { formatRupiah } from '../../lib/format'
+import { formatDate, formatRupiah } from '../../lib/format'
 import type { Invoice, Lease, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
 import { PERIOD_UNIT_LABEL } from '../../types/db'
 import { ROOM_AVAILABILITY_LABEL, roomAvailability } from '../leases/leaseUtils'
@@ -143,8 +144,15 @@ export function validateStayBooking(input: StayBookingInput, leases: Lease[]): S
   if (input.deposit && input.deposit.amount < 0) errors.deposit = 'Tidak boleh negatif.'
   const plan = planStayBooking(input.startDate, input.periodType, input.quantity, input.total, input.bonusQuantity ?? 0)
   if (plan) {
-    const availability = roomAvailability(input.room, leases, input.startDate, plan.end)
-    if (availability !== 'kosong') errors.room = `Kamar ${input.room.name} ${ROOM_AVAILABILITY_LABEL[availability].toLowerCase()} pada tanggal ini.`
+    // SPEC 7.20: a room booked for later is let until that guest arrives; only a stay that reaches his first night is refused
+    const availability = roomAvailability(input.room, leases, input.startDate, plan.end, undefined, true)
+    const booking = availability === 'dipesan' ? nextReservation(leases, input.room.id, input.startDate) : null
+    if (booking) {
+      const arrives = formatDate(booking.start_date)
+      errors.room = `Kamar ${input.room.name} dipesan mulai ${arrives}: check-out paling lambat ${arrives}. Kurangi lamanya, atau pilih kamar lain.`
+    } else if (availability !== 'kosong') {
+      errors.room = `Kamar ${input.room.name} ${ROOM_AVAILABILITY_LABEL[availability].toLowerCase()} pada tanggal ini.`
+    }
   }
   return errors
 }

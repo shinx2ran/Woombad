@@ -306,6 +306,11 @@ sisa tagihan), **Perpanjang** (tagihan saja), atau **Check-out** (membuka dialog
 isi nama, lamanya, dan total (terisi otomatis dari tarif kamar); lunas, DP, atau belum bayar; untuk bulanan/tahunan bisa isi
 **uang jaminan**, dan tahunan bisa diberi **bonus bulan gratis** (bayar 12, dapat 13). Nomor HP dan nomor kendaraan boleh diisi nanti.
 
+Kamar ungu **"Dipesan 15 Nov"** masih kosong sampai tamu pemesannya datang, dan tetap bisa disewakan sampai hari itu: ketuk
+kamarnya, lembarnya menulis berapa malam masih bisa disewakan ("maks 5 malam, check-out paling lambat 15 Nov"), lalu **Check-in
+cepat (sebelum pesanan)**. Check-out di hari tamu pemesan datang boleh; masa tinggal yang lebih panjang ditolak dengan tanggalnya.
+Di **Sewa Baru** aturannya sama (kartu kamar menulis "Dipesan mulai 15 Nov").
+
 **Ringkasan WA** (tombol hijau di pojok Papan kamar): pesan siap kirim untuk istri atau grup WhatsApp staf, berisi kamar yang
 perlu perhatian sesuai kos yang dipilih: **Telat bayar** ("Kamar 5D (Pak Beni) telat 2 hari (bulanan)"), **Hari ini**
 (habis sewa / jatuh tempo, rencana keluar, check-in hari ini) dan **Segera** (jatuh tempo dalam 7 hari). Pesannya bisa diubah dulu,

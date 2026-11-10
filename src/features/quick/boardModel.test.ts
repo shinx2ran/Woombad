@@ -169,6 +169,18 @@ describe('Papan kamar (SPEC 7.4)', () => {
     expect(a1.lease).toBeNull()
   })
 
+  // SPEC 7.20: a room booked for later shows when, and how many nights it can still be let
+  it('a reserved tile carries the booking day and the nights free before it; other tiles carry none', () => {
+    const c1 = board[0].tiles.find((t) => t.room.name === 'C1')!
+    // booked from 20 Okt, today 15 Okt: 5 nights, check-out 20 Okt
+    expect(c1.bookedFrom).toBe('20 Okt')
+    expect(c1.freeNights).toBe(5)
+    for (const name of ['A1', 'A2', 'A10', 'B1', 'D1']) {
+      const t = board[0].tiles.find((x) => x.room.name === name)!
+      expect([t.bookedFrom, t.freeNights], name).toEqual([null, null])
+    }
+  })
+
   it('names the tenant on the tile; an empty room has no name', () => {
     expect(board[0].tiles.find((t) => t.room.name === 'A10')!.name).toBe('Budi')
     expect(board[0].tiles.find((t) => t.room.name === 'A1')!.name).toBeNull()

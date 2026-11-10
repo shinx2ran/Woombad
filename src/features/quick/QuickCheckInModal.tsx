@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router'
 import { clsx } from 'clsx'
 import { AlertTriangle, ScanLine, X } from 'lucide-react'
 import { Button, CountInput, Input, LoadingState, Modal, MoneyInput, Select, useToast } from '../../components/ui'
+import { nextReservation } from '../../domain/occupancy'
+import { daysBetween } from '../../domain/period'
 import { normalizePlate } from '../../domain/plate'
 import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate } from '../../hooks/useTable'
-import { formatCheckout, formatRupiah, formatStay, todayISO } from '../../lib/format'
+import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import { ID_TYPE_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_UNIT_LABEL, type PaymentMethod, type PeriodType, type Room, type Tenant } from '../../types/db'
 import { PlateInput } from '../leases/PlateInput'
 import { usePriceConfirm } from '../leases/usePriceConfirm'
@@ -173,6 +175,9 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
     tenantPrefill: existing ? null : scanned,
   }
   const errors = validateStayBooking(input, data.leases)
+  // SPEC 7.20: the room may be booked for later: it is let until that guest arrives
+  const booking = useMemo(() => (startDate ? nextReservation(data.leases, room.id, startDate) : null), [data.leases, room.id, startDate])
+  const nightsBeforeBooking = booking && startDate ? daysBetween(startDate, booking.start_date.slice(0, 10)) : null
   const plan = planStayBooking(startDate, periodType, quantity, total, input.bonusQuantity)
   const hasErrors = Object.keys(errors).length > 0
   // SPEC 7.14: the price per night / week / month the total works out to, against the room's rate
@@ -341,6 +346,12 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
             <CountInput label={QUANTITY_LABEL[kind]} value={quantity} onChange={setQuantity} required error={touched ? errors.quantity : undefined} />
             <Input label="Tanggal check-in" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required error={touched ? errors.startDate : undefined} />
           </div>
+          {booking && nightsBeforeBooking !== null && nightsBeforeBooking > 0 && !errors.room && (
+            <p className="rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-900" data-testid="quick-checkin-booking">
+              Kamar ini dipesan mulai {formatDate(booking.start_date)}: check-out paling lambat {formatDate(booking.start_date, 'd MMM')} (maks{' '}
+              {nightsBeforeBooking} malam).
+            </p>
+          )}
           {kind === 'yearly' && (
             <CountInput label="Bonus bulan gratis" value={bonus} onChange={setBonus} min={0} max={12} error={touched ? errors.bonus : undefined} hint="Mis. bayar 12 bulan, bonus 1 bulan: sewa 13 bulan, tagihan tetap 12 bulan." />
           )}

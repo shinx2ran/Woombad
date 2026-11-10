@@ -70,6 +70,19 @@ export function occupiedRoomIds(leases: Lease[], dateISO: string): Set<string> {
 }
 
 /**
+ * The room's next booking after the date (SPEC 7.20): the active lease with the earliest start_date later than the
+ * date, or null. Until its first night the room is free: a stay that checks out on or before that day may be let.
+ */
+export function nextReservation(leases: readonly Lease[], roomId: string, dateISO: string): Lease | null {
+  let next: Lease | null = null
+  for (const lease of leases) {
+    if (lease.room_id !== roomId || !isLeaseReservedOn(lease, dateISO)) continue
+    if (!next || day(lease.start_date) < day(next.start_date)) next = lease
+  }
+  return next
+}
+
+/**
  * Room ids with a status 'active' lease whose start_date > date ("Dipesan"), regardless of whether the
  * room is also occupied on the date by another lease (e.g. the current tenant checks out 2026-03-31 and
  * the next lease starts 2026-04-01: on 2026-03-15 the room is both occupied and reserved). Callers that
