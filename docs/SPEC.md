@@ -1158,6 +1158,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   kewarganegaraan ("ERIKA<<MARIA" → "ERIKA MARIA", "D<<" → "D").
   Balasan 200: `{ result, model, usage, cost }`. Penolakan: 422 "Pastikan isinya KTP atau halaman data paspor".
   Log hanya hitungan (`scan-ktp usage`), tidak pernah isi kartu.
+  **Perbaikan 10 Nov 2026**: skema awal memakai 25 kolom nullable (`anyOf` dengan null) dan ditolak API pada scan nyata pertama
+  ("too many parameters with union types", batas 16), sehingga setiap scan gagal 502. Skema sekarang tanpa union sama sekali:
+  objek `ktp` dan `passport` selalu ada, kolom yang tidak terbaca berupa string kosong; `parseKtpScanOutput` mengubah '' menjadi
+  null dan hanya menyimpan objek sesuai `kind`. Uji skema menolak `anyOf`/null.
 - **`scan_usage.kind`** diperluas: `ktp` / `passport` / `unknown` (CHECK bernama `scan_usage_kind_check`; pada instalasi
   yang sudah punya tabel, blok `do` di `schema.sql` menjatuhkan CHECK lama dan memasang yang baru; `lines` = jumlah kolom
   terbaca). Kartu **Kredit Claude** menulis "16 data · KTP" dan subjudulnya menyebut Scan KTP.

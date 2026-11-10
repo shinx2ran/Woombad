@@ -58,8 +58,10 @@ export interface KtpScanResult {
   notes: string
 }
 
-const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: 'null' }] })
-const text = nullable({ type: 'string' })
+// No nullable / union types anywhere: the API refuses a schema with more than 16 of them ("too many parameters with
+// union types", seen live on 10 Nov 2026 with 25). A field that could not be read is an empty string, and both objects
+// are always present; parseKtpScanOutput turns '' into null and keeps only the object of the detected kind.
+const text = { type: 'string' }
 
 const KTP_FIELD_NAMES = [
   'nik', 'nama', 'tempat_lahir', 'tanggal_lahir', 'jenis_kelamin', 'gol_darah', 'alamat', 'rt_rw', 'kel_desa', 'kecamatan',
@@ -74,18 +76,18 @@ export const KTP_SCAN_SCHEMA = {
   required: ['kind', 'ktp', 'passport', 'unclear', 'notes'],
   properties: {
     kind: { type: 'string', enum: [...KTP_SCAN_KINDS] },
-    ktp: nullable({
+    ktp: {
       type: 'object',
       additionalProperties: false,
       required: [...KTP_FIELD_NAMES],
       properties: Object.fromEntries(KTP_FIELD_NAMES.map((k) => [k, text])),
-    }),
-    passport: nullable({
+    },
+    passport: {
       type: 'object',
       additionalProperties: false,
       required: [...PASSPORT_FIELD_NAMES],
       properties: Object.fromEntries(PASSPORT_FIELD_NAMES.map((k) => [k, text])),
-    }),
+    },
     unclear: { type: 'array', items: { type: 'string' } },
     notes: { type: 'string' },
   },
@@ -96,14 +98,14 @@ export const KTP_SCAN_SYSTEM_PROMPT = `You read photos of identity documents for
 The photo is one of:
 - An Indonesian e-KTP (national identity card). Return kind "ktp" and every field exactly as printed, in UPPER CASE as on the card:
   - nik: the 16 digits, no spaces. tempat_lahir and tanggal_lahir come from the one line "Tempat/Tgl Lahir: PLACE, DD-MM-YYYY"; give tanggal_lahir as YYYY-MM-DD.
-  - jenis_kelamin: "L" for LAKI-LAKI, "P" for PEREMPUAN. gol_darah: A, B, AB or O; null when the card shows "-".
+  - jenis_kelamin: "L" for LAKI-LAKI, "P" for PEREMPUAN. gol_darah: A, B, AB or O; an empty string when the card shows "-".
   - rt_rw as printed, "NNN/NNN". alamat is the street line only (RT/RW, Kel/Desa and Kecamatan are their own fields).
   - provinsi: the first header line without the word PROVINSI. kota: the second header line: "KOTA X" becomes "X", "KABUPATEN X" becomes "KAB. X"; a line with neither word (Jakarta's "JAKARTA SELATAN") stays as printed.
   - Do not read the issue place and date printed under the photo into any field. The NIK's digits 7-12 encode the birth date (DDMMYY; DD over 40 means a woman, minus 40): when the printed date and the NIK disagree, keep what is printed and name the field in unclear.
 - A passport: return kind "passport" with the fields of the two machine-readable lines at the bottom (surname, given names, passport number, nationality as the 3-letter code, birth date and expiry as YYYY-MM-DD, sex "L" or "P"). Prefer the machine-readable lines over the printed page when they differ.
-- Anything else, or a photo too blurry or dark to read: kind "unknown" with ktp and passport null, and say why in notes.
+- Anything else, or a photo too blurry or dark to read: kind "unknown", and say why in notes.
 
-Use null for any field you cannot read at all. List in unclear every field you were not sure of (a smudged digit, glare over a word). Never invent a value to fill a field.
+Both objects, ktp and passport, are always present in your answer: fill the one that matches kind and leave every field of the other as an empty string (for "unknown", both). Use an empty string for any field you cannot read at all. List in unclear every field you were not sure of (a smudged digit, glare over a word). Never invent a value to fill a field.
 
 notes: one or two short Indonesian sentences for the person checking (for example which field was hard to read), or an empty string.`
 
