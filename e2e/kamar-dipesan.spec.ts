@@ -110,6 +110,9 @@ test.describe('Kamar dipesan tetap bisa disewakan sebelum pesanannya (SPEC 7.20)
     await expect(page.locator(`[data-testid="board-tile"][data-room="${roomName}"]`)).not.toHaveAttribute('data-tone', 'reserved')
     await expect(page.locator(`[data-testid="board-tile"][data-room="${roomName}"]`)).not.toHaveAttribute('data-tone', 'vacant')
     // the sheet now names both: the guest staying, and the booking that follows
+    // SPEC 7.23: two colours on the tile: its own, and a violet band for the booking that follows
+    await expect(page.locator(`[data-testid="board-tile"][data-room="${roomName}"]`).getByTestId('board-tile-booked-next')).toBeVisible()
+    await expect(page.getByTestId('board-legend-booked-next')).toHaveText('Garis ungu: ada pesanan berikutnya (1)')
     await page.locator(`[data-testid="board-tile"][data-room="${roomName}"]`).click()
     const both = page.getByRole('dialog')
     await expect(both.getByTestId('board-current-tenant')).toHaveText('Penyewa sekarangTamu Sela')

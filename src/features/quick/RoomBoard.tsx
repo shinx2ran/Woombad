@@ -58,6 +58,8 @@ export function RoomBoard() {
     [properties, propertyFilterIds, data.rooms, data.leases, data.tenantById, data.invoices, data.payments, today],
   )
   const counts = useMemo(() => countTones(groups), [groups])
+  // SPEC 7.23: occupied rooms that already have a booking after the current tenant (two colours on the tile)
+  const bookedNext = useMemo(() => groups.flatMap((g) => g.tiles).filter((t) => t.upcoming && t.tone !== 'reserved').length, [groups])
   const openTile = openRoomId ? groups.flatMap((g) => g.tiles).find((t) => t.room.id === openRoomId) ?? null : null
   // The same pre-filled WhatsApp reminder as "Pengingat WhatsApp" on the lease list (leaseReminderText), built only for
   // the room that is open: the oldest open invoice, or the next period when everything is paid.
@@ -113,6 +115,12 @@ export function RoomBoard() {
               {BOARD_TONE_META[t].legend} ({counts[t]})
             </li>
           ))}
+          {bookedNext > 0 && (
+            <li className="inline-flex items-center gap-1" data-testid="board-legend-booked-next">
+              <span className="h-1.5 w-4 rounded-sm bg-violet-500" aria-hidden />
+              Garis ungu: ada pesanan berikutnya ({bookedNext})
+            </li>
+          )}
         </ul>
         {groups.map((g) => (
           <section key={g.property.id} aria-label={`Kamar ${g.property.name}`}>
@@ -125,10 +133,16 @@ export function RoomBoard() {
                   data-testid="board-tile"
                   data-room={t.room.name}
                   data-tone={t.tone}
-                  aria-label={`Kamar ${t.room.name}${t.tenant ? ` (${t.tenant.full_name})` : ''}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.bookedFrom ? ` mulai ${t.bookedFrom}, kosong sampai itu` : ''}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}${t.lease?.vehicle_plate ? `, kendaraan ${t.lease.vehicle_plate}` : ''}`}
+                  aria-label={`Kamar ${t.room.name}${t.tenant ? ` (${t.tenant.full_name})` : ''}: ${t.tone === 'soon' ? `jatuh tempo ${t.caption}` : BOARD_TONE_META[t.tone].legend}${t.bookedFrom ? ` mulai ${t.bookedFrom}, kosong sampai itu` : ''}${t.leavingOn ? `, akan keluar ${t.leavingOn}` : ''}${t.upcoming && t.tone !== 'reserved' ? `, ada pesanan mulai ${formatDate(t.upcoming.lease.start_date, 'd MMM')}` : ''}${t.lease?.vehicle_plate ? `, kendaraan ${t.lease.vehicle_plate}` : ''}`}
                   onClick={() => setOpenRoomId(t.room.id)}
-                  className={clsx('flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg border px-0 py-1 text-center', TILE_CLASS[t.tone])}
+                  className={clsx(
+                    'relative flex min-h-12 min-w-0 flex-col items-center justify-center overflow-hidden rounded-lg border px-0 py-1 text-center',
+                    TILE_CLASS[t.tone],
+                    t.upcoming && t.tone !== 'reserved' && 'pb-2.5',
+                  )}
                 >
+                  {/* SPEC 7.23: the room is occupied AND booked for later: a violet band (the "Dipesan" colour) under the tile's own colour */}
+                  {t.upcoming && t.tone !== 'reserved' && <span className="absolute inset-x-0 bottom-0 h-1.5 bg-violet-500" aria-hidden data-testid="board-tile-booked-next" />}
                   {/* up to two lines, so 'Kamar 12' and 'Kamar 13' stay apart on a 360 px phone */}
                   <span className="line-clamp-2 max-w-full break-words text-sm font-semibold tabular-nums" data-testid="board-tile-name">
                     {t.room.name}

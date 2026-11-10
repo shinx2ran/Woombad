@@ -461,7 +461,7 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
           <Button variant="ghost" onClick={onClose}>
             Batal
           </Button>
-          <Button onClick={submit} loading={saving} disabled={!target || target.availability !== 'kosong'}>
+          <Button onClick={submit} loading={saving} disabled={!date || !target || target.availability !== 'kosong'}>
             {changesType ? 'Lanjut: check-out' : 'Pindahkan'}
           </Button>
         </>

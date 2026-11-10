@@ -1275,3 +1275,8 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   pada tanggal pindah (pesanan sesudahnya tidak menghalangi, 7.20); lamanya diperiksa form Sewa Baru. Batal di langkah 1 tidak
   mengubah apa pun; bila langkah 2 ditinggalkan, sewa lama sudah selesai dan sewa baru bisa dibuat kapan saja dari Sewa Baru.
 - **Uji**: `e2e/pindah-kamar.spec.ts` (HP 360 px: pindah biasa dari papan; ganti ke mingguan → checkout → Sewa Baru terisi).
+
+### 7.23 Ubin dua warna: terisi dan sudah dipesan berikutnya
+- **Permintaan pemilik** (10 Nov 2026, kamar A10: masih ditempati, sudah dipesan mulai 11 Nov): ubin kamar terisi yang punya
+  pesanan berikutnya (`BoardTile.upcoming`, bukan ubin "Dipesan") mendapat **garis ungu** di bawah warna ubinnya sendiri; legenda
+  menulis "Garis ungu: ada pesanan berikutnya (n)" dan label pembaca layar ", ada pesanan mulai 11 Nov".
