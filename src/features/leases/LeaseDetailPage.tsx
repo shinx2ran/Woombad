@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { BackLink } from '../../app/BackLink'
 import { clsx } from 'clsx'
@@ -46,6 +46,7 @@ import { DepositModal, PaymentModal } from './PaymentModal'
 import { EditInvoiceModal, NextInvoiceModal } from './InvoiceFormModal'
 import { EditPaymentModal } from './EditPaymentModal'
 import { AddonModal, CancelLeaseModal, CheckoutModal, MoveRoomModal, describeAddon, type MoveWithNewType } from './LifecycleModals'
+import { unusedPaidRent } from './moveCredit'
 import { InvoiceShareModal } from '../invoices/InvoiceShareModal'
 import { RedateLeaseModal } from './RedateLeaseModal'
 import { PlannedCheckoutModal } from './PlannedCheckoutModal'
@@ -72,6 +73,7 @@ export function LeaseDetailPage() {
   const [modal, setModal] = useState<ModalKind | null>(null)
   /** SPEC 7.22: a move that changes the kind of stay, between its check-out and the new lease */
   const [pendingMove, setPendingMove] = useState<MoveWithNewType | null>(null)
+  const moveDoneRef = useRef(false)
   /** SPEC 7.13: the next-invoice sheet opens as "Bayar & perpanjang" (the rent is recorded with it) */
   const [payNow, setPayNow] = useState(false)
   /** SPEC 7.15: "Catat deposit diterima" was opened from the checkout sheet, which comes back when it closes */
@@ -640,16 +642,32 @@ export function LeaseDetailPage() {
       <CheckoutModal
         open={modal === 'checkout'}
         onClose={() => {
+          // "Pakai dulu" already moved the tenant: say what is left when the checkout step is put off
+          if (pendingMove?.mode === 'useFirst' && !moveDoneRef.current) {
+            toast.error(`Pindah ke kamar ${pendingMove.room.name} sudah dicatat, tetapi check-out ${formatDate(pendingMove.newStart, 'd MMM')} dan sewa baru belum: lakukan Check-out, lalu Sewa Baru.`)
+          }
+          moveDoneRef.current = false
           setModal(null)
           setPendingMove(null)
         }}
+        notice={
+          pendingMove?.mode === 'useFirst'
+            ? `Langkah 2 dari 3: check-out sewa lama tanggal ${formatDate(pendingMove.newStart, 'd MMM')} (sehari setelah malam terbayar terakhir). Sesudahnya form Sewa Baru terbuka.`
+            : pendingMove?.mode === 'credit'
+              ? `Sisa ${pendingMove.unusedNights} malam terbayar (${formatRupiah(pendingMove.credit)}) dipotong dari tagihan sewa baru: jangan dicatat lagi sebagai Pengembalian Sewa.`
+              : undefined
+        }
         initialDate={pendingMove?.newStart}
         // SPEC 7.22: the second step of a move that changes the kind of stay: the new lease, in the Sewa baru form
         onDone={(checkoutDate) => {
           if (!pendingMove) return
+          moveDoneRef.current = true
           toast.success(`Langkah 2: buat sewa ${PERIOD_TYPE_LABEL[pendingMove.periodType].toLowerCase()} di kamar ${pendingMove.room.name}.`)
           // SPEC 7.24: 'credit' takes the unused paid nights off the new stay's first invoice
-          const credit = pendingMove.mode === 'credit' && pendingMove.credit > 0 ? `&potong=${pendingMove.credit}&malam=${pendingMove.unusedNights}` : ''
+          // counted again for the day the checkout was really dated (it can be edited in the sheet): whatever is paid
+          // from that day on comes off the new stay, so no night is paid twice and none is credited twice
+          const left = pendingMove.mode === 'none' ? null : unusedPaidRent(lease.id, leaseInvoices, data.payments, checkoutDate)
+          const credit = left && left.amount > 0 ? `&potong=${left.amount}&malam=${left.nights}` : ''
           navigate(`/sewa/baru?tenant=${lease.tenant_id}&room=${pendingMove.room.id}&jenis=${pendingMove.periodType}&mulai=${checkoutDate}${credit}`)
         }}
         lease={lease}

@@ -797,7 +797,12 @@ export function NewLeasePage() {
               {credit > 0 && (
                 <div data-testid="lease-credit">
                   <Row label={`Potongan sisa ${creditNights > 0 ? `${creditNights} malam ` : ''}sewa lama`} value={`− ${formatRupiah(credit)}`} />
-                  {credit < presetCredit && <p className="text-xs text-amber-700">Sisa {formatRupiah(presetCredit - credit)} tidak terpotong: melebihi tagihan pertama.</p>}
+                  {credit < presetCredit && (
+                    <p className="text-xs text-amber-700" data-testid="lease-credit-rest">
+                      Sisa {formatRupiah(presetCredit - credit)} tidak terpotong (melebihi tagihan pertama): tambah jumlah periode supaya ikut terpotong, atau kembalikan ke penyewa
+                      dan catat sebagai pengeluaran Pengembalian Sewa.
+                    </p>
+                  )}
                   <button type="button" className="text-xs font-medium text-slate-600 underline" onClick={() => setCreditOn(false)}>
                     Hapus potongan
                   </button>

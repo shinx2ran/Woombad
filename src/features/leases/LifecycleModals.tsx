@@ -100,6 +100,8 @@ export interface CheckoutModalProps {
   initialDate?: string
   /** called after a successful checkout with its date, before onClose */
   onDone?: (checkoutDate: string) => void
+  /** a line above the sheet's fields: where this checkout sits in a longer flow (SPEC 7.24) */
+  notice?: string
 }
 
 /**
@@ -109,7 +111,7 @@ export interface CheckoutModalProps {
  * starts at the tenant's Rencana keluar when one is recorded (SPEC 7.8), else today. An agreed deposit that was never
  * recorded as received is pointed out above the settlement, which only returns what was received (SPEC 7.15).
  */
-export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions, onRecordDeposit, initialDate, onDone }: CheckoutModalProps) {
+export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions, onRecordDeposit, initialDate, onDone, notice }: CheckoutModalProps) {
   const toast = useToast()
   const balance = useMemo(() => depositBalance(lease, payments, expenses), [lease, payments, expenses])
   const planned = plannedCheckoutOf(lease)
@@ -187,6 +189,11 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
       }
     >
       <div className="space-y-4">
+        {notice && (
+          <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900" data-testid="checkout-notice">
+            {notice}
+          </p>
+        )}
         <Input
           label="Tanggal checkout"
           type="date"
@@ -491,6 +498,8 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
     })
   }
   const canChange = Boolean(date) && Boolean(target) && target?.availability === 'kosong'
+  // "Pakai dulu" moves THIS lease into the room first, under the ordinary move rule (a later booking refuses it)
+  const canUseFirst = canChange && target !== undefined && roomAvailability(target.room, leases, date, stayEnd, lease.id) === 'kosong'
 
   return (
     <Modal
@@ -583,7 +592,7 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
               </strong>
               , sampai malam {formatDate(unused.paidThrough, 'd MMM')}. Pilih:
             </p>
-            <Button type="button" fullWidth disabled={!canChange} onClick={() => changeType('useFirst')}>
+            <Button type="button" fullWidth disabled={!canUseFirst} onClick={() => changeType('useFirst')}>
               Pakai dulu: {PERIOD_TYPE_LABEL[newType].toLowerCase()} mulai {formatDate(unused.resumeOn, 'd MMM')}
             </Button>
             <p className="text-xs">
@@ -597,6 +606,7 @@ export function MoveRoomModal({ open, onClose, lease, rooms, leases, currentRoom
               Sewa {PERIOD_TYPE_LABEL[newType].toLowerCase()} mulai {formatDate(date)}; tagihan pertamanya dipotong {formatRupiah(unused.amount)}.
             </p>
             {!canChange && <p className="text-xs font-medium">Pilih kamar tujuan dulu.</p>}
+            {canChange && !canUseFirst && <p className="text-xs font-medium">Kamar ini sudah dipesan sesudahnya, jadi "Pakai dulu" tidak bisa: pakai "Potong dari harga", atau pilih kamar lain.</p>}
           </div>
         )}
       </div>
