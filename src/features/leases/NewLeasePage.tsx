@@ -99,6 +99,9 @@ export function NewLeasePage() {
   // SPEC 7.22 (pindah & ganti jenis sewa): the kind of stay and the check-in day, preset by the lease page
   const presetType = PERIOD_TYPES.find((t) => t === params.get('jenis'))
   const presetStart = /^\d{4}-\d{2}-\d{2}$/.test(params.get('mulai') ?? '') ? (params.get('mulai') as string) : null
+  // SPEC 7.24 "Potong dari harga": rupiah off the first invoice for nights paid but unused in the stay just checked out
+  const presetCredit = /^[1-9]\d{0,8}$/.test(params.get('potong') ?? '') ? Number(params.get('potong')) : 0
+  const creditNights = /^[1-9]\d{0,3}$/.test(params.get('malam') ?? '') ? Number(params.get('malam')) : 0
 
   // 1) penyewa
   const [tenantMode, setTenantMode] = useState<TenantMode>(() => (presetTenant ? 'existing' : autoScan ? 'scan' : 'choose'))
@@ -117,6 +120,7 @@ export function NewLeasePage() {
   const [startDate, setStartDate] = useState(presetStart ?? today)
   // 3) jenis sewa
   const [periodType, setPeriodType] = useState<PeriodType>(presetType ?? 'monthly')
+  const [creditOn, setCreditOn] = useState(presetCredit > 0)
   const [price, setPrice] = useState(0)
   const [quantity, setQuantity] = useState(1)
   // 4) add-on
@@ -209,7 +213,9 @@ export function NewLeasePage() {
     qty,
     true,
   )
-  const total = base + addonsAmount
+  // never more than the invoice itself (the rest of an over-large credit is not carried anywhere: the summary says so)
+  const credit = creditOn ? Math.min(presetCredit, base + addonsAmount) : 0
+  const total = base + addonsAmount - credit
   // SPEC 7.14: a price far from the room's rate (Rp 1 on A13, a zero too few or too many) waits for "Harga ini memang benar"
   const priceCheck = usePriceConfirm(price, roomPriceFor(room, periodType), PERIOD_UNIT_LABEL[periodType], Boolean(room))
   const payAmount = payMode === 'lunas' ? total : payMode === 'dp' ? dpAmount : 0
@@ -332,7 +338,10 @@ export function NewLeasePage() {
           addons.map((a) => ({ lease_id: leaseId, name: a.name, amount: a.amount, billing: a.billing })),
         )
       }
-      const { invoice } = await actions.insertFromDraft({ lease, addons: leaseAddons, quantity: qty, existingInvoices: [], orgInvoices: data.invoices }, null)
+      const { invoice } = await actions.insertFromDraft(
+        { lease, addons: leaseAddons, quantity: qty, existingInvoices: [], orgInvoices: data.invoices, ...(credit > 0 ? { discountAmount: credit } : {}) },
+        credit > 0 ? `Potongan sisa ${creditNights > 0 ? `${creditNights} malam ` : ''}sewa sebelumnya yang sudah dibayar` : null,
+      )
       if (payMode !== 'none' && payAmount > 0) {
         await repo.insert('payments', {
           property_id: propertyId,
@@ -785,6 +794,20 @@ export function NewLeasePage() {
               <Row label="Periode" value={periodPreview ? formatStay(periodPreview.start, periodPreview.end) : '-'} />
               <Row label={`${PERIOD_TYPE_LABEL[periodType]} ${qty} ${unit}`} value={formatRupiah(base)} />
               {addonsAmount > 0 && <Row label="Add-on" value={formatRupiah(addonsAmount)} />}
+              {credit > 0 && (
+                <div data-testid="lease-credit">
+                  <Row label={`Potongan sisa ${creditNights > 0 ? `${creditNights} malam ` : ''}sewa lama`} value={`− ${formatRupiah(credit)}`} />
+                  {credit < presetCredit && (
+                    <p className="text-xs text-amber-700" data-testid="lease-credit-rest">
+                      Sisa {formatRupiah(presetCredit - credit)} tidak terpotong (melebihi tagihan pertama): tambah jumlah periode supaya ikut terpotong, atau kembalikan ke penyewa
+                      dan catat sebagai pengeluaran Pengembalian Sewa.
+                    </p>
+                  )}
+                  <button type="button" className="text-xs font-medium text-slate-600 underline" onClick={() => setCreditOn(false)}>
+                    Hapus potongan
+                  </button>
+                </div>
+              )}
               <div className="border-t border-slate-200 pt-1">
                 <Row label="Total tagihan pertama" value={formatRupiah(total)} strong />
               </div>

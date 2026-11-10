@@ -1280,3 +1280,33 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Permintaan pemilik** (10 Nov 2026, kamar A10: masih ditempati, sudah dipesan mulai 11 Nov): ubin kamar terisi yang punya
   pesanan berikutnya (`BoardTile.upcoming`, bukan ubin "Dipesan") mendapat **garis ungu** di bawah warna ubinnya sendiri; legenda
   menulis "Garis ungu: ada pesanan berikutnya (n)" dan label pembaca layar ", ada pesanan mulai 11 Nov".
+
+### 7.24 Pindah sambil ganti jenis sewa: sisa malam yang sudah dibayar
+- **Permintaan pemilik** (10 Nov 2026): tamu bayar 3 malam di 3B, pindah ke 10A sebagai mingguan setelah 2 malam: masih ada 1
+  malam terbayar. Pemilik memakai dua cara, tergantung tamunya, jadi dialog **Pindah kamar** menawarkan keduanya.
+- `unusedPaidRent(leaseId, invoices, payments, moveDate)` (`src/features/leases/moveCredit.ts`, murni): dari tagihan **lunas**
+  (pembayaran sewa ≥ total, total > 0, bukan void) yang malam terakhirnya ≥ tanggal pindah: `nights` = malam sejak tanggal pindah
+  s/d `period_end`; `amount` = Σ ⌊dibayar × malam tersisa / malam tagihan itu⌋ (dibulatkan ke bawah, tidak pernah melebihi yang
+  dibayar); `paidThrough` = malam terbayar terakhir; `resumeOn` = hari berikutnya. Tagihan belum lunas/sebagian tidak dihitung
+  (ditutup aturan checkout sendiri). Contoh: Rp 450.000 untuk 10–12 Nov, pindah 12 Nov → 1 malam, Rp 150.000, s/d 12 Nov, mulai 13 Nov.
+- **Dialog** (hanya saat jenis sewa diganti dan ada sisa): kotak "Sisa 1 malam sudah dibayar (Rp 150.000), sampai malam 12 Nov"
+  dengan dua tombol (tombol "Lanjut: check-out" tidak tampil):
+  - **Pakai dulu: mingguan mulai 13 Nov**: sewa lama dipindah ke kamar tujuan sekarang (`moveRoom`, harga tetap), lalu lembar
+    checkout terbuka bertanggal 13 Nov (checkout lebih awal: kamar tetap dipegang sampai hari itu), lalu form Sewa Baru dengan
+    tanggal check-in 13 Nov dan harga penuh.
+  - **Potong Rp 150.000 dari harga mingguan**: checkout bertanggal hari pindah, lalu Sewa Baru mulai hari itu dengan
+    `?potong=150000&malam=1`: tagihan pertama memakai `discount_amount` (catatan "Potongan sisa 1 malam sewa sebelumnya yang sudah
+    dibayar"), baris "Potongan sisa 1 malam sewa lama − Rp 150.000" di ringkasan, bisa dihapus; potongan tidak pernah melebihi
+    tagihan pertama (sisanya disebut, tidak dibawa). Uang yang sudah diterima di sewa lama tidak diubah: total kas = yang lama +
+    tagihan baru setelah potongan.
+- Checkout tidak mengembalikan sewa lunas di muka secara otomatis (hanya catatan), jadi potongan tidak terhitung dua kali.
+- **Dari review**: nilai sisa hanya dari **sewa** (`base_amount − discount_amount`; add-on, denda dan biaya lain tidak dikembalikan);
+  hanya rangkaian malam terbayar yang **tidak terputus** sejak tanggal pindah yang dihitung (celah tagihan belum lunas memutusnya);
+  "Pakai dulu" nonaktif dengan alasannya bila kamar tujuan sudah dipesan sesudahnya (pindah biasa menolaknya); setelah checkout,
+  sisa dihitung ulang untuk tanggal checkout yang benar-benar dipakai (bila diubah di lembar checkout), jadi tidak ada malam yang
+  dibayar atau dipotong dua kali; lembar checkout menulis langkahnya ("Langkah 2 dari 3 …" / "… jangan dicatat lagi sebagai
+  Pengembalian Sewa"); membatalkan checkout setelah "Pakai dulu" memberi tahu apa yang belum; potongan yang melebihi tagihan
+  pertama disebut berikut dua jalan keluarnya (tambah periode, atau kembalikan dan catat Pengembalian Sewa).
+- **Uji**: `moveCredit.test.ts` (contoh pemilik, pembulatan ke bawah, hanya tagihan lunas, beberapa tagihan), `e2e/pindah-kamar.spec.ts`
+  (3 malam Rp 450.000 lalu hari ke-3: kotak sisa; Potong → total = harga minggu − 150.000; Pakai dulu → pindah, checkout 13 Nov,
+  Sewa Baru 13 Nov tanpa potongan).
