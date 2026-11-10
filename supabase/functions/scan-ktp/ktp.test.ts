@@ -41,6 +41,9 @@ describe('KTP_SCAN_SCHEMA (structured outputs)', () => {
       expect([...(o.required as string[])].sort()).toEqual(Object.keys(o.properties as object).sort())
     }
     const json = JSON.stringify(KTP_SCAN_SCHEMA)
+    // the API allows at most 16 union-typed parameters (the first schema had 25 and every scan failed): none at all
+    expect(json).not.toContain('anyOf')
+    expect(json).not.toContain('"null"')
     for (const key of ['minimum', 'maximum', 'minLength', 'maxLength', 'pattern', 'format']) expect(json).not.toContain(`"${key}"`)
   })
 })
@@ -106,6 +109,16 @@ describe('parseKtpScanOutput', () => {
     expect(out.kind).toBe('passport')
     expect(out.ktp).toBeNull()
     expect(out.passport).toEqual({ surname: 'SMITH', given_names: 'JOHN ANDREW', passport_number: 'N1234567', nationality: 'AUS', birth_date: '1985-07-04', sex: 'L', expiry_date: '2030-01-31' })
+  })
+
+  it('the shape the schema makes Claude send: both objects present, unread fields as empty strings', () => {
+    const emptyPassport = { surname: '', given_names: '', passport_number: '', nationality: '', birth_date: '', sex: '', expiry_date: '' }
+    const emptyKtp = Object.fromEntries(Object.keys(card()).map((k) => [k, '']))
+    const out = parseKtpScanOutput(reply('ktp', card({ gol_darah: '', pekerjaan: '' }), emptyPassport))
+    expect(out.passport).toBeNull()
+    expect(out.ktp).toMatchObject({ nik: '3273011203900007', gol_darah: null, pekerjaan: null })
+    expect(parseKtpScanOutput(reply('unknown', emptyKtp, emptyPassport, { notes: 'Foto buram.' }))).toEqual({ kind: 'unknown', ktp: null, passport: null, unclear: [], notes: 'Foto buram.' })
+    expect(parseKtpScanOutput(reply('passport', emptyKtp, { ...emptyPassport, surname: 'SMITH' })).ktp).toBeNull()
   })
 
   it('an unreadable photo: no fields, the reason in notes', () => {

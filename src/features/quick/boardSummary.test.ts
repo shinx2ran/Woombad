@@ -30,6 +30,7 @@ function tile(
     bookedFrom: null,
     freeUntil: null,
     freeNights: null,
+    upcoming: null,
   }
 }
 const group = (name: string, tiles: BoardTile[]): BoardGroup => ({ property: property(name), tiles })

@@ -1158,6 +1158,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   kewarganegaraan ("ERIKA<<MARIA" → "ERIKA MARIA", "D<<" → "D").
   Balasan 200: `{ result, model, usage, cost }`. Penolakan: 422 "Pastikan isinya KTP atau halaman data paspor".
   Log hanya hitungan (`scan-ktp usage`), tidak pernah isi kartu.
+  **Perbaikan 10 Nov 2026**: skema awal memakai 25 kolom nullable (`anyOf` dengan null) dan ditolak API pada scan nyata pertama
+  ("too many parameters with union types", batas 16), sehingga setiap scan gagal 502. Skema sekarang tanpa union sama sekali:
+  objek `ktp` dan `passport` selalu ada, kolom yang tidak terbaca berupa string kosong; `parseKtpScanOutput` mengubah '' menjadi
+  null dan hanya menyimpan objek sesuai `kind`. Uji skema menolak `anyOf`/null.
 - **`scan_usage.kind`** diperluas: `ktp` / `passport` / `unknown` (CHECK bernama `scan_usage_kind_check`; pada instalasi
   yang sudah punya tabel, blok `do` di `schema.sql` menjatuhkan CHECK lama dan memasang yang baru; `lines` = jumlah kolom
   terbaca). Kartu **Kredit Claude** menulis "16 data · KTP" dan subjudulnya menyebut Scan KTP.
@@ -1248,3 +1252,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   tanggal, bulanan), `boardModel.test.ts` (`bookedFrom`, `freeNights`), `e2e/kamar-dipesan.spec.ts` (HP 360 px, Mode Demo 10 Nov:
   kamar dipesan 15 Nov → ubin "Dipesan 15 Nov", lembar "maks 5 malam", 6 malam ditolak, 5 malam tersimpan dengan check-out 15 Nov;
   pesanan besok → "maks 1 malam"; Sewa baru: bulanan Dipesan, harian Kosong, keduanya "Dipesan mulai 11 Nov").
+
+### 7.21 Lembar kamar: penyewa sekarang dan pemesan dibedakan
+- **Permintaan pemilik** (10 Nov 2026): saat nomor kamar diketuk, jelas siapa yang memesan dan siapa penyewa saat ini.
+- `BoardTile.upcoming` (`buildBoard`): pesanan berikutnya kamar itu (sewa aktif yang mulai sesudah hari ini, `nextReservation`)
+  dan penyewanya, di setiap ubin. Lembar kamar: kamar terisi berlabel **Penyewa sekarang** di atas nama; kamar dipesan menulis
+  **Sekarang kosong**; kotak ungu **Dipesan oleh** (kamar dipesan) / **Pesanan berikutnya** (kamar terisi) dengan nama pemesan,
+  "Mulai 15 Nov 2026 · 15 Nov – 17 Nov 2026 (harian)" dan tautan **Lihat pesanan**. Uji: `e2e/kamar-dipesan.spec.ts`.
