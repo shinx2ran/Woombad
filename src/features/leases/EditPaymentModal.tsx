@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
-import { outstandingFor } from '../../domain/billing'
+import { depositBalance, outstandingFor } from '../../domain/billing'
 import { formatRupiah } from '../../lib/format'
 import { PAYMENT_KIND_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Expense, type Invoice, type Lease, type Payment, type PaymentMethod } from '../../types/db'
 import { RecordHistory } from '../settings/audit/RecordHistory'
@@ -25,6 +25,8 @@ export function EditPaymentModal({ payment, onClose, lease, invoices, payments, 
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  /** SPEC 7.26: uang jaminan received with this rent payment, recorded as its own deposit payment on save */
+  const [depositAdd, setDepositAdd] = useState(0)
 
   useEffect(() => {
     if (!payment) return
@@ -32,6 +34,7 @@ export function EditPaymentModal({ payment, onClose, lease, invoices, payments, 
     setPaidAt(payment.paid_at)
     setMethod(payment.method)
     setNotes(payment.notes ?? '')
+    setDepositAdd(0)
   }, [payment])
 
   const invoice = useMemo(() => (payment?.invoice_id ? invoices.find((i) => i.id === payment.invoice_id) ?? null : null), [payment, invoices])
@@ -48,12 +51,18 @@ export function EditPaymentModal({ payment, onClose, lease, invoices, payments, 
     ? [{ value: payment.method, label: PAYMENT_METHOD_LABEL[payment.method] }]
     : PAYMENT_METHODS.filter((m) => m !== 'deposit').map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))
 
+  // a deposit may be added from a rent payment of a running lease that was paid in money (not from the deposit itself)
+  const canAddDeposit = payment.kind === 'rent' && !locks.method && lease.status === 'active'
+  const balance = depositBalance(lease, payments, expenses)
+  const addDeposit = canAddDeposit && depositAdd > 0
+
   const submit = async () => {
-    if (error || unchanged) return
+    if (error || (unchanged && !addDeposit)) return
     setSaving(true)
     try {
-      await actions.updatePayment(payment, patch, ctx)
-      toast.success('Pembayaran diperbarui.')
+      if (!unchanged) await actions.updatePayment(payment, patch, ctx)
+      if (addDeposit) await actions.recordDeposit(lease, depositAdd, method, paidAt, 'Uang jaminan', balance.received + depositAdd)
+      toast.success(addDeposit ? `Deposit ${formatRupiah(depositAdd)} dicatat${unchanged ? '' : '; pembayaran diperbarui'}.` : 'Pembayaran diperbarui.')
       onClose()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gagal memperbarui pembayaran.')
@@ -73,7 +82,7 @@ export function EditPaymentModal({ payment, onClose, lease, invoices, payments, 
           <Button variant="ghost" onClick={onClose}>
             Batal
           </Button>
-          <Button onClick={submit} loading={saving} disabled={Boolean(error) || unchanged}>
+          <Button onClick={submit} loading={saving} disabled={Boolean(error) || (unchanged && !addDeposit)}>
             Simpan
           </Button>
         </>
@@ -100,6 +109,19 @@ export function EditPaymentModal({ payment, onClose, lease, invoices, payments, 
         />
         <Input label="Tanggal bayar" type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} required />
         <Select label="Metode" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} options={methodOptions} disabled={locks.method} />
+        {canAddDeposit && (
+          <MoneyInput
+            label="Deposit diterima (uang jaminan)"
+            value={depositAdd}
+            onChange={setDepositAdd}
+            hint={`Dicatat terpisah dari sewa, dengan tanggal dan metode di atas. 0 bila tidak ada. Deposit dipegang sekarang ${formatRupiah(balance.held)}.`}
+          />
+        )}
+        {addDeposit && (
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700" data-testid="edit-payment-deposit">
+            Sewa {formatRupiah(amount)} + deposit {formatRupiah(depositAdd)} = diterima {formatRupiah(amount + depositAdd)}. Deposit bukan pendapatan; dikembalikan saat check-out.
+          </p>
+        )}
         <Textarea label="Catatan" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="opsional" />
         {error && (
           <p role="alert" className="text-sm text-red-600">

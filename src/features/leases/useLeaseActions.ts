@@ -384,20 +384,34 @@ export function useLeaseActions() {
       return { payment, remaining: Math.max(0, outstanding - rentAmount), excessRecorded: excess }
     }
 
-    async function recordDeposit(lease: Lease, amount: number, method: PaymentMethod, paidAt: string, notes: string | null): Promise<Payment> {
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Jumlah harus lebih dari 0.')
-      const payment = await repo.insert('payments', {
-        property_id: lease.property_id,
-        invoice_id: null,
-        lease_id: lease.id,
-        amount,
-        paid_at: paidAt,
-        method,
-        kind: 'deposit',
-        notes,
-      })
-      await invalidate('payments')
-      return payment
+    /**
+     * Deposit money received. SPEC 7.26: on a lease made without a deposit (agreed 0), pass the total received after
+     * this payment as `agreedAfter`: the agreed deposit becomes that total, for owner/admin (staff may not change lease
+     * terms: their deposit is still recorded and held). A lease that already has an agreed deposit keeps it: a top-up
+     * after "potong jaminan" is not a new agreement. The lease is written first, so that a failure there records no
+     * money and a second try cannot record the deposit twice.
+     */
+    async function recordDeposit(lease: Lease, amount: number, method: PaymentMethod, paidAt: string, notes: string | null, agreedAfter?: number): Promise<Payment> {
+      if (!Number.isInteger(amount) || amount <= 0) throw new Error('Jumlah harus lebih dari 0.')
+      try {
+        if (canEditLeaseTerms && agreedAfter !== undefined && Number.isInteger(agreedAfter) && agreedAfter > 0) {
+          // the stored lease, not the one on screen: another device may have agreed a deposit since
+          const stored = await repo.get('leases', lease.id)
+          if (stored && stored.deposit_amount === 0) await repo.update('leases', lease.id, { deposit_amount: agreedAfter })
+        }
+        return await repo.insert('payments', {
+          property_id: lease.property_id,
+          invoice_id: null,
+          lease_id: lease.id,
+          amount,
+          paid_at: paidAt,
+          method,
+          kind: 'deposit',
+          notes,
+        })
+      } finally {
+        await invalidate('payments', 'leases')
+      }
     }
 
     /** `base_amount` (harga sewa of this invoice, SPEC 7.5) is optional: left out, the stored one stays. */

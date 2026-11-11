@@ -50,8 +50,8 @@ const rateOf = (room: Room, kind: StayKind) => (kind === 'daily' ? room.price_da
 
 /**
  * Check-in cepat for an empty room (SPEC 7.4): name, how long (nights / weeks / months, or a year = 12 months with
- * optional bonus months) and the total; paid in full, a DP or nothing yet; an optional uang jaminan for monthly and
- * yearly stays; an optional vehicle plate (SPEC 7.11). Scan KTP (SPEC 7.19) fills the name and keeps the document's
+ * optional bonus months) and the total; paid in full, a DP or nothing yet; an optional uang jaminan for any
+ * rent type (SPEC 7.26); an optional vehicle plate (SPEC 7.11). Scan KTP (SPEC 7.19) fills the name and keeps the document's
  * other values for the tenant that is created (and the photo, in Mode Online); a scanned NIK that an existing tenant
  * already has picks that tenant, and a scanned NIK that nobody has makes the stay a new tenant's unless an existing one
  * is picked by hand; an existing tenant only gets the columns still empty on his record. "Scan ulang" adds to the
@@ -96,8 +96,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const rate = rateOf(room, kind)
   const total = typedTotal ?? (rate ?? 0) * quantity
   const paidAmount = paidFull ? total : dp
-  const withDeposit = kind === 'monthly' || kind === 'yearly'
-  const deposit = withDeposit && depositAmount > 0 ? { amount: depositAmount, paidNow: depositNow } : null
+  const deposit = depositAmount > 0 ? { amount: depositAmount, paidNow: depositNow } : null
   // a same-name tenant whose known NIK / passport number differs from the scanned one is another person (SPEC 7.19)
   const sameName = useMemo(() => sameNameCandidates(data.tenants, name, scanned), [data.tenants, name, scanned])
   // a scanned number an existing tenant already has: that tenant, whatever the name was typed as
@@ -373,16 +372,13 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
             Sudah dibayar lunas
           </label>
           {!paidFull && <MoneyInput label="DP dibayar sekarang" value={dp} onChange={setDp} error={touched ? errors.paid : undefined} hint="0 bila belum bayar sama sekali." />}
-          {withDeposit && (
-            <>
-              <MoneyInput label="Uang jaminan (deposit)" value={depositAmount} onChange={setDepositAmount} error={touched ? errors.deposit : undefined} hint="0 bila tanpa deposit. Dikembalikan saat check-out." />
-              {depositAmount > 0 && (
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={depositNow} onChange={(e) => setDepositNow(e.target.checked)} />
-                  Deposit sudah diterima
-                </label>
-              )}
-            </>
+          {/* SPEC 7.26: every rent type, daily and weekly too */}
+          <MoneyInput label="Uang jaminan (deposit)" value={depositAmount} onChange={setDepositAmount} error={touched ? errors.deposit : undefined} hint="0 bila tanpa deposit. Dikembalikan saat check-out." />
+          {depositAmount > 0 && (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={depositNow} onChange={(e) => setDepositNow(e.target.checked)} />
+              Deposit sudah diterima
+            </label>
           )}
           {(paidAmount > 0 || (deposit?.paidNow ?? false)) && <Select label="Metode" value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)} options={CASH_METHODS} />}
           {plan && (

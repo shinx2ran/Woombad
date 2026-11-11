@@ -1321,3 +1321,19 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   "Penyewa sekarang belum dicatat check-out. Catat check-out-nya supaya kamar ini tampil atas nama tamu ini."
 - Setelah check-out penyewa sebelumnya dicatat, tamu yang dipesan menjadi penghuni dan garis ungu hilang.
 
+### 7.26 Deposit: di Ubah pembayaran, dan untuk semua jenis sewa di check-in cepat
+- **Permintaan pemilik** (11 Nov 2026, sewa mingguan Rp 1.000.000 + deposit Rp 200.000): deposit tidak bisa dicatat dari **Ubah
+  pembayaran**, dan check-in cepat tidak punya kolom deposit (kolomnya hanya muncul untuk bulanan/tahunan).
+- **Check-in cepat**: "Uang jaminan (deposit)" + "Deposit sudah diterima" tampil untuk harian, mingguan, bulanan dan tahunan.
+- **Ubah pembayaran** (pembayaran sewa, sewa aktif, bukan potong jaminan): kolom "Deposit diterima (uang jaminan)" (awal 0).
+  Saat disimpan, deposit dicatat sebagai pembayaran **terpisah** (`kind='deposit'`, catatan "Uang jaminan") dengan tanggal dan
+  metode pembayaran itu; pembayaran sewanya tidak berubah kecuali kolom lain juga diubah. Simpan aktif bila deposit > 0 walau
+  kolom lain tidak berubah. Ringkasan: "Sewa Rp X + deposit Rp Y = diterima Rp Z".
+- **Catat deposit diterima** (menu Aksi sewa) tampil untuk setiap sewa aktif, juga yang dibuat tanpa deposit.
+- `recordDeposit(..., agreedAfter)`: hanya untuk sewa **tanpa deposit disepakati (0)**, `leases.deposit_amount` menjadi total
+  deposit diterima (pemilik/admin; `leases_terms_guard`; dibaca dari sewa tersimpan, bukan dari layar). Sewa yang sudah punya
+  deposit disepakati tidak diubah (menambah deposit setelah potong jaminan bukan kesepakatan baru). Sewa ditulis lebih dulu,
+  baru pembayarannya, supaya gagal di tengah tidak membuat deposit tercatat dua kali saat dicoba lagi. Staf: deposit tetap
+  tercatat dan dipegang, yang disepakati tidak berubah. Deposit bukan pendapatan (2a) dan diselesaikan saat check-out.
+- "Catat deposit diterima" tidak lagi mengusulkan jumlah bila tidak ada kekurangan (dulu: jumlah yang disepakati).
+

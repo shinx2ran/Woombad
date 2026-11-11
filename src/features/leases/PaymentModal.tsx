@@ -246,7 +246,8 @@ export function DepositModal({ open, onClose, lease, payments, expenses, actions
 
   useEffect(() => {
     if (!open) return
-    setAmount(balance.shortfall > 0 ? balance.shortfall : lease.deposit_amount)
+    // nothing owed: no amount is suggested (a second deposit is typed on purpose)
+    setAmount(balance.shortfall)
     setMethod('cash')
     setPaidAt(todayISO())
     setNotes('Uang jaminan')
@@ -256,7 +257,7 @@ export function DepositModal({ open, onClose, lease, payments, expenses, actions
   const submit = async () => {
     setSaving(true)
     try {
-      await actions.recordDeposit(lease, amount, method, paidAt, notes.trim() || null)
+      await actions.recordDeposit(lease, amount, method, paidAt, notes.trim() || null, balance.received + amount)
       toast.success('Deposit dicatat.')
       onClose()
     } catch (err) {
@@ -289,7 +290,13 @@ export function DepositModal({ open, onClose, lease, payments, expenses, actions
           <Row label="Sudah diterima" value={formatRupiah(balance.received)} />
           <Row label="Belum diterima" value={formatRupiah(balance.shortfall)} strong />
         </div>
-        <MoneyInput label="Jumlah diterima" value={amount} onChange={setAmount} required error={amount <= 0 ? 'Jumlah harus lebih dari 0.' : undefined} />
+        <MoneyInput
+          label="Jumlah diterima"
+          value={amount}
+          onChange={setAmount}
+          required
+          hint={actions.isAdmin && amount > 0 && balance.agreed === 0 ? `Deposit disepakati menjadi ${formatRupiah(balance.received + amount)}.` : undefined}
+        />
         <Select
           label="Metode"
           value={method}

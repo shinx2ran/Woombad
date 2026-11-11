@@ -225,9 +225,8 @@ export function LeaseDetailPage() {
       icon: <Car className="h-4 w-4" />,
       onClick: () => setModal('plate'),
     })
-    if (deposit.shortfall > 0 || deposit.agreed > 0) {
-      menuItems.push({ label: 'Catat deposit diterima', icon: <PiggyBank className="h-4 w-4" />, onClick: () => setModal('deposit') })
-    }
+    // SPEC 7.26: also for a lease made without a deposit (a daily or weekly check-in whose guest pays one after all)
+    menuItems.push({ label: 'Catat deposit diterima', icon: <PiggyBank className="h-4 w-4" />, onClick: () => setModal('deposit') })
     // Staff may check out (SPEC 6.2; the modal explains when future invoices need an admin). 'Batalkan sewa'
     // voids invoices: admin only.
     menuItems.push({ label: 'Checkout', hint: 'Penyewa keluar; selesaikan jaminan', icon: <DoorOpen className="h-4 w-4" />, onClick: () => setModal('checkout') })
