@@ -1330,7 +1330,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   metode pembayaran itu; pembayaran sewanya tidak berubah kecuali kolom lain juga diubah. Simpan aktif bila deposit > 0 walau
   kolom lain tidak berubah. Ringkasan: "Sewa Rp X + deposit Rp Y = diterima Rp Z".
 - **Catat deposit diterima** (menu Aksi sewa) tampil untuk setiap sewa aktif, juga yang dibuat tanpa deposit.
-- `recordDeposit(..., agreedAfter)`: bila total deposit diterima melebihi yang disepakati, `leases.deposit_amount` dinaikkan ke
-  total itu dalam simpan yang sama (pemilik/admin; `leases_terms_guard`). Staf: deposit tetap tercatat dan dipegang, yang
-  disepakati tidak berubah. Deposit bukan pendapatan (2a) dan diselesaikan saat check-out seperti biasa.
+- `recordDeposit(..., agreedAfter)`: hanya untuk sewa **tanpa deposit disepakati (0)**, `leases.deposit_amount` menjadi total
+  deposit diterima (pemilik/admin; `leases_terms_guard`; dibaca dari sewa tersimpan, bukan dari layar). Sewa yang sudah punya
+  deposit disepakati tidak diubah (menambah deposit setelah potong jaminan bukan kesepakatan baru). Sewa ditulis lebih dulu,
+  baru pembayarannya, supaya gagal di tengah tidak membuat deposit tercatat dua kali saat dicoba lagi. Staf: deposit tetap
+  tercatat dan dipegang, yang disepakati tidak berubah. Deposit bukan pendapatan (2a) dan diselesaikan saat check-out.
+- "Catat deposit diterima" tidak lagi mengusulkan jumlah bila tidak ada kekurangan (dulu: jumlah yang disepakati).
 

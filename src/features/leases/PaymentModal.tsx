@@ -246,7 +246,8 @@ export function DepositModal({ open, onClose, lease, payments, expenses, actions
 
   useEffect(() => {
     if (!open) return
-    setAmount(balance.shortfall > 0 ? balance.shortfall : lease.deposit_amount)
+    // nothing owed: no amount is suggested (a second deposit is typed on purpose)
+    setAmount(balance.shortfall)
     setMethod('cash')
     setPaidAt(todayISO())
     setNotes('Uang jaminan')
@@ -294,8 +295,7 @@ export function DepositModal({ open, onClose, lease, payments, expenses, actions
           value={amount}
           onChange={setAmount}
           required
-          error={amount <= 0 ? 'Jumlah harus lebih dari 0.' : undefined}
-          hint={actions.isAdmin && amount > 0 && balance.received + amount > balance.agreed ? `Deposit disepakati menjadi ${formatRupiah(balance.received + amount)}.` : undefined}
+          hint={actions.isAdmin && amount > 0 && balance.agreed === 0 ? `Deposit disepakati menjadi ${formatRupiah(balance.received + amount)}.` : undefined}
         />
         <Select
           label="Metode"
