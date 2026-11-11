@@ -6,7 +6,7 @@
  */
 import { summarizeLeaseBilling, type LeaseBillingSummary } from '../../domain/billing'
 import { daysBetween } from '../../domain/period'
-import { nextReservation, plannedCheckoutOf } from '../../domain/occupancy'
+import { isLeaseActiveOn, nextReservation, plannedCheckoutOf } from '../../domain/occupancy'
 import { formatDate } from '../../lib/format'
 import type { Invoice, Lease, Payment, Property, Room, Tenant } from '../../types/db'
 import { roomDisplayState, sortRoomsNatural } from '../properties/roomUtils'
@@ -60,8 +60,9 @@ export interface BoardTile {
   /**
    * SPEC 7.21: the room's next booking (an active lease that starts after today) and who booked it, on every tile: the
    * sheet names the current tenant and the booked guest apart. On a 'reserved' tile it is the tile's own lease.
+   * `waiting` (SPEC 7.25): that booking's stay has already begun, and the guest before him has no check-out recorded.
    */
-  upcoming: { lease: Lease; tenant: Tenant | null } | null
+  upcoming: { lease: Lease; tenant: Tenant | null; waiting: boolean } | null
 }
 
 export interface BoardGroup {
@@ -162,8 +163,15 @@ export function buildBoard(
       const held = booked ? nextReservation(leases, room.id, todayISO) : null
       const freeUntil = held ? held.start_date.slice(0, 10) : null
       const freeNights = freeUntil ? daysBetween(todayISO, freeUntil) : null
-      const next = nextReservation(leases, room.id, todayISO)
-      const upcoming = next && next.status === 'active' ? { lease: next, tenant: tenantsById.get(next.tenant_id) ?? null } : null
+      // SPEC 7.25: a booked guest whose stay has begun while the guest before him has no check-out recorded
+      const waiting =
+        state.occupancy === 'occupied' && state.lease
+          ? (leases
+              .filter((l) => l.room_id === room.id && l.status === 'active' && l.id !== state.lease!.id && isLeaseActiveOn(l, todayISO))
+              .sort((x, y) => (x.start_date < y.start_date ? -1 : x.start_date > y.start_date ? 1 : 0))[0] ?? null)
+          : null
+      const next = waiting ?? nextReservation(leases, room.id, todayISO)
+      const upcoming = next && next.status === 'active' ? { lease: next, tenant: tenantsById.get(next.tenant_id) ?? null, waiting: waiting !== null } : null
       return { room, tone, caption: boardCaption(tone, days), days, lease: state.lease, tenant: state.tenant, name, summary, plannedCheckout, leavingOn, bookedFrom, freeUntil, freeNights, upcoming }
     })
     groups.push({ property, tiles })

@@ -243,3 +243,38 @@ describe('shortTenantName (the name on a board tile)', () => {
     expect(shortTenantName('')).toBe('')
   })
 })
+
+// SPEC 7.25, the owner's A10 on 11 Nov 2026: the daily guest of the 10th has no check-out recorded, the weekly booking starts today
+describe('a booking whose stay has begun while the guest before has no check-out recorded', () => {
+  const DAY = '2026-11-11'
+  const before = lease('l-before', 'r1', { tenant_id: 'ta', period_type: 'daily', start_date: '2026-11-10', end_date: '2026-11-10' })
+  const booked = lease('l-booked', 'r1', { tenant_id: 'tb', period_type: 'weekly', start_date: '2026-11-11', end_date: '2026-11-17' })
+  const people = new Map<string, Tenant>([
+    ['ta', { id: 'ta', full_name: 'Ersitha' } as Tenant],
+    ['tb', { id: 'tb', full_name: 'Syahril' } as Tenant],
+  ])
+
+  it('keeps the earlier guest as the occupant and names the booked guest as waiting, whatever the order of the leases', () => {
+    for (const list of [[before, booked], [booked, before]]) {
+      const [tile] = buildBoard([prop('p1', 'Kos')], ['p1'], [room('r1', 'A10')], list, people, [], [], DAY)[0].tiles
+      expect(tile.lease?.id).toBe('l-before')
+      expect(tile.tenant?.full_name).toBe('Ersitha')
+      expect(tile.tone).not.toBe('reserved')
+      expect(tile.upcoming?.lease.id).toBe('l-booked')
+      expect(tile.upcoming?.tenant?.full_name).toBe('Syahril')
+      expect(tile.upcoming?.waiting).toBe(true)
+    }
+  })
+
+  it('the day before, the same booking is an ordinary next booking', () => {
+    const [tile] = buildBoard([prop('p1', 'Kos')], ['p1'], [room('r1', 'A10')], [booked, before], people, [], [], '2026-11-10')[0].tiles
+    expect([tile.lease?.id, tile.upcoming?.lease.id, tile.upcoming?.waiting]).toEqual(['l-before', 'l-booked', false])
+  })
+
+  it('once the earlier guest is checked out, the booked guest is the occupant and nothing is waiting', () => {
+    const out = { ...before, status: 'ended' as const, checkout_date: '2026-11-11' }
+    const [tile] = buildBoard([prop('p1', 'Kos')], ['p1'], [room('r1', 'A10')], [out, booked], people, [], [], DAY)[0].tiles
+    expect([tile.lease?.id, tile.upcoming]).toEqual(['l-booked', null])
+  })
+})
+

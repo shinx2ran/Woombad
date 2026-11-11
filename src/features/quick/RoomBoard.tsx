@@ -288,11 +288,12 @@ function RoomActionSheet({
           )}
           {upcoming && (
             <div className="rounded-lg bg-violet-50 px-3 py-2 text-violet-900" data-testid="board-upcoming">
-              <p className="text-xs font-medium uppercase tracking-wide text-violet-700">{tone === 'reserved' ? 'Dipesan oleh' : 'Pesanan berikutnya'}</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-violet-700">{tone === 'reserved' ? 'Dipesan oleh' : upcoming.waiting ? 'Tamu berikutnya sudah waktunya masuk' : 'Pesanan berikutnya'}</p>
               <p className="text-base font-semibold">{upcoming.tenant?.full_name ?? 'Penyewa tidak ditemukan'}</p>
               <p>
                 Mulai {formatDate(upcoming.lease.start_date)} · {formatStay(upcoming.lease.start_date, upcoming.lease.end_date)} ({PERIOD_TYPE_LABEL[upcoming.lease.period_type].toLowerCase()})
               </p>
+              {upcoming.waiting && <p data-testid="board-upcoming-waiting">Penyewa sekarang belum dicatat check-out. Catat check-out-nya supaya kamar ini tampil atas nama tamu ini.</p>}
               {upcoming.lease.id !== lease?.id && (
                 <Link to={`/sewa/${upcoming.lease.id}`} className="inline-flex items-center gap-1 text-sm font-medium underline">
                   Lihat pesanan <ExternalLink className="h-3.5 w-3.5" aria-hidden />

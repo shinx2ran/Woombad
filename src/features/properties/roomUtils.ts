@@ -72,7 +72,12 @@ function leaseDisplayState(
   empty: RoomDisplayState,
 ): RoomDisplayState {
   const roomLeases = leases.filter((l) => l.room_id === room.id)
-  const current = roomLeases.find((l) => isLeaseActiveOn(l, todayISO)) ?? null
+  // two leases can hold the room today (the guest before has no check-out recorded and the booked guest's stay has
+  // begun, SPEC 7.25): the one who came first is the occupant; the board names the other as the guest waiting
+  const current =
+    roomLeases
+      .filter((l) => isLeaseActiveOn(l, todayISO))
+      .sort((x, y) => (x.start_date < y.start_date ? -1 : x.start_date > y.start_date ? 1 : 0))[0] ?? null
   if (current) {
     const summary = summarizeLeaseBilling(current, invoices, payments, todayISO)
     return {
