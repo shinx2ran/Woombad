@@ -384,8 +384,13 @@ export function useLeaseActions() {
       return { payment, remaining: Math.max(0, outstanding - rentAmount), excessRecorded: excess }
     }
 
-    async function recordDeposit(lease: Lease, amount: number, method: PaymentMethod, paidAt: string, notes: string | null): Promise<Payment> {
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Jumlah harus lebih dari 0.')
+    /**
+     * Deposit money received. SPEC 7.26: when it brings the total received above the agreed deposit (a lease made
+     * without one), pass that total as `agreedAfter`: the lease's agreed deposit is raised to it in the same save, for
+     * owner/admin (staff may not change lease terms: their deposit is still recorded and held).
+     */
+    async function recordDeposit(lease: Lease, amount: number, method: PaymentMethod, paidAt: string, notes: string | null, agreedAfter?: number): Promise<Payment> {
+      if (!Number.isInteger(amount) || amount <= 0) throw new Error('Jumlah harus lebih dari 0.')
       const payment = await repo.insert('payments', {
         property_id: lease.property_id,
         invoice_id: null,
@@ -396,6 +401,11 @@ export function useLeaseActions() {
         kind: 'deposit',
         notes,
       })
+      if (canEditLeaseTerms && agreedAfter !== undefined && Number.isInteger(agreedAfter) && agreedAfter > lease.deposit_amount) {
+        await repo.update('leases', lease.id, { deposit_amount: agreedAfter })
+        await invalidate('payments', 'leases')
+        return payment
+      }
       await invalidate('payments')
       return payment
     }
