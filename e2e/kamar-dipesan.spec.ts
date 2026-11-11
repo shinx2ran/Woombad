@@ -144,4 +144,49 @@ test.describe('Kamar dipesan tetap bisa disewakan sebelum pesanannya (SPEC 7.20)
     await expect(card.getByTestId('room-booked-from')).toHaveText('Dipesan mulai 11 Nov')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
+
+  // SPEC 7.25, the owner's A10 on 11 Nov: the booking's first day has come and the guest before has no check-out recorded
+  test('a booking that starts today in a room still occupied keeps its violet band and names the waiting guest', async ({ page }) => {
+    const occupied = page.getByTestId('board-tile').and(page.locator('[data-tone="occupied"]')).first()
+    const roomName = (await occupied.getAttribute('data-room'))!
+    await page.evaluate((roomName) => {
+      const db = JSON.parse(localStorage.getItem('woombad.local.db.v1') ?? '{}')
+      const room = db.rooms.find((r: { name: string }) => r.name === roomName)
+      const other = db.tenants.find((t: { id: string }) => !db.leases.some((l: { tenant_id: string; room_id: string }) => l.room_id === room.id && l.tenant_id === t.id))
+      // first in the list: the board must not take the occupant from the order of the data
+      db.leases.unshift({
+        ...db.leases[0],
+        id: 'starts-today',
+        room_id: room.id,
+        property_id: room.property_id,
+        tenant_id: other.id,
+        period_type: 'weekly',
+        price_per_period: 700_000,
+        deposit_amount: 0,
+        start_date: '2026-11-10',
+        end_date: '2026-11-16',
+        status: 'active',
+        checkout_date: null,
+        planned_checkout_date: null,
+        vehicle_plate: null,
+        notes: 'Pesanan',
+      })
+      localStorage.setItem('woombad.local.db.v1', JSON.stringify(db))
+    }, roomName)
+    await page.reload()
+    await expect(page.getByTestId('room-board')).toBeVisible()
+
+    const tile = page.locator(`[data-testid="board-tile"][data-room="${roomName}"]`)
+    await expect(tile).toHaveAttribute('data-tone', 'occupied')
+    await expect(tile.getByTestId('board-tile-booked-next')).toBeVisible()
+    await tile.click()
+    const sheet = page.getByRole('dialog')
+    await expect(sheet.getByTestId('board-current-tenant')).toBeVisible()
+    const upcoming = sheet.getByTestId('board-upcoming')
+    await expect(upcoming).toContainText('Tamu berikutnya sudah waktunya masuk')
+    await expect(upcoming).toContainText('Mulai 10 Nov 2026')
+    await expect(sheet.getByTestId('board-upcoming-waiting')).toBeVisible()
+    await expect(upcoming.getByRole('link', { name: 'Lihat pesanan' })).toHaveAttribute('href', /\/sewa\/starts-today$/)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
 })

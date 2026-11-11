@@ -1310,3 +1310,14 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Uji**: `moveCredit.test.ts` (contoh pemilik, pembulatan ke bawah, hanya tagihan lunas, beberapa tagihan), `e2e/pindah-kamar.spec.ts`
   (3 malam Rp 450.000 lalu hari ke-3: kotak sisa; Potong → total = harga minggu − 150.000; Pakai dulu → pindah, checkout 13 Nov,
   Sewa Baru 13 Nov tanpa potongan).
+
+### 7.25 Pesanan yang sudah waktunya masuk, penyewa sebelumnya belum check-out
+- **Laporan pemilik** (11 Nov 2026, kamar A10): tamu harian 10 Nov belum dicatat check-out, pesanan mingguan mulai 11 Nov. Dua
+  sewa memegang kamar di hari yang sama; papan hanya menampilkan satu, dan garis ungu (7.23) hilang karena pesanan itu tidak
+  lagi "mulai setelah hari ini".
+- `roomDisplayState`: dari sewa yang memegang kamar hari ini, penghuninya adalah yang **mulai paling awal** (bukan urutan data).
+- `buildBoard`: sewa aktif lain di kamar itu yang juga memegang hari ini menjadi `upcoming` dengan `waiting: true` (didahulukan
+  dari `nextReservation`). Ubin tetap bergaris ungu; lembar kamar menulis "Tamu berikutnya sudah waktunya masuk", namanya, dan
+  "Penyewa sekarang belum dicatat check-out. Catat check-out-nya supaya kamar ini tampil atas nama tamu ini."
+- Setelah check-out penyewa sebelumnya dicatat, tamu yang dipesan menjadi penghuni dan garis ungu hilang.
+
