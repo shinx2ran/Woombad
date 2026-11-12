@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { fillMoney } from './money'
 
 async function loginDemo(page: Page) {
   await page.goto('/login')
@@ -25,7 +26,7 @@ test.describe('Ubah pembayaran & tagihan (SPEC 7.5)', () => {
     await form.getByLabel('Nama penyewa').fill('Salah Ketik')
     await form.getByLabel('Jumlah malam').click()
     await page.keyboard.type('2')
-    await form.getByLabel('Total bayar').fill('360000')
+    await fillMoney(form.getByLabel('Total bayar'), '360000')
     await form.getByRole('button', { name: 'Simpan check-in' }).click()
     await page.waitForURL(/\/sewa\/[^/]+$/)
   })

@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { test, expect, type Page } from '@playwright/test'
+import { fillMoney } from './money'
 
 /** Phone screenshots for a human look; REDATE_SHOTS picks another folder (test-results is git-ignored). */
 const SHOTS = process.env.REDATE_SHOTS ?? join(process.cwd(), 'test-results', 'redate')
@@ -123,7 +124,7 @@ test.describe('Ubah tanggal mulai sewa (SPEC 7.6)', () => {
     await form.getByLabel('Nama penyewa').fill('Tamu Baru')
     await form.getByLabel('Jumlah malam').click()
     await page.keyboard.type('2')
-    await form.getByLabel('Total bayar').fill('260000')
+    await fillMoney(form.getByLabel('Total bayar'), '260000')
     await form.getByRole('button', { name: 'Simpan check-in' }).click()
     await page.waitForURL(/\/sewa\/[^/]+$/)
 

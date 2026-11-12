@@ -1337,3 +1337,12 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   tercatat dan dipegang, yang disepakati tidak berubah. Deposit bukan pendapatan (2a) dan diselesaikan saat check-out.
 - "Catat deposit diterima" tidak lagi mengusulkan jumlah bila tidak ada kekurangan (dulu: jumlah yang disepakati).
 
+### 7.27 Ringkasan WA: check-in yang sudah lunas punya blok sendiri
+- **Laporan pemilik** (12 Nov 2026, D2 Riana: harian 12–14 Nov, lunas): barisnya "check-in hari ini" berada di bawah judul "Hari
+  ini" bersama "jatuh tempo hari ini", sehingga terbaca seolah jatuh tempo hari ini, padahal masih 3 hari lagi.
+- Tamu yang check-in hari ini dan **sudah lunas**: blok **Check-in hari ini** di akhir pesan, baris "Kamar D2 (Riana Minsi) ·
+  harian · lunas, check-out 15 Nov" (mingguan/bulanan: "jatuh tempo <tgl>"). Yang **belum lunas** tetap di "Hari ini"
+  ("check-in hari ini (harian) · belum lunas").
+- Blok itu hanya informasi: "Mohon ditindaklanjuti." hanya ditulis bila ada baris di Telat bayar / Hari ini / Segera; pesan yang
+  hanya berisi check-in lunas ditutup "Semua kamar aman hari ini ✅".
+

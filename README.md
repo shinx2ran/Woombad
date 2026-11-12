@@ -321,7 +321,7 @@ Di **Sewa Baru** aturannya sama (kartu kamar menulis "Dipesan mulai 15 Nov").
 
 **Ringkasan WA** (tombol hijau di pojok Papan kamar): pesan siap kirim untuk istri atau grup WhatsApp staf, berisi kamar yang
 perlu perhatian sesuai kos yang dipilih: **Telat bayar** ("Kamar 5D (Pak Beni) telat 2 hari (bulanan)"), **Hari ini**
-(habis sewa / jatuh tempo, rencana keluar, check-in hari ini) dan **Segera** (jatuh tempo dalam 7 hari). Pesannya bisa diubah dulu,
+(habis sewa / jatuh tempo, rencana keluar, check-in yang belum lunas), **Segera** (jatuh tempo dalam 7 hari) dan **Check-in hari ini** (tamu baru yang sudah lunas, sebagai informasi). Pesannya bisa diubah dulu,
 lalu **Buka WhatsApp** dan pilih kontak atau grupnya; **Bagikan…** memakai menu bagikan HP (di iPhone yang punya WhatsApp dan
 WhatsApp Business, tombol Buka WhatsApp selalu membuka satu aplikasi yang sama: pakai Bagikan… lalu pilih WhatsApp Business),
 **Salin** untuk tempat lain. Pesannya ditutup "Mohon ditindaklanjuti."; tidak ada yang perlu dikabarkan: "Semua kamar aman hari ini ✅".

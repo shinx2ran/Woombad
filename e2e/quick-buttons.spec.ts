@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { fillMoney } from './money'
 
 async function loginDemo(page: Page) {
   await page.goto('/login')
@@ -58,7 +59,7 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     const nights = form.getByLabel('Jumlah malam')
     await nights.click()
     await page.keyboard.type('2')
-    await form.getByLabel('Total bayar').fill('360000')
+    await fillMoney(form.getByLabel('Total bayar'), '360000')
     await expect(form.getByText('= Rp 180.000 / malam')).toBeVisible()
     const summary = form.getByTestId('quick-checkin-summary')
     await expect(summary).toContainText('11 Okt – 13 Okt 2026 · 2 malam')
@@ -99,7 +100,7 @@ test.describe('Tombol cepat: papan kamar (SPEC 7.4)', () => {
     const bonus = form.getByLabel('Bonus bulan gratis')
     await bonus.click()
     await page.keyboard.type('1')
-    await form.getByLabel('Total bayar').fill('18000000')
+    await fillMoney(form.getByLabel('Total bayar'), '18000000')
     await expect(form.getByText('= Rp 1.500.000 / bulan')).toBeVisible()
     await form.getByLabel('Uang jaminan (deposit)').fill('1000000')
     await expect(form.getByRole('checkbox', { name: 'Deposit sudah diterima' })).toBeChecked()
