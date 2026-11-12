@@ -1,6 +1,7 @@
 /**
  * Ringkasan WhatsApp (SPEC 7.18): the room board as a short message the owner sends to his wife or to the staff group:
- * rooms whose rent is late, what happens today (due, leaving, check-in) and what is due soon. Pure: built from the same
+ * rooms whose rent is late, what happens today (due, leaving, an unpaid check-in), what is due soon, and who checked in
+ * today and has paid (SPEC 7.27). Pure: built from the same
  * BoardGroup tiles the board draws, so the message and the colours never disagree.
  */
 import { daysBetween } from '../../domain/period'
@@ -12,9 +13,15 @@ export const SUMMARY_ALL_CLEAR = 'Semua kamar aman hari ini ✅'
 /** closes a message that has something to act on (the owner's wording) */
 export const SUMMARY_FOLLOW_UP = 'Mohon ditindaklanjuti.'
 
-type Section = 'telat' | 'hariIni' | 'segera'
-const SECTION_TITLE: Record<Section, string> = { telat: 'Telat bayar', hariIni: 'Hari ini', segera: 'Segera' }
-const SECTIONS: Section[] = ['telat', 'hariIni', 'segera']
+type Section = 'telat' | 'hariIni' | 'segera' | 'masuk'
+const SECTION_TITLE: Record<Section, string> = { telat: 'Telat bayar', hariIni: 'Hari ini', segera: 'Segera', masuk: 'Check-in hari ini' }
+const SECTIONS: Section[] = ['telat', 'hariIni', 'segera', 'masuk']
+/**
+ * SPEC 7.27: a guest who checked in today and has paid is news, not work. He has his own block after the others, with
+ * the day his stay runs to, so that he is not read as "jatuh tempo hari ini"; the message asks for follow-up only when
+ * one of the other blocks has a line.
+ */
+const INFO_SECTIONS: ReadonlySet<Section> = new Set<Section>(['masuk'])
 
 interface Line {
   section: Section
@@ -64,8 +71,10 @@ function tileLines(tile: BoardTile, today: string): Line[] {
   // the tenant checks in today: say so, and whether the first payment is still open (then the tile is 'today').
   // "belum lunas", not "belum bayar": the summary only knows what is still owed, and the staff may have taken a DP
   if (lease.start_date.slice(0, 10) === today) {
-    const unpaid = tone === 'today' && tile.summary.outstanding > 0 ? ' · belum lunas' : ''
-    return [{ section: 'hariIni', rank: 3, text: `${who(tile)} check-in hari ini${tail}${unpaid}${repair}` }]
+    if (tone === 'today' && tile.summary.outstanding > 0) return [{ section: 'hariIni', rank: 3, text: `${who(tile)} check-in hari ini${tail} · belum lunas${repair}` }]
+    // paid: an arrival to know about, with the day the stay runs to (a daily guest's check-out, else the next due date)
+    const until = tile.summary.nextDueDate ? ` · lunas, ${type === 'daily' ? 'check-out' : 'jatuh tempo'} ${formatDate(tile.summary.nextDueDate, 'd MMM')}` : ''
+    return [{ section: 'masuk', rank: tile.days, text: `${who(tile)} · ${period(type)}${until}${repair}` }]
   }
   if (tone === 'overdue') {
     const extra = leavingToday ? ' · rencana keluar hari ini' : ''
@@ -87,14 +96,14 @@ function tileLines(tile: BoardTile, today: string): Line[] {
   return []
 }
 
-function sectionBlocks(tiles: BoardTile[], today: string): string[] {
+function sectionBlocks(tiles: BoardTile[], today: string): { blocks: string[]; toDo: boolean } {
   const lines = tiles.flatMap((t) => tileLines(t, today))
   const blocks: string[] = []
   for (const s of SECTIONS) {
     const own = lines.filter((l) => l.section === s).sort((a, b) => a.rank - b.rank)
     if (own.length > 0) blocks.push([SECTION_TITLE[s], ...own.map((l) => `• ${l.text}`)].join('\n'))
   }
-  return blocks
+  return { blocks, toDo: lines.some((l) => !INFO_SECTIONS.has(l.section)) }
 }
 
 /**
@@ -105,16 +114,20 @@ function sectionBlocks(tiles: BoardTile[], today: string): string[] {
 export function boardSummaryText(groups: BoardGroup[], today: string, orgName: string): string {
   const title = `*${groups.length === 1 ? groups[0].property.name : orgName}* · ${formatDate(today, 'EEEE, d MMM yyyy')}`
   const parts: string[] = [title]
+  let toDo = false
   if (groups.length === 1) {
-    parts.push(...sectionBlocks(groups[0].tiles, today))
+    const own = sectionBlocks(groups[0].tiles, today)
+    parts.push(...own.blocks)
+    toDo = own.toDo
   } else {
     for (const g of groups) {
-      const blocks = sectionBlocks(g.tiles, today)
-      if (blocks.length > 0) parts.push([`_${g.property.name}_`, ...blocks].join('\n\n'))
+      const own = sectionBlocks(g.tiles, today)
+      if (own.blocks.length > 0) parts.push([`_${g.property.name}_`, ...own.blocks].join('\n\n'))
+      toDo = toDo || own.toDo
     }
   }
-  // something to act on ends with the owner's request; a quiet day needs none
-  parts.push(parts.length > 1 ? SUMMARY_FOLLOW_UP : SUMMARY_ALL_CLEAR)
+  // something to act on ends with the owner's request; a quiet day (paid arrivals at most) needs none
+  parts.push(toDo ? SUMMARY_FOLLOW_UP : SUMMARY_ALL_CLEAR)
   return parts.join('\n\n')
 }
 

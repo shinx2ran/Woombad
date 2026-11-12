@@ -73,8 +73,10 @@ describe('boardSummaryText', () => {
       'Org',
     )
     expect(text).toContain(
-      'Hari ini\n• Kamar 1B (Sari) jatuh tempo hari ini (bulanan)\n• Kamar 2C (Dodi) rencana keluar hari ini (mingguan)\n• Kamar 7A (Andi) check-in hari ini (harian)\n• Kamar 7C (Citra) check-in hari ini (bulanan) · belum lunas',
+      'Hari ini\n• Kamar 1B (Sari) jatuh tempo hari ini (bulanan)\n• Kamar 2C (Dodi) rencana keluar hari ini (mingguan)\n• Kamar 7C (Citra) check-in hari ini (bulanan) · belum lunas',
     )
+    // SPEC 7.27: the paid arrival is not under "Hari ini"; it closes the message in its own block
+    expect(text).toContain('Check-in hari ini\n• Kamar 7A (Andi) · harian\n\n' + SUMMARY_FOLLOW_UP)
     expect(text).toContain(
       'Segera\n• Kamar 4A (Rina) jatuh tempo besok (mingguan)\n• Kamar 6B (Joko) jatuh tempo 3 hari lagi (bulanan)\n• Kamar 8A (Tono) rencana keluar 11 Nov (bulanan)',
     )
@@ -199,7 +201,7 @@ describe('boardSummaryText from buildBoard', () => {
   })
   const tenant = (id: string, name: string): [string, Tenant] => [id, { id, full_name: name } as Tenant]
 
-  it('an arrival today is "check-in hari ini", paid or not; never "habis sewa"', () => {
+  it('an arrival today: unpaid under "Hari ini", paid in its own block; never "habis sewa"', () => {
     const paid = mkInvoice('i-paid', 'l-paid', TODAY, '2026-11-09', 'paid')
     const open = mkInvoice('i-open', 'l-open', TODAY, '2026-11-09', 'unpaid')
     const payments: Payment[] = [{ id: 'pay', property_id: 'p1', invoice_id: 'i-paid', lease_id: 'l-paid', tenant_id: 't-l-paid', amount: 130_000, paid_at: TODAY, method: 'cash', kind: 'rent', notes: null, created_by: null, ...ts } as Payment]
@@ -209,8 +211,13 @@ describe('boardSummaryText from buildBoard', () => {
       new Map([tenant('t-l-paid', 'Andi'), tenant('t-l-open', 'Citra')]), [paid, open], payments, TODAY,
     )
     const text = boardSummaryText(board, TODAY, 'Org')
-    expect(text).toContain('• Kamar R1 (Andi) check-in hari ini (harian)')
-    expect(text).toContain('• Kamar R2 (Citra) check-in hari ini (harian) · belum lunas')
+    // SPEC 7.27, the owner's D2: paid for 3 nights from today, he is not due today
+    expect(text).toContain('Hari ini\n• Kamar R2 (Citra) check-in hari ini (harian) · belum lunas')
+    expect(text).toContain('Check-in hari ini\n• Kamar R1 (Andi) · harian · lunas, check-out 10 Nov')
+    expect(text.indexOf('Kamar R1')).toBeGreaterThan(text.indexOf('Kamar R2'))
+    // only paid arrivals: nothing to follow up
+    const quiet = boardSummaryText(buildBoard([prop], ['p1'], [mkRoom('R1')], [mkLease('l-paid', 'R1', { end_date: '2026-11-09' })], new Map([tenant('t-l-paid', 'Andi')]), [paid], payments, TODAY), TODAY, 'Org')
+    expect(quiet.endsWith(`Check-in hari ini\n• Kamar R1 (Andi) · harian · lunas, check-out 10 Nov\n\n${SUMMARY_ALL_CLEAR}`)).toBe(true)
     expect(text).not.toContain('habis sewa')
   })
 
