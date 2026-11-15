@@ -1346,3 +1346,14 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - Blok itu hanya informasi: "Mohon ditindaklanjuti." hanya ditulis bila ada baris di Telat bayar / Hari ini / Segera; pesan yang
   hanya berisi check-in lunas ditutup "Semua kamar aman hari ini ✅".
 
+### 7.28 Tata letak tablet: daftar tagihan, menu aksi, kolom tanggal
+- **Laporan pemilik** (15 Nov 2026, iPad): di halaman sewa (potret) baris tagihan terjepit dan menu "⋯"-nya terpotong; di
+  dialog Bayar & perpanjang (lanskap) kolom tanggal keluar dari kotaknya dan isi dialog bergeser.
+- **Tagihan di halaman sewa**: tabel baru dipakai dari `lg` (1024 px). Di bawah itu (tablet potret: di samping sidebar tersisa
+  ± 540 px) dipakai daftar seperti di HP.
+- **Menu aksi** (`ActionMenu`): digambar di atas halaman (portal, `position: fixed`) pada tempat tombolnya (`menuPlacement.ts`):
+  di bawah tombol, atau di atasnya bila ruang di bawah < 240 px dan di atas lebih lega; tidak keluar layar; tingginya dibatasi
+  ruang yang ada. Tidak lagi terpotong oleh tabel/kartu yang bisa digulir. Tertutup oleh ketuk di luar dan Escape; saat halaman digulir menu mengikuti tombolnya.
+- **Kolom tanggal/jam di iOS** (`index.css`, hanya iOS WebKit): tanpa tampilan bawaan Safari, sehingga lebar, tinggi dan
+  perataannya sama dengan kolom lain. `Field` boleh menyusut di dalam grid (`min-w-0`); isi dialog tidak bisa digulir ke samping.
+

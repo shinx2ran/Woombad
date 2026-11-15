@@ -13,7 +13,7 @@ interface FieldProps {
 
 export function Field({ label, hint, error, required, className, children, htmlFor }: FieldProps) {
   return (
-    <div className={clsx('flex flex-col gap-1', className)}>
+    <div className={clsx('flex min-w-0 flex-col gap-1', className)}>
       {label && (
         <label htmlFor={htmlFor} className="text-sm font-medium text-slate-700">
           {label}

@@ -31,6 +31,24 @@ body {
   }
 }
 
+/* Safari on iPhone and iPad draws date and time fields as its own control: wider than the width they are given (they
+   spilled out of a two-column form, SPEC 7.28), taller than the other fields, and with the value centred. Without the
+   native look they take the box, height and alignment of every other field. Only iOS WebKit is matched. */
+@supports (-webkit-touch-callout: none) {
+  input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"]) {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+  input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"])::-webkit-date-and-time-value {
+    text-align: left;
+    margin: 0;
+  }
+}
+
 /* Native-feeling number inputs on mobile */
 input[type="number"] {
   -moz-appearance: textfield;
