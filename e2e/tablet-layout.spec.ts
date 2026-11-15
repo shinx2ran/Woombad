@@ -44,9 +44,10 @@ test.describe('Tata letak tablet (SPEC 7.28)', () => {
   test('portrait: invoices are a list beside the sidebar, and the row menu is whole', async ({ page }) => {
     await page.setViewportSize({ width: 820, height: 1180 })
     await newDailyLease(page)
-    await expect(page.locator('table')).toHaveCount(0)
     const row = page.locator('li', { has: page.getByRole('button', { name: /^Aksi tagihan/ }) })
     await expect(row).toContainText('Lunas')
+    // the table is in the page for wide screens, and not shown here
+    await expect(page.locator('table')).toBeHidden()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await row.getByRole('button', { name: /^Aksi tagihan/ }).click()
     await expectMenuWhole(page)
