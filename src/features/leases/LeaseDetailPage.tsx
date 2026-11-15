@@ -448,10 +448,11 @@ export function LeaseDetailPage() {
           }
         />
         <CardBody className="px-0 py-0">
-          <div className="hidden md:block [&>div]:rounded-none [&>div]:border-0">
+          {/* SPEC 7.28: beside the sidebar a tablet in portrait leaves ~540px, too narrow for the table: the list until lg */}
+          <div className="hidden lg:block [&>div]:rounded-none [&>div]:border-0">
             <DataTable columns={invoiceColumns} rows={leaseInvoices} rowKey={(i) => i.id} emptyMessage="Belum ada tagihan untuk sewa ini." />
           </div>
-          <ul className="divide-y divide-slate-100 md:hidden">
+          <ul className="divide-y divide-slate-100 lg:hidden">
             {leaseInvoices.length === 0 && <li className="px-4 py-8 text-center text-sm text-slate-500">Belum ada tagihan untuk sewa ini.</li>}
             {leaseInvoices.map((inv) => {
               const rest = outstandingFor(inv, data.payments)

@@ -70,7 +70,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
               </button>
             </div>
             <div
-              className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 group-data-compact:flex-none group-data-compact:overflow-visible"
+              className="flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 group-data-compact:flex-none group-data-compact:overflow-visible"
               // a field tapped while the keyboard is already open (or half hidden at the bottom) is brought into view
               onFocus={() => requestAnimationFrame(() => overlayRef.current && revealFocusedField(overlayRef.current))}
             >

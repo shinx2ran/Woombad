@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { menuPlacement } from './menuPlacement'
 import { Link, useNavigate } from 'react-router'
 import { clsx } from 'clsx'
 import { AlertTriangle, CalendarClock, Car, FilePlus2, MessageCircle, MoreHorizontal, User, Wallet } from 'lucide-react'
@@ -179,23 +181,45 @@ export interface MenuItem {
   hint?: string
 }
 
-/** Minimal dropdown for row / page actions; closes on outside click and Escape. */
+/**
+ * Minimal dropdown for row / page actions; closes on outside click and Escape, and follows its button when the page scrolls. The list is drawn on
+ * top of the page (a portal, fixed to the trigger's place): inside a table or a card it was cut off by the scrolling
+ * box around it (SPEC 7.28).
+ */
 export function ActionMenu({ items, label = 'Aksi lainnya', trigger, align = 'right' }: { items: MenuItem[]; label?: string; trigger?: ReactNode; align?: 'left' | 'right' }) {
-  const [open, setOpen] = useState(false)
+  const [place, setPlace] = useState<ReturnType<typeof menuPlacement> | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const open = place !== null
   useEffect(() => {
     if (!open) return
+    const close = () => setPlace(null)
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (ref.current?.contains(target) || menuRef.current?.contains(target)) return
+      close()
     }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
+    // the page moved or changed size under the menu: it follows its button (scrolling inside the menu is its own)
+    const follow = (e: Event) => {
+      if (e.target instanceof Node && menuRef.current?.contains(e.target)) return
+      const box = ref.current?.getBoundingClientRect()
+      if (!box) return close()
+      // the button left the screen: nothing to hang the menu on
+      if (box.bottom < 0 || box.top > window.innerHeight) return close()
+      setPlace(menuPlacement(box, { width: window.innerWidth, height: window.innerHeight }, align))
+    }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', follow, true)
+    window.addEventListener('resize', follow)
     return () => {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', follow, true)
+      window.removeEventListener('resize', follow)
     }
-  }, [open])
+  }, [open, align])
   if (items.length === 0) return null
   return (
     <div ref={ref} className="relative inline-block">
@@ -206,42 +230,49 @@ export function ActionMenu({ items, label = 'Aksi lainnya', trigger, align = 'ri
         aria-expanded={open}
         onClick={(e) => {
           e.stopPropagation()
-          setOpen((o) => !o)
+          if (open) return setPlace(null)
+          const box = e.currentTarget.getBoundingClientRect()
+          setPlace(menuPlacement(box, { width: window.innerWidth, height: window.innerHeight }, align))
         }}
         className={clsx(trigger ? '' : 'rounded-lg p-1.5 text-slate-500 hover:bg-slate-100')}
       >
         {trigger ?? <MoreHorizontal className="h-5 w-5" />}
       </button>
-      {open && (
-        <div
-          role="menu"
-          className={clsx('absolute z-40 mt-1 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg', align === 'right' ? 'right-0' : 'left-0')}
-        >
-          {items.map((item) => (
-            <button
-              key={item.label}
-              role="menuitem"
-              type="button"
-              disabled={item.disabled}
-              onClick={(e) => {
-                e.stopPropagation()
-                setOpen(false)
-                item.onClick()
-              }}
-              className={clsx(
-                'flex w-full items-start gap-2 px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50',
-                item.danger ? 'text-red-700 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50',
-              )}
-            >
-              {item.icon && <span className="mt-0.5 shrink-0 text-slate-400">{item.icon}</span>}
-              <span className="min-w-0">
-                <span className="block">{item.label}</span>
-                {item.hint && <span className="block text-xs text-slate-500">{item.hint}</span>}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      {place &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            data-testid="action-menu"
+            style={{ left: place.left, top: place.top, bottom: place.bottom, maxHeight: place.maxHeight }}
+            className="fixed z-50 w-56 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+          >
+            {items.map((item) => (
+              <button
+                key={item.label}
+                role="menuitem"
+                type="button"
+                disabled={item.disabled}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPlace(null)
+                  item.onClick()
+                }}
+                className={clsx(
+                  'flex w-full items-start gap-2 px-3 py-2 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50',
+                  item.danger ? 'text-red-700 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50',
+                )}
+              >
+                {item.icon && <span className="mt-0.5 shrink-0 text-slate-400">{item.icon}</span>}
+                <span className="min-w-0">
+                  <span className="block">{item.label}</span>
+                  {item.hint && <span className="block text-xs text-slate-500">{item.hint}</span>}
+                </span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
