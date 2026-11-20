@@ -9,7 +9,7 @@
 export type PageMotion = 'push' | 'pop' | 'tab' | 'none'
 
 /** the sections of the bottom tabs and the sidebar (NAV_ITEMS in AppShell): a page at depth 1 */
-const SECTION_ROOTS = new Set(['dashboard', 'sewa', 'penyewa', 'kos', 'pengeluaran', 'laporan', 'pengaturan'])
+const SECTION_ROOTS = new Set(['dashboard', 'sewa', 'penyewa', 'kos', 'pengeluaran', 'laporan', 'tanya', 'pengaturan'])
 /** screens outside the app shell (login, sign-up, password reset, invitation links) */
 const OUTSIDE_APP = new Set(['login', 'daftar', 'reset-sandi', 'gabung'])
 

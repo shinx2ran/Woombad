@@ -391,6 +391,17 @@ Online setiap perubahan tercatat di **Riwayat perubahan** tagihan. Hanya pemilik
 - **Logo kos**: **Kos → Ubah kos → Logo kos → Pilih logo** (PNG transparan paling bagus; hanya tersimpan di mode online).
   Logo tampil di gambar tagihan dan di halaman kos.
 
+### Tanya AI
+
+**Tanya AI** (sidebar, tombol di Aksi cepat Dashboard, dan di Laporan; hanya pemilik/admin) adalah percakapan dengan Claude
+tentang data kos: "Berapa proyeksi pendapatan bulan ini?", "Siapa yang telat bayar?", "Bandingkan dengan bulan lalu".
+Aplikasi membuat ringkasan data (total bulanan, kamar, tunggakan, pembayaran dan pengeluaran terakhir, proyeksi bulan ini)
+dan mengirimkannya bersama pertanyaan lewat Edge Function `tanya-ai`. Claude hanya membaca ringkasan itu: ia tidak punya akses
+ke database dan tidak bisa mengubah apa pun. NIK, alamat, nomor HP dan foto KTP tidak ikut dikirim; nama penyewa ikut.
+Tiap jawaban memakai kredit API Claude (kira-kira US$0,05–0,20) dan tercatat di **Pengaturan → Kredit Claude**. Jawaban AI
+bisa keliru: cocokkan angka penting dengan Laporan. Deploy: isi `supabase/functions/tanya-ai/` (`index.ts` + `chat.ts`,
+ditambah `../scan-nota/scan.ts`), `verify_jwt = false`, memakai secret `ANTHROPIC_API_KEY` yang sama.
+
 ### Scan KTP / paspor
 
 **Scan KTP / Paspor** ada di form penyewa, wizard **Sewa Baru**, dan **Check-in cepat** di papan kamar: foto kartunya, lalu

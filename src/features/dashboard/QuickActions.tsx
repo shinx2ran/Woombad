@@ -1,5 +1,6 @@
 import { Link } from 'react-router'
-import { CalendarSearch, FilePlus2, ScanLine, UserPlus, Wallet } from 'lucide-react'
+import { CalendarSearch, FilePlus2, ScanLine, Sparkles, UserPlus, Wallet } from 'lucide-react'
+import { useOrg } from '../../hooks/useOrg'
 
 const PRIMARY = 'bg-brand-700 text-white hover:bg-brand-800'
 const SECONDARY = 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50'
@@ -16,7 +17,12 @@ const QUICK_ACTIONS = [
 const PLANNER = { to: '/rencana', label: 'Cek kamar kosong', icon: CalendarSearch }
 
 /** Big shortcuts for the most common tasks; Check-in first because it is what happens at the front desk. */
+/** Tanya AI (SPEC 7.29): owner and admin only; the phone's tab bar has no room for it, so this is its entry there. */
+const ASK = { to: '/tanya', label: 'Tanya AI', icon: Sparkles }
+
 export function QuickActions() {
+  const { role } = useOrg()
+  const wide = role === 'staff' ? [PLANNER] : [PLANNER, ASK]
   return (
     <nav aria-label="Aksi cepat" className="grid grid-cols-4 gap-2 sm:inline-flex sm:gap-2">
       {QUICK_ACTIONS.map((a) => (
@@ -29,13 +35,16 @@ export function QuickActions() {
           <span>{a.label}</span>
         </Link>
       ))}
-      <Link
-        to={PLANNER.to}
-        className={`col-span-4 flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium sm:h-10 sm:min-h-0 sm:rounded-lg sm:px-4 ${SECONDARY}`}
-      >
-        <PLANNER.icon className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
-        <span>{PLANNER.label}</span>
-      </Link>
+      {wide.map((a) => (
+        <Link
+          key={a.to}
+          to={a.to}
+          className={`${wide.length === 1 ? 'col-span-4' : 'col-span-2'} flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium sm:h-10 sm:min-h-0 sm:rounded-lg sm:px-4 ${SECONDARY}`}
+        >
+          <a.icon className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" aria-hidden />
+          <span>{a.label}</span>
+        </Link>
+      ))}
     </nav>
   )
 }

@@ -25,6 +25,8 @@ const KIND_LABEL: Record<NonNullable<ScanUsage['kind']>, string> = {
   ktp: 'KTP',
   passport: 'paspor',
   unknown: 'dokumen tidak dikenali',
+  // Tanya AI (SPEC 7.29): "lines" is the number of the question in its conversation
+  chat: 'Tanya AI',
 }
 /** what `lines` counts for each kind */
 const KIND_UNIT: Record<NonNullable<ScanUsage['kind']>, string> = {
@@ -34,6 +36,7 @@ const KIND_UNIT: Record<NonNullable<ScanUsage['kind']>, string> = {
   ktp: 'data',
   passport: 'data',
   unknown: 'data',
+  chat: 'pertanyaan',
 }
 const OUTCOME_LABEL: Record<Exclude<ScanOutcome, 'ok'>, string> = {
   refused: 'Ditolak',
@@ -107,7 +110,7 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
     <Card className="lg:col-span-2">
       <CardHeader
         title="Kredit Claude"
-        subtitle="Biaya tiap Scan nota dan Scan KTP, dan perkiraan sisa kredit API"
+        subtitle="Biaya tiap Scan nota, Scan KTP dan Tanya AI, dan perkiraan sisa kredit API"
         action={
           isLocalMode ? (
             <Sparkles className="h-5 w-5 text-slate-400" />
@@ -240,7 +243,13 @@ export function ScanCreditCard({ isLocalMode }: { isLocalMode: boolean }) {
                         <span className="min-w-0 text-sm text-slate-800">
                           {row.outcome === 'ok' ? (
                             <>
-                              {row.lines ?? 0} {row.kind ? KIND_UNIT[row.kind] : 'baris'} · {row.kind ? KIND_LABEL[row.kind] : '–'}
+                              {row.kind === 'chat' ? (
+                                <>Tanya AI · pertanyaan ke-{row.lines ?? 1}</>
+                              ) : (
+                                <>
+                                  {row.lines ?? 0} {row.kind ? KIND_UNIT[row.kind] : 'baris'} · {row.kind ? KIND_LABEL[row.kind] : '–'}
+                                </>
+                              )}
                             </>
                           ) : (
                             <Badge tone="warning">{OUTCOME_LABEL[row.outcome]}</Badge>

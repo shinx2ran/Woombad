@@ -219,6 +219,8 @@ begin
   perform zz.eq('H-ktp', 'a KTP scan is recorded with the number of fields read', 'ok:1', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'ktp', 14), true));
   perform zz.eq('H-ktp', 'a passport too', 'ok:1', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'passport', 7), true));
   perform zz.eq('H-ktp', 'and a photo of something else (no fields)', 'ok:1', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'unknown', 0), true));
+  -- Tanya AI (SPEC 7.29): an answered question, lines = its number in the conversation
+  perform zz.eq('H-chat', 'a Tanya AI answer is recorded as chat', 'ok:1', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'chat', 2), true));
   perform zz.chk('H-ktp', 'the kind list is still closed', '^err:23514', zz.bs_svc(format(row_sql, org, s, 'claude-opus-5-5', 'ok', 'sim', 1)));
   perform zz.eq('H-ktp', 'exactly one kind check, under its own name', 'scan_usage_kind_check',
     (select string_agg(conname, ',') from pg_constraint where conrelid = 'public.scan_usage'::regclass and contype = 'c' and pg_get_constraintdef(oid) like '%expense_list%'));
