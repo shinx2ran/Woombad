@@ -1357,3 +1357,33 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Kolom tanggal/jam di iOS** (`index.css`, hanya iOS WebKit): tanpa tampilan bawaan Safari, sehingga lebar, tinggi dan
   perataannya sama dengan kolom lain. `Field` boleh menyusut di dalam grid (`min-w-0`); isi dialog tidak bisa digulir ke samping.
 
+### 7.29 Tanya AI
+- **Permintaan pemilik** (20 Nov 2026): tombol/halaman "Tanya AI" untuk bertanya ke Claude tentang data kos, proyeksi
+  pendapatan sewa, dan hal lain.
+- **Halaman `/tanya`** (pemilik/admin; staf: "Tidak memiliki akses"): percakapan biasa. Empat pertanyaan contoh, kotak
+  pertanyaan (maks 4.000 huruf; jawaban lama yang ikut dikirim maks 80.000), "Percakapan baru". Jawaban teks polos. Percakapan hanya hidup di halaman itu (hilang saat
+  dimuat ulang), maks 24 pesan. Pintu masuk: sidebar (layar lebar), tombol **Tanya AI** di Aksi cepat Dashboard, dan di Laporan.
+- **Ringkasan data** (`src/features/tanya/snapshot.ts`, murni): dibuat aplikasi dari baris yang sudah dimiliki anggota itu (RLS
+  yang menentukan isinya) dengan fungsi yang sama dengan Laporan dan Papan kamar: total bulanan 6 bulan (`summarizeFinance`),
+  hunian hari ini, tiap kamar (penyewa, jenis, dibayar s/d, jatuh tempo, sisa tagihan, deposit dipegang), tunggakan per
+  tagihan (`outstandingInvoices`, seperti Piutang di Laporan: termasuk penyewa yang sudah keluar, tanpa sewa batal), pesanan
+  mendatang, sewa berakhir 60 hari, baris pembayaran dan pengeluaran 120 hari (maks 400 baris), dan **proyeksi bulan ini**:
+  `proyeksi_dasar = pendapatan sudah diterima + tagihan belum lunas yang jatuh tempo ≤ akhir bulan (tunggakan lama ikut;
+  tagihan bulan depan tidak) + perpanjangan diharapkan`.
+  Perpanjangan (belum ditagih): penyewa yang sedang menempati, tanpa tunggakan; setiap periode (bulan/minggu) yang mulai
+  ≤ akhir bulan dan sebelum hari rencana keluar, dihitung sejak jatuh tempo berikutnya (yang sudah lewat ikut dihitung).
+  Harian tidak dihitung (didaftar terpisah dengan malam tersisa). Mengikuti filter kos; ganti kos = percakapan baru.
+  Ringkasan dibuat sekali per percakapan.
+- **Yang tidak ikut dikirim**: NIK/nomor paspor, alamat, nomor HP, e-mail, foto dokumen, catatan penyewa. Nama penyewa ikut.
+  Halaman menuliskannya, juga perkiraan biaya dan bahwa jawaban AI bisa keliru.
+- **Edge Function `tanya-ai`** (`supabase/functions/tanya-ai`, pola yang sama dengan `scan-nota`/`scan-ktp`): anggota yang masuk,
+  peran owner/admin (diperiksa dengan token pemanggil), `verify_jwt = false`, kunci `ANTHROPIC_API_KEY`. Claude
+  (`claude-opus-5-5`, effort medium, fallback bawaan) menerima instruksi (`chat.ts`) + ringkasan (blok sistem kedua, di-cache) +
+  percakapan. **Tanpa tool dan tanpa akses database**: Claude hanya membaca ringkasan dan tidak bisa mengubah apa pun. Teks
+  yang diketik orang di dalam data diperlakukan sebagai data, bukan perintah.
+- **Biaya**: tiap jawaban dicatat di `scan_usage` dengan `kind = 'chat'`, `lines` = nomor pertanyaan dalam percakapan; tampil di
+  Pengaturan → Kredit Claude ("Tanya AI · pertanyaan ke-n") dan di bawah jawaban. Daftar `kind` di database perlu diperlebar
+  (blok `scan_usage_kind_check` di `supabase/schema.sql`, memakai `drop constraint`: dijalankan pemilik); sebelum itu Tanya AI
+  tetap jalan, hanya baris biayanya ditolak database dan tinggal di log function.
+- **Mode Demo**: tidak ada yang dikirim; jawabannya contoh berlabel yang dibaca dari ringkasan data itu sendiri.
+

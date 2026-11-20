@@ -1064,8 +1064,9 @@ create table if not exists public.scan_usage (
   cost_usd numeric(12, 6) not null check (cost_usd >= 0),
   -- ok = read (kind/lines say what); refused; max_tokens = cut off; invalid = output not usable
   outcome text not null check (outcome in ('ok', 'refused', 'max_tokens', 'invalid')),
-  -- what was read: an expense record (Scan nota) or an identity document (Scan KTP, 7.19)
-  kind text constraint scan_usage_kind_check check (kind is null or kind in ('expense_list', 'receipt', 'unreadable', 'ktp', 'passport', 'unknown')),
+  -- what was read: an expense record (Scan nota), an identity document (Scan KTP, 7.19), or a question answered
+  -- (Tanya AI, 7.29: 'chat', lines = the number of the question in its conversation)
+  kind text constraint scan_usage_kind_check check (kind is null or kind in ('expense_list', 'receipt', 'unreadable', 'ktp', 'passport', 'unknown', 'chat')),
   lines int check (lines is null or lines >= 0),
   -- [{ "model", "input_tokens", "output_tokens", "cost_usd" }, ...] in order; one element without a fallback
   attempts jsonb not null default '[]'::jsonb check (jsonb_typeof(attempts) = 'array'),
@@ -1073,21 +1074,22 @@ create table if not exists public.scan_usage (
   check (case when outcome = 'ok' then kind is not null and lines is not null else kind is null and lines is null end)
 );
 create index if not exists scan_usage_org_idx on public.scan_usage (org_id, created_at desc);
--- Scan KTP (SPEC 7.19, added after 7.17): identity documents join the kinds. On an installation that already has the
--- table, the check carries the old list under the same name (or Postgres's generated one), so it is replaced in place.
+-- Scan KTP (SPEC 7.19) and Tanya AI (SPEC 7.29), added after 7.17: identity documents and 'chat' join the kinds. On an
+-- installation that already has the table, the check carries an older list under the same name (or Postgres's
+-- generated one), so it is replaced in place.
 do $$
 declare c record;
 begin
   for c in
     select con.conname from pg_constraint con
      where con.conrelid = 'public.scan_usage'::regclass and con.contype = 'c'
-       and pg_get_constraintdef(con.oid) like '%expense_list%' and pg_get_constraintdef(con.oid) not like '%passport%'
+       and pg_get_constraintdef(con.oid) like '%expense_list%' and pg_get_constraintdef(con.oid) not like '%chat%'
   loop
     execute format('alter table public.scan_usage drop constraint %I', c.conname);
   end loop;
   if not exists (select 1 from pg_constraint where conrelid = 'public.scan_usage'::regclass and conname = 'scan_usage_kind_check') then
     alter table public.scan_usage add constraint scan_usage_kind_check
-      check (kind is null or kind in ('expense_list', 'receipt', 'unreadable', 'ktp', 'passport', 'unknown'));
+      check (kind is null or kind in ('expense_list', 'receipt', 'unreadable', 'ktp', 'passport', 'unknown', 'chat'));
   end if;
 end $$;
 

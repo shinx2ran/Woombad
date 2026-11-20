@@ -168,7 +168,7 @@ export interface ScanUsage {
   cost_usd: number | string
   outcome: ScanOutcome
   /** what was read: an expense record (Scan nota) or an identity document (Scan KTP, SPEC 7.19) */
-  kind: 'expense_list' | 'receipt' | 'unreadable' | 'ktp' | 'passport' | 'unknown' | null
+  kind: 'expense_list' | 'receipt' | 'unreadable' | 'ktp' | 'passport' | 'unknown' | 'chat' | null
   lines: number | null
   /** per-attempt figures (one element without a fallback) */
   attempts: unknown[]

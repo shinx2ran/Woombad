@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Link } from 'react-router'
-import { Landmark, ShieldOff } from 'lucide-react'
+import { Landmark, ShieldOff, Sparkles } from 'lucide-react'
 import { Card, CardBody, EmptyState, ErrorState, LoadingState, PageHeader } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import { formatDate, formatRupiah } from '../../lib/format'
@@ -47,7 +47,15 @@ export function ReportsPage() {
 
   return (
     <>
-      <PageHeader title="Laporan" subtitle="Keuangan basis kas, piutang, hunian, dan ekspor data." />
+      <PageHeader
+        title="Laporan"
+        subtitle="Keuangan basis kas, piutang, hunian, dan ekspor data."
+        actions={
+          <Link to="/tanya" className="inline-flex h-9 print:hidden items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50">
+            <Sparkles className="h-4 w-4 text-brand-600" aria-hidden /> Tanya AI
+          </Link>
+        }
+      />
       <ReportControls report={report} />
 
       {/* print-only title */}

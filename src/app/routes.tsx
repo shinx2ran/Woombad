@@ -13,6 +13,7 @@ import { rencanaRoutes } from '../features/rencana/routes'
 import { expensesRoutes } from '../features/expenses/routes'
 import { reportsRoutes } from '../features/reports/routes'
 import { settingsRoutes } from '../features/settings/routes'
+import { tanyaRoutes } from '../features/tanya/routes'
 import { NotFoundPage } from './NotFoundPage'
 import { RouteErrorPage } from './RouteErrorPage'
 import { BootSplashHold } from './BootSplash'
@@ -53,6 +54,7 @@ const routes: RouteObject[] = [
           ...expensesRoutes,
           ...reportsRoutes,
           ...settingsRoutes,
+          ...tanyaRoutes,
           { path: '*', element: <NotFoundPage /> },
         ],
       },

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect } from 'react'
 import { NavLink, Outlet, ScrollRestoration, useLocation, useNavigate } from 'react-router'
 import { clsx } from 'clsx'
-import { LayoutDashboard, DoorOpen, Users, ReceiptText, Wallet, BarChart3, Settings, LogOut, FlaskConical } from 'lucide-react'
+import { LayoutDashboard, DoorOpen, Users, ReceiptText, Wallet, BarChart3, Settings, LogOut, FlaskConical, Sparkles } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useOrg } from '../hooks/useOrg'
 import { PropertySwitcher } from './PropertySwitcher'
@@ -27,6 +27,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/kos', label: 'Kos & Kamar', shortLabel: 'Kamar', icon: DoorOpen },
   { to: '/pengeluaran', label: 'Pengeluaran', shortLabel: 'Keluar', icon: Wallet },
   { to: '/laporan', label: 'Laporan', icon: BarChart3, adminOnly: true },
+  // SPEC 7.29: in the sidebar; on a phone the entry is the Tanya AI button on the Dashboard and on Laporan
+  { to: '/tanya', label: 'Tanya AI', icon: Sparkles, adminOnly: true },
   { to: '/pengaturan', label: 'Pengaturan', shortLabel: 'Atur', icon: Settings },
 ]
 
