@@ -1,0 +1,1 @@
+import{Vt as e,ct as t,vt as n}from"./useTable-BIHXV-xv.js";import{Gi as r}from"./index--LgEY02b.js";var i=e();function a({to:e,className:a,children:o}){let s=n();return(0,i.jsx)(t,{to:e,className:a,onClick:t=>{t.button!==0||t.metaKey||t.ctrlKey||t.shiftKey||t.altKey||r()===e&&(t.preventDefault(),s(-1))},children:o})}export{a as t};
