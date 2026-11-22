@@ -4,6 +4,7 @@ import { LocalRepo, emptyLocalDb } from '../../lib/repo/localRepo'
 import { bindOrg, type OrgRepo } from '../../lib/repo/types'
 import type { Lease, Room, Tenant } from '../../types/db'
 import { invoiceInsertFromDraft } from '../leases/leaseUtils'
+import type { ScanPrefill } from '../scanner/types'
 import {
   perNightText,
   perPeriodText,
@@ -26,6 +27,8 @@ import {
   type QuickCheckInDeps,
   type QuickCheckInInput,
   type StayBookingInput,
+  stayIdentity,
+  scannedNumber,
 } from './quickCheckIn'
 
 const TODAY = '2026-10-15'
@@ -505,5 +508,46 @@ describe('saveStayBooking: a year with a bonus month and a deposit, as the owner
     expect(inserted).toHaveLength(1)
     expect(inserted[0]).not.toHaveProperty('vehicle_plate')
     expect(lease.vehicle_plate ?? null).toBeNull()
+  })
+})
+
+// SPEC 7.30: the No. KTP (NIK) field of check-in cepat, optional, typed or filled by a scan
+describe('stayIdentity', () => {
+  const card: ScanPrefill = { id_type: 'ktp', full_name: 'Budi Santoso', nik: '3273012505900002', birth_place: 'Bandung' }
+  const passport: ScanPrefill = { id_type: 'passport', full_name: 'John Smith', id_number: 'N1234567', nationality: 'AUS' }
+
+  it('nothing typed and no scan: nothing to save, no error', () => {
+    expect(stayIdentity(null, '')).toEqual({ idType: 'ktp', column: 'nik', label: 'No. KTP (NIK)', prefill: null, error: null })
+    expect(stayIdentity(null, '   ').prefill).toBeNull()
+  })
+
+  it('a NIK typed by hand: spaces dropped; a short or non-digit one is refused in the tenant form\'s words', () => {
+    expect(stayIdentity(null, '3273 0125 0590 0002')).toMatchObject({ prefill: { id_type: 'ktp', nik: '3273012505900002' }, error: null })
+    expect(stayIdentity(null, '3273')).toMatchObject({ prefill: null, error: 'NIK harus 16 digit (saat ini 4 digit).' })
+    expect(stayIdentity(null, '3273O12505900002')).toMatchObject({ prefill: null, error: 'NIK hanya boleh berisi angka.' })
+  })
+
+  it('after a scan the field decides the number; the scan\'s other values stay', () => {
+    expect(stayIdentity(card, '3273012505900002').prefill).toEqual(card)
+    // corrected by hand
+    expect(stayIdentity(card, '3273012505900099').prefill).toEqual({ ...card, nik: '3273012505900099' })
+    // cleared: the scanned number is not saved, the rest of the card is
+    expect(stayIdentity(card, '').prefill).toEqual({ id_type: 'ktp', full_name: 'Budi Santoso', birth_place: 'Bandung' })
+    // an invalid edit keeps the number out (and blocks the save through `error`)
+    expect(stayIdentity(card, '12')).toMatchObject({ prefill: { id_type: 'ktp', full_name: 'Budi Santoso', birth_place: 'Bandung' }, error: 'NIK harus 16 digit (saat ini 2 digit).' })
+  })
+
+  it('a passport scan makes it the passport number, upper-cased', () => {
+    const p = stayIdentity(passport, 'n 1234567')
+    expect([p.label, p.column, p.error]).toEqual(['Nomor paspor', 'id_number', null])
+    expect(p.prefill).toEqual({ ...passport, id_number: 'N1234567' })
+    expect(stayIdentity(passport, 'N12#4567').error).toMatch(/paspor/i)
+  })
+
+  it('scannedNumber: the number of the scan\'s own type', () => {
+    expect(scannedNumber(card)).toBe('3273012505900002')
+    expect(scannedNumber(passport)).toBe('N1234567')
+    expect(scannedNumber({ id_type: 'ktp', full_name: 'X' })).toBe('')
+    expect(scannedNumber(null)).toBe('')
   })
 })

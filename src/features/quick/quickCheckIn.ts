@@ -15,7 +15,7 @@ import { periodBounds } from '../../domain/period'
 import { plateColumn } from '../../domain/plate'
 import type { OrgRepo } from '../../lib/repo/types'
 import { formatDate, formatRupiah, todayISO } from '../../lib/format'
-import type { Invoice, Lease, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
+import type { IdType, Invoice, Lease, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
 import { PERIOD_UNIT_LABEL } from '../../types/db'
 import { ROOM_AVAILABILITY_LABEL, roomAvailability } from '../leases/leaseUtils'
 import type { ScanPrefill } from '../scanner/types'
@@ -184,6 +184,52 @@ export function mergeScanPrefill(previous: ScanPrefill | null, next: ScanPrefill
     }
   }
   return merged
+}
+
+/**
+ * The identity number check-in cepat saves (SPEC 7.30): the No. KTP (NIK) field, optional, typed by hand or filled by
+ * a scan and editable after it. The document type is the scan's (a passport scan makes it the passport number), else
+ * KTP.
+ */
+export interface StayIdentity {
+  idType: IdType
+  /** the tenant column the number goes in */
+  column: 'nik' | 'id_number'
+  /** the field's label: 'No. KTP (NIK)', 'Nomor paspor' or 'Nomor identitas' */
+  label: string
+  /**
+   * what the stay carries for the tenant: the scan's values with the number in the field instead of the scanned one
+   * (only a valid number; none when the field is empty, so clearing it drops the scanned number), or just the typed
+   * number when there was no scan; null when there is neither
+   */
+  prefill: ScanPrefill | null
+  /** why the typed number cannot be saved (the tenant form's own wording), else null */
+  error: string | null
+}
+
+const IDENTITY_FIELD_LABEL: Record<IdType, string> = { ktp: 'No. KTP (NIK)', passport: 'Nomor paspor', other: 'Nomor identitas' }
+
+export function stayIdentity(scanned: ScanPrefill | null, typed: string): StayIdentity {
+  const idType: IdType = scanned?.id_type ?? 'ktp'
+  const column = idType === 'ktp' ? 'nik' : 'id_number'
+  const compact = typed.replace(/\s+/g, '')
+  const errors = compact ? validateTenantForm({ ...EMPTY_TENANT_FORM, full_name: 'xx', id_type: idType, [column]: compact }) : {}
+  const error = (idType === 'ktp' ? errors.nik : errors.id_number) ?? null
+  const value = !compact || error ? null : idType === 'ktp' ? compact : compact.toUpperCase()
+  let prefill: ScanPrefill | null = null
+  if (scanned) {
+    prefill = { ...scanned }
+    delete prefill.nik
+    delete prefill.id_number
+  }
+  if (value) prefill = { ...(prefill ?? { id_type: idType }), [column]: value }
+  return { idType, column, label: IDENTITY_FIELD_LABEL[idType], prefill, error }
+}
+
+/** The number a scan read for its own document type ('' when it read none, or the review left it unticked). */
+export function scannedNumber(prefill: ScanPrefill | null): string {
+  if (!prefill) return ''
+  return (prefill.id_type === 'ktp' ? prefill.nik : prefill.id_number) ?? ''
 }
 
 /** tenant columns a scan may fill on an existing tenant, besides the identity ones */

@@ -1387,3 +1387,23 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   tetap jalan, hanya baris biayanya ditolak database dan tinggal di log function.
 - **Mode Demo**: tidak ada yang dikirim; jawabannya contoh berlabel yang dibaca dari ringkasan data itu sendiri.
 
+### 7.30 Check-in cepat: kolom No. KTP (NIK)
+- **Permintaan pemilik** (22 Nov 2026): NIK tidak wajib, tetapi bisa diisi lewat scan Claude atau diketik manual. Sewa baru dan
+  form penyewa sudah punya kolom NIK opsional; check-in cepat belum (scan mengisinya tanpa terlihat).
+- **Kolom "No. KTP (NIK)"** di bawah Nama penyewa: opsional (kosong = penyewa disimpan tanpa NIK). Placeholder "16 digit",
+  keyboard angka. Petunjuk: "Boleh dikosongkan. Ketik manual, atau isi lewat Scan KTP di atas."; saat mengetik "n dari 16 digit.";
+  dari scan: "Terisi dari scan: cocokkan dengan kartunya.". Validasi sama dengan form penyewa (`validateTenantForm`): 16 digit,
+  hanya angka, spasi diabaikan; NIK salah menahan simpan ("NIK harus 16 digit (saat ini n digit).").
+- Setelah scan **paspor**, kolom menjadi "Nomor paspor" (huruf besar, aturan nomor paspor form penyewa).
+- **Scan**: nomor yang diterapkan di review mengisi kolom; nomor yang dibiarkan tidak dicentang membiarkan isi kolom (kecuali scan
+  jenis dokumen lain). Review scan menerima isi kolom sebagai data sekarang: nomor ketikan yang berbeda tidak dicentang otomatis.
+  Kolom bisa diubah setelah scan; yang disimpan adalah isi kolom. "Hapus hasil scan" mengosongkan kolom bila isinya masih nomor
+  dari scan (atau nomor paspor); nomor yang diketik di atasnya tetap.
+- **Pencocokan penyewa** (`stayIdentity` → aturan SPEC 7.19 yang sama untuk nomor ketikan dan hasil scan, hanya nomor valid):
+  NIK milik penyewa lama → sewa atas namanya ("NIK ini milik penyewa lama …", "Bukan dia?"); NIK yang belum dimiliki siapa pun →
+  penyewa baru kecuali penyewa lama sebelumnya dipilih. Penyewa lama yang sudah ditemukan lewat namanya tetap terpilih saat NIK-nya
+  diketik, dan NIK itu ditambahkan ke datanya bila ia belum punya NIK/nomor identitas ("Ditambahkan ke data penyewa: NIK").
+  "Orang lain" yang dipilih untuk satu nomor batal bila nomor diganti ke nomor milik penyewa lama.
+- Kolom disembunyikan hanya untuk penyewa lama yang sudah punya nomor identitas dan kolomnya kosong.
+- Ringkasan: "Dokumen KTP · NIK …" (ditambah "· data penyewa diisi dari scan" bila ada scan). Tidak ada perubahan database.
+
