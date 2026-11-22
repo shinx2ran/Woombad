@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { clsx } from 'clsx'
 import { AlertTriangle, ScanLine, X } from 'lucide-react'
@@ -23,6 +23,8 @@ import {
   QuickCheckInError,
   quantityText,
   resolveScanTenant,
+  compactIdNumber,
+  sameDocument,
   sameNameCandidates,
   scanFillsTenant,
   scannedDocument,
@@ -78,6 +80,9 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const [scanImage, setScanImage] = useState<Blob | null>(null)
   /** SPEC 7.30: the No. KTP (NIK) field (the passport number after a passport scan), optional; a scan fills it */
   const [idNumber, setIdNumber] = useState('')
+  /** the field holds the number a scan put there (not one typed, nor one the scan merely confirmed) */
+  const [idFromScan, setIdFromScan] = useState(false)
+  const idRef = useRef<HTMLInputElement>(null)
   /** optional, SPEC 7.11 */
   const [plate, setPlate] = useState('')
   /** '' = automatic (the one same-name tenant, if any), NEW_TENANT, or a tenant id */
@@ -109,8 +114,9 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const sameName = useMemo(() => sameNameCandidates(data.tenants, name, card), [data.tenants, name, card])
   // a number (scanned or typed) an existing tenant already has: that tenant, whatever the name was typed as
   const byDocument = useMemo(() => tenantByDocument(data.tenants, card), [data.tenants, card])
-  // with a number, never a pick by name alone: the number's owner, a tenant picked by hand, or a new tenant
-  const tenantId = resolveScanTenant({ sameName, byDocument, choice: tenantChoice, newChoice: NEW_TENANT, scanned: card })
+  // the number's owner; with a scan never a pick by name alone (a tenant picked by hand, or a new tenant); with a typed
+  // number the name match still counts among the same-name tenants whose own number does not differ (SPEC 7.30)
+  const tenantId = resolveScanTenant({ sameName, byDocument, choice: tenantChoice, newChoice: NEW_TENANT, scanned })
   const existing = tenantId ? data.tenantById.get(tenantId) ?? null : null
   // what the scan or the typed number adds to that tenant (matched by number or picked by hand): only what he lacks
   const fill = existing && card ? scanFillsTenant(existing, card) : null
@@ -123,36 +129,42 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
     const merged = mergeScanPrefill(scanned, prefill)
     // the NIK field takes the number the review applied; one left unticked keeps what is in the field, unless the
     // scan is of another document type (a NIK is not a passport number)
-    const nextNumber = scannedNumber(prefill) || (prefill.id_type === identity.idType ? idNumber : '')
+    const read = scannedNumber(prefill)
+    const sameType = prefill.id_type === identity.idType
+    const nextNumber = read || (sameType ? idNumber : '')
+    const nextFromScan = read ? idFromScan || !sameType || compactIdNumber(prefill.id_type, read) !== compactIdNumber(identity.idType, idNumber) : sameType && idFromScan
+    const next = stayIdentity(merged, nextNumber).prefill
     // a rescan of the same document keeps the tenant picked by hand; another document starts the choice over, and so
     // does a first scan after "Orang lain" was chosen for a typed number
-    const before = scannedDocument(card)
-    const after = scannedDocument(stayIdentity(merged, nextNumber).prefill)
-    const changed = before?.column !== after?.column || before?.value !== after?.value
-    if (changed && (scanned || tenantChoice === NEW_TENANT)) setTenantChoice('')
+    const after = scannedDocument(next)
+    const changed = !sameDocument(scannedDocument(card), after) && !sameDocument(scannedDocument(scanned), after)
+    const reset = changed && (scanned !== null || tenantChoice === NEW_TENANT)
+    if (reset) setTenantChoice('')
     setScanned(merged)
     setIdNumber(nextNumber)
+    setIdFromScan(nextFromScan)
     if (image) setScanImage(image)
     setScannerOpen(false)
-    const match = tenantByDocument(data.tenants, stayIdentity(merged, nextNumber).prefill)
-    if (match) toast.success(`${after?.column === 'nik' ? 'NIK' : 'Nomor paspor'} ini milik penyewa lama ${match.full_name}: sewa dicatat atas namanya.`)
+    // only when the stay will go to him (not after "Bukan dia?" for this same number)
+    const match = tenantByDocument(data.tenants, next)
+    if (match && (reset || tenantChoice !== NEW_TENANT)) toast.success(`${after?.column === 'nik' ? 'NIK' : 'Nomor paspor'} ini milik penyewa lama ${match.full_name}: sewa dicatat atas namanya.`)
   }
 
   // the tenant picked by hand stays picked (also one this form created before a failed save); the number the scan put
-  // in the NIK field goes with it (a number typed over it stays, unless it was a passport's)
+  // in the NIK field goes with it (a number typed, or typed over it, stays; a passport number always goes)
   const dropScan = () => {
-    const compact = (v: string) => v.replace(/\s+/g, '').toUpperCase()
-    if (scanned && (scanned.id_type !== 'ktp' || compact(idNumber) === compact(scannedNumber(scanned)))) setIdNumber('')
+    if (scanned && (scanned.id_type !== 'ktp' || idFromScan)) setIdNumber('')
+    setIdFromScan(false)
     setScanned(null)
     setScanImage(null)
   }
 
   const changeIdNumber = (value: string) => {
     setIdNumber(value)
-    // a tenant found by his name alone is the one this number is typed for: he stays picked and gets it on his record
-    if (tenantChoice === '' && existing && !scanned) setTenantChoice(existing.id)
+    setIdFromScan(false)
     // "Orang lain" chosen for one number does not hold for another that an existing tenant carries
-    else if (tenantChoice === NEW_TENANT && tenantByDocument(data.tenants, stayIdentity(scanned, value).prefill)) setTenantChoice('')
+    const next = stayIdentity(scanned, value).prefill
+    if (tenantChoice === NEW_TENANT && !sameDocument(scannedDocument(card), scannedDocument(next)) && tenantByDocument(data.tenants, next)) setTenantChoice('')
   }
 
   /**
@@ -225,7 +237,14 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
 
   const submit = async () => {
     setTouched(true)
-    if (hasErrors || !plan) return
+    if (hasErrors || !plan) {
+      // the NIK field sits near the top of a long sheet: bring a wrong number into view
+      if (idError && !errors.name) {
+        idRef.current?.focus()
+        idRef.current?.scrollIntoView?.({ block: 'center' })
+      }
+      return
+    }
     if (!priceCheck.ok) {
       priceCheck.focus()
       return
@@ -260,19 +279,22 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
     }
   }
 
-  // SPEC 7.30: the NIK field; hidden only for an existing tenant who already has a number on file and nothing typed
-  const showIdField = !existing || idNumber.trim() !== '' || !(existing.nik || existing.id_number)
-  const idDigits = idNumber.replace(/\s+/g, '')
-  const numberFromScan = scanned !== null && idDigits !== '' && idDigits.toUpperCase() === scannedNumber(scanned).replace(/\s+/g, '').toUpperCase()
+  // SPEC 7.30: the NIK field (always shown: a typed number is what tells two same-name guests apart)
+  const idDigits = compactIdNumber(identity.idType, idNumber)
+  const numberWord = identity.idType === 'ktp' ? 'NIK' : 'Nomor'
+  const numberFromScan = scanned !== null && idFromScan && idDigits !== ''
+  const onFile = existing ? (existing.nik ? `NIK ${existing.nik}` : existing.id_number ? `nomor ${existing.id_number}` : null) : null
   const idHint = numberFromScan
     ? 'Terisi dari scan: cocokkan dengan kartunya.'
-    : idDigits === '' && existing && !existing.nik && !existing.id_number
-      ? `Penyewa lama ini belum punya ${identity.idType === 'ktp' ? 'NIK' : 'nomor identitas'}: isi untuk melengkapi datanya.`
-      : idDigits === ''
-        ? 'Boleh dikosongkan. Ketik manual, atau isi lewat Scan KTP di atas.'
-        : identity.idType === 'ktp' && /^\d+$/.test(idDigits) && idDigits.length < 16
-          ? `${idDigits.length} dari 16 digit.`
-          : undefined
+    : idDigits === '' && existing && onFile
+      ? `Penyewa lama ini tercatat dengan ${onFile}. Isi hanya bila tamunya orang lain.`
+      : idDigits === '' && existing
+        ? `Penyewa lama ini belum punya ${identity.idType === 'ktp' ? 'NIK' : 'nomor identitas'}: isi untuk melengkapi datanya.`
+        : idDigits === ''
+          ? 'Boleh dikosongkan. Ketik manual, atau isi lewat Scan KTP di atas.'
+          : identity.idType === 'ktp' && /^\d+$/.test(idDigits) && idDigits.length < 16
+            ? `${idDigits.length} dari 16 digit.`
+            : undefined
 
   const payText = paidAmount <= 0 ? `Belum bayar (${formatRupiah(total)})` : paidAmount >= total ? `Lunas ${formatRupiah(total)} · ${PAYMENT_METHOD_LABEL[method]}` : `DP ${formatRupiah(paidAmount)} · sisa ${formatRupiah(total - paidAmount)} · ${PAYMENT_METHOD_LABEL[method]}`
 
@@ -321,7 +343,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
                 id_type: identity.idType,
                 nik: undefined,
                 id_number: undefined,
-                [identity.column]: idNumber.trim() || undefined,
+                [identity.column]: compactIdNumber(identity.idType, idNumber) || undefined,
                 full_name: name.trim() || undefined,
               }}
               onApply={applyScan}
@@ -340,21 +362,20 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
             </p>
           )}
           <Input label="Nama penyewa" value={name} onChange={(e) => setName(e.target.value)} required autoFocus autoComplete="off" error={touched ? errors.name : undefined} />
-          {showIdField && (
-            <Input
-              label={identity.label}
-              value={idNumber}
-              onChange={(e) => changeIdNumber(e.target.value)}
-              inputMode={identity.idType === 'ktp' ? 'numeric' : 'text'}
-              autoCapitalize={identity.idType === 'ktp' ? 'off' : 'characters'}
-              autoComplete="off"
-              maxLength={24}
-              placeholder={identity.idType === 'ktp' ? '16 digit' : undefined}
-              error={idError && (touched || idDigits.length >= 16) ? idError : undefined}
-              hint={idHint}
-              data-testid="quick-checkin-id-number"
-            />
-          )}
+          <Input
+            ref={idRef}
+            label={identity.label}
+            value={idNumber}
+            onChange={(e) => changeIdNumber(e.target.value)}
+            inputMode={identity.idType === 'ktp' ? 'numeric' : 'text'}
+            autoCapitalize={identity.idType === 'ktp' ? 'off' : 'characters'}
+            autoComplete="off"
+            maxLength={24}
+            placeholder={identity.idType === 'ktp' ? '16 digit' : undefined}
+            error={idError && (touched || idDigits.length >= 16) ? idError : undefined}
+            hint={idHint}
+            data-testid="quick-checkin-id-number"
+          />
           {byDocument && tenantChoice !== NEW_TENANT && (
             <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" data-testid="quick-checkin-nik-match">
               {scannedDocument(card)?.column === 'nik' ? 'NIK' : 'Nomor paspor'} {numberFromScan ? 'dari scan ' : 'ini '}milik penyewa lama <strong>{byDocument.full_name}</strong>
@@ -376,9 +397,11 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
               hint={
                 scanned
                   ? 'Hasil scan dianggap penyewa baru. Pilih penyewa lama bila orangnya sama; data yang masih kosong dilengkapi dari scan.'
-                  : card
-                    ? `Dengan ${identity.idType === 'ktp' ? 'NIK' : 'nomor'} ini dianggap penyewa baru. Pilih penyewa lama bila orangnya sama; ${identity.idType === 'ktp' ? 'NIK' : 'nomor'}-nya ditambahkan ke datanya.`
-                    : 'Pilih penyewa lama supaya datanya tidak dobel.'
+                  : card && existing && fill && (fill.nik || fill.id_number)
+                    ? `${numberWord} ini ditambahkan ke data penyewa lama ini. Pilih "Orang lain" bila bukan dia.`
+                    : card && !existing
+                      ? `${numberWord} ini dianggap penyewa baru. Pilih penyewa lama bila orangnya sama; ${numberWord}-nya ditambahkan ke datanya.`
+                      : 'Pilih penyewa lama supaya datanya tidak dobel.'
               }
             />
           )}

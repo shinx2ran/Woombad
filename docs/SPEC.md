@@ -1390,20 +1390,22 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 ### 7.30 Check-in cepat: kolom No. KTP (NIK)
 - **Permintaan pemilik** (22 Nov 2026): NIK tidak wajib, tetapi bisa diisi lewat scan Claude atau diketik manual. Sewa baru dan
   form penyewa sudah punya kolom NIK opsional; check-in cepat belum (scan mengisinya tanpa terlihat).
-- **Kolom "No. KTP (NIK)"** di bawah Nama penyewa: opsional (kosong = penyewa disimpan tanpa NIK). Placeholder "16 digit",
-  keyboard angka. Petunjuk: "Boleh dikosongkan. Ketik manual, atau isi lewat Scan KTP di atas."; saat mengetik "n dari 16 digit.";
-  dari scan: "Terisi dari scan: cocokkan dengan kartunya.". Validasi sama dengan form penyewa (`validateTenantForm`): 16 digit,
-  hanya angka, spasi diabaikan; NIK salah menahan simpan ("NIK harus 16 digit (saat ini n digit).").
+- **Kolom "No. KTP (NIK)"** di bawah Nama penyewa, selalu tampil: opsional (kosong = penyewa disimpan tanpa NIK). Placeholder
+  "16 digit", keyboard angka. Spasi, titik dan tanda hubung diabaikan ("3273-0125-…"). Validasi sama dengan form penyewa
+  (`validateTenantForm`): 16 digit, hanya angka; NIK salah menahan simpan ("NIK harus 16 digit (saat ini n digit).") dan kolomnya
+  difokuskan. Petunjuk: "Boleh dikosongkan. Ketik manual, atau isi lewat Scan KTP di atas."; saat mengetik "n dari 16 digit.";
+  dari scan "Terisi dari scan: cocokkan dengan kartunya."; penyewa lama tanpa nomor "Penyewa lama ini belum punya NIK: isi untuk
+  melengkapi datanya."; penyewa lama dengan nomor "Penyewa lama ini tercatat dengan NIK …. Isi hanya bila tamunya orang lain."
 - Setelah scan **paspor**, kolom menjadi "Nomor paspor" (huruf besar, aturan nomor paspor form penyewa).
 - **Scan**: nomor yang diterapkan di review mengisi kolom; nomor yang dibiarkan tidak dicentang membiarkan isi kolom (kecuali scan
   jenis dokumen lain). Review scan menerima isi kolom sebagai data sekarang: nomor ketikan yang berbeda tidak dicentang otomatis.
-  Kolom bisa diubah setelah scan; yang disimpan adalah isi kolom. "Hapus hasil scan" mengosongkan kolom bila isinya masih nomor
-  dari scan (atau nomor paspor); nomor yang diketik di atasnya tetap.
-- **Pencocokan penyewa** (`stayIdentity` → aturan SPEC 7.19 yang sama untuk nomor ketikan dan hasil scan, hanya nomor valid):
-  NIK milik penyewa lama → sewa atas namanya ("NIK ini milik penyewa lama …", "Bukan dia?"); NIK yang belum dimiliki siapa pun →
-  penyewa baru kecuali penyewa lama sebelumnya dipilih. Penyewa lama yang sudah ditemukan lewat namanya tetap terpilih saat NIK-nya
-  diketik, dan NIK itu ditambahkan ke datanya bila ia belum punya NIK/nomor identitas ("Ditambahkan ke data penyewa: NIK").
-  "Orang lain" yang dipilih untuk satu nomor batal bila nomor diganti ke nomor milik penyewa lama.
-- Kolom disembunyikan hanya untuk penyewa lama yang sudah punya nomor identitas dan kolomnya kosong.
+  Kolom bisa diubah setelah scan; yang disimpan adalah isi kolom. "Hapus hasil scan" mengosongkan kolom hanya bila isinya nomor yang
+  dimasukkan scan (atau nomor paspor); nomor yang diketik (juga yang hanya dikonfirmasi scan) tetap.
+- **Pencocokan penyewa** (`stayIdentity`, `resolveScanTenant`; hanya nomor yang valid ikut): nomor (scan atau ketikan) milik penyewa
+  lama → sewa atas namanya ("NIK ini milik penyewa lama …", "Bukan dia?"). Tanpa scan, nama yang cocok tetap memilih penyewa lama
+  seperti sebelumnya, tetapi hanya penyewa bernama sama yang nomornya tidak berbeda; NIK ketikan ditambahkan ke datanya bila ia
+  belum punya NIK/nomor identitas ("Ditambahkan ke data penyewa: NIK"; petunjuk pilihan: "NIK ini ditambahkan ke data penyewa lama
+  ini. Pilih "Orang lain" bila bukan dia."). Dengan scan aturan SPEC 7.19 tetap: tidak ada pilihan lewat nama saja; mengetik lalu
+  menghapus isi kolom tidak dianggap memilih. "Orang lain"/"Bukan dia?" batal hanya bila nomor diganti ke nomor lain milik penyewa
+  lama (spasi tambahan atau scan kartu yang sama tidak); toast "sewa dicatat atas namanya" hanya bila sewa memang ke dia.
 - Ringkasan: "Dokumen KTP · NIK …" (ditambah "· data penyewa diisi dari scan" bila ada scan). Tidak ada perubahan database.
-

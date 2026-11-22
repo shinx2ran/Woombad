@@ -29,6 +29,8 @@ import {
   type StayBookingInput,
   stayIdentity,
   scannedNumber,
+  compactIdNumber,
+  sameDocument,
 } from './quickCheckIn'
 
 const TODAY = '2026-10-15'
@@ -226,6 +228,15 @@ describe('resolveScanTenant (SPEC 7.19: with a scan, never a pick by name alone)
   it('"Orang lain" / "Bukan dia?" always means a new tenant', () => {
     expect(resolveScanTenant({ ...base, byDocument: t('z'), choice: 'baru' })).toBeNull()
     expect(resolveScanTenant({ ...base, scanned: null, choice: 'baru' })).toBeNull()
+  })
+
+  // SPEC 7.30: a number typed by hand (no scan)
+  it('a typed number an existing tenant carries picks him, whatever the name; else the name match still counts', () => {
+    expect(resolveScanTenant({ ...base, scanned: null, sameName: [], byDocument: t('z') })).toBe('z')
+    expect(resolveScanTenant({ ...base, scanned: null, sameName: [t('a')], byDocument: null })).toBe('a')
+    // two same-name tenants, none picked: a new tenant unless one is picked
+    expect(resolveScanTenant({ ...base, scanned: null, sameName: [t('a'), t('b')] })).toBeNull()
+    expect(resolveScanTenant({ ...base, scanned: null, sameName: [t('a'), t('b')], choice: 'b' })).toBe('b')
   })
 })
 
@@ -542,6 +553,20 @@ describe('stayIdentity', () => {
     expect([p.label, p.column, p.error]).toEqual(['Nomor paspor', 'id_number', null])
     expect(p.prefill).toEqual({ ...passport, id_number: 'N1234567' })
     expect(stayIdentity(passport, 'N12#4567').error).toMatch(/paspor/i)
+  })
+
+  it('a NIK typed with dashes or dots counts as its digits; a passport number keeps its dashes', () => {
+    expect(stayIdentity(null, '3273-0125-0590-0002')).toMatchObject({ prefill: { id_type: 'ktp', nik: '3273012505900002' }, error: null })
+    expect(stayIdentity(null, '3273.0125.0590.0002').prefill?.nik).toBe('3273012505900002')
+    expect(compactIdNumber('passport', ' ab-12 34 ')).toBe('AB-1234')
+    expect(compactIdNumber('ktp', '32-73 01')).toBe('327301')
+  })
+
+  it('sameDocument', () => {
+    expect(sameDocument(null, null)).toBe(true)
+    expect(sameDocument({ column: 'nik', value: '1' }, { column: 'nik', value: '1' })).toBe(true)
+    expect(sameDocument({ column: 'nik', value: '1' }, null)).toBe(false)
+    expect(sameDocument({ column: 'nik', value: '1' }, { column: 'id_number', value: '1' })).toBe(false)
   })
 
   it('scannedNumber: the number of the scan\'s own type', () => {

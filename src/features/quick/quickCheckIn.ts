@@ -209,13 +209,21 @@ export interface StayIdentity {
 
 const IDENTITY_FIELD_LABEL: Record<IdType, string> = { ktp: 'No. KTP (NIK)', passport: 'Nomor paspor', other: 'Nomor identitas' }
 
+/**
+ * A number as typed, without what people put between the groups: spaces for any document; for a NIK also dots and
+ * dashes ("3273-0125-0590-0002"). A passport number keeps its dashes (they can be part of it) and is upper-cased.
+ */
+export function compactIdNumber(idType: IdType, typed: string): string {
+  return idType === 'ktp' ? typed.replace(/[\s.-]+/g, '') : typed.replace(/\s+/g, '').toUpperCase()
+}
+
 export function stayIdentity(scanned: ScanPrefill | null, typed: string): StayIdentity {
   const idType: IdType = scanned?.id_type ?? 'ktp'
   const column = idType === 'ktp' ? 'nik' : 'id_number'
-  const compact = typed.replace(/\s+/g, '')
+  const compact = compactIdNumber(idType, typed)
   const errors = compact ? validateTenantForm({ ...EMPTY_TENANT_FORM, full_name: 'xx', id_type: idType, [column]: compact }) : {}
   const error = (idType === 'ktp' ? errors.nik : errors.id_number) ?? null
-  const value = !compact || error ? null : idType === 'ktp' ? compact : compact.toUpperCase()
+  const value = !compact || error ? null : compact
   let prefill: ScanPrefill | null = null
   if (scanned) {
     prefill = { ...scanned }
@@ -289,17 +297,23 @@ export function sameNameCandidates(tenants: Tenant[], name: string, prefill: Sca
 }
 
 /**
- * Who the stay in check-in cepat goes to (SPEC 7.4, 7.19). Without a scan: the tenant picked among the same-name ones,
- * or the only one (resolveTenantChoice). With a scan, nobody is picked by name alone, so the card's data never lands on
- * the wrong record: the tenant who carries the scanned number, else a same-name tenant picked by hand, else a new
- * tenant. `newChoice` (the "Orang lain" / "Bukan dia?" choice) always means a new tenant.
+ * Who the stay in check-in cepat goes to (SPEC 7.4, 7.19, 7.30). `newChoice` (the "Orang lain" / "Bukan dia?" choice)
+ * always means a new tenant; otherwise the tenant who carries the document number (scanned or typed, `byDocument`).
+ * Without a scan: the tenant picked among the same-name ones, or the only one (resolveTenantChoice); with a typed number
+ * `sameName` holds only those whose own number does not differ from it. With a scan, nobody is picked by name alone, so
+ * the card's data never lands on the wrong record: a same-name tenant picked by hand, else a new tenant.
  */
 export function resolveScanTenant(input: { sameName: Tenant[]; byDocument: Tenant | null; choice: string; newChoice: string; scanned: ScanPrefill | null }): string | null {
   const { sameName, byDocument, choice, newChoice, scanned } = input
   if (choice === newChoice) return null
-  if (!scanned) return resolveTenantChoice(sameName, choice, newChoice)
   if (byDocument) return byDocument.id
+  if (!scanned) return resolveTenantChoice(sameName, choice, newChoice)
   return sameName.find((t) => t.id === choice)?.id ?? null
+}
+
+/** Two document numbers (scannedDocument) are the same one, or both absent. */
+export function sameDocument(a: { column: string; value: string } | null, b: { column: string; value: string } | null): boolean {
+  return (a?.column ?? null) === (b?.column ?? null) && (a?.value ?? null) === (b?.value ?? null)
 }
 
 /**

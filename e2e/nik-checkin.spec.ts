@@ -58,8 +58,11 @@ test.describe('No. KTP (NIK) di check-in cepat (SPEC 7.30)', () => {
     await form.getByRole('button', { name: 'Simpan check-in' }).click()
     await expect(form.getByText('NIK harus 16 digit (saat ini 8 digit).')).toBeVisible()
     await expect(form.getByRole('heading', { name: /Check-in cepat/ })).toBeVisible()
+    // the wrong number is brought into view
+    await expect(nik).toBeFocused()
 
-    await nik.fill('3273 0199 0101 0003')
+    // typed as printed on some cards, with dashes: the digits count
+    await nik.fill('3273-0199-0101-0003')
     await expect(form.getByText(/NIK harus 16 digit/)).toHaveCount(0)
     await expect(form.getByTestId('quick-checkin-scanned')).toHaveText('Dokumen KTP · NIK 3273019901010003')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -135,6 +138,51 @@ test.describe('No. KTP (NIK) di check-in cepat (SPEC 7.30)', () => {
     await form.getByRole('button', { name: 'Bukan dia?' }).click()
     await expect(form.getByTestId('quick-checkin-nik-match')).toHaveCount(0)
     await expect(form.getByTestId('quick-checkin-scanned')).toHaveText(`Dokumen KTP · NIK ${CARD_NIK}`)
+    // a space typed into the same number does not undo "Bukan dia?"
+    await form.getByLabel('No. KTP (NIK)').fill(`${CARD_NIK} `)
+    await expect(form.getByTestId('quick-checkin-nik-match')).toHaveCount(0)
+    // nor does scanning the same card, and it does not claim the stay goes to him
+    await form.getByRole('button', { name: 'Scan KTP / Paspor' }).click()
+    await form.getByTestId('scanner-file-input').setInputFiles(PHOTO)
+    await form.getByRole('button', { name: 'Terapkan' }).click()
+    await expect(form.getByTestId('quick-checkin-nik-match')).toHaveCount(0)
+    await expect(page.getByText('sewa dicatat atas namanya', { exact: false })).toHaveCount(0)
+  })
+
+  test('two guests with one name: the field stays for a returning guest who has a NIK, and another NIK is another person', async ({ page }) => {
+    await page.evaluate((nik) => {
+      const db = JSON.parse(localStorage.getItem('woombad.local.db.v1') ?? '{}')
+      const budi = db.tenants.find((t: { full_name: string }) => t.full_name === 'Budi Santoso')
+      budi.nik = nik
+      localStorage.setItem('woombad.local.db.v1', JSON.stringify(db))
+    }, CARD_NIK)
+    await page.reload()
+    await expect(page.getByTestId('room-board')).toBeVisible()
+    const form = await openCheckIn(page)
+    await form.getByLabel('Nama penyewa').fill('Budi Santoso')
+    const nik = form.getByLabel('No. KTP (NIK)')
+    await expect(nik).toBeVisible()
+    await expect(form.getByText(`Penyewa lama ini tercatat dengan NIK ${CARD_NIK}. Isi hanya bila tamunya orang lain.`)).toBeVisible()
+    await nik.fill('3273019901010003')
+    await fillMoney(form.getByLabel('Total bayar'), '180000')
+    // the old Budi has another NIK: this is a new tenant
+    await expect(form.getByTestId('quick-checkin-summary')).not.toContainText('Penyewa lama')
+    await expect(form.getByTestId('quick-checkin-scanned')).toHaveText('Dokumen KTP · NIK 3273019901010003')
+    await expect(form.getByLabel('Nomor HP')).toBeVisible()
+  })
+
+  test('touching the field does not make a name match count as a pick: a later scan is still a new tenant by default', async ({ page }) => {
+    const form = await openCheckIn(page)
+    await form.getByLabel('Nama penyewa').fill('Budi Santoso')
+    const nik = form.getByLabel('No. KTP (NIK)')
+    await nik.fill('3')
+    await nik.fill('')
+    await form.getByRole('button', { name: 'Scan KTP / Paspor' }).click()
+    await form.getByTestId('scanner-file-input').setInputFiles(PHOTO)
+    await form.getByRole('button', { name: 'Terapkan' }).click()
+    // SPEC 7.19: with a scan nobody is picked by name alone
+    await expect(form.getByLabel('Nama ini sudah ada')).toHaveValue('baru')
+    await expect(nik).toHaveValue(CARD_NIK)
   })
 
   test('a returning guest found by name keeps being picked while his NIK is typed, and gets it on his record', async ({ page }) => {
@@ -146,6 +194,7 @@ test.describe('No. KTP (NIK) di check-in cepat (SPEC 7.30)', () => {
     await expect(form.getByText('Penyewa lama ini belum punya NIK: isi untuk melengkapi datanya.')).toBeVisible()
     await form.getByLabel('No. KTP (NIK)').fill(CARD_NIK)
     await expect(form.getByLabel('Nama ini sudah ada')).not.toHaveValue('baru')
+    await expect(form.getByText('NIK ini ditambahkan ke data penyewa lama ini. Pilih "Orang lain" bila bukan dia.')).toBeVisible()
     await fillMoney(form.getByLabel('Total bayar'), '180000')
     await expect(form.getByTestId('quick-checkin-summary')).toContainText('Penyewa lama: Budi Santoso')
     await expect(form.getByTestId('quick-checkin-scan-fill')).toHaveText('Ditambahkan ke data penyewa: NIK')
