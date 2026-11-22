@@ -4,6 +4,7 @@ import { LocalRepo, emptyLocalDb } from '../../lib/repo/localRepo'
 import { bindOrg, type OrgRepo } from '../../lib/repo/types'
 import type { Lease, Room, Tenant } from '../../types/db'
 import { invoiceInsertFromDraft } from '../leases/leaseUtils'
+import type { ScanPrefill } from '../scanner/types'
 import {
   perNightText,
   perPeriodText,
@@ -26,6 +27,10 @@ import {
   type QuickCheckInDeps,
   type QuickCheckInInput,
   type StayBookingInput,
+  stayIdentity,
+  scannedNumber,
+  compactIdNumber,
+  sameDocument,
 } from './quickCheckIn'
 
 const TODAY = '2026-10-15'
@@ -223,6 +228,36 @@ describe('resolveScanTenant (SPEC 7.19: with a scan, never a pick by name alone)
   it('"Orang lain" / "Bukan dia?" always means a new tenant', () => {
     expect(resolveScanTenant({ ...base, byDocument: t('z'), choice: 'baru' })).toBeNull()
     expect(resolveScanTenant({ ...base, scanned: null, choice: 'baru' })).toBeNull()
+  })
+
+  // SPEC 7.30: a number typed by hand (no scan)
+  it('a typed number an existing tenant carries picks him, whatever the name; else the name match still counts', () => {
+    const typed = { ...base, scanned: null, typedIdType: 'ktp' as const }
+    expect(resolveScanTenant({ ...typed, sameName: [], byDocument: t('z') })).toBe('z')
+    expect(resolveScanTenant({ ...typed, sameName: [{ ...t('a'), id_type: 'ktp' } as Tenant], byDocument: null })).toBe('a')
+    // two same-name tenants, none picked: a new tenant unless one is picked
+    expect(resolveScanTenant({ ...typed, sameName: [t('a'), t('b')] })).toBeNull()
+    expect(resolveScanTenant({ ...typed, sameName: [t('a'), t('b')], choice: 'b' })).toBe('b')
+  })
+
+  it('a typed number: the only same-name tenant is taken by name only when he has no number of either kind on file', () => {
+    const typed = { ...base, scanned: null, typedIdType: 'ktp' as const }
+    const passportHolder = { ...t('p'), id_type: 'passport', nik: null, id_number: 'N1234567' } as Tenant
+    expect(resolveScanTenant({ ...typed, sameName: [passportHolder] })).toBeNull()
+    // picked by hand, he stays picked
+    expect(resolveScanTenant({ ...typed, sameName: [passportHolder], choice: 'p' })).toBe('p')
+    // recorded as a passport holder without a number: not given a NIK by name alone
+    expect(resolveScanTenant({ ...typed, sameName: [{ ...t('f'), id_type: 'passport', nik: null, id_number: null } as Tenant] })).toBeNull()
+  })
+
+  it('a typed number: a tenant picked by hand who no longer fits is not replaced by the other same-name tenant', () => {
+    // A was picked; the typed NIK differs from his, so only B is left in sameName
+    const b = { ...t('b'), id_type: 'ktp' } as Tenant
+    expect(resolveScanTenant({ ...base, scanned: null, typedIdType: 'ktp', named: [t('a'), b], sameName: [b], choice: 'a' })).toBeNull()
+    // a pick made for an earlier spelling of the name (not among `named`) gives way to the only match, as without a number
+    expect(resolveScanTenant({ ...base, scanned: null, typedIdType: 'ktp', named: [b], sameName: [b], choice: 'a' })).toBe('b')
+    // without a number the earlier rule stands (a pick for an earlier spelling of the name gives way to the only match)
+    expect(resolveScanTenant({ ...base, scanned: null, sameName: [t('b')], choice: 'a' })).toBe('b')
   })
 })
 
@@ -505,5 +540,60 @@ describe('saveStayBooking: a year with a bonus month and a deposit, as the owner
     expect(inserted).toHaveLength(1)
     expect(inserted[0]).not.toHaveProperty('vehicle_plate')
     expect(lease.vehicle_plate ?? null).toBeNull()
+  })
+})
+
+// SPEC 7.30: the No. KTP (NIK) field of check-in cepat, optional, typed or filled by a scan
+describe('stayIdentity', () => {
+  const card: ScanPrefill = { id_type: 'ktp', full_name: 'Budi Santoso', nik: '3273012505900002', birth_place: 'Bandung' }
+  const passport: ScanPrefill = { id_type: 'passport', full_name: 'John Smith', id_number: 'N1234567', nationality: 'AUS' }
+
+  it('nothing typed and no scan: nothing to save, no error', () => {
+    expect(stayIdentity(null, '')).toEqual({ idType: 'ktp', column: 'nik', label: 'No. KTP (NIK)', prefill: null, error: null })
+    expect(stayIdentity(null, '   ').prefill).toBeNull()
+  })
+
+  it('a NIK typed by hand: spaces dropped; a short or non-digit one is refused in the tenant form\'s words', () => {
+    expect(stayIdentity(null, '3273 0125 0590 0002')).toMatchObject({ prefill: { id_type: 'ktp', nik: '3273012505900002' }, error: null })
+    expect(stayIdentity(null, '3273')).toMatchObject({ prefill: null, error: 'NIK harus 16 digit (saat ini 4 digit).' })
+    expect(stayIdentity(null, '3273O12505900002')).toMatchObject({ prefill: null, error: 'NIK hanya boleh berisi angka.' })
+  })
+
+  it('after a scan the field decides the number; the scan\'s other values stay', () => {
+    expect(stayIdentity(card, '3273012505900002').prefill).toEqual(card)
+    // corrected by hand
+    expect(stayIdentity(card, '3273012505900099').prefill).toEqual({ ...card, nik: '3273012505900099' })
+    // cleared: the scanned number is not saved, the rest of the card is
+    expect(stayIdentity(card, '').prefill).toEqual({ id_type: 'ktp', full_name: 'Budi Santoso', birth_place: 'Bandung' })
+    // an invalid edit keeps the number out (and blocks the save through `error`)
+    expect(stayIdentity(card, '12')).toMatchObject({ prefill: { id_type: 'ktp', full_name: 'Budi Santoso', birth_place: 'Bandung' }, error: 'NIK harus 16 digit (saat ini 2 digit).' })
+  })
+
+  it('a passport scan makes it the passport number, upper-cased', () => {
+    const p = stayIdentity(passport, 'n 1234567')
+    expect([p.label, p.column, p.error]).toEqual(['Nomor paspor', 'id_number', null])
+    expect(p.prefill).toEqual({ ...passport, id_number: 'N1234567' })
+    expect(stayIdentity(passport, 'N12#4567').error).toMatch(/paspor/i)
+  })
+
+  it('a NIK typed with dashes or dots counts as its digits; a passport number keeps its dashes', () => {
+    expect(stayIdentity(null, '3273-0125-0590-0002')).toMatchObject({ prefill: { id_type: 'ktp', nik: '3273012505900002' }, error: null })
+    expect(stayIdentity(null, '3273.0125.0590.0002').prefill?.nik).toBe('3273012505900002')
+    expect(compactIdNumber('passport', ' ab-12 34 ')).toBe('AB-1234')
+    expect(compactIdNumber('ktp', '32-73 01')).toBe('327301')
+  })
+
+  it('sameDocument', () => {
+    expect(sameDocument(null, null)).toBe(true)
+    expect(sameDocument({ column: 'nik', value: '1' }, { column: 'nik', value: '1' })).toBe(true)
+    expect(sameDocument({ column: 'nik', value: '1' }, null)).toBe(false)
+    expect(sameDocument({ column: 'nik', value: '1' }, { column: 'id_number', value: '1' })).toBe(false)
+  })
+
+  it('scannedNumber: the number of the scan\'s own type', () => {
+    expect(scannedNumber(card)).toBe('3273012505900002')
+    expect(scannedNumber(passport)).toBe('N1234567')
+    expect(scannedNumber({ id_type: 'ktp', full_name: 'X' })).toBe('')
+    expect(scannedNumber(null)).toBe('')
   })
 })

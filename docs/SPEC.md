@@ -1387,3 +1387,31 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   tetap jalan, hanya baris biayanya ditolak database dan tinggal di log function.
 - **Mode Demo**: tidak ada yang dikirim; jawabannya contoh berlabel yang dibaca dari ringkasan data itu sendiri.
 
+### 7.30 Check-in cepat: kolom No. KTP (NIK)
+- **Permintaan pemilik** (22 Nov 2026): NIK tidak wajib, tetapi bisa diisi lewat scan Claude atau diketik manual. Sewa baru dan
+  form penyewa sudah punya kolom NIK opsional; check-in cepat belum (scan mengisinya tanpa terlihat).
+- **Kolom "No. KTP (NIK)"** di bawah Nama penyewa, selalu tampil: opsional (kosong = penyewa disimpan tanpa NIK). Placeholder
+  "16 digit", keyboard angka. Spasi, titik dan tanda hubung diabaikan ("3273-0125-…"). Validasi sama dengan form penyewa
+  (`validateTenantForm`): 16 digit, hanya angka; NIK salah menahan simpan ("NIK harus 16 digit (saat ini n digit).") dan kolomnya
+  difokuskan. Petunjuk: "Boleh dikosongkan. Ketik manual, atau isi lewat Scan KTP di atas."; saat mengetik "n dari 16 digit.";
+  dari scan "Terisi dari scan: cocokkan dengan kartunya."; penyewa lama tanpa nomor "Penyewa lama ini belum punya NIK: isi untuk
+  melengkapi datanya."; penyewa lama dengan nomor "Penyewa lama ini tercatat dengan NIK …. Isi hanya bila tamunya orang lain."
+- Setelah scan **paspor**, kolom menjadi "Nomor paspor" (huruf besar, aturan nomor paspor form penyewa).
+- **Scan**: nomor yang diterapkan di review mengisi kolom; nomor yang dibiarkan tidak dicentang membiarkan isi kolom (kecuali scan
+  jenis dokumen lain). Review scan menerima isi kolom sebagai data sekarang: nomor ketikan yang berbeda tidak dicentang otomatis.
+  Kolom bisa diubah setelah scan; yang disimpan adalah isi kolom. "Hapus hasil scan" mengosongkan kolom hanya bila isinya nomor yang
+  dimasukkan scan (atau nomor paspor); nomor yang diketik (juga yang hanya dikonfirmasi scan) tetap.
+- **Pencocokan penyewa** (`stayIdentity`, `resolveScanTenant`; hanya nomor yang valid ikut): nomor (scan atau ketikan) milik penyewa
+  lama → sewa atas namanya ("NIK ini milik penyewa lama …", "Bukan dia?"). Tanpa scan dan tanpa nomor: nama yang cocok memilih
+  penyewa lama seperti sebelumnya. Tanpa scan dengan NIK ketikan: satu-satunya penyewa bernama sama dipilih otomatis hanya bila ia
+  belum punya nomor identitas apa pun (NIK maupun paspor) dan tercatat dengan jenis identitas yang sama (pemegang paspor tidak
+  diberi NIK lewat nama saja), lalu NIK itu ditambahkan ke datanya ("Ditambahkan ke data penyewa: NIK";
+  petunjuk pilihan: "NIK ini ditambahkan ke data penyewa lama ini. Pilih "Orang lain" bila bukan dia."); penyewa yang dipilih dengan
+  tangan tetap dipilih selama nomornya tidak berbeda, dan tidak pernah diganti diam-diam oleh penyewa lain bernama sama (pilihan
+  untuk ejaan nama sebelumnya tidak dihitung, seperti tanpa nomor). Petunjuk "…-nya ditambahkan ke datanya" hanya bila penyewa
+  bernama sama memang belum punya nomor. Penyewa
+  lama yang sudah punya nomor lain: "… tercatat dengan …; NIK yang diketik tidak disimpan.". Dengan scan aturan SPEC 7.19 tetap:
+  tidak ada pilihan lewat nama saja; mengetik lalu menghapus isi kolom tidak dianggap memilih. "Orang lain"/"Bukan dia?" diingat
+  untuk nomor saat itu dipilih, dan batal hanya bila datang nomor lain milik penyewa lama (spasi tambahan, menghapus lalu mengetik
+  ulang digit, atau Hapus hasil scan lalu scan kartu yang sama tidak); toast "sewa dicatat atas namanya" hanya bila sewa memang ke dia.
+- Ringkasan: "Dokumen KTP · NIK …" (ditambah "· data penyewa diisi dari scan" bila ada scan). Tidak ada perubahan database.
