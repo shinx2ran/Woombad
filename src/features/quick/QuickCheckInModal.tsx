@@ -87,6 +87,8 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const [plate, setPlate] = useState('')
   /** '' = automatic (the one same-name tenant, if any), NEW_TENANT, or a tenant id */
   const [tenantChoice, setTenantChoice] = useState('')
+  /** the number "Bukan dia?" / "Orang lain" was chosen for: that choice holds until another owned number comes */
+  const [refusedFor, setRefusedFor] = useState<{ column: string; value: string } | null>(null)
   const [kind, setKind] = useState<StayKind>('daily')
   const [startDate, setStartDate] = useState(today)
   const [quantity, setQuantity] = useState(1)
@@ -116,7 +118,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const byDocument = useMemo(() => tenantByDocument(data.tenants, card), [data.tenants, card])
   // the number's owner; with a scan never a pick by name alone (a tenant picked by hand, or a new tenant); with a typed
   // number the name match still counts among the same-name tenants whose own number does not differ (SPEC 7.30)
-  const tenantId = resolveScanTenant({ sameName, byDocument, choice: tenantChoice, newChoice: NEW_TENANT, scanned })
+  const tenantId = resolveScanTenant({ sameName, byDocument, choice: tenantChoice, newChoice: NEW_TENANT, scanned, typedNumber: card !== null && scannedDocument(card) !== null })
   const existing = tenantId ? data.tenantById.get(tenantId) ?? null : null
   // what the scan or the typed number adds to that tenant (matched by number or picked by hand): only what he lacks
   const fill = existing && card ? scanFillsTenant(existing, card) : null
@@ -134,11 +136,14 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
     const nextNumber = read || (sameType ? idNumber : '')
     const nextFromScan = read ? idFromScan || !sameType || compactIdNumber(prefill.id_type, read) !== compactIdNumber(identity.idType, idNumber) : sameType && idFromScan
     const next = stayIdentity(merged, nextNumber).prefill
-    // a rescan of the same document keeps the tenant picked by hand; another document starts the choice over, and so
-    // does a first scan after "Orang lain" was chosen for a typed number
+    // a rescan of the same document keeps the tenant picked by hand, another document starts the choice over; "Bukan
+    // dia?" / "Orang lain" holds unless the scan brings another number an existing tenant carries
     const after = scannedDocument(next)
     const changed = !sameDocument(scannedDocument(card), after) && !sameDocument(scannedDocument(scanned), after)
-    const reset = changed && (scanned !== null || tenantChoice === NEW_TENANT)
+    const reset =
+      tenantChoice === NEW_TENANT
+        ? after !== null && !sameDocument(refusedFor, after) && tenantByDocument(data.tenants, next) !== null
+        : changed && scanned !== null
     if (reset) setTenantChoice('')
     setScanned(merged)
     setIdNumber(nextNumber)
@@ -162,9 +167,15 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const changeIdNumber = (value: string) => {
     setIdNumber(value)
     setIdFromScan(false)
-    // "Orang lain" chosen for one number does not hold for another that an existing tenant carries
+    // "Orang lain" chosen for one number does not hold for another that an existing tenant carries (the same number
+    // typed again, after a digit was deleted, is not another one)
     const next = stayIdentity(scanned, value).prefill
-    if (tenantChoice === NEW_TENANT && !sameDocument(scannedDocument(card), scannedDocument(next)) && tenantByDocument(data.tenants, next)) setTenantChoice('')
+    if (tenantChoice === NEW_TENANT && !sameDocument(refusedFor, scannedDocument(next)) && tenantByDocument(data.tenants, next)) setTenantChoice('')
+  }
+
+  const chooseTenant = (value: string) => {
+    setTenantChoice(value)
+    if (value === NEW_TENANT) setRefusedFor(scannedDocument(card))
   }
 
   /**
@@ -380,7 +391,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
             <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" data-testid="quick-checkin-nik-match">
               {scannedDocument(card)?.column === 'nik' ? 'NIK' : 'Nomor paspor'} {numberFromScan ? 'dari scan ' : 'ini '}milik penyewa lama <strong>{byDocument.full_name}</strong>
               {byDocument.phone ? ` · ${byDocument.phone}` : ''}.{' '}
-              <button type="button" className="font-medium underline" onClick={() => setTenantChoice(NEW_TENANT)}>
+              <button type="button" className="font-medium underline" onClick={() => chooseTenant(NEW_TENANT)}>
                 Bukan dia?
               </button>
             </p>
@@ -389,7 +400,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
             <Select
               label="Nama ini sudah ada"
               value={tenantId ?? NEW_TENANT}
-              onChange={(e) => setTenantChoice(e.target.value)}
+              onChange={(e) => chooseTenant(e.target.value)}
               options={[
                 ...sameName.map((t) => ({ value: t.id, label: `Penyewa lama · ${t.phone ?? 'tanpa HP'}` })),
                 { value: NEW_TENANT, label: 'Orang lain (penyewa baru)' },
@@ -399,6 +410,8 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
                   ? 'Hasil scan dianggap penyewa baru. Pilih penyewa lama bila orangnya sama; data yang masih kosong dilengkapi dari scan.'
                   : card && existing && fill && (fill.nik || fill.id_number)
                     ? `${numberWord} ini ditambahkan ke data penyewa lama ini. Pilih "Orang lain" bila bukan dia.`
+                    : card && existing && onFile
+                      ? `Penyewa lama ini tercatat dengan ${onFile}; ${numberWord} yang diketik tidak disimpan. Pilih "Orang lain" bila bukan dia.`
                     : card && !existing
                       ? `${numberWord} ini dianggap penyewa baru. Pilih penyewa lama bila orangnya sama; ${numberWord}-nya ditambahkan ke datanya.`
                       : 'Pilih penyewa lama supaya datanya tidak dobel.'

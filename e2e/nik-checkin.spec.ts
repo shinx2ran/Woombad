@@ -138,8 +138,11 @@ test.describe('No. KTP (NIK) di check-in cepat (SPEC 7.30)', () => {
     await form.getByRole('button', { name: 'Bukan dia?' }).click()
     await expect(form.getByTestId('quick-checkin-nik-match')).toHaveCount(0)
     await expect(form.getByTestId('quick-checkin-scanned')).toHaveText(`Dokumen KTP · NIK ${CARD_NIK}`)
-    // a space typed into the same number does not undo "Bukan dia?"
+    // a space typed into the same number does not undo "Bukan dia?", nor does deleting a digit and typing it again
     await form.getByLabel('No. KTP (NIK)').fill(`${CARD_NIK} `)
+    await expect(form.getByTestId('quick-checkin-nik-match')).toHaveCount(0)
+    await form.getByLabel('No. KTP (NIK)').fill(CARD_NIK.slice(0, 15))
+    await form.getByLabel('No. KTP (NIK)').fill(CARD_NIK)
     await expect(form.getByTestId('quick-checkin-nik-match')).toHaveCount(0)
     // nor does scanning the same card, and it does not claim the stay goes to him
     await form.getByRole('button', { name: 'Scan KTP / Paspor' }).click()
@@ -205,5 +208,74 @@ test.describe('No. KTP (NIK) di check-in cepat (SPEC 7.30)', () => {
     await openTenantByNik(page, CARD_NIK, /Budi Santoso/)
     await expect(page.getByText(CARD_NIK)).toBeVisible()
     await expect(page.getByText('+6281234567801')).toBeVisible()
+  })
+
+  test('"Bukan dia?" for a scanned card holds after Hapus hasil scan and a scan of the same card', async ({ page }) => {
+    await page.evaluate((nik) => {
+      const db = JSON.parse(localStorage.getItem('woombad.local.db.v1') ?? '{}')
+      const free = db.tenants.find((t: { id: string }) => !db.leases.some((l: { tenant_id: string; status: string }) => l.tenant_id === t.id && l.status === 'active'))
+      ;(free ?? db.tenants[0]).nik = nik
+      ;(free ?? db.tenants[0]).full_name = 'Andi Wijaya'
+      localStorage.setItem('woombad.local.db.v1', JSON.stringify(db))
+    }, CARD_NIK)
+    await page.reload()
+    await expect(page.getByTestId('room-board')).toBeVisible()
+    const form = await openCheckIn(page)
+    const scan = async () => {
+      await form.getByRole('button', { name: /^Scan (ulang )?KTP \/ Paspor$/ }).click()
+      await form.getByTestId('scanner-file-input').setInputFiles(PHOTO)
+      await form.getByRole('button', { name: 'Terapkan' }).click()
+    }
+    await scan()
+    await expect(form.getByTestId('quick-checkin-nik-match')).toContainText('Andi Wijaya')
+    await form.getByRole('button', { name: 'Bukan dia?' }).click()
+    await form.getByRole('button', { name: 'Hapus hasil scan' }).click()
+    await page.getByText('sewa dicatat atas namanya', { exact: false }).waitFor({ state: 'detached' }).catch(() => undefined)
+    await scan()
+    await expect(form.getByTestId('quick-checkin-nik-match')).toHaveCount(0)
+    await fillMoney(form.getByLabel('Total bayar'), '180000')
+    await expect(form.getByTestId('quick-checkin-summary')).not.toContainText('Penyewa lama')
+  })
+
+  test('a same-name tenant with a passport number on file is another person when a NIK is typed', async ({ page }) => {
+    await page.evaluate(() => {
+      const db = JSON.parse(localStorage.getItem('woombad.local.db.v1') ?? '{}')
+      const budi = db.tenants.find((t: { full_name: string }) => t.full_name === 'Budi Santoso')
+      Object.assign(budi, { id_type: 'passport', id_number: 'N1234567', nationality: 'AUS', nik: null })
+      localStorage.setItem('woombad.local.db.v1', JSON.stringify(db))
+    })
+    await page.reload()
+    await expect(page.getByTestId('room-board')).toBeVisible()
+    const form = await openCheckIn(page)
+    await form.getByLabel('Nama penyewa').fill('Budi Santoso')
+    await expect(form.getByText('Penyewa lama ini tercatat dengan nomor N1234567. Isi hanya bila tamunya orang lain.')).toBeVisible()
+    await form.getByLabel('No. KTP (NIK)').fill(CARD_NIK)
+    await fillMoney(form.getByLabel('Total bayar'), '180000')
+    await expect(form.getByLabel('Nama ini sudah ada')).toHaveValue('baru')
+    await expect(form.getByTestId('quick-checkin-summary')).not.toContainText('Penyewa lama')
+    await expect(form.getByTestId('quick-checkin-scanned')).toHaveText(`Dokumen KTP · NIK ${CARD_NIK}`)
+    // picked by hand all the same: he stays picked, and the form says the NIK is not saved
+    await form.getByLabel('Nama ini sudah ada').selectOption({ label: 'Penyewa lama · +6281234567801' })
+    await expect(form.getByText('Penyewa lama ini tercatat dengan nomor N1234567; NIK yang diketik tidak disimpan. Pilih "Orang lain" bila bukan dia.')).toBeVisible()
+  })
+
+  test('a tenant picked by hand who does not fit the typed NIK is not swapped for the other same-name tenant', async ({ page }) => {
+    // two Budi Santoso: the demo one (no NIK) and a second one with a NIK
+    await page.evaluate((nik) => {
+      const db = JSON.parse(localStorage.getItem('woombad.local.db.v1') ?? '{}')
+      const budi = db.tenants.find((t: { full_name: string }) => t.full_name === 'Budi Santoso')
+      db.tenants.push({ ...budi, id: 'budi-2', nik, phone: '+6281299990000' })
+      localStorage.setItem('woombad.local.db.v1', JSON.stringify(db))
+    }, CARD_NIK)
+    await page.reload()
+    await expect(page.getByTestId('room-board')).toBeVisible()
+    const form = await openCheckIn(page)
+    await form.getByLabel('Nama penyewa').fill('Budi Santoso')
+    await form.getByLabel('Nama ini sudah ada').selectOption({ label: 'Penyewa lama · +6281299990000' })
+    // his NIK with one digit wrong
+    await form.getByLabel('No. KTP (NIK)').fill('3273012505900009')
+    await fillMoney(form.getByLabel('Total bayar'), '180000')
+    await expect(form.getByLabel('Nama ini sudah ada')).toHaveValue('baru')
+    await expect(form.getByTestId('quick-checkin-summary')).not.toContainText('Penyewa lama')
   })
 })

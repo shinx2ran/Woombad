@@ -299,16 +299,31 @@ export function sameNameCandidates(tenants: Tenant[], name: string, prefill: Sca
 /**
  * Who the stay in check-in cepat goes to (SPEC 7.4, 7.19, 7.30). `newChoice` (the "Orang lain" / "Bukan dia?" choice)
  * always means a new tenant; otherwise the tenant who carries the document number (scanned or typed, `byDocument`).
- * Without a scan: the tenant picked among the same-name ones, or the only one (resolveTenantChoice); with a typed number
- * `sameName` holds only those whose own number does not differ from it. With a scan, nobody is picked by name alone, so
- * the card's data never lands on the wrong record: a same-name tenant picked by hand, else a new tenant.
+ * With a scan, nobody is picked by name alone, so the card's data never lands on the wrong record: a same-name tenant
+ * picked by hand, else a new tenant. Without a scan and without a number: the tenant picked among the same-name ones,
+ * or the only one (resolveTenantChoice). Without a scan but with a typed number (`typedNumber`): a same-name tenant
+ * picked by hand while he still fits it, and no other in his place; nothing picked, the only same-name tenant only when
+ * he has no identity number on file at all (one with another number, of either kind, is another person).
  */
-export function resolveScanTenant(input: { sameName: Tenant[]; byDocument: Tenant | null; choice: string; newChoice: string; scanned: ScanPrefill | null }): string | null {
-  const { sameName, byDocument, choice, newChoice, scanned } = input
+export function resolveScanTenant(input: {
+  sameName: Tenant[]
+  byDocument: Tenant | null
+  choice: string
+  newChoice: string
+  scanned: ScanPrefill | null
+  typedNumber?: boolean
+}): string | null {
+  const { sameName, byDocument, choice, newChoice, scanned, typedNumber } = input
   if (choice === newChoice) return null
   if (byDocument) return byDocument.id
-  if (!scanned) return resolveTenantChoice(sameName, choice, newChoice)
-  return sameName.find((t) => t.id === choice)?.id ?? null
+  if (scanned) return sameName.find((t) => t.id === choice)?.id ?? null
+  if (!typedNumber) return resolveTenantChoice(sameName, choice, newChoice)
+  const picked = sameName.find((t) => t.id === choice)
+  if (picked) return picked.id
+  // a tenant picked by hand who no longer fits the number: not silently replaced by another same-name tenant
+  if (choice !== '') return null
+  const only = sameName.length === 1 ? sameName[0] : null
+  return only && !only.nik && !only.id_number ? only.id : null
 }
 
 /** Two document numbers (scannedDocument) are the same one, or both absent. */

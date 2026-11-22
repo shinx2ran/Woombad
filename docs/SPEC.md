@@ -1402,10 +1402,13 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   Kolom bisa diubah setelah scan; yang disimpan adalah isi kolom. "Hapus hasil scan" mengosongkan kolom hanya bila isinya nomor yang
   dimasukkan scan (atau nomor paspor); nomor yang diketik (juga yang hanya dikonfirmasi scan) tetap.
 - **Pencocokan penyewa** (`stayIdentity`, `resolveScanTenant`; hanya nomor yang valid ikut): nomor (scan atau ketikan) milik penyewa
-  lama → sewa atas namanya ("NIK ini milik penyewa lama …", "Bukan dia?"). Tanpa scan, nama yang cocok tetap memilih penyewa lama
-  seperti sebelumnya, tetapi hanya penyewa bernama sama yang nomornya tidak berbeda; NIK ketikan ditambahkan ke datanya bila ia
-  belum punya NIK/nomor identitas ("Ditambahkan ke data penyewa: NIK"; petunjuk pilihan: "NIK ini ditambahkan ke data penyewa lama
-  ini. Pilih "Orang lain" bila bukan dia."). Dengan scan aturan SPEC 7.19 tetap: tidak ada pilihan lewat nama saja; mengetik lalu
-  menghapus isi kolom tidak dianggap memilih. "Orang lain"/"Bukan dia?" batal hanya bila nomor diganti ke nomor lain milik penyewa
-  lama (spasi tambahan atau scan kartu yang sama tidak); toast "sewa dicatat atas namanya" hanya bila sewa memang ke dia.
+  lama → sewa atas namanya ("NIK ini milik penyewa lama …", "Bukan dia?"). Tanpa scan dan tanpa nomor: nama yang cocok memilih
+  penyewa lama seperti sebelumnya. Tanpa scan dengan NIK ketikan: satu-satunya penyewa bernama sama dipilih otomatis hanya bila ia
+  belum punya nomor identitas apa pun (NIK maupun paspor), lalu NIK itu ditambahkan ke datanya ("Ditambahkan ke data penyewa: NIK";
+  petunjuk pilihan: "NIK ini ditambahkan ke data penyewa lama ini. Pilih "Orang lain" bila bukan dia."); penyewa yang dipilih dengan
+  tangan tetap dipilih selama nomornya tidak berbeda, dan tidak pernah diganti diam-diam oleh penyewa lain bernama sama. Penyewa
+  lama yang sudah punya nomor lain: "… tercatat dengan …; NIK yang diketik tidak disimpan.". Dengan scan aturan SPEC 7.19 tetap:
+  tidak ada pilihan lewat nama saja; mengetik lalu menghapus isi kolom tidak dianggap memilih. "Orang lain"/"Bukan dia?" diingat
+  untuk nomor saat itu dipilih, dan batal hanya bila datang nomor lain milik penyewa lama (spasi tambahan, menghapus lalu mengetik
+  ulang digit, atau Hapus hasil scan lalu scan kartu yang sama tidak); toast "sewa dicatat atas namanya" hanya bila sewa memang ke dia.
 - Ringkasan: "Dokumen KTP · NIK …" (ditambah "· data penyewa diisi dari scan" bila ada scan). Tidak ada perubahan database.
