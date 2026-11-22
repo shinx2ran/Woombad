@@ -252,6 +252,8 @@ test.describe('No. KTP (NIK) di check-in cepat (SPEC 7.30)', () => {
     await form.getByLabel('No. KTP (NIK)').fill(CARD_NIK)
     await fillMoney(form.getByLabel('Total bayar'), '180000')
     await expect(form.getByLabel('Nama ini sudah ada')).toHaveValue('baru')
+    // no promise that the NIK goes on his record: he has another number
+    await expect(form.getByText('NIK ini dianggap penyewa baru. Pilih penyewa lama bila orangnya sama.', { exact: true })).toBeVisible()
     await expect(form.getByTestId('quick-checkin-summary')).not.toContainText('Penyewa lama')
     await expect(form.getByTestId('quick-checkin-scanned')).toHaveText(`Dokumen KTP · NIK ${CARD_NIK}`)
     // picked by hand all the same: he stays picked, and the form says the NIK is not saved

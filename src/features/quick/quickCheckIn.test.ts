@@ -232,25 +232,30 @@ describe('resolveScanTenant (SPEC 7.19: with a scan, never a pick by name alone)
 
   // SPEC 7.30: a number typed by hand (no scan)
   it('a typed number an existing tenant carries picks him, whatever the name; else the name match still counts', () => {
-    const typed = { ...base, scanned: null, typedNumber: true }
+    const typed = { ...base, scanned: null, typedIdType: 'ktp' as const }
     expect(resolveScanTenant({ ...typed, sameName: [], byDocument: t('z') })).toBe('z')
-    expect(resolveScanTenant({ ...typed, sameName: [t('a')], byDocument: null })).toBe('a')
+    expect(resolveScanTenant({ ...typed, sameName: [{ ...t('a'), id_type: 'ktp' } as Tenant], byDocument: null })).toBe('a')
     // two same-name tenants, none picked: a new tenant unless one is picked
     expect(resolveScanTenant({ ...typed, sameName: [t('a'), t('b')] })).toBeNull()
     expect(resolveScanTenant({ ...typed, sameName: [t('a'), t('b')], choice: 'b' })).toBe('b')
   })
 
   it('a typed number: the only same-name tenant is taken by name only when he has no number of either kind on file', () => {
-    const typed = { ...base, scanned: null, typedNumber: true }
-    const passportHolder = { ...t('p'), nik: null, id_number: 'N1234567' } as Tenant
+    const typed = { ...base, scanned: null, typedIdType: 'ktp' as const }
+    const passportHolder = { ...t('p'), id_type: 'passport', nik: null, id_number: 'N1234567' } as Tenant
     expect(resolveScanTenant({ ...typed, sameName: [passportHolder] })).toBeNull()
     // picked by hand, he stays picked
     expect(resolveScanTenant({ ...typed, sameName: [passportHolder], choice: 'p' })).toBe('p')
+    // recorded as a passport holder without a number: not given a NIK by name alone
+    expect(resolveScanTenant({ ...typed, sameName: [{ ...t('f'), id_type: 'passport', nik: null, id_number: null } as Tenant] })).toBeNull()
   })
 
   it('a typed number: a tenant picked by hand who no longer fits is not replaced by the other same-name tenant', () => {
     // A was picked; the typed NIK differs from his, so only B is left in sameName
-    expect(resolveScanTenant({ ...base, scanned: null, typedNumber: true, sameName: [t('b')], choice: 'a' })).toBeNull()
+    const b = { ...t('b'), id_type: 'ktp' } as Tenant
+    expect(resolveScanTenant({ ...base, scanned: null, typedIdType: 'ktp', named: [t('a'), b], sameName: [b], choice: 'a' })).toBeNull()
+    // a pick made for an earlier spelling of the name (not among `named`) gives way to the only match, as without a number
+    expect(resolveScanTenant({ ...base, scanned: null, typedIdType: 'ktp', named: [b], sameName: [b], choice: 'a' })).toBe('b')
     // without a number the earlier rule stands (a pick for an earlier spelling of the name gives way to the only match)
     expect(resolveScanTenant({ ...base, scanned: null, sameName: [t('b')], choice: 'a' })).toBe('b')
   })

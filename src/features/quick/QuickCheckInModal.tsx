@@ -31,6 +31,7 @@ import {
   scannedNumber,
   stayIdentity,
   tenantByDocument,
+  tenantsNamed,
   validateStayBooking,
   type StayBookingInput,
 } from './quickCheckIn'
@@ -118,7 +119,9 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
   const byDocument = useMemo(() => tenantByDocument(data.tenants, card), [data.tenants, card])
   // the number's owner; with a scan never a pick by name alone (a tenant picked by hand, or a new tenant); with a typed
   // number the name match still counts among the same-name tenants whose own number does not differ (SPEC 7.30)
-  const tenantId = resolveScanTenant({ sameName, byDocument, choice: tenantChoice, newChoice: NEW_TENANT, scanned, typedNumber: card !== null && scannedDocument(card) !== null })
+  const named = useMemo(() => tenantsNamed(data.tenants, name), [data.tenants, name])
+  const typedIdType = card !== null && scannedDocument(card) !== null ? identity.idType : null
+  const tenantId = resolveScanTenant({ sameName, byDocument, choice: tenantChoice, newChoice: NEW_TENANT, scanned, typedIdType, named })
   const existing = tenantId ? data.tenantById.get(tenantId) ?? null : null
   // what the scan or the typed number adds to that tenant (matched by number or picked by hand): only what he lacks
   const fill = existing && card ? scanFillsTenant(existing, card) : null
@@ -413,7 +416,7 @@ export function QuickCheckInModal({ room, onClose }: { room: Room; onClose: () =
                     : card && existing && onFile
                       ? `Penyewa lama ini tercatat dengan ${onFile}; ${numberWord} yang diketik tidak disimpan. Pilih "Orang lain" bila bukan dia.`
                     : card && !existing
-                      ? `${numberWord} ini dianggap penyewa baru. Pilih penyewa lama bila orangnya sama; ${numberWord}-nya ditambahkan ke datanya.`
+                      ? `${numberWord} ini dianggap penyewa baru. Pilih penyewa lama bila orangnya sama${sameName.every((t) => !t.nik && !t.id_number) ? `; ${numberWord}-nya ditambahkan ke datanya` : ''}.`
                       : 'Pilih penyewa lama supaya datanya tidak dobel.'
               }
             />

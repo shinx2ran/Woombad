@@ -1404,9 +1404,12 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Pencocokan penyewa** (`stayIdentity`, `resolveScanTenant`; hanya nomor yang valid ikut): nomor (scan atau ketikan) milik penyewa
   lama → sewa atas namanya ("NIK ini milik penyewa lama …", "Bukan dia?"). Tanpa scan dan tanpa nomor: nama yang cocok memilih
   penyewa lama seperti sebelumnya. Tanpa scan dengan NIK ketikan: satu-satunya penyewa bernama sama dipilih otomatis hanya bila ia
-  belum punya nomor identitas apa pun (NIK maupun paspor), lalu NIK itu ditambahkan ke datanya ("Ditambahkan ke data penyewa: NIK";
+  belum punya nomor identitas apa pun (NIK maupun paspor) dan tercatat dengan jenis identitas yang sama (pemegang paspor tidak
+  diberi NIK lewat nama saja), lalu NIK itu ditambahkan ke datanya ("Ditambahkan ke data penyewa: NIK";
   petunjuk pilihan: "NIK ini ditambahkan ke data penyewa lama ini. Pilih "Orang lain" bila bukan dia."); penyewa yang dipilih dengan
-  tangan tetap dipilih selama nomornya tidak berbeda, dan tidak pernah diganti diam-diam oleh penyewa lain bernama sama. Penyewa
+  tangan tetap dipilih selama nomornya tidak berbeda, dan tidak pernah diganti diam-diam oleh penyewa lain bernama sama (pilihan
+  untuk ejaan nama sebelumnya tidak dihitung, seperti tanpa nomor). Petunjuk "…-nya ditambahkan ke datanya" hanya bila penyewa
+  bernama sama memang belum punya nomor. Penyewa
   lama yang sudah punya nomor lain: "… tercatat dengan …; NIK yang diketik tidak disimpan.". Dengan scan aturan SPEC 7.19 tetap:
   tidak ada pilihan lewat nama saja; mengetik lalu menghapus isi kolom tidak dianggap memilih. "Orang lain"/"Bukan dia?" diingat
   untuk nomor saat itu dipilih, dan batal hanya bila datang nomor lain milik penyewa lama (spasi tambahan, menghapus lalu mengetik
