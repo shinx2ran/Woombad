@@ -155,9 +155,23 @@ export function rentInvoices<T extends Pick<Invoice, 'invoice_type'>>(invoices: 
   return invoices.filter((inv) => !isChargeInvoice(inv))
 }
 
-/** What a charge is for (its notes, trimmed): 'Late checkout'. '' for a charge saved without one, and for rent. */
+/**
+ * What a charge is for: the first line of its notes, trimmed ('Late checkout'). Keterangan is typed on one line; lines
+ * the app adds later (the closing note of Batalkan sewa, 2b.4: 'Sisa dianggap hangus (…)') are internal, so they never
+ * reach the invoice image, WhatsApp texts or the Keterangan field. '' for a charge saved without one, and for rent.
+ */
 export function chargeNote(invoice: Pick<Invoice, 'invoice_type' | 'notes'>): string {
-  return isChargeInvoice(invoice) ? (invoice.notes ?? '').trim() : ''
+  return isChargeInvoice(invoice) ? (invoice.notes ?? '').trim().split('\n')[0].trim() : ''
+}
+
+/** The lines of a charge's notes after its keterangan (closing notes the app wrote); kept as they are when Keterangan is edited. */
+export function chargeNoteRest(invoice: Pick<Invoice, 'invoice_type' | 'notes'>): string[] {
+  if (!isChargeInvoice(invoice)) return []
+  return (invoice.notes ?? '')
+    .trim()
+    .split('\n')
+    .slice(1)
+    .filter((line) => line.trim() !== '')
 }
 
 /**

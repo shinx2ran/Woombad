@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button, CountInput, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
 import type { Expense, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { buildInvoiceDraft, chargeNote, depositBalance, isChargeInvoice, nextPeriodBounds, outstandingFor, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
+import { buildInvoiceDraft, chargeNote, chargeNoteRest, depositBalance, isChargeInvoice, nextPeriodBounds, outstandingFor, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 import { plannedCheckoutOf } from '../../domain/occupancy'
 import {
@@ -635,7 +635,10 @@ export function EditInvoiceModal(props: EditInvoiceModalProps) {
   return props.invoice && isChargeInvoice(props.invoice) ? <EditChargeModal {...props} invoice={props.invoice} /> : <EditRentInvoiceModal {...props} />
 }
 
-/** SPEC 7.31: Keterangan (notes, plain text), Jumlah (extra_amount) and Diskon of a charge; base stays 0, the date stays. */
+/**
+ * SPEC 7.31: Keterangan (the first line of notes, chargeNote), Jumlah (extra_amount) and Diskon of a charge; base stays 0,
+ * the date stays, and lines the app added under the keterangan are kept.
+ */
 function EditChargeModal({ open, onClose, invoice, payments, actions }: EditInvoiceModalProps & { invoice: Invoice }) {
   const toast = useToast()
   const [description, setDescription] = useState('')
@@ -670,7 +673,8 @@ function EditChargeModal({ open, onClose, invoice, payments, actions }: EditInvo
     if (error) return
     setSaving(true)
     try {
-      await actions.updateInvoice(invoice, payments, { base_amount: 0, extra_amount: amount, discount_amount: discount, notes: note })
+      // only the keterangan line is edited; closing notes the app wrote under it (Batalkan sewa, 2b.4) stay as they are
+      await actions.updateInvoice(invoice, payments, { base_amount: 0, extra_amount: amount, discount_amount: discount, notes: [note, ...chargeNoteRest(invoice)].join('\n') })
       toast.success('Biaya tambahan diperbarui.')
       onClose()
     } catch (err) {

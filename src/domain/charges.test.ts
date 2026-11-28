@@ -6,6 +6,7 @@ import {
   buildInvoiceDraft,
   chainAnchor,
   chargeNote,
+  chargeNoteRest,
   latestCoveredThrough,
   nextPeriodBounds,
   nextPeriodStart,
@@ -193,6 +194,14 @@ describe('charge helpers', () => {
     expect(chargeNote(charge('c', '2026-03-31', 1, 'unpaid', null))).toBe('')
     expect(chargeNote({ ...r1, notes: 'Listrik: 50000' })).toBe('')
   })
+
+  it('chargeNote is the keterangan line only; chargeNoteRest keeps the closing notes the app wrote under it', () => {
+    const closed = charge('c', '2026-03-31', 1, 'paid', 'Kerusakan kipas\nSisa dianggap hangus (sewa dibatalkan)')
+    expect(chargeNote(closed)).toBe('Kerusakan kipas')
+    expect(chargeNoteRest(closed)).toEqual(['Sisa dianggap hangus (sewa dibatalkan)'])
+    expect(chargeNoteRest(charge('c', '2026-03-31', 1, 'unpaid', 'Late checkout'))).toEqual([])
+    expect(chargeNoteRest({ ...r1, notes: 'a\nb' })).toEqual([])
+  })
 })
 
 describe('finance classifies charges (SPEC 7.31)', () => {
@@ -304,6 +313,15 @@ describe('Kirim tagihan for a charge (SPEC 7.31)', () => {
       'Rincian lengkap ada di gambar terlampir. Terima kasih 🙏',
     ])
     expect(text).not.toMatch(/Periode|malam|sewa kamar/i)
+  })
+
+  it('a charge closed by Batalkan sewa keeps its closing note off the image and the WhatsApp text', () => {
+    const closed = charge('c', '2026-11-28', 50_000, 'paid', 'Kerusakan\nSisa dianggap hangus (sewa dibatalkan)')
+    const doc = buildInvoiceDocument({ invoice: closed, lease, tenant, room, property, payments: [], leaseAddons: [] })
+    expect(doc.charge).toEqual({ note: 'Kerusakan', date: '2026-11-28' })
+    expect(doc.lines[0].label).toBe('Biaya tambahan: Kerusakan')
+    expect(doc.notes).toBeNull()
+    expect(invoiceShareText(doc)).not.toContain('hangus')
   })
 
   it('paid from the deposit it says LUNAS; without a keterangan the line is just Biaya tambahan', () => {

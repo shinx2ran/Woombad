@@ -1451,7 +1451,10 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   sewa; batalkan tagihannya bila tidak jadi ditagih."; Mode Demo memeriksa hal yang sama. Pengingat WA dari Laporan → Piutang
   untuk biaya: "Tagihan kamar X untuk Biaya tambahan: <keterangan> · <tanggal> sebesar …", tanpa periode. Ubah tanggal mulai:
   toast menghitung tagihan yang benar-benar bergeser (biaya tidak). Impor cadangan: tagihan sewa tidak mengirim `invoice_type`.
-- **Batalkan sewa**: biaya yang belum dibayar ikut dibatalkan seperti tagihan lain (aturan 2b.4 tidak berubah).
+- **Batalkan sewa**: biaya yang belum dibayar ikut dibatalkan seperti tagihan lain (aturan 2b.4 tidak berubah). Catatan penutup yang
+  ditulis aplikasi di bawah keterangan biaya yang sudah dibayar sebagian ("Sisa dianggap hangus (…)" / "DP dikembalikan (…)")
+  tetap internal: keterangan = baris pertama `notes` (`chargeNote`), jadi gambar tagihan, teks WA dan kolom Keterangan hanya
+  memakai baris itu, dan Ubah biaya tambahan menyimpan baris penutup apa adanya.
 - **Hak**: anggota mana pun boleh menambah biaya dan membayarnya (RLS insert invoices/payments yang sudah ada); mengubah,
   membatalkan atau menghapusnya tetap hanya pemilik/admin. Database live: kolom ditambah (tanpa DROP) setelah disetujui pemilik;
   sebelum itu menyimpan biaya menampilkan "Biaya tambahan belum bisa disimpan: database server belum diperbarui…".
