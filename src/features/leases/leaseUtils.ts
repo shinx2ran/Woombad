@@ -12,12 +12,14 @@ import {
   computeAddonsAmount,
   deriveInvoiceStatus,
   formatExtraBreakdown,
+  isChargeInvoice,
   isPaidUpAndEnding,
   nextDueSortKey,
   nextPeriodBounds,
   outstandingFor,
   paidAmountFor,
   parseExtraBreakdown,
+  rentInvoices,
 } from '../../domain/billing'
 import { reminderText } from '../../domain/messages'
 import { addDaysISO, daysBetween, periodEnd, periodsToCover } from '../../domain/period'
@@ -310,6 +312,8 @@ export interface TimelineSegment {
  * before its checkout_date (the tenant is gone that night, SPEC 7.3), so the bar ends where the stay ended; a
  * cancelled lease without a night stayed (isCancelledWithoutStay) adds no unbilled night of its own. An active
  * lease runs on to today only after its check-out day (end_date + 1): on that day tonight is not an unbilled night.
+ * Rent invoices only (activeInvoicesSorted): a charge is not a stay, so it neither fills a gap, nor overlaps a period,
+ * nor stretches the bar past the check-out day (SPEC 7.31).
  */
 export function invoiceTimeline(lease: Lease, invoices: Invoice[], payments: Payment[], todayISO: string): TimelineSegment[] {
   const active = activeInvoicesSorted(invoices.filter((inv) => inv.lease_id === lease.id))
@@ -574,15 +578,17 @@ export interface FutureInvoicesAtCheckout {
 }
 
 /**
- * Non-void invoices of the lease whose period starts ON or after the checkout date, split by payment position: the
+ * Non-void rent invoices of the lease whose period starts ON or after the checkout date, split by payment position: the
  * checkout date is the day the tenant leaves, so a period starting that day bills a night they are no longer there
- * (SPEC 7.3). Everything starting before the checkout date is untouched (stays receivable, SPEC 2b.5).
+ * (SPEC 7.3). Everything starting before the checkout date is untouched (stays receivable, SPEC 2b.5). Charges are never
+ * here, whatever their date (SPEC 7.31): a late-checkout fee on the check-out day is owed, not a night to cancel, so it
+ * stays open for the deposit settlement and never makes the checkout an owner/admin task.
  */
 export function futureInvoicesAtCheckout(leaseId: string, invoices: Invoice[], payments: Payment[], checkoutDate: string): FutureInvoicesAtCheckout {
   const out: FutureInvoicesAtCheckout = { toVoid: [], partial: [], paid: [] }
   if (!checkoutDate) return out
   for (const inv of invoices) {
-    if (inv.lease_id !== leaseId || inv.status === 'void' || inv.period_start < checkoutDate) continue
+    if (inv.lease_id !== leaseId || inv.status === 'void' || isChargeInvoice(inv) || inv.period_start < checkoutDate) continue
     const paid = paidAmountFor(inv.id, payments)
     if (paid <= 0) out.toVoid.push(inv)
     else if (paid < inv.total_amount) out.partial.push(inv)
@@ -702,7 +708,10 @@ export function rentRefundsToRecord(leaseId: string, refundedNow: Invoice[], inv
 
 // ---------- open invoices & deposit settlement ----------
 
-/** Non-void invoices of the lease with money still owed, oldest due date first. */
+/**
+ * Non-void invoices of the lease with money still owed, oldest due date first. Charges included (SPEC 7.31): an open
+ * charge is paid from the same Bayar list and is an open invoice the deposit may settle at check-out.
+ */
 export function openInvoicesSorted(leaseId: string, invoices: Invoice[], payments: Payment[]): Invoice[] {
   return invoices
     .filter((inv) => inv.lease_id === leaseId && inv.status !== 'void' && outstandingFor(inv, payments) > 0)
@@ -726,13 +735,14 @@ export interface LeaseReminderInput {
 
 /**
  * Text of the WhatsApp reminder for a lease, shared by the list row and the detail page: the oldest open
- * invoice, or, when nothing is open on an active lease, a preview of the next period (buildInvoiceDraft with
- * quantity 1; a draft that cannot be built gives null). Null when the tenant has no phone number.
+ * rent invoice, or, when no rent is open on an active lease, a preview of the next period (buildInvoiceDraft with
+ * quantity 1; a draft that cannot be built gives null). Null when the tenant has no phone number. The reminder is
+ * about rent only (SPEC 7.31): an open charge has no period to remind of and goes out with Kirim tagihan.
  */
 export function leaseReminderText({ lease, tenant, room, property, invoices, orgInvoices, payments, addons }: LeaseReminderInput): string | null {
   if (!tenant?.phone) return null
   const base = { tenantName: tenant.full_name, roomName: room?.name ?? '-', propertyName: property?.name ?? 'Kos', paymentInfo: property?.payment_info }
-  const oldest = openInvoicesSorted(lease.id, invoices, payments)[0]
+  const oldest = openInvoicesSorted(lease.id, rentInvoices(invoices), payments)[0]
   if (oldest) {
     return reminderText({ ...base, outstanding: outstandingFor(oldest, payments), dueDate: oldest.due_date, periodStart: oldest.period_start, periodEnd: oldest.period_end })
   }
@@ -772,7 +782,7 @@ export function allocateAcrossInvoices(amount: number, invoices: Invoice[], paym
 export interface DepositSettlement {
   /** cash returned to the tenant (expense deposit_refund) */
   refund: number
-  /** applied to open rent invoices (payment rent, method deposit) */
+  /** applied to the open invoices, open charges included (payment rent, method deposit; SPEC 7.31) */
   rent: number
   /** kept for damage etc. (payment other, method deposit) */
   damage: number
@@ -992,7 +1002,9 @@ export function previewFollowingPeriod(lease: Lease, invoices: Invoice[], draft:
   const after: Lease = { ...lease, ...(extensionLeasePatch(lease, draft, makePermanent) ?? {}) }
   const pseudo: Invoice = { ...invoiceInsertFromDraft(lease, draft, null), id: '__draft__', org_id: lease.org_id, created_at: '', updated_at: '' }
   // Old rows with period_type null get pinned to the current type on save (invoicesToPinType); mirror that here.
-  const all = [...invoices.filter((i) => i.lease_id === lease.id).map((i) => (i.period_type == null ? { ...i, period_type: lease.period_type } : i)), pseudo]
+  // Charges are no period (SPEC 7.31) and are never pinned, so they stay out of the chain.
+  const own = rentInvoices(invoices.filter((i) => i.lease_id === lease.id))
+  const all = [...own.map((i) => (i.period_type == null ? { ...i, period_type: lease.period_type } : i)), pseudo]
   try {
     const chain = chainAnchor(after, all)
     const next = nextPeriodBounds(after, all, 1)
@@ -1031,10 +1043,11 @@ export function applyAddonAmounts(addons: LeaseAddon[], amounts: Record<string, 
 /**
  * Add-ons amount of an extension whose new type is made permanent: the per_period add-ons are already expressed
  * per NEW unit (`amounts`), so they are multiplied by the invoice's quantity like a same-type invoice
- * (computeAddonsAmount); one_time add-ons only when the lease has no non-void invoice yet (as buildInvoiceDraft).
+ * (computeAddonsAmount); one_time add-ons only when the lease has no non-void rent invoice yet (as buildInvoiceDraft:
+ * a charge does not count, SPEC 7.31).
  */
 export function permanentSwitchAddonsAmount(addons: LeaseAddon[], amounts: Record<string, number>, quantity: number, leaseInvoices: Invoice[]): number {
-  const isFirst = !leaseInvoices.some((i) => i.status !== 'void')
+  const isFirst = !rentInvoices(leaseInvoices).some((i) => i.status !== 'void')
   return computeAddonsAmount(applyAddonAmounts(addons, amounts), quantity, isFirst)
 }
 
@@ -1048,9 +1061,10 @@ export function addonAmountUpdates(addons: LeaseAddon[], amounts: Record<string,
 /**
  * Invoices of `lease` that store period_type null ('jenis sewa saat itu', SPEC 5.2) and must be pinned to the
  * lease's CURRENT type before the lease switches type, so '8 malam' does not turn into '8 bulan' and chainAnchor
- * keeps reading them correctly. Empty when the type does not change.
+ * keeps reading them correctly. Empty when the type does not change. Charges keep period_type null (they have no
+ * period; invoices_charge_shape_check refuses any other value, SPEC 7.31), so they are never listed.
  */
 export function invoicesToPinType(lease: Lease, invoices: Invoice[], newType: PeriodType | undefined): Invoice[] {
   if (newType === undefined || newType === lease.period_type) return []
-  return invoices.filter((i) => i.lease_id === lease.id && i.period_type == null)
+  return invoices.filter((i) => i.lease_id === lease.id && i.period_type == null && !isChargeInvoice(i))
 }

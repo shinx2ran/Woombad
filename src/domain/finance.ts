@@ -7,6 +7,9 @@
  * - **Operating expenses** = every expense except the REFUND_CATEGORIES ('deposit_refund', 'rent_refund'),
  *   which are money returned to a tenant rather than cost.
  * - **Receivables** are derived from payments (`paidAmountFor`), never from `invoices.status`.
+ * - **Biaya tambahan** (SPEC 7.31): a payment on a charge invoice is kind 'rent' in the database (it settles an invoice)
+ *   but is income other than rent: it counts in `otherRevenue`, never in `rentRevenue`. Open charges are receivables
+ *   like any invoice.
  *
  * Property filter semantics (`propertyIds`): `undefined` = everything in the org, including shared
  * expenses (`property_id = null`). An array = only rows whose property_id is in the list; shared expenses
@@ -17,7 +20,7 @@ import type { Expense, ExpenseCategory, Invoice, Lease, Payment, PaymentMethod, 
 import { EXPENSE_CATEGORY_LABEL, PAYMENT_METHOD_LABEL, REFUND_CATEGORIES } from '../types/db'
 import type { DateRange, Granularity } from './period'
 import { bucketKey, bucketKeysInRange, bucketLabel, daysBetween, inRange } from './period'
-import { paidAmountFor } from './billing'
+import { paidAmountFor, paymentIsForCharge } from './billing'
 
 // ---------- shared filters ----------
 
@@ -89,9 +92,9 @@ function sumAmount(rows: ReadonlyArray<{ amount: number }>): number {
 export interface FinanceSummary {
   /** rentRevenue + otherRevenue - rentRefunds (cash basis, by paid_at / expense_date in range) */
   revenue: number
-  /** payments kind 'rent' by paid_at in range (any method, including 'deposit') */
+  /** payments kind 'rent' on rent invoices by paid_at in range (any method, including 'deposit') */
   rentRevenue: number
-  /** payments kind 'other' by paid_at in range (any method, including 'deposit') */
+  /** payments kind 'other', and payments on charges (biaya tambahan, SPEC 7.31), by paid_at in range (any method, including 'deposit') */
   otherRevenue: number
   /** expenses category 'rent_refund' by expense_date in range */
   rentRefunds: number
@@ -118,7 +121,7 @@ export interface FinanceSummary {
    * left out of `expenses`, so the UI can note them. 0 when there is no property filter.
    */
   sharedExpensesExcluded: number
-  /** sum of total_amount of non-void invoices whose due_date is in range (due-date basis) */
+  /** sum of total_amount of non-void invoices (rent and charges) whose due_date is in range (due-date basis) */
   billed: number
   /**
    * Over the same billed set: sum(min(rent paid to date, total_amount)). Payments of ANY date count, so
@@ -127,7 +130,7 @@ export interface FinanceSummary {
   collected: number
   /** collected / billed, null when billed is 0; always within 0..1 */
   collectionRate: number | null
-  /** cash figure: payments kind 'rent' by paid_at in range (equals rentRevenue; kept for the collection card) */
+  /** cash figure: rent payments on rent invoices by paid_at in range (equals rentRevenue; kept for the collection card) */
   rentReceived: number
   /**
    * Sum of (total - rent paid) over non-void invoices with due_date <= range.end (not only in range) that
@@ -170,11 +173,13 @@ export function summarizeFinance(
   const revenueRows = revenuePaymentsInRange(payments, range, propertyIds)
   const expenseRows = operatingExpensesListInRange(expenses, range, propertyIds)
 
+  // every invoice, not only the filtered ones: a payment is classified by the invoice it pays
+  const invoiceById = new Map(invoices.map((inv) => [inv.id, inv]))
   let rentRevenue = 0
   let otherRevenue = 0
   let depositsApplied = 0
   for (const p of revenueRows) {
-    if (p.kind === 'rent') rentRevenue += p.amount
+    if (p.kind === 'rent' && !paymentIsForCharge(p, invoiceById)) rentRevenue += p.amount
     else otherRevenue += p.amount
     if (p.method === 'deposit') depositsApplied += p.amount
   }
@@ -412,7 +417,8 @@ export interface OutstandingItem {
 }
 
 /**
- * Non-void invoices that still have money owed (total_amount - rent paid > 0, derived from payments rather
+ * Non-void invoices, rent and charges (SPEC 7.31: an unpaid biaya tambahan is owed like rent), that still have money
+ * owed (total_amount - rent paid > 0, derived from payments rather
  * than the status column, SPEC §2a), regardless of due_date, sorted by due_date ascending (most overdue
  * first) then invoice_number (numeric-aware). When `leases` is given, invoices whose lease has status
  * 'cancelled' are skipped (their unpaid invoices are void or refunded by the cancel flow, §2b.4); an

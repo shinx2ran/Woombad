@@ -352,7 +352,7 @@ function passesChecks(table: ImportTable, r: Record<string, unknown>): boolean {
         n('total_amount') === n('base_amount') + n('addons_amount') + n('extra_amount') - n('discount_amount') &&
         // invoices_charge_shape_check (SPEC 7.31)
         (r.invoice_type !== 'charge' ||
-          (n('base_amount') === 0 && n('addons_amount') === 0 && n('quantity') === 1 && r.period_type === null && s('period_end') === s('period_start') && n('extra_amount') > 0))
+          (n('base_amount') === 0 && n('addons_amount') === 0 && n('quantity') === 1 && r.period_type === null && s('period_end') === s('period_start') && n('extra_amount') > 0 && n('total_amount') > 0))
       )
     case 'payments':
       return (r.kind === 'rent') === (r.invoice_id !== null)

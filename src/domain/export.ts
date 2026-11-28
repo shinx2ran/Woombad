@@ -19,12 +19,13 @@ import {
   EXPENSE_CATEGORY_LABEL,
   GENDER_LABEL,
   INVOICE_STATUS_LABEL,
+  INVOICE_TYPE_LABEL,
   LEASE_STATUS_LABEL,
-  PAYMENT_KIND_LABEL,
   PAYMENT_METHOD_LABEL,
   ID_TYPE_LABEL,
 } from '../types/db'
 import type { CashflowPoint, CategoryBreakdown, FinanceSummary, PropertyBreakdown } from './finance'
+import { isChargeInvoice, paymentKindLabel } from './billing'
 import { checkoutISO } from '../lib/format'
 import { isLeaseActiveOn, isLeaseReservedOn } from './occupancy'
 import type { DateRange } from './period'
@@ -156,7 +157,8 @@ function compareStrings(a: string, b: string): number {
  * point at an invoice, or that have no lease at all, carry '-' in 'Sewa' (the invoice number already
  * identifies them). An unknown lease id renders '-' as well.
  * Kos/Kamar/Penyewa are resolved through the lease; without a lease the kos falls back to the payment's own
- * property_id.
+ * property_id. Jenis is the payment kind's label, except 'Biaya tambahan' for a payment on a charge (SPEC 7.31;
+ * paymentKindLabel), so the sheet adds up with Pendapatan lain.
  */
 export function buildPaymentsSheet(payments: Payment[], invoices: Invoice[], ctx: ExportContext, range: DateRange, propertyIds?: string[]): ExportSheet {
   const lookup = indexContext(ctx)
@@ -177,7 +179,7 @@ export function buildPaymentsSheet(payments: Payment[], invoices: Invoice[], ctx
       property: names.property,
       room: names.room,
       tenant: names.tenant,
-      kind: PAYMENT_KIND_LABEL[p.kind],
+      kind: paymentKindLabel(p, invoiceById),
       method: PAYMENT_METHOD_LABEL[p.method],
       invoice_number: invoice?.invoice_number ?? MISSING,
       lease,
@@ -241,8 +243,11 @@ export interface InvoicesSheetOptions {
 
 /**
  * Invoices with due_date in range, sorted by due_date then invoice number (numeric aware).
- * Columns: No. Tagihan, Kos, Kamar, Penyewa, Periode Awal, Periode s/d (check-out), Jatuh Tempo, Total, Dibayar, Sisa, Status.
+ * Columns: No. Tagihan, Jenis, Kos, Kamar, Penyewa, Periode Awal, Periode s/d (check-out), Jatuh Tempo, Total, Dibayar, Sisa,
+ * Status.
  *
+ * - Jenis = 'Sewa' or 'Biaya tambahan' (SPEC 7.31). A charge is one day, not a stay: Periode Awal holds its date and
+ *   'Periode s/d (check-out)' is empty (null).
  * - 'Periode s/d (check-out)' (key `period_checkout`) = period_end + 1: period_end is stored as the last night, people
  *   read the end of a period as the check-out day (SPEC 7.3), e.g. 2 nights from 15 Okt -> 17 Okt.
  * - Dibayar = sum of payments with kind 'rent' and this invoice_id, of ANY date (not only in range).
@@ -280,13 +285,15 @@ export function buildInvoicesSheet(
     const names = resolveLeaseNames(lookup, inv.lease_id, inv.property_id)
     const paid = paidForInvoice(inv.id, payments)
     const status = derivedInvoiceStatus(inv, paid)
+    const charge = isChargeInvoice(inv)
     return {
       invoice_number: inv.invoice_number,
+      invoice_type: INVOICE_TYPE_LABEL[charge ? 'charge' : 'rent'],
       property: names.property,
       room: names.room,
       tenant: names.tenant,
       period_start: dateCell(inv.period_start),
-      period_checkout: checkoutISO(dateCell(inv.period_end)) ?? dateCell(inv.period_end),
+      period_checkout: charge ? null : (checkoutISO(dateCell(inv.period_end)) ?? dateCell(inv.period_end)),
       due_date: dateCell(inv.due_date),
       total_amount: inv.total_amount,
       paid,
@@ -299,6 +306,7 @@ export function buildInvoicesSheet(
     name: 'Tagihan',
     columns: [
       { key: 'invoice_number', header: 'No. Tagihan', type: 'string' },
+      { key: 'invoice_type', header: 'Jenis', type: 'string' },
       { key: 'property', header: 'Kos', type: 'string' },
       { key: 'room', header: 'Kamar', type: 'string' },
       { key: 'tenant', header: 'Penyewa', type: 'string' },
@@ -469,7 +477,7 @@ function reconciliationRows(summary: FinanceSummary): SummaryRow[] {
   const cashOut = summary.expenses + summary.rentRefunds + summary.depositRefunds
   return [
     { label: 'Pendapatan sewa bruto', value: summary.rentRevenue, note: 'Pembayaran sewa, termasuk potong jaminan' },
-    { label: 'Pemasukan lain', value: summary.otherRevenue, note: '' },
+    { label: 'Pemasukan lain', value: summary.otherRevenue, note: 'Termasuk biaya tambahan' },
     { label: 'Pengembalian sewa', value: negate(summary.rentRefunds), note: 'Mengurangi pendapatan' },
     { label: 'Pendapatan bersih', value: summary.revenue, note: 'Sewa bruto + lain - pengembalian sewa' },
     { label: 'Uang jaminan diterima', value: summary.depositsReceived, note: 'Kewajiban, bukan pendapatan' },

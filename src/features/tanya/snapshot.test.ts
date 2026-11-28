@@ -109,7 +109,7 @@ describe('buildAiSnapshot', () => {
     expect(p.pengeluaran_operasional_tercatat).toBe(400_000)
     expect(s.tunggakan).toEqual({
       total: 1_600_000,
-      per_tagihan: [{ kamar: 'F', penyewa: 'Penyewa F', status_sewa: 'aktif', periode: '2026-11-15 s/d 2026-12-14', jatuh_tempo: '2026-11-15', hari_telat: 4, sisa_tagihan: 1_600_000 }],
+      per_tagihan: [{ kamar: 'F', penyewa: 'Penyewa F', status_sewa: 'aktif', jenis: 'sewa', periode: '2026-11-15 s/d 2026-12-14', jatuh_tempo: '2026-11-15', hari_telat: 4, sisa_tagihan: 1_600_000 }],
     })
   })
 
@@ -162,6 +162,58 @@ describe('buildAiSnapshot', () => {
     expect(filtered.kos.map((k) => k.nama)).toEqual(['EG Kost'])
     expect(filtered.kamar.some((k) => k.kamar === 'Z')).toBe(false)
     expect(filtered.cakupan).toContain('hanya kos yang dipilih')
+  })
+})
+
+describe('buildAiSnapshot with biaya tambahan (SPEC 7.31)', () => {
+  // A: a late checkout charged yesterday, not paid; B: a cleaning charge paid in cash today
+  const charge = (id: string, leaseId: string, date: string, amount: number, status: Invoice['status'], notes: string): Invoice => ({
+    ...invoice(id, leaseId, date, date, amount, status),
+    invoice_type: 'charge',
+    base_amount: 0,
+    extra_amount: amount,
+    notes,
+  })
+  const cA = charge('cA', 'lA', '2026-11-18', 150_000, 'unpaid', 'Late checkout')
+  const cB = charge('cB', 'lB', '2026-11-19', 75_000, 'paid', 'Kebersihan')
+  const withCharges = { ...input, invoices: [...invoices, cA, cB], payments: [...payments, pay('pcB', cB, 'lB', 75_000, '2026-11-19')] }
+  const s = buildAiSnapshot(withCharges)
+  const base = buildAiSnapshot(input)
+
+  it('an open charge is a tunggakan row of its own kind, with what it is for and its day', () => {
+    expect(s.tunggakan.total).toBe(base.tunggakan.total + 150_000)
+    expect(s.tunggakan.per_tagihan).toEqual([
+      { kamar: 'F', penyewa: 'Penyewa F', status_sewa: 'aktif', jenis: 'sewa', periode: '2026-11-15 s/d 2026-12-14', jatuh_tempo: '2026-11-15', hari_telat: 4, sisa_tagihan: 1_600_000 },
+      { kamar: 'A', penyewa: 'Penyewa A', status_sewa: 'aktif', jenis: 'biaya tambahan', keterangan: 'Late checkout', tanggal: '2026-11-18', jatuh_tempo: '2026-11-18', hari_telat: 1, sisa_tagihan: 150_000 },
+    ])
+  })
+
+  it('a room shows its open charges apart; its rent position is unchanged', () => {
+    const a = s.kamar.find((k) => k.kamar === 'A')!
+    const { biaya_tambahan_belum_lunas, ...rentOnly } = a as typeof a & { biaya_tambahan_belum_lunas: number }
+    const { biaya_tambahan_belum_lunas: none, ...before } = base.kamar.find((k) => k.kamar === 'A') as typeof a & { biaya_tambahan_belum_lunas: number }
+    expect(rentOnly).toEqual(before)
+    expect(biaya_tambahan_belum_lunas).toBe(150_000)
+    expect(none).toBe(0)
+    expect(s.kamar.find((k) => k.kamar === 'B')).toMatchObject({ biaya_tambahan_belum_lunas: 0, sisa_tagihan: 0 })
+  })
+
+  it('a payment on a charge is "biaya tambahan" and Pendapatan lain, never sewa', () => {
+    expect(s.pembayaran.baris[0]).toEqual(['2026-11-19', 'B', 'Penyewa B', 'biaya tambahan', 'tunai', 75_000])
+    expect(s.pembayaran.baris.filter((r) => r[3] === 'sewa')).toEqual(base.pembayaran.baris.filter((r) => r[3] === 'sewa'))
+    const nov = s.ringkasan_bulanan.at(-1)!
+    const novBase = base.ringkasan_bulanan.at(-1)!
+    expect(nov.pendapatan_sewa).toBe(novBase.pendapatan_sewa)
+    expect(nov.pendapatan_lain).toBe(novBase.pendapatan_lain + 75_000)
+    expect(nov.pendapatan).toBe(novBase.pendapatan + 75_000)
+  })
+
+  it('the projection never counts a charge as a renewal: the same tenants renew on the same dates', () => {
+    expect(s.proyeksi_bulan_ini.perpanjangan_diharapkan).toEqual(base.proyeksi_bulan_ini.perpanjangan_diharapkan)
+    expect(s.proyeksi_bulan_ini.kamar_harian).toEqual(base.proyeksi_bulan_ini.kamar_harian)
+    // the open charge is owed this month like any unpaid bill; the paid one is already received
+    expect(s.proyeksi_bulan_ini.tagihan_belum_lunas_jatuh_tempo_sampai_akhir_bulan).toBe(1_600_000 + 150_000)
+    expect(s.proyeksi_bulan_ini.pendapatan_sudah_diterima).toBe(4_800_000 + 75_000)
   })
 })
 

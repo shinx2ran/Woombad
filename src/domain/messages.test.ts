@@ -43,3 +43,14 @@ describe('messages', () => {
     expect(receiptText(base)).not.toContain('Periode:')
   })
 })
+
+// SPEC 7.31: a payment on a biaya tambahan names what it was for, and no period
+describe('receiptText for a charge', () => {
+  it('says what the charge was for instead of a period', () => {
+    const text = receiptText({ tenantName: 'Budi', roomName: 'A1', propertyName: 'EG Kost', amount: 100_000, paidAt: '2026-11-28', methodLabel: 'Tunai', invoiceNumber: 'INV-202611-0040', remaining: 0, forLabel: 'Biaya tambahan: Late checkout' })
+    expect(text).toContain('Untuk: Biaya tambahan: Late checkout')
+    expect(text).not.toContain('Periode')
+    expect(text).toContain('Status: *LUNAS*')
+  })
+})
+

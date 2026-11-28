@@ -247,7 +247,8 @@ export function layoutInvoice(doc: InvoiceDocument, measure: MeasureText, opts: 
       ['Kamar', doc.room],
     ],
     [
-      ['Periode', period, periodSub],
+      // SPEC 7.31: a charge is one day, not a stay
+      doc.charge ? ['Tanggal', formatDate(doc.charge.date)] : ['Periode', period, periodSub],
       ['Jatuh tempo', formatDate(doc.dueDate)],
     ],
     [['Tanggal terbit', formatDate(doc.issuedDate)]],

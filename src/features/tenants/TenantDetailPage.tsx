@@ -23,8 +23,9 @@ import { useOrg } from '../../hooks/useOrg'
 import { useInvalidate, useRemove, useRow, useTable } from '../../hooks/useTable'
 import { useRestoreDeleted } from '../settings/audit/useRestoreDeleted'
 import { formatDate, formatRupiah, todayISO, whatsappLink } from '../../lib/format'
-import { GENDER_LABEL, PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, type Lease, type Payment } from '../../types/db'
+import { GENDER_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, type Lease, type Payment } from '../../types/db'
 import { TenantFormModal } from './TenantFormModal'
+import { paymentKindLabel } from '../../domain/billing'
 import { currentStayFor, describeIdentity, describeRoom, initials, leaseStayText, leasesOfTenant, paymentsOfLeases } from './tenantUtils'
 
 function InfoList({ items }: { items: { label: string; value: ReactNode }[] }) {
@@ -54,6 +55,8 @@ export function TenantDetailPage() {
   const leases = useTable('leases')
   const rooms = useTable('rooms')
   const payments = useTable('payments')
+  // only to name payments on a charge "Biaya tambahan" (SPEC 7.31)
+  const invoices = useTable('invoices')
   const remove = useRemove('tenants')
   const invalidate = useInvalidate()
   // ?isi=hp (a missing-phone WhatsApp button): open the form at Nomor HP right away
@@ -75,6 +78,7 @@ export function TenantDetailPage() {
 
   const myLeases = useMemo(() => (tenant.data ? leasesOfTenant(tenant.data.id, leases.data ?? []) : []), [tenant.data, leases.data])
   const myPayments = useMemo(() => paymentsOfLeases(myLeases.map((l) => l.id), payments.data ?? []), [myLeases, payments.data])
+  const invoicesById = useMemo(() => new Map((invoices.data ?? []).map((i) => [i.id, i])), [invoices.data])
   const stay = tenant.data ? currentStayFor(tenant.data.id, leases.data ?? [], today) : null
 
   const ktpUrl = useQuery({
@@ -169,7 +173,7 @@ export function TenantDetailPage() {
       header: 'Jenis',
       render: (p) => (
         <div>
-          <p>{PAYMENT_KIND_LABEL[p.kind]}</p>
+          <p>{paymentKindLabel(p, invoicesById)}</p>
           <p className="text-xs text-slate-500">
             {PAYMENT_METHOD_LABEL[p.method]}
             <span className="md:hidden">{roomOfPayment(p) ? ` · ${roomOfPayment(p)}` : ''}</span>

@@ -6,7 +6,7 @@
  * Dates follow SPEC 7.3: period_end / end_date are LAST NIGHTS (inclusive); screens show them as check-out days.
  */
 import type { Invoice, Lease, Payment, PeriodType, Tenant } from '../../types/db'
-import { activeInvoicesSorted, billedPeriodCount, summarizeLeaseBilling, type LeaseBillingSummary } from '../../domain/billing'
+import { activeInvoicesSorted, billedPeriodCount, isChargeInvoice, rentInvoices, summarizeLeaseBilling, type LeaseBillingSummary } from '../../domain/billing'
 import { addDaysISO, addPeriods, daysBetween, parseISODate, periodBounds } from '../../domain/period'
 import { leaseOccupiedUntil, leaseOverlaps } from '../../domain/occupancy'
 import { formatCheckout, formatDate, formatRupiah, formatStay } from '../../lib/format'
@@ -179,7 +179,9 @@ function emptyPlan(lease: Lease, newStart: string, error: string): LeaseRedatePl
  *    redateShiftWarning is added. The relative layout is kept, so nextPeriodBounds still follows the shifted latest
  *    invoice without overlap or gap.
  *  - due_date keeps its offset in days from its own period_start.
- * Lease end_date: when it equals the latest non-void invoice's period_end it follows that invoice; otherwise its
+ *  - charges (SPEC 7.31) keep their date: a late-checkout fee happened on its day whatever the start was. They are listed
+ *    and patched unchanged (redate_lease wants every invoice of the lease) and play no part in the mode or the end.
+ * Lease end_date: when it equals the latest non-void rent invoice's period_end it follows that invoice; otherwise its
  * check-out boundary (end_date + 1) is mapped like an invoice boundary (grid index in grid mode when it is a grid point
  * of the old start, else + deltaDays); never before the new start. Amounts, numbers, statuses, payments, add-ons and the
  * deposit are not touched.
@@ -193,10 +195,13 @@ export function planLeaseRedate(lease: Lease, invoices: Invoice[], newStart: str
   const type = lease.period_type
   const deltaDays = daysBetween(oldStart, newStart)
   const own = invoices.filter((inv) => inv.lease_id === lease.id)
+  const rent = rentInvoices(own)
+  // rent only (activeInvoicesSorted, billedPeriodCount): a charge on any day never turns grid mode into shift mode
   const active = activeInvoicesSorted(own)
   const mode: RedateMode = billedPeriodCount(lease, own) !== null ? 'grid' : 'shift'
 
   const after = new Map<string, { dates: InvoiceDates; gridIndex: number | null }>()
+  for (const inv of own) if (isChargeInvoice(inv)) after.set(inv.id, { dates: datesOf(inv), gridIndex: null })
   const shifted = (inv: Invoice) => withDue(datesOf(inv), addDaysISO(inv.period_start, deltaDays), addDaysISO(inv.period_end, deltaDays))
   if (mode === 'grid') {
     let k = 0
@@ -205,7 +210,7 @@ export function planLeaseRedate(lease: Lease, invoices: Invoice[], newStart: str
       after.set(inv.id, { dates: withDue(datesOf(inv), b.start, b.end), gridIndex: k })
       k += inv.quantity
     }
-    for (const inv of own) {
+    for (const inv of rent) {
       if (inv.status !== 'void') continue
       const gk = invoiceGridIndex(oldStart, type, inv)
       if (gk === null) {
@@ -216,7 +221,7 @@ export function planLeaseRedate(lease: Lease, invoices: Invoice[], newStart: str
       }
     }
   } else {
-    for (const inv of own) after.set(inv.id, { dates: shifted(inv), gridIndex: null })
+    for (const inv of rent) after.set(inv.id, { dates: shifted(inv), gridIndex: null })
   }
 
   // lease end: follow the latest invoice, else map the check-out boundary like an invoice boundary
@@ -240,7 +245,7 @@ export function planLeaseRedate(lease: Lease, invoices: Invoice[], newStart: str
       return { invoice: inv, before: datesOf(inv), after: a.dates, gridIndex: a.gridIndex }
     })
 
-  const warnings = mode === 'shift' && own.length > 0 ? [redateShiftWarning(deltaDays)] : []
+  const warnings = mode === 'shift' && rent.length > 0 ? [redateShiftWarning(deltaDays)] : []
 
   // Only collisions the correction itself creates count. A lease that already overlaps the stored span is room history:
   // after 'Pindah kamar' (SPEC 2b.9: room_id changes on the same lease, the new room is checked from the move date only)

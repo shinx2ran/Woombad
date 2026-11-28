@@ -14,7 +14,7 @@
  *    with the lease_id. The lease row itself stores only the agreed deposit_amount.
  */
 import type { Expense, Invoice, InvoiceStatus, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType } from '../types/db'
-import { PERIOD_UNIT_LABEL } from '../types/db'
+import { INVOICE_TYPE_LABEL, PAYMENT_KIND_LABEL, PERIOD_UNIT_LABEL } from '../types/db'
 import { checkoutISO, formatRupiah } from '../lib/format'
 import { addDaysISO, daysBetween, periodBounds, periodEnd, periodsToCover } from './period'
 
@@ -71,7 +71,10 @@ export interface InvoiceDraftInput {
   extraAmount?: number
   /** Discount, >= 0. A discount larger than base + addons + extra throws 'Diskon melebihi jumlah tagihan.' */
   discountAmount?: number
-  /** all invoices of this lease (used for first-invoice detection and the next period) */
+  /**
+   * all invoices of this lease (used for first-invoice detection and the next period: rent invoices only, a charge never
+   * moves a period or uses up the one_time add-ons, SPEC 7.31; charges still count for numbering without orgInvoices)
+   */
   existingInvoices: Invoice[]
   /**
    * All invoices in the org (optional; used for sequence numbering, see nextInvoiceSequence).
@@ -140,13 +143,6 @@ export function addonUnitWarning(leaseType: PeriodType, addonQuantity: number): 
   return `Add-on per periode dihitung per ${unit} sesuai satuan sewa (${addonQuantity} ${unit}); periksa jumlahnya.`
 }
 
-// ---------- helpers ----------
-
-/** Non-void invoices sorted by period_start ascending (string compare is chronological for ISO dates). */
-export function activeInvoicesSorted(invoices: Invoice[]): Invoice[] {
-  return invoices.filter((inv) => inv.status !== 'void').sort((a, b) => a.period_start.localeCompare(b.period_start))
-}
-
 // ---------- rent vs charges (SPEC 7.31) ----------
 
 /** A one-off charge (biaya tambahan), not rent for a period; a row without the column is rent. */
@@ -159,11 +155,47 @@ export function rentInvoices<T extends Pick<Invoice, 'invoice_type'>>(invoices: 
   return invoices.filter((inv) => !isChargeInvoice(inv))
 }
 
-/** Latest period_end among non-void invoices, or null when none. */
+/** What a charge is for (its notes, trimmed): 'Late checkout'. '' for a charge saved without one, and for rent. */
+export function chargeNote(invoice: Pick<Invoice, 'invoice_type' | 'notes'>): string {
+  return isChargeInvoice(invoice) ? (invoice.notes ?? '').trim() : ''
+}
+
+/**
+ * True when the payment pays a charge (biaya tambahan): a kind 'rent' payment whose invoice is a charge. `invoicesById`
+ * should hold every invoice the payments may point at; a payment on an unknown invoice counts as rent. Reports file it
+ * under Pendapatan lain and screens label it 'Biaya tambahan' (SPEC 7.31).
+ */
+export function paymentIsForCharge(
+  payment: Pick<Payment, 'kind' | 'invoice_id'>,
+  invoicesById: ReadonlyMap<string, Pick<Invoice, 'invoice_type'>>,
+): boolean {
+  if (payment.kind !== 'rent' || payment.invoice_id === null) return false
+  const invoice = invoicesById.get(payment.invoice_id)
+  return invoice !== undefined && isChargeInvoice(invoice)
+}
+
+/** Jenis of a payment for lists and exports: 'Biaya tambahan' on a charge (paymentIsForCharge), else its kind's label ('Sewa', …). */
+export function paymentKindLabel(
+  payment: Pick<Payment, 'kind' | 'invoice_id'>,
+  invoicesById: ReadonlyMap<string, Pick<Invoice, 'invoice_type'>>,
+): string {
+  return paymentIsForCharge(payment, invoicesById) ? INVOICE_TYPE_LABEL.charge : PAYMENT_KIND_LABEL[payment.kind]
+}
+
+// ---------- helpers ----------
+
+/** Non-void RENT invoices sorted by period_start ascending (string compare is chronological for ISO dates); charges never cover a night. */
+export function activeInvoicesSorted(invoices: Invoice[]): Invoice[] {
+  return rentInvoices(invoices)
+    .filter((inv) => inv.status !== 'void')
+    .sort((a, b) => a.period_start.localeCompare(b.period_start))
+}
+
+/** Latest period_end among non-void rent invoices, or null when none (a charge's day is not billed rent, SPEC 7.31). */
 export function latestCoveredThrough(invoices: Invoice[]): string | null {
   let latest: string | null = null
   for (const inv of invoices) {
-    if (inv.status === 'void') continue
+    if (inv.status === 'void' || isChargeInvoice(inv)) continue
     if (latest === null || inv.period_end > latest) latest = inv.period_end
   }
   return latest
@@ -182,8 +214,9 @@ function assertNonNegative(value: number | undefined): number {
 // ---------- periods ----------
 
 /**
- * Number of periods already billed when the lease's non-void invoices sit exactly on the anchored grid
- * from lease.start_date. Non-void invoices are sorted by period_start; starting at idx = 0 each invoice must
+ * Number of periods already billed when the lease's non-void rent invoices sit exactly on the anchored grid
+ * from lease.start_date (charges are ignored, SPEC 7.31: a late-checkout fee on any day never breaks the grid).
+ * Non-void rent invoices are sorted by period_start; starting at idx = 0 each invoice must
  * satisfy period_start === periodBounds(start_date, type, idx, 1).start AND
  * period_end === periodBounds(start_date, type, idx, quantity).end, then idx += quantity. Returns idx.
  *
@@ -224,7 +257,8 @@ export interface ChainAnchor {
 }
 
 /**
- * Where the lease's billing chain is anchored, for the lease's own period_type:
+ * Where the lease's billing chain is anchored, for the lease's own period_type (rent invoices only, as every rule below;
+ * "non-void invoices" means non-void rent invoices, SPEC 7.31):
  *  1. `{ anchor: lease.start_date, count: billedPeriodCount }` when the non-void invoices sit on the grid
  *     from start_date (billedPeriodCount != null) — the normal case;
  *  2. otherwise the chain **re-anchors**: take the trailing run of non-void invoices (sorted by
@@ -257,7 +291,8 @@ export function chainAnchor(lease: Lease, invoices: Invoice[]): ChainAnchor | nu
 
 /**
  * Bounds of the next `quantity` periods to bill. `periodType` (default lease.period_type) is the type the
- * new invoice will use (SPEC 5.2 extension with a different type); UIs pass it to preview the bounds.
+ * new invoice will use (SPEC 5.2 extension with a different type); UIs pass it to preview the bounds. Charges in
+ * `invoices` are ignored (chainAnchor / latestCoveredThrough read rent only, SPEC 7.31).
  *  - periodType === lease.period_type and chainAnchor(lease, invoices) != null:
  *    periodBounds(anchor, lease.period_type, count, quantity). With invoices on the grid from start_date
  *    this is the anchored grid exactly as before; after an off-grid invoice the chain re-anchors on the
@@ -378,7 +413,7 @@ export function nextInvoiceSequence(periodStart: string, orgInvoices: Invoice[])
  * are priced per LEASE period, so on a type-changed invoice they are multiplied by the lease periods the
  * invoice covers (daily lease, 'Parkir motor' Rp 10.000/malam, extended monthly 2026-03-11..2026-04-10 ->
  * 31 x 10.000 = Rp 310.000, plus addonUnitWarning('daily', 31)); one_time add-ons only on the lease's first
- * non-void invoice; extra/discount default 0. baseAmount, addonsAmount, extraAmount and discountAmount must
+ * non-void rent invoice (charges never count, SPEC 7.31); extra/discount default 0. baseAmount, addonsAmount, extraAmount and discountAmount must
  * be >= 0 ('Nilai tidak boleh negatif.'). total = base + addons + extra - discount; a negative total throws
  * 'Diskon melebihi jumlah tagihan.' (no clamping); 0 is allowed (free period, 'paid').
  * A type change without pricePerPeriod (and without baseAmount) bills the old unit's price for the new unit
@@ -417,8 +452,9 @@ export function buildInvoiceDraft(input: InvoiceDraftInput): InvoiceDraft {
   }
   if (typeChanged && input.pricePerPeriod === undefined && input.baseAmount === undefined) warnings.push(WARN_PRICE_NOT_SET)
 
-  // A voided first invoice does not count: the re-issued one is the lease's first invoice again.
-  const isFirstInvoice = !existingInvoices.some((inv) => inv.status !== 'void')
+  // A voided first invoice does not count: the re-issued one is the lease's first invoice again. Neither does a charge
+  // (SPEC 7.31): a late-checkout fee booked before the first rent bill must not swallow the one_time add-ons.
+  const isFirstInvoice = !rentInvoices(existingInvoices).some((inv) => inv.status !== 'void')
 
   const base_amount = input.baseAmount === undefined ? price_per_period * quantity : assertNonNegative(input.baseAmount)
   // per_period add-ons stay in the lease's unit: on a type change they are multiplied by the lease periods covered.

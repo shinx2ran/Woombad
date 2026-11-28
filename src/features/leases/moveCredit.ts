@@ -7,9 +7,10 @@
  * unbroken run of paid nights from the move day counts: a gap (an unpaid invoice in between, or a paid period that
  * starts later) ends it, so "paid through" is a day the tenant has really paid up to. The unused share is by nights
  * and of the RENT only (base - discount; add-ons, late fees and other extras are not given back): rent x unused nights
- * / nights of the invoice, rounded DOWN to whole rupiah, never more than was paid.
+ * / nights of the invoice, rounded DOWN to whole rupiah, never more than was paid. Rent invoices only (SPEC 7.31): a
+ * paid charge (late checkout, damage) is no night, so it neither adds to the run nor gives anything back.
  */
-import { paidAmountFor } from '../../domain/billing'
+import { paidAmountFor, rentInvoices } from '../../domain/billing'
 import { addDaysISO, daysBetween } from '../../domain/period'
 import type { Invoice, Payment } from '../../types/db'
 
@@ -32,7 +33,7 @@ export function unusedPaidRent(leaseId: string, invoices: readonly Invoice[], pa
   let amount = 0
   let paidThrough: string | null = null
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return { nights, amount, paidThrough, resumeOn: null }
-  const settled = invoices
+  const settled = rentInvoices(invoices)
     .filter((inv) => inv.lease_id === leaseId && inv.status !== 'void' && inv.total_amount > 0 && day(inv.period_end) >= from && day(inv.period_end) >= day(inv.period_start))
     .filter((inv) => paidAmountFor(inv.id, payments) >= inv.total_amount)
     .sort((x, y) => day(x.period_start).localeCompare(day(y.period_start)))

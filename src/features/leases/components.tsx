@@ -522,11 +522,11 @@ export function DepositSettlementForm({
         <>
           <MoneyInput label="Kembalikan ke penyewa" value={value.refund} onChange={(v) => set({ refund: v })} hint="Dicatat sebagai pengeluaran 'Pengembalian Uang Jaminan'." />
           <MoneyInput
-            label="Potong untuk sewa"
+            label="Potong untuk tagihan"
             value={value.rent}
             onChange={(v) => set({ rent: v })}
             disabled={rentCapacity <= 0}
-            hint={rentCapacity > 0 ? `Sisa tagihan yang bisa dipotong: ${formatRupiah(rentCapacity)}.` : 'Tidak ada tagihan terbuka.'}
+            hint={rentCapacity > 0 ? `Tagihan terbuka (sewa dan biaya tambahan) yang bisa dipotong: ${formatRupiah(rentCapacity)}.` : 'Tidak ada tagihan terbuka.'}
           />
           <MoneyInput label="Potong untuk kerusakan / lainnya" value={value.damage} onChange={(v) => set({ damage: v })} hint="Dicatat sebagai pemasukan lain (potong jaminan)." />
           {value.damage > 0 && (

@@ -553,7 +553,7 @@ create table if not exists public.invoices (
 -- Biaya tambahan (SPEC 7.31, added after 7.30; the create above is a no-op on an existing installation): an invoice is
 -- rent for a period ('rent', every row before this) or a one-off charge on the lease ('charge': a late check-out, damage,
 -- cleaning, ...). A charge is billed on one day and never counts as rent coverage in the app; it is paid like any invoice
--- (a kind 'rent' payment on it: payments_kind_invoice_check), so the status triggers need no change. Every member may
+-- (a kind 'rent' payment on it: the payments CHECK (kind = 'rent') = (invoice_id is not null), payments_check), so the status triggers need no change. Every member may
 -- add one (invoices insert is open to members, as for rent invoices). Added without dropping anything.
 alter table public.invoices add column if not exists invoice_type text not null default 'rent';
 do $$
@@ -565,7 +565,10 @@ begin
   if not exists (select 1 from pg_constraint where conrelid = 'public.invoices'::regclass and conname = 'invoices_charge_shape_check') then
     alter table public.invoices add constraint invoices_charge_shape_check check (
       invoice_type = 'rent'
-      or (base_amount = 0 and addons_amount = 0 and quantity = 1 and period_type is null and period_end = period_start and extra_amount > 0));
+      or (base_amount = 0 and addons_amount = 0 and quantity = 1 and period_type is null and period_end = period_start and extra_amount > 0
+          -- never discounted to nothing (it would read as paid without a payment); a part-paid charge closed at checkout
+          -- (2b.4: discount = the unpaid rest, total = what was paid) stays above 0
+          and total_amount > 0));
   end if;
 end $$;
 

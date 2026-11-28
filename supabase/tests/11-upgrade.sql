@@ -18,6 +18,9 @@ begin
   perform zz.eq('upgrade-data', 'payment authors kept', '400000:' || o || ',600000:' || zz.id('v2staff'),
     (select string_agg(amount || ':' || created_by, ',' order by amount) from public.payments));
   perform zz.eq('upgrade-data', 'invoice status kept', 'paid', (select status from public.invoices));
+  -- Biaya tambahan (SPEC 7.31): the column arrives with its default, so every invoice of the old installation is rent
+  perform zz.eq('upgrade-data', 'old invoices are rent (invoice_type added with its default)', 'rent:1',
+    (select string_agg(distinct invoice_type, ',') || ':' || count(*) from public.invoices));
   perform zz.eq('upgrade-data', 'storage objects kept', '2', (select count(*)::text from storage.objects));
   perform zz.ok('upgrade-data', 'properties.logo_path added, empty for the old kos', (select logo_path is null from public.properties));
   perform zz.eq('upgrade-data', 'owner can set a kos logo on the old kos', 'ok:1', zz.att(o, format('update public.properties set logo_path = %L', org || '/logo.png')));

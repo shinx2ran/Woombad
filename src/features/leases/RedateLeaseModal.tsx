@@ -3,8 +3,9 @@ import { clsx } from 'clsx'
 import { ArrowRight } from 'lucide-react'
 import { Button, Input, InvoiceStatusBadge, Modal, Textarea, useToast } from '../../components/ui'
 import type { Invoice, Lease, Payment, Tenant } from '../../types/db'
-import { invoiceUnitLabel, nextPeriodBounds, paidAmountFor } from '../../domain/billing'
+import { invoiceUnitLabel, isChargeInvoice, nextPeriodBounds, paidAmountFor } from '../../domain/billing'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
+import { chargeTitle } from './charges'
 import { applyRedatePlan, nightsOf, planLeaseRedate, redateNoteLine, redateStatePreview, type InvoiceRedate } from './redate'
 import type { LeaseActions } from './useLeaseActions'
 
@@ -44,6 +45,21 @@ function PreviewRow({ label, from, to }: { label: string; from: string; to: stri
 function InvoiceChange({ row, lease, paid }: { row: InvoiceRedate; lease: Lease; paid: number }) {
   const inv = row.invoice
   const isVoid = inv.status === 'void'
+  // SPEC 7.31: a charge keeps its day whatever the start; it is listed so the whole lease is in view
+  if (isChargeInvoice(inv)) {
+    return (
+      <li className={clsx('space-y-0.5 px-3 py-2.5', isVoid && 'bg-slate-50 opacity-60')} data-testid="redate-invoice" data-void={isVoid || undefined}>
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-mono text-xs text-slate-900">{inv.invoice_number}</span>
+          <InvoiceStatusBadge status={inv.status} />
+        </p>
+        <p className="text-sm text-slate-700" data-testid="redate-charge">
+          {chargeTitle(inv)} · {formatDate(inv.period_start, 'd MMM yyyy')} · tanggal tetap
+        </p>
+        <p className="text-xs text-slate-500">{formatRupiah(inv.total_amount)} · tidak berubah</p>
+      </li>
+    )
+  }
   const nightsBefore = nightsOf(row.before.period_start, row.before.period_end)
   const nightsAfter = nightsOf(row.after.period_start, row.after.period_end)
   return (

@@ -8,6 +8,7 @@ import {
   isPaidUpAndEnding as domainIsPaidUpAndEnding,
   nextDueSortKey,
   outstandingFor,
+  rentInvoices,
   summarizeLeaseBilling,
   type BillingState,
   type LeaseBillingSummary,
@@ -98,7 +99,8 @@ export interface AmountDue {
  * an earlier date.
  */
 export function amountDueAsOf(leaseId: string, invoices: Invoice[], payments: Payment[], asOfISO: string): AmountDue {
-  const due = invoices
+  // rent only (SPEC 7.31): the dashboard is about rent falling due; an open charge is on the lease page
+  const due = rentInvoices(invoices)
     .filter((inv) => inv.lease_id === leaseId && inv.status !== 'void' && inv.status !== 'paid' && inv.due_date <= asOfISO)
     .map((inv) => ({ inv, open: outstandingFor(inv, payments) }))
     .filter((x) => x.open > 0)
@@ -142,7 +144,7 @@ export function buildAttentionSections(
     const summary = summarizeLeaseBilling(lease, invoices, payments, todayISO, DUE_SOON_DAYS)
     if (!isAttentionGroup(summary.state)) continue
     if (isPaidUpAndEnding(lease, summary, todayISO, expiringWithinDays)) continue
-    const activeInvoices = invoices.filter((inv) => inv.lease_id === lease.id && inv.status !== 'void')
+    const activeInvoices = rentInvoices(invoices).filter((inv) => inv.lease_id === lease.id && inv.status !== 'void')
     const openInvoices = activeInvoices
       .filter((inv) => inv.status !== 'paid' && outstandingFor(inv, payments) > 0)
       .sort((a, b) => (a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0))

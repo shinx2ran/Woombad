@@ -57,6 +57,8 @@ export interface ReceiptInput {
   periodEnd?: string
   /** remaining balance after this payment; 0 = lunas */
   remaining: number
+  /** SPEC 7.31: what a payment on a biaya tambahan was for ('Biaya tambahan: Late checkout'); shown instead of a period */
+  forLabel?: string
 }
 
 export function receiptText(input: ReceiptInput): string {
@@ -67,6 +69,7 @@ export function receiptText(input: ReceiptInput): string {
     `Tanggal: ${formatDate(input.paidAt)}`,
   ]
   if (input.invoiceNumber) lines.push(`Untuk tagihan: ${input.invoiceNumber}`)
+  if (input.forLabel) lines.push(`Untuk: ${input.forLabel}`)
   const period = periodText(input.periodStart, input.periodEnd)
   if (period) lines.push(`Periode: ${period}`)
   lines.push(input.remaining > 0 ? `Sisa tagihan: ${formatRupiah(input.remaining)}` : 'Status: *LUNAS* ✅')
