@@ -1444,6 +1444,13 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
 - **Laporan**: pembayaran biaya masuk **Pendapatan lain** (bukan Sewa); piutang memuat biaya yang belum dibayar; ekspor menandai
   jenisnya. **Tanya AI**: tunggakan per tagihan berjenis `sewa` / `biaya tambahan` (dengan keterangan), pembayaran biaya berjenis
   `biaya tambahan`, kamar menyebut biaya tambahan yang belum dibayar.
+- **Ubah** (pemilik/admin): dialog "Ubah biaya tambahan" berisi Keterangan, Jumlah dan Diskon dengan Tanggal yang tetap; tanpa
+  Harga sewa/Listrik/Denda. Total harus di atas Rp 0 (diskon sampai habis ditolak: batalkan tagihannya) dan tidak di bawah yang
+  sudah dibayar. Ubah pembayaran pada biaya diberi label "Biaya tambahan" dan tidak menawarkan "Deposit diterima". Pelanggaran
+  bentuk biaya dari database (`invoices_charge_shape_check`) tampil sebagai "Biaya tambahan harus lebih dari Rp 0 dan tanpa harga
+  sewa; batalkan tagihannya bila tidak jadi ditagih."; Mode Demo memeriksa hal yang sama. Pengingat WA dari Laporan → Piutang
+  untuk biaya: "Tagihan kamar X untuk Biaya tambahan: <keterangan> · <tanggal> sebesar …", tanpa periode. Ubah tanggal mulai:
+  toast menghitung tagihan yang benar-benar bergeser (biaya tidak). Impor cadangan: tagihan sewa tidak mengirim `invoice_type`.
 - **Batalkan sewa**: biaya yang belum dibayar ikut dibatalkan seperti tagihan lain (aturan 2b.4 tidak berubah).
 - **Hak**: anggota mana pun boleh menambah biaya dan membayarnya (RLS insert invoices/payments yang sudah ada); mengubah,
   membatalkan atau menghapusnya tetap hanya pemilik/admin. Database live: kolom ditambah (tanpa DROP) setelah disetujui pemilik;

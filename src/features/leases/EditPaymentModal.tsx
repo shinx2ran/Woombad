@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
-import { depositBalance, outstandingFor } from '../../domain/billing'
+import { depositBalance, isChargeInvoice, outstandingFor, paymentKindLabel } from '../../domain/billing'
 import { formatRupiah } from '../../lib/format'
-import { PAYMENT_KIND_LABEL, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Expense, type Invoice, type Lease, type Payment, type PaymentMethod } from '../../types/db'
+import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Expense, type Invoice, type Lease, type Payment, type PaymentMethod } from '../../types/db'
 import { RecordHistory } from '../settings/audit/RecordHistory'
 import { isSamePayment, paymentEditLocks, validatePaymentEdit, type PaymentEditPatch } from './paymentEdit'
 import type { LeaseActions } from './useLeaseActions'
@@ -38,6 +38,7 @@ export function EditPaymentModal({ payment, onClose, lease, invoices, payments, 
   }, [payment])
 
   const invoice = useMemo(() => (payment?.invoice_id ? invoices.find((i) => i.id === payment.invoice_id) ?? null : null), [payment, invoices])
+  const invoiceById = useMemo(() => new Map(invoice ? [[invoice.id, invoice]] : []), [invoice])
   if (!payment) return null
 
   const locks = paymentEditLocks(payment)
@@ -51,8 +52,9 @@ export function EditPaymentModal({ payment, onClose, lease, invoices, payments, 
     ? [{ value: payment.method, label: PAYMENT_METHOD_LABEL[payment.method] }]
     : PAYMENT_METHODS.filter((m) => m !== 'deposit').map((m) => ({ value: m, label: PAYMENT_METHOD_LABEL[m] }))
 
-  // a deposit may be added from a rent payment of a running lease that was paid in money (not from the deposit itself)
-  const canAddDeposit = payment.kind === 'rent' && !locks.method && lease.status === 'active'
+  // a deposit may be added from a rent payment of a running lease that was paid in money (not from the deposit itself);
+  // never from a biaya tambahan payment (SPEC 7.31): that money is not rent the deposit came with
+  const canAddDeposit = payment.kind === 'rent' && !(invoice && isChargeInvoice(invoice)) && !locks.method && lease.status === 'active'
   const balance = depositBalance(lease, payments, expenses)
   const addDeposit = canAddDeposit && depositAdd > 0
 
@@ -90,7 +92,7 @@ export function EditPaymentModal({ payment, onClose, lease, invoices, payments, 
     >
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          {PAYMENT_KIND_LABEL[payment.kind]}
+          {paymentKindLabel(payment, invoiceById)}
           {invoice ? ` · ${invoice.invoice_number} (total ${formatRupiah(invoice.total_amount)})` : ''}
         </p>
         <MoneyInput

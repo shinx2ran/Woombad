@@ -138,6 +138,13 @@ function datesOf(inv: Invoice): InvoiceDates {
   return { period_start: inv.period_start, period_end: inv.period_end, due_date: inv.due_date }
 }
 
+/** How many invoices the correction really moves: a biaya tambahan keeps its day (SPEC 7.31) and is not counted. */
+export function movedInvoiceCount(plan: Pick<LeaseRedatePlan, 'invoices'>): number {
+  return plan.invoices.filter(
+    (r) => r.before.period_start !== r.after.period_start || r.before.period_end !== r.after.period_end || r.before.due_date !== r.after.due_date,
+  ).length
+}
+
 /** New dates for a new period: due_date keeps its offset (in days) from the period start. */
 function withDue(before: InvoiceDates, start: string, end: string): InvoiceDates {
   return { period_start: start, period_end: end, due_date: addDaysISO(start, daysBetween(before.period_start, before.due_date)) }

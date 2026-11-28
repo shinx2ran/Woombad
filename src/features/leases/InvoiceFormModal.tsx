@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
 import { Button, CountInput, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
 import type { Expense, Invoice, Lease, LeaseAddon, Payment, PaymentMethod, PeriodType, Room } from '../../types/db'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { buildInvoiceDraft, depositBalance, nextPeriodBounds, outstandingFor, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
+import { buildInvoiceDraft, chargeNote, depositBalance, isChargeInvoice, nextPeriodBounds, outstandingFor, paidAmountFor, type ExtraBreakdown, type InvoiceDraft } from '../../domain/billing'
 import { checkoutISO, formatCheckout, formatDate, formatRupiah, formatStay, lastNightISO, todayISO } from '../../lib/format'
 import { plannedCheckoutOf } from '../../domain/occupancy'
 import {
@@ -27,6 +27,7 @@ import {
 } from './leaseUtils'
 import { PeriodTypePicker, PriceField, Row } from './components'
 import { InvoiceIssuedError, type LeaseActions } from './useLeaseActions'
+import { CHARGE_DESCRIPTION_MAX } from './charges'
 import { RecordHistory } from '../settings/audit/RecordHistory'
 import { usePriceConfirm } from './usePriceConfirm'
 import { PriceConfirm } from './PriceConfirm'
@@ -628,8 +629,91 @@ export interface EditInvoiceModalProps {
 /**
  * Edit the rent amount (harga sewa of this invoice, SPEC 7.5), extra / discount / notes of an existing invoice; total
  * and status are recomputed (SPEC 2b.1). The invoice's change history is shown underneath.
+ * A biaya tambahan (SPEC 7.31) edits Keterangan, Jumlah and Diskon instead: it has no rent and no Listrik/Denda split.
  */
-export function EditInvoiceModal({ open, onClose, invoice, payments, actions }: EditInvoiceModalProps) {
+export function EditInvoiceModal(props: EditInvoiceModalProps) {
+  return props.invoice && isChargeInvoice(props.invoice) ? <EditChargeModal {...props} invoice={props.invoice} /> : <EditRentInvoiceModal {...props} />
+}
+
+/** SPEC 7.31: Keterangan (notes, plain text), Jumlah (extra_amount) and Diskon of a charge; base stays 0, the date stays. */
+function EditChargeModal({ open, onClose, invoice, payments, actions }: EditInvoiceModalProps & { invoice: Invoice }) {
+  const toast = useToast()
+  const [description, setDescription] = useState('')
+  const [amount, setAmount] = useState(0)
+  const [discount, setDiscount] = useState(0)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setDescription(chargeNote(invoice))
+    setAmount(invoice.extra_amount)
+    setDiscount(invoice.discount_amount)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, invoice.id])
+
+  const total = amount - discount
+  const paid = paidAmountFor(invoice.id, payments)
+  const note = description.trim()
+  const error = !note
+    ? 'Keterangan wajib diisi.'
+    : note.length > CHARGE_DESCRIPTION_MAX
+      ? `Keterangan maksimal ${CHARGE_DESCRIPTION_MAX} huruf.`
+      : amount <= 0
+        ? 'Jumlah harus lebih dari 0.'
+        : total <= 0
+          ? 'Diskon harus lebih kecil dari jumlah; batalkan tagihannya bila tidak jadi ditagih.'
+          : total < paid
+            ? `Total tidak boleh lebih kecil dari yang sudah dibayar (${formatRupiah(paid)}).`
+            : null
+
+  const submit = async () => {
+    if (error) return
+    setSaving(true)
+    try {
+      await actions.updateInvoice(invoice, payments, { base_amount: 0, extra_amount: amount, discount_amount: discount, notes: note })
+      toast.success('Biaya tambahan diperbarui.')
+      onClose()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Gagal memperbarui tagihan.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={`Ubah biaya tambahan ${invoice.invoice_number}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Batal
+          </Button>
+          <Button onClick={submit} loading={saving} disabled={Boolean(error)}>
+            Simpan
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">Tanggal {formatDate(invoice.period_start)}</p>
+        <Input label="Keterangan" value={description} maxLength={CHARGE_DESCRIPTION_MAX} onChange={(e) => setDescription(e.target.value)} />
+        <MoneyInput label="Jumlah" value={amount} onChange={setAmount} />
+        <MoneyInput label="Diskon" value={discount} onChange={setDiscount} />
+        <div className="space-y-1 rounded-lg bg-slate-50 p-3">
+          <Row label="Total baru" value={formatRupiah(Math.max(0, total))} strong />
+          <Row label="Sudah dibayar" value={formatRupiah(paid)} />
+          <Row label="Sisa" value={formatRupiah(Math.max(0, total - paid))} />
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <RecordHistory table="invoices" rowId={invoice.id} />
+      </div>
+    </Modal>
+  )
+}
+
+function EditRentInvoiceModal({ open, onClose, invoice, payments, actions }: EditInvoiceModalProps) {
   const toast = useToast()
   const [base, setBase] = useState(0)
   const [parts, setParts] = useState<ExtraBreakdown>({})

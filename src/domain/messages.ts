@@ -17,6 +17,8 @@ export interface ReminderInput {
   periodEnd?: string
   /** owner's bank / QRIS instructions (properties.payment_info); omitted when empty */
   paymentInfo?: string | null
+  /** SPEC 7.31: what a biaya tambahan is for ('Biaya tambahan: Late checkout · 28 Nov 2026'), said instead of a period */
+  forLabel?: string
 }
 
 const honorific = (name: string) => {
@@ -36,7 +38,9 @@ export function reminderText(input: ReminderInput): string {
   const period = periodText(input.periodStart, input.periodEnd)
   const lines = [
     `Halo ${honorific(input.tenantName)}, ini pengingat dari ${input.propertyName}.`,
-    `Tagihan kamar ${input.roomName}${period ? ` periode ${period}` : ''} sebesar *${formatRupiah(input.outstanding)}* jatuh tempo ${formatDate(input.dueDate)}.`,
+    input.forLabel
+      ? `Tagihan kamar ${input.roomName} untuk ${input.forLabel} sebesar *${formatRupiah(input.outstanding)}* jatuh tempo ${formatDate(input.dueDate)}.`
+      : `Tagihan kamar ${input.roomName}${period ? ` periode ${period}` : ''} sebesar *${formatRupiah(input.outstanding)}* jatuh tempo ${formatDate(input.dueDate)}.`,
   ]
   if (input.paymentInfo?.trim()) lines.push(`Pembayaran dapat dilakukan ke: ${input.paymentInfo.trim()}`)
   lines.push('Mohon konfirmasi setelah transfer ya. Terima kasih 🙏')

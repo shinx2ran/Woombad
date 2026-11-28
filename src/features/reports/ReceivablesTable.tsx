@@ -3,6 +3,8 @@ import { ExternalLink, MessageCircle } from 'lucide-react'
 import { Badge, Card, CardBody, CardHeader, DataTable, type Column } from '../../components/ui'
 import { formatDate, formatRupiah, whatsappLink } from '../../lib/format'
 import { reminderText } from '../../domain/messages'
+import { chargeNote, isChargeInvoice } from '../../domain/billing'
+import { chargeLineLabel } from '../../domain/invoiceDocument'
 import type { ReceivableRow } from './useReportData'
 import { MissingPhoneLink } from '../tenants/MissingPhoneLink'
 
@@ -14,8 +16,10 @@ function waHref(row: ReceivableRow): string | null {
     propertyName: row.property?.name ?? 'kos',
     outstanding: row.outstanding,
     dueDate: row.invoice.due_date,
-    periodStart: row.invoice.period_start,
-    periodEnd: row.invoice.period_end,
+    // SPEC 7.31: a charge is said for what it is, never as a period of rent
+    ...(isChargeInvoice(row.invoice)
+      ? { forLabel: `${chargeLineLabel(chargeNote(row.invoice))} · ${formatDate(row.invoice.period_start)}` }
+      : { periodStart: row.invoice.period_start, periodEnd: row.invoice.period_end }),
     paymentInfo: row.property?.payment_info ?? null,
   })
   return whatsappLink(row.tenant.phone, text)

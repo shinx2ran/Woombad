@@ -617,3 +617,25 @@ describe('helpers', () => {
     expect(emptyExisting().ids.properties.size).toBe(0)
   })
 })
+
+describe('normalizeRow: invoice_type (SPEC 7.31)', () => {
+  const base = {
+    id: 'x',
+    property_id: '11111111-1111-4111-8111-111111111111',
+    lease_id: '22222222-2222-4222-8222-222222222222',
+    invoice_number: 'INV-202611-0001',
+    period_start: '2026-11-28',
+    period_end: '2026-11-28',
+    due_date: '2026-11-28',
+  }
+  it('leaves a rent invoice to the column default, so a database without the column still takes it', () => {
+    const row = normalizeRow('invoices', { ...base, period_type: 'daily', base_amount: 100_000, total_amount: 100_000 } as BackupRow)
+    expect(row).not.toBeNull()
+    expect(row).not.toHaveProperty('invoice_type')
+    expect(normalizeRow('invoices', { ...base, invoice_type: 'rent', period_type: 'daily', base_amount: 100_000, total_amount: 100_000 } as BackupRow)).not.toHaveProperty('invoice_type')
+  })
+  it('keeps a charge as a charge, and drops one the database would refuse', () => {
+    expect(normalizeRow('invoices', { ...base, invoice_type: 'charge', extra_amount: 150_000, total_amount: 150_000 } as BackupRow)).toMatchObject({ invoice_type: 'charge', total_amount: 150_000 })
+    expect(normalizeRow('invoices', { ...base, invoice_type: 'charge', extra_amount: 150_000, discount_amount: 150_000, total_amount: 0 } as BackupRow)).toBeNull()
+  })
+})

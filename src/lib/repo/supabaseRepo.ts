@@ -12,6 +12,7 @@ import {
   SCAN_CREDIT_NOT_DEPLOYED_MESSAGE,
   VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE,
   CHARGE_NOT_DEPLOYED_MESSAGE,
+  CHARGE_SHAPE_MESSAGE,
   StaleWriteError,
   UPDATE_DENIED_MESSAGE,
   formatCode,
@@ -47,6 +48,7 @@ export function translateDbError(error: string | DbError): string {
   if (/vehicle_plate/.test(message) && (code === 'PGRST204' || /schema cache|does not exist/i.test(message))) return VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE
   // Biaya tambahan (SPEC 7.31): the column is not on the server yet
   if (/invoice_type/.test(message) && (code === 'PGRST204' || /schema cache|does not exist/i.test(message))) return CHARGE_NOT_DEPLOYED_MESSAGE
+  if (/invoices_charge_shape_check|invoices_invoice_type_check/.test(message)) return CHARGE_SHAPE_MESSAGE
   // Kredit Claude (SPEC 7.17): the settings columns are not on the server yet, or a value breaks their CHECK
   if (/claude_credit_/.test(message) && (code === 'PGRST204' || /schema cache|does not exist/i.test(message))) return SCAN_CREDIT_NOT_DEPLOYED_MESSAGE
   if (/organizations_claude_credit_monthly_usd_check/.test(message)) return 'Kredit per bulan tidak boleh negatif.'

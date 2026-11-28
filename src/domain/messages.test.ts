@@ -26,6 +26,18 @@ describe('messages', () => {
     expect(reminderText({ ...base, periodStart: '2026-12-31', periodEnd: '2026-12-31' })).toContain('periode 31 Des 2026 s/d 1 Jan 2027 sebesar')
     expect(reminderText({ ...base, periodStart: '2026-10-15' })).toContain('Tagihan kamar B2 sebesar *Rp 300.000* jatuh tempo 15 Okt 2026.')
   })
+  it('reminderText names a biaya tambahan instead of a period (SPEC 7.31)', () => {
+    const t = reminderText({
+      tenantName: 'Siti',
+      roomName: 'B2',
+      propertyName: 'Kos Anggrek',
+      outstanding: 150_000,
+      dueDate: '2026-11-28',
+      forLabel: 'Biaya tambahan: Late checkout · 28 Nov 2026',
+    })
+    expect(t).toContain('Tagihan kamar B2 untuk Biaya tambahan: Late checkout · 28 Nov 2026 sebesar *Rp 150.000* jatuh tempo 28 Nov 2026.')
+    expect(t).not.toContain('periode')
+  })
   it('reminderText omits the payment line when info is empty', () => {
     const t = reminderText({ tenantName: 'Siti', roomName: 'B2', propertyName: 'Kos Anggrek', outstanding: 500_000, dueDate: '2026-03-05', paymentInfo: '  ' })
     expect(t).not.toContain('Pembayaran dapat dilakukan')

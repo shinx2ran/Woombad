@@ -6,7 +6,7 @@ import type { Invoice, Lease, Payment, Tenant } from '../../types/db'
 import { invoiceUnitLabel, isChargeInvoice, nextPeriodBounds, paidAmountFor } from '../../domain/billing'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO } from '../../lib/format'
 import { chargeTitle } from './charges'
-import { applyRedatePlan, nightsOf, planLeaseRedate, redateNoteLine, redateStatePreview, type InvoiceRedate } from './redate'
+import { applyRedatePlan, movedInvoiceCount, nightsOf, planLeaseRedate, redateNoteLine, redateStatePreview, type InvoiceRedate } from './redate'
 import type { LeaseActions } from './useLeaseActions'
 
 export interface RedateLeaseModalProps {
@@ -122,7 +122,7 @@ export function RedateLeaseModal({ onClose, lease, invoices, payments, leases, t
     setSaving(true)
     try {
       const done = await actions.redateLease({ lease, invoices, newStart, reason, tenants })
-      const n = done.patches.length
+      const n = movedInvoiceCount(done)
       toast.success(`Tanggal mulai diubah ke ${formatDate(done.lease.start_date)}${n > 0 ? `; ${n} tagihan ikut digeser` : ''}.`)
       onClose()
     } catch (err) {

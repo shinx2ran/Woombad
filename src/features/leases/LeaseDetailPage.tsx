@@ -261,7 +261,7 @@ export function LeaseDetailPage() {
     if (isAdmin && inv.status !== 'void') {
       items.push({
         label: 'Ubah',
-        hint: 'Harga sewa, listrik, denda, diskon, catatan · riwayat',
+        hint: isChargeInvoice(inv) ? 'Keterangan, jumlah, diskon · riwayat' : 'Harga sewa, listrik, denda, diskon, catatan · riwayat',
         onClick: () => {
           setEditInvoice(inv)
           setModal('edit')

@@ -71,14 +71,17 @@ export const REDATE_NOT_DEPLOYED_MESSAGE = 'Fitur ini belum aktif di server. Min
  */
 export const PLANNED_CHECKOUT_BEFORE_START_MESSAGE = 'Rencana keluar harus sesudah tanggal mulai sewa. Ubah atau batalkan rencana keluar dulu.'
 
+/** Biaya tambahan (SPEC 7.31): PGRST204 / 42703 naming invoices.invoice_type: the app went out before schema.sql was re-run. */
+export const CHARGE_NOT_DEPLOYED_MESSAGE = 'Biaya tambahan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya.'
+
+/** SPEC 7.31: invoices_charge_shape_check / invoices_invoice_type_check (a charge is an amount above 0 on one day, no rent). */
+export const CHARGE_SHAPE_MESSAGE = 'Biaya tambahan harus lebih dari Rp 0 dan tanpa harga sewa; batalkan tagihannya bila tidak jadi ditagih.'
+
 /**
  * Nomor kendaraan (SPEC 7.11): PGRST204 / 42703 naming leases.vehicle_plate, i.e. the app went out before schema.sql was
  * re-run (or before PostgREST reloaded its schema). Check-in cepat and Sewa baru send the column only with a plate, so
  * saving without one still works on such a server.
  */
-/** Biaya tambahan (SPEC 7.31): PGRST204 / 42703 naming invoices.invoice_type: the app went out before schema.sql was re-run. */
-export const CHARGE_NOT_DEPLOYED_MESSAGE = 'Biaya tambahan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya.'
-
 export const VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE = 'No. kendaraan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya; check-in tanpa no. kendaraan tetap bisa disimpan.'
 
 /** Kredit Claude (SPEC 7.17): PGRST204 / 42703 naming organizations.claude_credit_*: the app went out before schema.sql was re-run. */

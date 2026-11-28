@@ -14,7 +14,7 @@ import {
   permanentSwitchAddonsAmount,
   previewFollowingPeriod,
 } from './leaseUtils'
-import { planLeaseRedate } from './redate'
+import { movedInvoiceCount, planLeaseRedate } from './redate'
 import { unusedPaidRent } from './moveCredit'
 
 // SPEC 7.31: a charge (biaya tambahan) never takes part in the lease's rent schedule: timeline, check-out, the start-date
@@ -206,6 +206,9 @@ describe('planLeaseRedate (SPEC 7.6 + 7.31): charges keep their date', () => {
     // every invoice of the lease is listed once (redate_lease refuses a missing one)
     expect(withCharge.patches.map((p) => p.id).sort()).toEqual(['c', 'nov', 'oct', 'sep'])
     expect(withCharge.invoices.find((r) => r.invoice.id === 'c')).toMatchObject({ before: { period_start: inv.period_start }, after: { period_start: inv.period_start }, gridIndex: null })
+    // the toast says how many invoices moved: the three rent invoices, not the charge that kept its day
+    expect(movedInvoiceCount(withCharge)).toBe(3)
+    expect(movedInvoiceCount(without)).toBe(3)
   })
 
   it.each(CASES)('$name: shift mode moves the rent by the same days and leaves the charge', ({ inv }) => {

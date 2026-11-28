@@ -19,6 +19,7 @@ import {
   UPDATE_DENIED_MESSAGE,
   VOID_PAID_INVOICE_MESSAGE,
   formatCode,
+  CHARGE_SHAPE_MESSAGE,
 } from './types'
 import type { Lease, MemberRole, WaitlistEntry } from '../../types/db'
 import { PERIOD_TYPES, SCAN_OUTCOMES, WAITLIST_STATUSES } from '../../types/db'
@@ -173,8 +174,9 @@ export class LocalRepo implements Repo {
   async insertMany<T extends TableName>(table: T, rows: Insert<T>[]): Promise<Row<T>[]> {
     const now = new Date().toISOString()
     const created = rows.map((row) => {
+      // the database fills a column's default on insert; so does Mode Demo (invoice_type 'rent', SPEC 7.31, ...)
       const full = {
-        ...row,
+        ...withColumnDefaults(table, row as unknown as Record<string, unknown>),
         id: (row as { id?: string }).id ?? newId(),
         created_at: (row as { created_at?: string }).created_at ?? now,
       } as Record<string, unknown>
@@ -193,6 +195,7 @@ export class LocalRepo implements Repo {
     }
     if (table === 'waitlist') for (const row of created as unknown as WaitlistEntry[]) assertWaitlistRow(row)
     if (table === 'scan_usage') for (const row of created) assertScanUsageRow(rec(row))
+    if (table === 'invoices') for (const row of created) assertInvoiceRow(rec(row))
     ;(this.db[table] as Row<T>[]).push(...created)
     saveDb(this.db)
     return created.map((r) => ({ ...r }))
@@ -213,6 +216,7 @@ export class LocalRepo implements Repo {
     }
     if (table === 'waitlist') assertWaitlistRow(next as unknown as WaitlistEntry)
     if (table === 'organizations') assertOrganizationRow(next)
+    if (table === 'invoices') assertInvoiceRow(next)
     // scan_usage is append-only (online: no UPDATE right even for the secret key)
     if (table === 'scan_usage') throw new Error(UPDATE_DENIED_MESSAGE)
     if (hasUpdatedAt(table)) next.updated_at = new Date().toISOString()
@@ -423,6 +427,23 @@ function withWaitlistDefaults(row: Record<string, unknown>): Record<string, unkn
 function assertLeaseRow(row: Lease): void {
   const planned = row.planned_checkout_date
   if (planned !== null && planned !== undefined && !(isISODate(planned) && planned > row.start_date)) throw new Error(PLANNED_CHECKOUT_BEFORE_START_MESSAGE)
+}
+
+/** invoices_invoice_type_check and invoices_charge_shape_check (SPEC 7.31): a charge is an amount above 0 on one day. */
+function assertInvoiceRow(row: Record<string, unknown>): void {
+  const type = row.invoice_type ?? 'rent'
+  if (type !== 'rent' && type !== 'charge') throw new Error(CHARGE_SHAPE_MESSAGE)
+  if (type !== 'charge') return
+  const n = (k: string) => Number(row[k] ?? 0)
+  const ok =
+    n('base_amount') === 0 &&
+    n('addons_amount') === 0 &&
+    Number(row.quantity ?? 1) === 1 &&
+    (row.period_type ?? null) === null &&
+    row.period_end === row.period_start &&
+    n('extra_amount') > 0 &&
+    n('total_amount') > 0
+  if (!ok) throw new Error(CHARGE_SHAPE_MESSAGE)
 }
 
 /** The CHECK constraints of public.waitlist. */

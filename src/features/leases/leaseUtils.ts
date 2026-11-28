@@ -792,7 +792,7 @@ export interface DepositSettlement {
 /** Indonesian error when the three parts do not add up to `held`, exceed the rent capacity, or are negative. */
 export function validateSettlement(s: DepositSettlement, held: number, rentCapacity: number): string | null {
   if (s.refund < 0 || s.rent < 0 || s.damage < 0) return 'Jumlah tidak boleh negatif.'
-  if (s.rent > rentCapacity) return `Potongan untuk sewa melebihi sisa tagihan (maks. ${formatRupiah(rentCapacity)}).`
+  if (s.rent > rentCapacity) return `Potongan untuk tagihan melebihi sisa tagihan (maks. ${formatRupiah(rentCapacity)}).`
   if (s.refund + s.rent + s.damage !== held) return 'Jumlah pengembalian + potongan harus sama dengan jaminan yang dipegang.'
   if (s.damage > 0 && !s.damageNotes.trim()) return 'Isi keterangan potongan (mis. kerusakan).'
   return null

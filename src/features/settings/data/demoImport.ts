@@ -336,7 +336,11 @@ export function normalizeRow(table: ImportTable, raw: BackupRow): Record<string,
     if (!result.ok) return null
     out[column] = result.value
   }
-  return passesChecks(table, out) ? out : null
+  if (!passesChecks(table, out)) return null
+  // SPEC 7.31: a rent invoice leaves invoice_type to the column default, so a restore still works on a database that
+  // has not received the biaya tambahan column yet; only a charge needs it said
+  if (table === 'invoices' && out.invoice_type === 'rent') delete out.invoice_type
+  return out
 }
 
 /** The database CHECK constraints that span several columns. */

@@ -51,7 +51,7 @@ import {
 } from './leaseUtils'
 import { validatePaymentEdit, type PaymentEditContext, type PaymentEditPatch } from './paymentEdit'
 import { REDATE_INACTIVE_MESSAGE, REDATE_STAFF_MESSAGE, planLeaseRedate, redateDataChanged, redateNoteLine, type LeaseRedatePlan } from './redate'
-import { StaleWriteError } from '../../lib/repo/types'
+import { CHARGE_SHAPE_MESSAGE, StaleWriteError } from '../../lib/repo/types'
 
 export type { PartialDecision } from './leaseUtils'
 
@@ -80,8 +80,9 @@ export class ChargeSavedError extends Error {
 
 export const CHARGE_CANCELLED_MESSAGE = 'Sewa yang dibatalkan tidak bisa diberi biaya tambahan.'
 
-function errorDetail(err: unknown): string {
-  return err instanceof Error ? err.message : 'kesalahan tak dikenal'
+/** The error's own words without its closing full stop: it is quoted mid-sentence ('…: <detail>. Bayar …'). */
+export function errorDetail(err: unknown): string {
+  return (err instanceof Error ? err.message : 'kesalahan tak dikenal').replace(/[.\s]+$/, '')
 }
 
 export interface ChargeResult {
@@ -520,6 +521,8 @@ export function useLeaseActions() {
       if (patch.extra_amount < 0 || patch.discount_amount < 0 || base < 0) throw new Error('Nilai tidak boleh negatif.')
       const total = base + invoice.addons_amount + patch.extra_amount - patch.discount_amount
       if (total < 0) throw new Error('Diskon melebihi jumlah tagihan.')
+      // SPEC 7.31: a charge stays an amount above 0 with no rent (invoices_charge_shape_check)
+      if (isChargeInvoice(invoice) && (base !== 0 || patch.extra_amount <= 0 || total <= 0)) throw new Error(CHARGE_SHAPE_MESSAGE)
       const paid = paidAmountFor(invoice.id, payments)
       if (total < paid) throw new Error(`Total tagihan tidak boleh lebih kecil dari yang sudah dibayar (${formatRupiah(paid)}).`)
       await assertInvoiceUnchanged(invoice)

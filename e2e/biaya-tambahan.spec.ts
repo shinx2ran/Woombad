@@ -130,6 +130,56 @@ test.describe('Biaya tambahan pada sewa (SPEC 7.31)', () => {
     await expect(chargePayments(page)).toHaveCount(1)
   })
 
+  test('Ubah on a charge edits Keterangan, Jumlah and Diskon; its payment is labelled and offers no deposit', async ({ page }) => {
+    await checkInWeekly(page, 'Tamu Ubah Biaya')
+    const sheet = await openChargeFromMenu(page)
+    await sheet.getByRole('button', { name: 'Kebersihan' }).click()
+    await fillMoney(sheet.getByLabel(/^Jumlah/), '75000')
+    await sheet.getByRole('radio', { name: 'Bayar nanti' }).click()
+    await sheet.getByRole('button', { name: 'Simpan', exact: true }).click()
+    await expect(page.getByText('Biaya tambahan Rp 75.000 dicatat, belum dibayar.')).toBeVisible()
+
+    await chargeRow(page).getByRole('button', { name: /^Aksi tagihan/ }).click()
+    await page.getByRole('menuitem', { name: 'Ubah Keterangan, jumlah, diskon · riwayat' }).click()
+    const edit = page.getByRole('dialog')
+    await expect(edit.getByRole('heading', { name: /^Ubah biaya tambahan INV-/ })).toBeVisible()
+    // a charge has a day, no rent and no Listrik/Denda split
+    await expect(edit.getByText('Tanggal 11 Nov 2026')).toBeVisible()
+    await expect(edit.getByLabel(/Harga sewa/)).toHaveCount(0)
+    await expect(edit.getByLabel(/Listrik/)).toHaveCount(0)
+    await expect(edit.getByLabel('Keterangan')).toHaveValue('Kebersihan')
+    await expect(edit.getByLabel(/^Jumlah/)).toHaveValue('75.000')
+
+    // a discount down to Rp 0 is refused here (cancel the charge instead)
+    await fillMoney(edit.getByLabel(/^Diskon/), '75000')
+    await expect(edit.getByText('Diskon harus lebih kecil dari jumlah; batalkan tagihannya bila tidak jadi ditagih.')).toBeVisible()
+    await expect(edit.getByRole('button', { name: 'Simpan', exact: true })).toBeDisabled()
+
+    await edit.getByLabel('Keterangan').fill('Kebersihan kamar mandi')
+    await fillMoney(edit.getByLabel(/^Jumlah/), '90000')
+    await fillMoney(edit.getByLabel(/^Diskon/), '10000')
+    await expect(edit.getByText('Rp 80.000').first()).toBeVisible()
+    expect(await noHorizontalScroll(page)).toBe(true)
+    await edit.getByRole('button', { name: 'Simpan', exact: true }).click()
+    await expect(page.getByText('Biaya tambahan diperbarui.')).toBeVisible()
+    await expect(chargeRow(page)).toContainText('Biaya tambahan · Kebersihan kamar mandi')
+    await expect(chargeRow(page)).toContainText('sisa Rp 80.000')
+    await expect(page.getByTestId('charges-outstanding')).toHaveText('termasuk biaya tambahan Rp 80.000')
+
+    // pay it, then open Ubah pembayaran on that payment
+    await chargeRow(page).getByRole('button', { name: /^Aksi tagihan/ }).click()
+    await page.getByRole('menuitem', { name: 'Bayar', exact: true }).click()
+    const pay = page.getByRole('dialog')
+    await pay.getByRole('button', { name: 'Simpan pembayaran' }).click()
+    await pay.getByRole('button', { name: 'Selesai' }).click()
+    await expect(chargePayments(page)).toHaveCount(1)
+    const chargePayment = page.locator('li', { has: chargePayments(page) })
+    await chargePayment.getByRole('button', { name: 'Ubah pembayaran' }).click()
+    const editPay = page.getByRole('dialog')
+    await expect(editPay.getByText(/^Biaya tambahan · INV-/)).toBeVisible()
+    await expect(editPay.getByLabel(/Deposit diterima/)).toHaveCount(0)
+  })
+
   test('Potong jaminan: only up to the deposit held, which then goes down', async ({ page }) => {
     await checkInWeekly(page, 'Tamu Berjaminan', 200_000)
     await expect(page.getByText('Diterima Rp 200.000 · dipotong Rp 0 · dikembalikan Rp 0')).toBeVisible()
