@@ -689,6 +689,7 @@ describe('summarizeLeaseBilling', () => {
       coveredThrough: null,
       paidThrough: null,
       outstanding: 0,
+      chargesOutstanding: 0,
       nextDueDate: '2026-01-31',
       daysUntilDue: 21,
       state: 'unbilled',
@@ -1098,7 +1099,7 @@ describe('parseExtraBreakdown / formatExtraBreakdown', () => {
 describe('isPaidUpAndEnding', () => {
   it('is true for a paid-up lease ending within the window, false otherwise', async () => {
     const { isPaidUpAndEnding } = await import('./billing')
-    const base = { leaseId: 'L', coveredThrough: '2026-03-10', paidThrough: '2026-03-10', outstanding: 0, nextDueDate: '2026-03-11', daysUntilDue: 1, state: 'due_soon' as const }
+    const base = { leaseId: 'L', coveredThrough: '2026-03-10', paidThrough: '2026-03-10', outstanding: 0, chargesOutstanding: 0, nextDueDate: '2026-03-11', daysUntilDue: 1, state: 'due_soon' as const }
     // last night 10 Mar -> check-out 11 Mar (SPEC 7.3)
     const lease = { ...makeLease({ status: 'active', start_date: '2026-03-01', end_date: '2026-03-10' }) }
     expect(isPaidUpAndEnding(lease, base, '2026-03-10')).toBe(true)
@@ -1113,7 +1114,7 @@ describe('isPaidUpAndEnding', () => {
   it('still counts on the check-out day itself (end_date + 1), so the lease is not shown as due today', async () => {
     const { isPaidUpAndEnding } = await import('./billing')
     // rolling lease: next due = check-out day = today
-    const onCheckoutDay = { leaseId: 'L', coveredThrough: '2026-03-10', paidThrough: '2026-03-10', outstanding: 0, nextDueDate: '2026-03-11', daysUntilDue: 0, state: 'due_soon' as const }
+    const onCheckoutDay = { leaseId: 'L', coveredThrough: '2026-03-10', paidThrough: '2026-03-10', outstanding: 0, chargesOutstanding: 0, nextDueDate: '2026-03-11', daysUntilDue: 0, state: 'due_soon' as const }
     const lease = makeLease({ status: 'active', start_date: '2026-03-01', end_date: '2026-03-10' })
     expect(isPaidUpAndEnding(lease, onCheckoutDay, '2026-03-11')).toBe(true)
     expect(isPaidUpAndEnding(lease, onCheckoutDay, '2026-03-11', 0)).toBe(true)

@@ -60,7 +60,7 @@ function loadDb(): Db {
 
 /** Columns added after the first release default to null (like a DB migration) for rows stored earlier. */
 const COLUMN_DEFAULTS: Partial<Record<TableName, Record<string, unknown>>> = {
-  invoices: { period_type: null },
+  invoices: { period_type: null, invoice_type: 'rent' },
   invitations: { label: null, expires_at: '2099-12-31T00:00:00.000Z', accepted_by: null },
   tenants: { id_type: 'ktp', id_number: null, nationality: null },
   payments: { created_by: null },

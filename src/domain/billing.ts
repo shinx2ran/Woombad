@@ -147,6 +147,18 @@ export function activeInvoicesSorted(invoices: Invoice[]): Invoice[] {
   return invoices.filter((inv) => inv.status !== 'void').sort((a, b) => a.period_start.localeCompare(b.period_start))
 }
 
+// ---------- rent vs charges (SPEC 7.31) ----------
+
+/** A one-off charge (biaya tambahan), not rent for a period; a row without the column is rent. */
+export function isChargeInvoice(invoice: Pick<Invoice, 'invoice_type'>): boolean {
+  return invoice.invoice_type === 'charge'
+}
+
+/** The rent invoices of a list: every rent-coverage rule (periods, paid-through, due dates, timeline) reads only these. */
+export function rentInvoices<T extends Pick<Invoice, 'invoice_type'>>(invoices: readonly T[]): T[] {
+  return invoices.filter((inv) => !isChargeInvoice(inv))
+}
+
 /** Latest period_end among non-void invoices, or null when none. */
 export function latestCoveredThrough(invoices: Invoice[]): string | null {
   let latest: string | null = null
@@ -493,6 +505,11 @@ export interface LeaseBillingSummary {
   /** sum of max(0, total_amount - rent paid) over non-settled invoices; always 0 when state is driven by coveredThrough */
   outstanding: number
   /**
+   * SPEC 7.31: what the lease's open one-off charges (biaya tambahan) still owe. Charges never count in any field above
+   * or below (coverage, `outstanding`, due dates, state): a screen that shows "sisa tagihan" adds this itself.
+   */
+  chargesOutstanding: number
+  /**
    * Next date money is expected:
    *  - earliest due_date among non-settled invoices (derived: total_amount - rent paid > 0 and status != 'paid'), else
    *  - coveredThrough + 1 day (next period not yet billed), else
@@ -530,7 +547,14 @@ export function summarizeLeaseBilling(
   dueSoonDays = 3,
   graceDays = 3,
 ): LeaseBillingSummary {
-  const active = invoices.filter((inv) => inv.lease_id === lease.id && inv.status !== 'void')
+  const own = invoices.filter((inv) => inv.lease_id === lease.id && inv.status !== 'void')
+  // SPEC 7.31: one-off charges are owed money, never rent coverage
+  const active = rentInvoices(own)
+  let chargesOutstanding = 0
+  for (const inv of own) {
+    if (!isChargeInvoice(inv) || inv.status === 'paid') continue
+    chargesOutstanding += Math.max(0, inv.total_amount - paidAmountFor(inv.id, payments))
+  }
 
   let coveredThrough: string | null = null
   let paidThrough: string | null = null
@@ -576,6 +600,7 @@ export function summarizeLeaseBilling(
     coveredThrough,
     paidThrough,
     outstanding,
+    chargesOutstanding,
     nextDueDate,
     daysUntilDue,
     state,

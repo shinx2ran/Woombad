@@ -422,6 +422,7 @@ describe('list helpers', () => {
     coveredThrough: null,
     paidThrough: null,
     outstanding: 0,
+    chargesOutstanding: 0,
     nextDueDate,
     daysUntilDue: 0,
     state,
@@ -485,7 +486,7 @@ describe('list helpers', () => {
 })
 
 describe('sort by remaining days (SPEC 7.1)', () => {
-  const summary = (nextDueDate: string | null): LeaseBillingSummary => ({ leaseId: 'x', coveredThrough: null, paidThrough: null, outstanding: 0, nextDueDate, daysUntilDue: null, state: 'ok' })
+  const summary = (nextDueDate: string | null): LeaseBillingSummary => ({ leaseId: 'x', coveredThrough: null, paidThrough: null, outstanding: 0, chargesOutstanding: 0, nextDueDate, daysUntilDue: null, state: 'ok' })
   const item = (id: string, kos: string, roomName: string, due: string | null): LeaseListItem => ({
     lease: { ...lease, id },
     summary: summary(due),
@@ -571,6 +572,7 @@ describe('remainingDays (SPEC 7.1)', () => {
     coveredThrough: null,
     paidThrough: null,
     outstanding,
+    chargesOutstanding: 0,
     nextDueDate,
     daysUntilDue,
     state,

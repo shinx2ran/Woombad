@@ -76,6 +76,9 @@ export const PLANNED_CHECKOUT_BEFORE_START_MESSAGE = 'Rencana keluar harus sesud
  * re-run (or before PostgREST reloaded its schema). Check-in cepat and Sewa baru send the column only with a plate, so
  * saving without one still works on such a server.
  */
+/** Biaya tambahan (SPEC 7.31): PGRST204 / 42703 naming invoices.invoice_type: the app went out before schema.sql was re-run. */
+export const CHARGE_NOT_DEPLOYED_MESSAGE = 'Biaya tambahan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya.'
+
 export const VEHICLE_PLATE_NOT_DEPLOYED_MESSAGE = 'No. kendaraan belum bisa disimpan: database server belum diperbarui. Minta operator memperbaruinya; check-in tanpa no. kendaraan tetap bisa disimpan.'
 
 /** Kredit Claude (SPEC 7.17): PGRST204 / 42703 naming organizations.claude_credit_*: the app went out before schema.sql was re-run. */

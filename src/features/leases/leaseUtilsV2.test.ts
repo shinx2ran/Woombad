@@ -109,7 +109,7 @@ function tenant(id: string, full_name: string): Tenant {
 }
 
 function summary(nextDueDate: string | null, state: LeaseBillingSummary['state'] = 'ok', daysUntilDue: number | null = null, outstanding = 0): LeaseBillingSummary {
-  return { leaseId: 'x', coveredThrough: null, paidThrough: null, outstanding, nextDueDate, daysUntilDue, state }
+  return { leaseId: 'x', coveredThrough: null, paidThrough: null, outstanding, chargesOutstanding: 0, nextDueDate, daysUntilDue, state }
 }
 
 function item(key: string, kos: string, roomName: string, tenantName: string | null, due: string | null): LeaseListItem {
