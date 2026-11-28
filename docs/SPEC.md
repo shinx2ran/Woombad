@@ -1415,3 +1415,47 @@ tersisa ada pada **pendaftaran & undangan** (siapa cepat dia dapat), **pembatasa
   untuk nomor saat itu dipilih, dan batal hanya bila datang nomor lain milik penyewa lama (spasi tambahan, menghapus lalu mengetik
   ulang digit, atau Hapus hasil scan lalu scan kartu yang sama tidak); toast "sewa dicatat atas namanya" hanya bila sewa memang ke dia.
 - Ringkasan: "Dokumen KTP · NIK …" (ditambah "· data penyewa diisi dari scan" bila ada scan). Tidak ada perubahan database.
+
+### 7.31 Biaya tambahan (charge) pada sewa
+- **Permintaan pemilik** (28 Nov 2026): "tambahkan biaya tambahan (charge) pada tenant, kadang ada yang late checkout ada tambahan
+  biaya". Biaya sekali (late checkout, kerusakan, kebersihan, tamu menginap, …) yang bukan sewa suatu periode.
+- **Penyimpanan**: tagihan sendiri dengan `invoices.invoice_type = 'charge'` (kolom baru, default `'rent'` untuk semua tagihan
+  lama; `invoices_invoice_type_check`, `invoices_charge_shape_check`): `period_start = period_end = due_date =` tanggal biaya,
+  `period_type null`, `quantity 1`, `base_amount 0`, `addons_amount 0`, `extra_amount = total_amount =` jumlah (> 0),
+  `discount_amount 0`, `notes =` keterangan, nomor `INV-YYYYMM-NNNN` biasa (urutan bulan tanggal biaya). Dibayar seperti tagihan
+  lain: pembayaran `kind 'rent'` pada tagihan itu (CHECK `payments`), metode tunai/transfer/QRIS, atau `deposit` (potong jaminan).
+  Trigger status tagihan tidak berubah. Helper: `isChargeInvoice`, `rentInvoices` (`src/domain/billing.ts`).
+- **Tidak pernah menjadi cakupan sewa**: semua aturan periode memakai `rentInvoices` saja: `activeInvoicesSorted`,
+  `latestCoveredThrough`, `billedPeriodCount`, `chainAnchor`, `nextPeriodBounds`/`nextPeriodStart`, `buildInvoiceDraft`
+  (tagihan pertama, add-on sekali), `summarizeLeaseBilling` (dibayar s/d, ditagih s/d, jatuh tempo, status, `outstanding`;
+  biaya terbuka di `chargesOutstanding`), linimasa tagihan, sinkron/penyusutan `end_date`, `futureInvoicesAtCheckout` (biaya tidak
+  dibatalkan saat check-out dan tidak butuh admin), `planLeaseRedate` (biaya ikut dikirim dengan tanggal tetap), `unusedPaidRent`
+  (pindah kamar). Papan kamar, dashboard, daftar sewa dan pengingat WA tetap hanya soal sewa.
+- **Dialog "Biaya tambahan"** (semua peran; sewa aktif atau sudah berakhir, bukan batal): Keterangan (pilihan cepat Late checkout,
+  Kerusakan, Kebersihan, Tamu menginap, Lainnya; wajib, maks 200 huruf), Jumlah (> 0), Tanggal (default hari ini, tidak sebelum
+  mulai sewa), Pembayaran: Tunai / Transfer / QRIS (lunas sekarang), Potong jaminan (hanya bila jaminan dipegang ≥ jumlah),
+  atau Bayar nanti. Simpan: tagihan biaya → pembayaran (bila dibayar; tanggal bayar hari ini, catatan "Biaya tambahan") → status
+  tagihan. Pembayaran gagal setelah tagihan tersimpan: "Biaya tersimpan, tetapi pembayarannya gagal … bayar dari daftar tagihan".
+  Pintu masuk: menu **Lainnya → Biaya tambahan** di halaman sewa, dan tombol **Tambah biaya tambahan** di dialog Checkout (kembali
+  ke Checkout setelah disimpan; pembagian jaminan lalu melihat biaya yang belum dibayar sebagai tagihan terbuka).
+- **Tampilan**: baris tagihan biaya "Biaya tambahan · <keterangan>" dengan tanggalnya (tanpa "n malam"); bayar dari baris itu
+  seperti tagihan lain. Kartu Sisa tagihan = sewa + biaya terbuka ("termasuk biaya tambahan Rp X"). Pembayaran pada biaya diberi
+  label "Biaya tambahan". Kirim tagihan (gambar/WA): "Biaya tambahan: <keterangan>", tanpa periode.
+- **Laporan**: pembayaran biaya masuk **Pendapatan lain** (bukan Sewa); piutang memuat biaya yang belum dibayar; ekspor menandai
+  jenisnya. **Tanya AI**: tunggakan per tagihan berjenis `sewa` / `biaya tambahan` (dengan keterangan), pembayaran biaya berjenis
+  `biaya tambahan`, kamar menyebut biaya tambahan yang belum dibayar.
+- **Ubah** (pemilik/admin): dialog "Ubah biaya tambahan" berisi Keterangan, Jumlah dan Diskon dengan Tanggal yang tetap; tanpa
+  Harga sewa/Listrik/Denda. Total harus di atas Rp 0 (diskon sampai habis ditolak: batalkan tagihannya) dan tidak di bawah yang
+  sudah dibayar. Ubah pembayaran pada biaya diberi label "Biaya tambahan" dan tidak menawarkan "Deposit diterima". Pelanggaran
+  bentuk biaya dari database (`invoices_charge_shape_check`) tampil sebagai "Biaya tambahan harus lebih dari Rp 0 dan tanpa harga
+  sewa; batalkan tagihannya bila tidak jadi ditagih."; Mode Demo memeriksa hal yang sama. Pengingat WA dari Laporan → Piutang
+  untuk biaya: "Tagihan kamar X untuk Biaya tambahan: <keterangan> · <tanggal> sebesar …", tanpa periode. Ubah tanggal mulai:
+  toast menghitung tagihan yang benar-benar bergeser (biaya tidak). Impor cadangan: tagihan sewa tidak mengirim `invoice_type`.
+- **Batalkan sewa**: biaya yang belum dibayar ikut dibatalkan seperti tagihan lain (aturan 2b.4 tidak berubah). Catatan penutup yang
+  ditulis aplikasi di bawah keterangan biaya yang sudah dibayar sebagian ("Sisa dianggap hangus (…)" / "DP dikembalikan (…)")
+  tetap internal: keterangan = baris pertama `notes` (`chargeNote`), jadi gambar tagihan, teks WA dan kolom Keterangan hanya
+  memakai baris itu, dan Ubah biaya tambahan menyimpan baris penutup apa adanya.
+- **Hak**: anggota mana pun boleh menambah biaya dan membayarnya (RLS insert invoices/payments yang sudah ada); mengubah,
+  membatalkan atau menghapusnya tetap hanya pemilik/admin. Database live: kolom ditambah (tanpa DROP) setelah disetujui pemilik;
+  sebelum itu menyimpan biaya menampilkan "Biaya tambahan belum bisa disimpan: database server belum diperbarui…".
+

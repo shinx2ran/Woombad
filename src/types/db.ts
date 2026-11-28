@@ -269,10 +269,20 @@ export interface LeaseAddon extends BaseRow {
   billing: AddonBilling
 }
 
+/** SPEC 7.31: rent for a period, or a one-off charge on the lease (late check-out, damage, ...) */
+export const INVOICE_TYPES = ['rent', 'charge'] as const
+export type InvoiceType = (typeof INVOICE_TYPES)[number]
+export const INVOICE_TYPE_LABEL: Record<InvoiceType, string> = { rent: 'Sewa', charge: 'Biaya tambahan' }
+
 export interface Invoice extends TimestampedRow {
   property_id: string
   lease_id: string
   invoice_number: string
+  /**
+   * SPEC 7.31: 'rent' (every invoice before 7.31) or 'charge' (a one-off charge: extra_amount on one day, base 0, no
+   * period type; never part of rent coverage). Optional in the type: a row read before the column existed is rent.
+   */
+  invoice_type?: InvoiceType
   /**
    * Period type this invoice was billed with. null = the lease's period_type at the time (older rows).
    * A lease can switch type on extension (daily guest becomes monthly), so each invoice remembers its own.

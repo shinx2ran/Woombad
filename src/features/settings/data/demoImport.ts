@@ -15,6 +15,7 @@ import {
   GENDERS,
   ID_TYPES,
   INVOICE_STATUSES,
+  INVOICE_TYPES,
   LEASE_STATUSES,
   PAYMENT_KINDS,
   PAYMENT_METHODS,
@@ -221,6 +222,7 @@ const COLUMNS: { [T in ImportTable]: { [K in DataColumns<T>]: Col } } = {
     due_date: reqDate,
     status: { type: INVOICE_STATUSES, def: 'unpaid' },
     notes: text,
+    invoice_type: { type: INVOICE_TYPES, def: 'rent' },
   },
   payments: {
     property_id: reqUuid,
@@ -334,7 +336,11 @@ export function normalizeRow(table: ImportTable, raw: BackupRow): Record<string,
     if (!result.ok) return null
     out[column] = result.value
   }
-  return passesChecks(table, out) ? out : null
+  if (!passesChecks(table, out)) return null
+  // SPEC 7.31: a rent invoice leaves invoice_type to the column default, so a restore still works on a database that
+  // has not received the biaya tambahan column yet; only a charge needs it said
+  if (table === 'invoices' && out.invoice_type === 'rent') delete out.invoice_type
+  return out
 }
 
 /** The database CHECK constraints that span several columns. */
@@ -345,7 +351,13 @@ function passesChecks(table: ImportTable, r: Record<string, unknown>): boolean {
     case 'leases':
       return s('end_date') >= s('start_date') && (r.planned_checkout_date === null || s('planned_checkout_date') > s('start_date'))
     case 'invoices':
-      return s('period_end') >= s('period_start') && n('total_amount') === n('base_amount') + n('addons_amount') + n('extra_amount') - n('discount_amount')
+      return (
+        s('period_end') >= s('period_start') &&
+        n('total_amount') === n('base_amount') + n('addons_amount') + n('extra_amount') - n('discount_amount') &&
+        // invoices_charge_shape_check (SPEC 7.31)
+        (r.invoice_type !== 'charge' ||
+          (n('base_amount') === 0 && n('addons_amount') === 0 && n('quantity') === 1 && r.period_type === null && s('period_end') === s('period_start') && n('extra_amount') > 0 && n('total_amount') > 0))
+      )
     case 'payments':
       return (r.kind === 'rent') === (r.invoice_id !== null)
     case 'expenses':

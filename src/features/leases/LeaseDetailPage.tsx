@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { BackLink } from '../../app/BackLink'
 import { clsx } from 'clsx'
-import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, Car, DoorOpen, FilePlus2, LogOut, MessageCircle, Pencil, PiggyBank, Plus, Share2, Trash2, Wallet } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, Ban, CalendarClock, CalendarPlus, Car, DoorOpen, FilePlus2, LogOut, MessageCircle, Pencil, PiggyBank, Plus, ReceiptText, Share2, Trash2, Wallet } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -22,8 +22,8 @@ import {
   type Column,
 } from '../../components/ui'
 import type { Invoice, LeaseAddon, Payment } from '../../types/db'
-import { PAYMENT_KIND_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
-import { depositBalance, invoiceUnitLabel, outstandingFor, paidAmountFor, summarizeLeaseBilling } from '../../domain/billing'
+import { PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL, PERIOD_UNIT_LABEL } from '../../types/db'
+import { depositBalance, invoiceUnitLabel, isChargeInvoice, outstandingFor, paidAmountFor, paymentKindLabel, summarizeLeaseBilling } from '../../domain/billing'
 import { formatCheckout, formatDate, formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
 import { useLeaseActions } from './useLeaseActions'
@@ -52,8 +52,10 @@ import { RedateLeaseModal } from './RedateLeaseModal'
 import { PlannedCheckoutModal } from './PlannedCheckoutModal'
 import { PlateList } from './PlateInput'
 import { VehiclePlateModal } from './VehiclePlateModal'
+import { ChargeModal } from './ChargeModal'
+import { chargeTitle } from './charges'
 
-type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon' | 'redate' | 'keluar' | 'plate'
+type ModalKind = 'pay' | 'deposit' | 'invoice' | 'edit' | 'checkout' | 'cancel' | 'move' | 'addon' | 'redate' | 'keluar' | 'plate' | 'charge'
 type Confirm =
   | { kind: 'void-invoice'; invoice: Invoice }
   | { kind: 'delete-invoice'; invoice: Invoice }
@@ -78,6 +80,8 @@ export function LeaseDetailPage() {
   const [payNow, setPayNow] = useState(false)
   /** SPEC 7.15: "Catat deposit diterima" was opened from the checkout sheet, which comes back when it closes */
   const [depositFromCheckout, setDepositFromCheckout] = useState(false)
+  /** SPEC 7.31: "Biaya tambahan" was opened from the checkout sheet, which comes back when it closes */
+  const [chargeFromCheckout, setChargeFromCheckout] = useState(false)
   const [payInvoiceId, setPayInvoiceId] = useState<string | undefined>(undefined)
   const [editInvoice, setEditInvoice] = useState<Invoice | null>(null)
   /** Ubah pembayaran (SPEC 7.5) */
@@ -101,6 +105,7 @@ export function LeaseDetailPage() {
   const summary = useMemo(() => (lease ? summarizeLeaseBilling(lease, data.invoices, data.payments, today) : null), [lease, data.invoices, data.payments, today])
   const deposit = useMemo(() => (lease ? depositBalance(lease, data.payments, data.expenses) : null), [lease, data.payments, data.expenses])
   const timeline = useMemo(() => (lease ? invoiceTimeline(lease, data.invoices, data.payments, today) : []), [lease, data.invoices, data.payments, today])
+  const invoicesById = useMemo(() => new Map(leaseInvoices.map((i) => [i.id, i])), [leaseInvoices])
 
   // Deep links from other modules: /sewa/:id?action=bayar|tagih|bayar-perpanjang|checkout
   useEffect(() => {
@@ -148,6 +153,8 @@ export function LeaseDetailPage() {
   // SPEC 5.4: the room's current rate for the lease's type is the 'harga standar'.
   const standardPrice = roomPriceFor(room, lease.period_type)
   const openInvoices = openInvoicesSorted(lease.id, leaseInvoices, data.payments)
+  // SPEC 7.31: what the tenant still owes = rent + open charges (the summary keeps charges apart)
+  const owed = summary.outstanding + summary.chargesOutstanding
   // A freshly issued invoice (NextInvoiceModal.onCreated) may not be in the query cache yet: fall back to the inserted row.
   const sharedInvoice = shareInvoice ? (leaseInvoices.find((i) => i.id === shareInvoice.id) ?? shareInvoice) : null
 
@@ -195,6 +202,13 @@ export function LeaseDetailPage() {
     }
   }
 
+  // SPEC 7.31: every member; also after checkout (damage found later), never on a cancelled lease
+  const chargeItem: MenuItem = {
+    label: 'Biaya tambahan',
+    hint: 'Late checkout, kerusakan, dll.',
+    icon: <ReceiptText className="h-4 w-4" />,
+    onClick: () => setModal('charge'),
+  }
   const menuItems: MenuItem[] = []
   if (isActive) {
     menuItems.push({ label: 'Perpanjang', hint: 'Buat tagihan periode berikutnya', icon: <CalendarPlus className="h-4 w-4" />, onClick: () => openNextInvoice(false) })
@@ -227,10 +241,13 @@ export function LeaseDetailPage() {
     })
     // SPEC 7.26: also for a lease made without a deposit (a daily or weekly check-in whose guest pays one after all)
     menuItems.push({ label: 'Catat deposit diterima', icon: <PiggyBank className="h-4 w-4" />, onClick: () => setModal('deposit') })
+    menuItems.push(chargeItem)
     // Staff may check out (SPEC 6.2; the modal explains when future invoices need an admin). 'Batalkan sewa'
     // voids invoices: admin only.
     menuItems.push({ label: 'Checkout', hint: 'Penyewa keluar; selesaikan jaminan', icon: <DoorOpen className="h-4 w-4" />, onClick: () => setModal('checkout') })
     if (isAdmin) menuItems.push({ label: 'Batalkan sewa', hint: 'Sewa tidak pernah berjalan', icon: <Ban className="h-4 w-4" />, danger: true, onClick: () => setModal('cancel') })
+  } else if (lease.status === 'ended') {
+    menuItems.push(chargeItem)
   }
 
   const invoiceMenu = (inv: Invoice): MenuItem[] => {
@@ -244,7 +261,7 @@ export function LeaseDetailPage() {
     if (isAdmin && inv.status !== 'void') {
       items.push({
         label: 'Ubah',
-        hint: 'Harga sewa, listrik, denda, diskon, catatan · riwayat',
+        hint: isChargeInvoice(inv) ? 'Keterangan, jumlah, diskon · riwayat' : 'Harga sewa, listrik, denda, diskon, catatan · riwayat',
         onClick: () => {
           setEditInvoice(inv)
           setModal('edit')
@@ -268,12 +285,21 @@ export function LeaseDetailPage() {
       key: 'period',
       header: 'Periode',
       hideOnMobile: true,
-      render: (inv) => (
-        <span>
-          {formatStay(inv.period_start, inv.period_end)}
-          <span className="block text-xs text-slate-500">{`${inv.quantity} ${invoiceUnitLabel(inv, lease)}`}</span>
-        </span>
-      ),
+      // SPEC 7.31: a charge is one day with a keterangan, not a period of nights
+      render: (inv) =>
+        isChargeInvoice(inv) ? (
+          <span>
+            <span className="break-words" data-testid="invoice-charge-title">
+              {chargeTitle(inv)}
+            </span>
+            <span className="block text-xs text-slate-500">{formatDate(inv.period_start)}</span>
+          </span>
+        ) : (
+          <span>
+            {formatStay(inv.period_start, inv.period_end)}
+            <span className="block text-xs text-slate-500">{`${inv.quantity} ${invoiceUnitLabel(inv, lease)}`}</span>
+          </span>
+        ),
     },
     {
       key: 'due',
@@ -348,7 +374,7 @@ export function LeaseDetailPage() {
                 Bayar &amp; perpanjang
               </Button>
             ) : (
-              (isActive || summary.outstanding > 0) && (
+              (isActive || owed > 0) && (
                 <Button variant="secondary" icon={<Wallet className="h-4 w-4" />} onClick={() => openPay()} disabled={openInvoices.length === 0}>
                   Catat pembayaran
                 </Button>
@@ -373,9 +399,20 @@ export function LeaseDetailPage() {
         />
         <StatCard
           label="Sisa tagihan"
-          value={formatRupiah(summary.outstanding)}
-          tone={summary.outstanding > 0 ? 'negative' : 'positive'}
-          sub={isActive && summary.nextDueDate ? `Jatuh tempo ${formatDate(summary.nextDueDate)}` : undefined}
+          value={formatRupiah(owed)}
+          tone={owed > 0 ? 'negative' : 'positive'}
+          sub={
+            (isActive && summary.nextDueDate) || summary.chargesOutstanding > 0 ? (
+              <>
+                {isActive && summary.nextDueDate && <span className="block">Jatuh tempo {formatDate(summary.nextDueDate)}</span>}
+                {summary.chargesOutstanding > 0 && (
+                  <span className="block" data-testid="charges-outstanding">
+                    termasuk biaya tambahan {formatRupiah(summary.chargesOutstanding)}
+                  </span>
+                )}
+              </>
+            ) : undefined
+          }
         />
         <StatCard
           label="Deposit dipegang"
@@ -463,9 +500,19 @@ export function LeaseDetailPage() {
                       <span className="font-mono text-xs text-slate-900">{inv.invoice_number}</span>
                       <InvoiceStatusBadge status={inv.status} />
                     </p>
-                    <p className="text-xs text-slate-500">
-                      {formatStay(inv.period_start, inv.period_end)} · {inv.quantity} {invoiceUnitLabel(inv, lease)} · {invoiceDueText(inv, data.payments)}
-                    </p>
+                    {isChargeInvoice(inv) ? (
+                      <p className="text-xs text-slate-500">
+                        <span className="break-words font-medium text-slate-700" data-testid="invoice-charge-title">
+                          {chargeTitle(inv)}
+                        </span>{' '}
+                        · {formatDate(inv.period_start)}
+                        {inv.status === 'paid' && ` · ${invoiceDueText(inv, data.payments)}`}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">
+                        {formatStay(inv.period_start, inv.period_end)} · {inv.quantity} {invoiceUnitLabel(inv, lease)} · {invoiceDueText(inv, data.payments)}
+                      </p>
+                    )}
                     <p className="mt-0.5 text-sm tabular-nums">
                       <span className="text-slate-800">{formatRupiah(inv.total_amount)}</span>
                       {inv.status !== 'void' && (
@@ -498,7 +545,7 @@ export function LeaseDetailPage() {
               )
             }
             action={
-              (isActive || summary.outstanding > 0) && openInvoices.length > 0 ? (
+              (isActive || owed > 0) && openInvoices.length > 0 ? (
                 <Button size="sm" variant="secondary" icon={<Plus className="h-4 w-4" />} onClick={() => openPay()}>
                   Catat
                 </Button>
@@ -515,7 +562,9 @@ export function LeaseDetailPage() {
                     <div className="min-w-0 flex-1">
                       <p className="flex flex-wrap items-center gap-x-2 text-slate-900">
                         <span className="font-medium">{formatDate(p.paid_at)}</span>
-                        <span className="text-slate-500">{PAYMENT_KIND_LABEL[p.kind]}</span>
+                        <span className="text-slate-500" data-testid="payment-kind">
+                          {paymentKindLabel(p, invoicesById)}
+                        </span>
                         <span className={clsx('rounded-full px-1.5 py-0.5 text-xs', p.method === 'deposit' ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700')}>{PAYMENT_METHOD_LABEL[p.method]}</span>
                       </p>
                       <p className="truncate text-xs text-slate-500">
@@ -679,7 +728,27 @@ export function LeaseDetailPage() {
           setDepositFromCheckout(true)
           setModal('deposit')
         }}
+        onAddCharge={() => {
+          setChargeFromCheckout(true)
+          setModal('charge')
+        }}
       />
+      {modal === 'charge' && lease.status !== 'cancelled' && (
+        <ChargeModal
+          lease={lease}
+          tenantName={tenant?.full_name ?? 'Penyewa'}
+          roomName={room?.name ?? '?'}
+          orgInvoices={data.invoices}
+          payments={data.payments}
+          expenses={data.expenses}
+          actions={actions}
+          onClose={() => {
+            // back to the checkout sheet when it was opened from there, so the settlement sees the open charge
+            setModal(chargeFromCheckout && isActive ? 'checkout' : null)
+            setChargeFromCheckout(false)
+          }}
+        />
+      )}
       <CancelLeaseModal open={modal === 'cancel'} onClose={() => setModal(null)} lease={lease} invoices={leaseInvoices} payments={data.payments} expenses={data.expenses} actions={actions} />
       <MoveRoomModal
         open={modal === 'move'}

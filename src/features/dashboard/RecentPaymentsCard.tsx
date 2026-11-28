@@ -1,12 +1,18 @@
+import { useMemo } from 'react'
 import { Link } from 'react-router'
 import { Banknote } from 'lucide-react'
 import { Badge } from '../../components/ui'
+import { useTable } from '../../hooks/useTable'
 import { formatDate, formatRupiah } from '../../lib/format'
-import { PAYMENT_METHOD_LABEL } from '../../types/db'
+import { paymentIsForCharge } from '../../domain/billing'
+import { INVOICE_TYPE_LABEL, PAYMENT_METHOD_LABEL } from '../../types/db'
 import type { RecentPaymentItem } from './dashboardModel'
 import { SectionCard, SectionEmpty } from './SectionCard'
 
 export function RecentPaymentsCard({ items }: { items: RecentPaymentItem[] }) {
+  // the dashboard's own invoices query (same key, already cached): which payments paid a charge (SPEC 7.31)
+  const invoices = useTable('invoices')
+  const invoicesById = useMemo(() => new Map((invoices.data ?? []).map((i) => [i.id, i])), [invoices.data])
   return (
     <SectionCard title="Pembayaran terakhir" linkTo="/sewa">
       {items.length === 0 ? (
@@ -31,6 +37,7 @@ export function RecentPaymentsCard({ items }: { items: RecentPaymentItem[] }) {
                   <p className="mt-0.5 flex items-center justify-end gap-1 text-xs text-slate-500">
                     {payment.kind === 'deposit' && <Badge tone="brand">Jaminan</Badge>}
                     {payment.kind === 'other' && <Badge tone="neutral">Lain</Badge>}
+                    {paymentIsForCharge(payment, invoicesById) && <Badge tone="warning">{INVOICE_TYPE_LABEL.charge}</Badge>}
                     {PAYMENT_METHOD_LABEL[payment.method]}
                   </p>
                 </div>

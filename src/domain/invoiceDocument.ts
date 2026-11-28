@@ -7,15 +7,20 @@
  * reconstructed: add-ons from the lease's add-ons when they explain addons_amount, extras from the
  * 'Listrik: …; Denda: …' notes convention (see billing.parseExtraBreakdown), and a single summary line
  * otherwise. Status is derived from the rent payments (SPEC 2), not from the stored status column.
+ *
+ * A charge (biaya tambahan, SPEC 7.31) is one amount on one day: its document has `charge` set and a single line
+ * 'Biaya tambahan: <keterangan>' with the date, never a rent line, a period, nights or 'Sewa kamar'.
  */
 import type { Invoice, InvoiceStatus, Lease, LeaseAddon, Payment, Property, Room, Tenant } from '../types/db'
-import { PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL } from '../types/db'
+import { INVOICE_TYPE_LABEL, PAYMENT_METHOD_LABEL, PERIOD_TYPE_LABEL } from '../types/db'
 import { checkoutISO, formatDate, formatRupiah, formatStay, parseDate, toDateISO } from '../lib/format'
 import {
+  chargeNote,
   computeAddonsAmount,
   formatExtraBreakdown,
   invoicePeriodType,
   invoiceUnitLabel,
+  isChargeInvoice,
   paidAmountFor,
   parseExtraBreakdown,
 } from './billing'
@@ -43,8 +48,15 @@ export interface InvoiceDocument {
   /**
    * The invoice period. `end` is period_end as stored (the LAST NIGHT, inclusive); `checkout` is the day shown to
    * people as the end of the stay, end + 1 (SPEC 7.3): 2 nights from 15 Okt -> end 16 Okt, checkout 17 Okt.
+   * For a charge (`charge` set) there is no stay: start = end = checkout = the charge's date, quantity 1, unit '' and
+   * typeLabel 'Biaya tambahan'; show `charge.date` ('Tanggal') instead of a period.
    */
   period: { start: string; end: string; checkout: string; quantity: number; unit: string; typeLabel: string }
+  /**
+   * SPEC 7.31: set for a charge (biaya tambahan): what it is for ('' when saved without one) and its date. null for rent
+   * (buildInvoiceDocument always sets it; optional only so a hand-built rent document stays valid)
+   */
+  charge?: { note: string; date: string } | null
   lines: InvoiceDocumentLine[]
   discount: number
   total: number
@@ -54,7 +66,7 @@ export interface InvoiceDocument {
   remaining: number
   /** rent payments of this invoice, oldest first */
   payments: { date: string; amount: number; methodLabel: string }[]
-  /** free-text part of invoice.notes (without the 'Listrik: …; Denda: …' breakdown line), or null */
+  /** free-text part of invoice.notes (without the 'Listrik: …; Denda: …' breakdown line), or null; null for a charge (its notes are its line) */
   notes: string | null
 }
 
@@ -81,6 +93,16 @@ export const STATUS_LABEL_UNPAID = 'BELUM BAYAR'
 export const STATUS_LABEL_VOID = 'DIBATALKAN'
 
 // ---------- lines ----------
+
+/** 'Biaya tambahan: Late checkout' (just 'Biaya tambahan' without a note). */
+export function chargeLineLabel(note: string): string {
+  return note ? `${INVOICE_TYPE_LABEL.charge}: ${note}` : INVOICE_TYPE_LABEL.charge
+}
+
+/** The one line of a charge: label from its note, its date under it, its amount (extra_amount; a discount shows apart as for rent). */
+function chargeLine(invoice: Invoice): InvoiceDocumentLine {
+  return { label: chargeLineLabel(chargeNote(invoice)), detail: formatDate(invoice.period_start), amount: invoice.extra_amount }
+}
 
 function rentLine(invoice: Invoice, lease: Lease, room: string): InvoiceDocumentLine {
   const typeLabel = PERIOD_TYPE_LABEL[invoicePeriodType(invoice, lease)]
@@ -160,14 +182,16 @@ export function invoiceStatusLabel(status: InvoiceStatus, paid: number, remainin
 // ---------- document ----------
 
 /**
- * Build the document for one invoice. lines[0] is always the rent line; add-on and extra lines follow (see
+ * Build the document for one invoice. lines[0] is the rent line (of a rent invoice); add-on and extra lines follow (see
  * addonLines / extraLines). total is invoice.total_amount as stored; paid = paidAmountFor; remaining =
  * max(0, total - paid) even for a void invoice (statusLabel says DIBATALKAN; show that instead of the
  * amount). issuedDate is created_at in local time, or period_start when created_at is empty / invalid.
- * A missing tenant / room / kos falls back to 'Penyewa' / '-' / 'Kos'.
+ * A missing tenant / room / kos falls back to 'Penyewa' / '-' / 'Kos'. A charge has `charge` set, its one chargeLine
+ * instead of the rent, add-on and extra lines, notes null, and a period that is only its day (see `period`).
  */
 export function buildInvoiceDocument(input: InvoiceDocumentInput): InvoiceDocument {
   const { invoice, lease, tenant, room, property } = input
+  const isCharge = isChargeInvoice(invoice)
   const roomName = room?.name.trim() || FALLBACK_ROOM_NAME
   const paid = paidAmountFor(invoice.id, input.payments)
   const total = invoice.total_amount
@@ -194,21 +218,24 @@ export function buildInvoiceDocument(input: InvoiceDocumentInput): InvoiceDocume
     },
     tenant: { name: tenant?.full_name.trim() || FALLBACK_TENANT_NAME, phone: tenant?.phone ?? null },
     room: roomName,
-    period: {
-      start: invoice.period_start,
-      end: invoice.period_end,
-      checkout: checkoutISO(invoice.period_end) ?? invoice.period_end,
-      quantity: invoice.quantity,
-      unit: invoiceUnitLabel(invoice, lease),
-      typeLabel: PERIOD_TYPE_LABEL[invoicePeriodType(invoice, lease)],
-    },
-    lines: [rentLine(invoice, lease, roomName), ...addonLines(invoice, input.leaseAddons), ...extraLines(invoice)],
+    period: isCharge
+      ? { start: invoice.period_start, end: invoice.period_start, checkout: invoice.period_start, quantity: 1, unit: '', typeLabel: INVOICE_TYPE_LABEL.charge }
+      : {
+          start: invoice.period_start,
+          end: invoice.period_end,
+          checkout: checkoutISO(invoice.period_end) ?? invoice.period_end,
+          quantity: invoice.quantity,
+          unit: invoiceUnitLabel(invoice, lease),
+          typeLabel: PERIOD_TYPE_LABEL[invoicePeriodType(invoice, lease)],
+        },
+    charge: isCharge ? { note: chargeNote(invoice), date: invoice.period_start } : null,
+    lines: isCharge ? [chargeLine(invoice)] : [rentLine(invoice, lease, roomName), ...addonLines(invoice, input.leaseAddons), ...extraLines(invoice)],
     discount: invoice.discount_amount,
     total,
     paid,
     remaining,
     payments,
-    notes: invoiceFreeText(invoice.notes),
+    notes: isCharge ? null : invoiceFreeText(invoice.notes),
   }
 }
 
@@ -222,17 +249,25 @@ function firstName(name: string): string {
  * WhatsApp caption sent with the invoice image (Indonesian, short): greeting 'Halo Kak <first name>' (just
  * 'Halo Kak' for the unnamed fallback tenant), number, room + kos, period (start s/d check-out day), total, then the status (LUNAS /
  * DIBATALKAN) or the remaining amount with the due date, the kos payment info when present and something is
- * still owed, and 'Terima kasih 🙏'.
+ * still owed, and 'Terima kasih 🙏'. A charge says 'berikut tagihan kamar …' and 'Biaya tambahan: Late checkout · 28
+ * Nov 2026' in place of the period line (SPEC 7.31).
  */
 export function invoiceShareText(doc: InvoiceDocument): string {
   const first = firstName(doc.tenant.name)
   const greeting = first && first !== FALLBACK_TENANT_NAME ? `Halo Kak ${first}` : 'Halo Kak'
-  const lines = [
-    `${greeting}, berikut tagihan sewa kamar ${doc.room} ${doc.property.name}.`,
-    `No. tagihan: ${doc.number}`,
-    `Periode: ${doc.period.typeLabel} · ${doc.period.quantity} ${doc.period.unit} · ${formatDate(doc.period.start)} s/d ${formatDate(doc.period.checkout)}`,
-    `Total: *${formatRupiah(doc.total)}*`,
-  ]
+  const lines = doc.charge
+    ? [
+        `${greeting}, berikut tagihan kamar ${doc.room} ${doc.property.name}.`,
+        `No. tagihan: ${doc.number}`,
+        `${chargeLineLabel(doc.charge.note)} · ${formatDate(doc.charge.date)}`,
+        `Total: *${formatRupiah(doc.total)}*`,
+      ]
+    : [
+        `${greeting}, berikut tagihan sewa kamar ${doc.room} ${doc.property.name}.`,
+        `No. tagihan: ${doc.number}`,
+        `Periode: ${doc.period.typeLabel} · ${doc.period.quantity} ${doc.period.unit} · ${formatDate(doc.period.start)} s/d ${formatDate(doc.period.checkout)}`,
+        `Total: *${formatRupiah(doc.total)}*`,
+      ]
   const open = doc.status !== 'void' && doc.remaining > 0
   if (doc.status === 'void') lines.push(`Status: *${STATUS_LABEL_VOID}*`)
   else if (!open) lines.push(`Status: *${STATUS_LABEL_PAID}* ✅`)

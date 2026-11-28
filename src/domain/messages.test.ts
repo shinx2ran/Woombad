@@ -26,6 +26,18 @@ describe('messages', () => {
     expect(reminderText({ ...base, periodStart: '2026-12-31', periodEnd: '2026-12-31' })).toContain('periode 31 Des 2026 s/d 1 Jan 2027 sebesar')
     expect(reminderText({ ...base, periodStart: '2026-10-15' })).toContain('Tagihan kamar B2 sebesar *Rp 300.000* jatuh tempo 15 Okt 2026.')
   })
+  it('reminderText names a biaya tambahan instead of a period (SPEC 7.31)', () => {
+    const t = reminderText({
+      tenantName: 'Siti',
+      roomName: 'B2',
+      propertyName: 'Kos Anggrek',
+      outstanding: 150_000,
+      dueDate: '2026-11-28',
+      forLabel: 'Biaya tambahan: Late checkout · 28 Nov 2026',
+    })
+    expect(t).toContain('Tagihan kamar B2 untuk Biaya tambahan: Late checkout · 28 Nov 2026 sebesar *Rp 150.000* jatuh tempo 28 Nov 2026.')
+    expect(t).not.toContain('periode')
+  })
   it('reminderText omits the payment line when info is empty', () => {
     const t = reminderText({ tenantName: 'Siti', roomName: 'B2', propertyName: 'Kos Anggrek', outstanding: 500_000, dueDate: '2026-03-05', paymentInfo: '  ' })
     expect(t).not.toContain('Pembayaran dapat dilakukan')
@@ -43,3 +55,14 @@ describe('messages', () => {
     expect(receiptText(base)).not.toContain('Periode:')
   })
 })
+
+// SPEC 7.31: a payment on a biaya tambahan names what it was for, and no period
+describe('receiptText for a charge', () => {
+  it('says what the charge was for instead of a period', () => {
+    const text = receiptText({ tenantName: 'Budi', roomName: 'A1', propertyName: 'EG Kost', amount: 100_000, paidAt: '2026-11-28', methodLabel: 'Tunai', invoiceNumber: 'INV-202611-0040', remaining: 0, forLabel: 'Biaya tambahan: Late checkout' })
+    expect(text).toContain('Untuk: Biaya tambahan: Late checkout')
+    expect(text).not.toContain('Periode')
+    expect(text).toContain('Status: *LUNAS*')
+  })
+})
+

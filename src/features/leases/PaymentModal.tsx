@@ -3,12 +3,19 @@ import { MessageCircle, Check } from 'lucide-react'
 import { Button, Input, Modal, MoneyInput, Select, Textarea, useToast } from '../../components/ui'
 import type { Expense, Invoice, Lease, PaymentMethod, Payment, Property, Room, Tenant } from '../../types/db'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL } from '../../types/db'
-import { depositBalance, outstandingFor, validateRentPayment } from '../../domain/billing'
+import { chargeNote, depositBalance, isChargeInvoice, outstandingFor, validateRentPayment } from '../../domain/billing'
+import { chargeLineLabel } from '../../domain/invoiceDocument'
 import { receiptText } from '../../domain/messages'
-import { formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
+import { formatDate, formatRupiah, formatStay, todayISO, whatsappLink } from '../../lib/format'
 import { openInvoicesSorted } from './leaseUtils'
 import { Row } from './components'
+import { chargeTitle } from './charges'
 import type { LeaseActions } from './useLeaseActions'
+
+/** What an invoice is for in the picker: its stay, or a charge with its keterangan and day (SPEC 7.31). */
+function invoiceWhat(invoice: Invoice): string {
+  return isChargeInvoice(invoice) ? `${chargeTitle(invoice)} (${formatDate(invoice.period_start, 'd MMM')})` : formatStay(invoice.period_start, invoice.period_end)
+}
 
 export interface PaymentModalProps {
   open: boolean
@@ -121,8 +128,10 @@ export function PaymentModal(props: PaymentModalProps) {
           paidAt,
           methodLabel: PAYMENT_METHOD_LABEL[method],
           invoiceNumber: invoice.invoice_number,
-          periodStart: invoice.period_start,
-          periodEnd: invoice.period_end,
+          // a charge (SPEC 7.31) is not rent for a period: the receipt names no period
+          periodStart: isChargeInvoice(invoice) ? undefined : invoice.period_start,
+          periodEnd: isChargeInvoice(invoice) ? undefined : invoice.period_end,
+          forLabel: isChargeInvoice(invoice) ? chargeLineLabel(chargeNote(invoice)) : undefined,
           remaining: result.remaining,
         }),
       })
@@ -183,11 +192,16 @@ export function PaymentModal(props: PaymentModalProps) {
             onChange={(e) => onPickInvoice(e.target.value)}
             options={selectable.map((i) => ({
               value: i.id,
-              label: `${i.invoice_number} · ${formatStay(i.period_start, i.period_end)} · sisa ${formatRupiah(outstandingFor(i, payments))}`,
+              label: `${i.invoice_number} · ${invoiceWhat(i)} · sisa ${formatRupiah(outstandingFor(i, payments))}`,
             }))}
           />
           {invoice && (
             <div className="rounded-lg bg-slate-50 p-3">
+              {isChargeInvoice(invoice) && (
+                <p className="mb-1 break-words text-sm font-medium text-slate-800" data-testid="payment-charge-title">
+                  {chargeTitle(invoice)} · {formatDate(invoice.period_start)}
+                </p>
+              )}
               <Row label="Total tagihan" value={formatRupiah(invoice.total_amount)} />
               <Row label="Sudah dibayar" value={formatRupiah(invoice.total_amount - outstanding)} />
               <Row label="Sisa tagihan" value={formatRupiah(outstanding)} strong />

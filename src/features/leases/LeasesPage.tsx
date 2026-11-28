@@ -5,7 +5,7 @@ import { ArrowUpDown, CalendarSearch, Plus, Search, Share2, Users } from 'lucide
 import { Button, Card, EmptyState, ErrorState, LoadingState, PageHeader, useToast } from '../../components/ui'
 import { useOrg } from '../../hooks/useOrg'
 import type { Invoice, Lease } from '../../types/db'
-import { summarizeLeaseBilling } from '../../domain/billing'
+import { rentInvoices, summarizeLeaseBilling } from '../../domain/billing'
 import { plateMatches } from '../../domain/plate'
 import { todayISO, whatsappLink } from '../../lib/format'
 import { useLeaseData } from './useLeaseData'
@@ -80,7 +80,8 @@ export function LeasesPage() {
   // The oldest open invoice, else the latest non-void one; picked only when the menu item is tapped.
   const openShare = (lease: Lease) => {
     const [oldestOpen] = openInvoicesSorted(lease.id, data.invoices, data.payments)
-    const latest = data.invoices
+    // with nothing owed, the latest rent bill (a paid charge is not what "Kirim tagihan" means, SPEC 7.31)
+    const latest = rentInvoices(data.invoices)
       .filter((i) => i.lease_id === lease.id && i.status !== 'void')
       .sort((a, b) => b.period_start.localeCompare(a.period_start) || b.created_at.localeCompare(a.created_at))[0]
     const invoice = oldestOpen ?? latest

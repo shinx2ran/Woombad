@@ -6,7 +6,7 @@
  * What is left out on purpose: NIK / passport numbers, addresses, phone numbers, e-mail, document photos, notes on
  * tenants. Names stay ("siapa yang telat?" needs them). Keys are Indonesian, like the answers.
  */
-import { depositBalance, summarizeLeaseBilling } from '../../domain/billing'
+import { chargeNote, depositBalance, isChargeInvoice, paymentIsForCharge, summarizeLeaseBilling } from '../../domain/billing'
 import { matchesProperty, outstandingInvoices, summarizeFinance } from '../../domain/finance'
 import { isLeaseActiveOn, plannedCheckoutOf, roomOccupancy } from '../../domain/occupancy'
 import { addDaysISO, addPeriods, daysBetween, type DateRange } from '../../domain/period'
@@ -59,7 +59,9 @@ export interface ExpectedRenewal {
  * every period (month or week) that starts on or before the last day of the month, and before the day a tenant said he
  * leaves. A due date already past counts from that date, so a tenant two months behind on billing counts twice. Daily
  * stays are left out (nobody knows whether a daily guest stays another night); they are listed apart with the nights
- * left in the month. An assumption, not a fact: every one of them renews and pays on the due date.
+ * left in the month. An assumption, not a fact: every one of them renews and pays on the due date. Rent only
+ * (summarizeLeaseBilling): an open or paid charge (biaya tambahan, SPEC 7.31) neither moves the due date nor stops a
+ * renewal; open charges are counted with the other unpaid bills.
  */
 export function expectedRenewals(
   leases: Lease[],
@@ -181,6 +183,8 @@ export function buildAiSnapshot(input: AiSnapshotInput) {
         jatuh_tempo_berikut: s.nextDueDate,
         hari_ke_jatuh_tempo: s.daysUntilDue,
         sisa_tagihan: s.outstanding,
+        // SPEC 7.31: what open charges (late checkout, damage, …) still owe, apart from the rent above
+        biaya_tambahan_belum_lunas: s.chargesOutstanding,
         deposit_dipegang: deposit.held,
         rencana_keluar: plannedCheckoutOf(current),
         ...(current.status !== 'active' ? { sudah_check_out_per: current.checkout_date ? day(current.checkout_date) : null } : {}),
@@ -217,14 +221,17 @@ export function buildAiSnapshot(input: AiSnapshotInput) {
 
   // ---- this month: what is in, what is owed, what is expected ----
   const { perpanjangan, harian } = expectedRenewals(leases, invoices, payments, roomName, tenantName, today)
-  // open invoices one by one (Laporan's receivables: also of tenants who have left, not of cancelled leases)
+  // open invoices one by one (Laporan's receivables: also of tenants who have left, not of cancelled leases); a charge
+  // (SPEC 7.31) says what it is for and its day instead of a period
   const tunggakan = outstandingInvoices(invoices, input.payments, today, undefined, leases).map((o) => {
     const lease = leaseById.get(o.invoice.lease_id)
+    const charge = isChargeInvoice(o.invoice)
     return {
       kamar: lease ? roomName(lease.room_id) : '?',
       penyewa: lease ? tenantName(lease.tenant_id) : '?',
       status_sewa: lease?.status === 'active' ? 'aktif' : 'sudah keluar',
-      periode: `${day(o.invoice.period_start)} s/d ${day(o.invoice.period_end)}`,
+      jenis: charge ? ('biaya tambahan' as const) : ('sewa' as const),
+      ...(charge ? { keterangan: chargeNote(o.invoice), tanggal: day(o.invoice.period_start) } : { periode: `${day(o.invoice.period_start)} s/d ${day(o.invoice.period_end)}` }),
       jatuh_tempo: day(o.invoice.due_date),
       hari_telat: o.daysOverdue,
       sisa_tagihan: o.outstanding,
@@ -252,9 +259,12 @@ export function buildAiSnapshot(input: AiSnapshotInput) {
   const paymentRows = payments.filter((p) => day(p.paid_at) >= rowsFrom).sort((a, b) => (a.paid_at < b.paid_at ? 1 : a.paid_at > b.paid_at ? -1 : 0))
   const KIND = { rent: 'sewa', deposit: 'deposit', other: 'lain' } as const
   const METHOD = { cash: 'tunai', transfer: 'transfer', qris: 'qris', deposit: 'potong jaminan', other: 'lain' } as const
+  // a payment on a charge is kind 'rent' in the database but not rent (SPEC 7.31), as in Laporan's Pendapatan lain
+  const invoiceById = new Map(input.invoices.map((i) => [i.id, i]))
   const pembayaran = paymentRows.slice(0, SNAPSHOT_MAX_ROWS).map((p) => {
     const lease = p.lease_id ? leaseById.get(p.lease_id) : undefined
-    return [day(p.paid_at), lease ? roomName(lease.room_id) : '-', lease ? tenantName(lease.tenant_id) : '-', KIND[p.kind], METHOD[p.method], p.amount]
+    const jenis = paymentIsForCharge(p, invoiceById) ? 'biaya tambahan' : KIND[p.kind]
+    return [day(p.paid_at), lease ? roomName(lease.room_id) : '-', lease ? tenantName(lease.tenant_id) : '-', jenis, METHOD[p.method], p.amount]
   })
   const expenseRows = expenses.filter((e) => day(e.expense_date) >= rowsFrom).sort((a, b) => (a.expense_date < b.expense_date ? 1 : a.expense_date > b.expense_date ? -1 : 0))
   const pengeluaran = expenseRows.slice(0, SNAPSHOT_MAX_ROWS).map((e) => [day(e.expense_date), e.category, e.amount, (e.description ?? '').slice(0, 80)])

@@ -373,10 +373,11 @@ describe('buildInvoicesSheet', () => {
     ]
     const sheet = buildInvoicesSheet([inv], payments, ctx, MARCH)
     expect(sheet.name).toBe('Tagihan')
-    expect(headers(sheet)).toEqual(['No. Tagihan', 'Kos', 'Kamar', 'Penyewa', 'Periode Awal', 'Periode s/d (check-out)', 'Jatuh Tempo', 'Total', 'Dibayar', 'Sisa', 'Status'])
+    expect(headers(sheet)).toEqual(['No. Tagihan', 'Jenis', 'Kos', 'Kamar', 'Penyewa', 'Periode Awal', 'Periode s/d (check-out)', 'Jatuh Tempo', 'Total', 'Dibayar', 'Sisa', 'Status'])
     expect(sheet.rows).toEqual([
       {
         invoice_number: 'INV-001',
+        invoice_type: 'Sewa',
         property: 'Kos Mawar',
         room: 'A1',
         tenant: 'Budi Santoso',

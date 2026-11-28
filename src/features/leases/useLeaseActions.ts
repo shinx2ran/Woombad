@@ -9,12 +9,15 @@ import { useInvalidate } from '../../hooks/useTable'
 import type { AddonBilling, Invoice, Lease, LeaseAddon, OrgTableName, Payment, PaymentMethod, PeriodType, Room, Tenant } from '../../types/db'
 import {
   buildInvoiceDraft,
+  depositBalance,
   deriveInvoiceStatus,
+  isChargeInvoice,
   latestCoveredThrough,
   paidAmountFor,
   type InvoiceDraft,
   type InvoiceDraftInput,
 } from '../../domain/billing'
+import { CHARGE_PAYMENT_NOTE, chargeInvoiceRow, hasChargeErrors, validateCharge, type ChargeInput, type ChargePayWith } from './charges'
 import { formatCheckout, formatDate, formatRupiah, todayISO } from '../../lib/format'
 import { guardedNights, overlappingLease } from '../../domain/occupancy'
 import { normalizePlate } from '../../domain/plate'
@@ -48,7 +51,7 @@ import {
 } from './leaseUtils'
 import { validatePaymentEdit, type PaymentEditContext, type PaymentEditPatch } from './paymentEdit'
 import { REDATE_INACTIVE_MESSAGE, REDATE_STAFF_MESSAGE, planLeaseRedate, redateDataChanged, redateNoteLine, type LeaseRedatePlan } from './redate'
-import { StaleWriteError } from '../../lib/repo/types'
+import { CHARGE_SHAPE_MESSAGE, StaleWriteError } from '../../lib/repo/types'
 
 export type { PartialDecision } from './leaseUtils'
 
@@ -60,6 +63,32 @@ export class InvoiceIssuedError extends Error {
     this.name = 'InvoiceIssuedError'
     this.invoice = invoice
   }
+}
+
+/**
+ * addCharge saved the charge but a step after it failed (SPEC 7.31): the charge exists, so the dialog must not offer to
+ * save it again; what is left is paid from the invoice list.
+ */
+export class ChargeSavedError extends Error {
+  readonly invoice: Invoice
+  constructor(message: string, invoice: Invoice) {
+    super(message)
+    this.name = 'ChargeSavedError'
+    this.invoice = invoice
+  }
+}
+
+export const CHARGE_CANCELLED_MESSAGE = 'Sewa yang dibatalkan tidak bisa diberi biaya tambahan.'
+
+/** The error's own words without its closing full stop: it is quoted mid-sentence ('…: <detail>. Bayar …'). */
+export function errorDetail(err: unknown): string {
+  return (err instanceof Error ? err.message : 'kesalahan tak dikenal').replace(/[.\s]+$/, '')
+}
+
+export interface ChargeResult {
+  invoice: Invoice
+  /** the payment made with it; null for 'Bayar nanti' */
+  payment: Payment | null
 }
 
 /** SPEC 7.6 Ubah tanggal mulai sewa */
@@ -414,6 +443,73 @@ export function useLeaseActions() {
       }
     }
 
+    /** Insert a charge invoice; on a duplicate number (two devices) renumber from a fresh list (SPEC 2b.11). */
+    async function insertCharge(lease: Lease, input: ChargeInput, orgInvoices: Invoice[]): Promise<Invoice> {
+      let numbering = orgInvoices
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await repo.insert('invoices', chargeInvoiceRow(lease, input, numbering))
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (attempt < 2 && /Nomor tagihan sudah dipakai/i.test(msg)) {
+            numbering = await repo.list('invoices')
+            continue
+          }
+          throw err
+        }
+      }
+    }
+
+    /**
+     * SPEC 7.31 Biaya tambahan: a one-off charge on an active or ended lease, by any member, paid now (`payWith` cash,
+     * transfer or QRIS), from the held deposit ('deposit') or later (null). Everything is checked on fresh rows before
+     * the first write: a lease cancelled on another device is refused, and 'deposit' needs the deposit held now to cover
+     * the amount. Then the charge invoice, its payment (dated today) and the invoice status, in that order. Once the
+     * invoice is saved any failure is a ChargeSavedError, so the dialog never saves the same charge twice.
+     */
+    async function addCharge(lease: Lease, input: ChargeInput, orgInvoices: Invoice[], payWith: ChargePayWith): Promise<ChargeResult> {
+      try {
+        const fresh = await repo.get('leases', lease.id)
+        if (!fresh) throw new Error('Sewa tidak ditemukan.')
+        if (fresh.status === 'cancelled') throw new Error(CHARGE_CANCELLED_MESSAGE)
+        let depositHeld = 0
+        if (payWith === 'deposit') {
+          const leasePayments = await repo.list('payments', { where: { lease_id: fresh.id } })
+          const leaseExpenses = await repo.list('expenses', { where: { lease_id: fresh.id } })
+          depositHeld = depositBalance(fresh, leasePayments, leaseExpenses).held
+        }
+        const errors = validateCharge({ ...input, leaseStart: fresh.start_date, depositHeld, payWith })
+        if (hasChargeErrors(errors)) throw new Error(errors.description ?? errors.amount ?? errors.date ?? errors.payWith)
+
+        const invoice = await insertCharge(fresh, input, orgInvoices)
+        if (!payWith) return { invoice, payment: null }
+        let payment: Payment
+        try {
+          payment = await repo.insert('payments', {
+            property_id: invoice.property_id,
+            invoice_id: invoice.id,
+            lease_id: fresh.id,
+            amount: invoice.total_amount,
+            paid_at: todayISO(),
+            method: payWith,
+            kind: 'rent',
+            notes: CHARGE_PAYMENT_NOTE,
+          })
+        } catch (err) {
+          throw new ChargeSavedError(`Biaya tersimpan, tetapi pembayarannya gagal: ${errorDetail(err)}. Bayar dari daftar tagihan.`, invoice)
+        }
+        try {
+          await syncInvoiceStatus(invoice.id)
+        } catch (err) {
+          throw new ChargeSavedError(`Biaya dan pembayarannya tersimpan, tetapi status tagihan gagal diperbarui: ${errorDetail(err)}. Muat ulang halaman.`, invoice)
+        }
+        return { invoice, payment }
+      } finally {
+        // also after a failure, so the screen shows what was saved
+        await invalidate('invoices', 'payments')
+      }
+    }
+
     /** `base_amount` (harga sewa of this invoice, SPEC 7.5) is optional: left out, the stored one stays. */
     async function updateInvoice(
       invoice: Invoice,
@@ -425,6 +521,8 @@ export function useLeaseActions() {
       if (patch.extra_amount < 0 || patch.discount_amount < 0 || base < 0) throw new Error('Nilai tidak boleh negatif.')
       const total = base + invoice.addons_amount + patch.extra_amount - patch.discount_amount
       if (total < 0) throw new Error('Diskon melebihi jumlah tagihan.')
+      // SPEC 7.31: a charge stays an amount above 0 with no rent (invoices_charge_shape_check)
+      if (isChargeInvoice(invoice) && (base !== 0 || patch.extra_amount <= 0 || total <= 0)) throw new Error(CHARGE_SHAPE_MESSAGE)
       const paid = paidAmountFor(invoice.id, payments)
       if (total < paid) throw new Error(`Total tagihan tidak boleh lebih kecil dari yang sudah dibayar (${formatRupiah(paid)}).`)
       await assertInvoiceUnchanged(invoice)
@@ -460,7 +558,8 @@ export function useLeaseActions() {
       if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       if (paidAmountFor(invoice.id, payments) > 0) throw new Error('Tagihan sudah memiliki pembayaran. Hapus pembayaran dulu atau kecilkan total lewat diskon.')
       await repo.update('invoices', invoice.id, { status: 'void' })
-      await shrinkLeaseEnd(lease, leaseInvoices.filter((i) => i.id !== invoice.id))
+      // a charge never set the end, so removing one never moves it (SPEC 7.31)
+      if (!isChargeInvoice(invoice)) await shrinkLeaseEnd(lease, leaseInvoices.filter((i) => i.id !== invoice.id))
       await invalidate('invoices', 'leases')
     }
 
@@ -468,7 +567,7 @@ export function useLeaseActions() {
       if (!canEditInvoices) throw new Error(STAFF_INVOICE_ERROR)
       if (paidAmountFor(invoice.id, payments) > 0) throw new Error('Tagihan sudah memiliki pembayaran dan tidak dapat dihapus.')
       await removeRow('invoices', invoice.id)
-      await shrinkLeaseEnd(lease, leaseInvoices.filter((i) => i.id !== invoice.id))
+      if (!isChargeInvoice(invoice)) await shrinkLeaseEnd(lease, leaseInvoices.filter((i) => i.id !== invoice.id))
       await invalidate('invoices', 'leases')
     }
 
@@ -774,6 +873,7 @@ export function useLeaseActions() {
       issueInvoice,
       recordRentPayment,
       recordDeposit,
+      addCharge,
       updateInvoice,
       voidInvoice,
       deleteInvoice,

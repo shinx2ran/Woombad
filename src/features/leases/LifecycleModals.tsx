@@ -96,6 +96,11 @@ export interface CheckoutModalProps {
    * warning about an agreed deposit that was never recorded as received only says where to record it.
    */
   onRecordDeposit?: () => void
+  /**
+   * SPEC 7.31: open "Biaya tambahan" (late check-out, damage); the lease page returns to this checkout afterwards, where
+   * an unpaid charge is an open invoice the deposit can settle. Without it the button is not shown.
+   */
+  onAddCharge?: () => void
   /** SPEC 7.22 (pindah & ganti jenis sewa): the day the sheet starts on instead of the plan / today */
   initialDate?: string
   /** called after a successful checkout with its date, before onClose */
@@ -111,7 +116,7 @@ export interface CheckoutModalProps {
  * starts at the tenant's Rencana keluar when one is recorded (SPEC 7.8), else today. An agreed deposit that was never
  * recorded as received is pointed out above the settlement, which only returns what was received (SPEC 7.15).
  */
-export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions, onRecordDeposit, initialDate, onDone, notice }: CheckoutModalProps) {
+export function CheckoutModal({ open, onClose, lease, invoices, payments, expenses, actions, onRecordDeposit, onAddCharge, initialDate, onDone, notice }: CheckoutModalProps) {
   const toast = useToast()
   const balance = useMemo(() => depositBalance(lease, payments, expenses), [lease, payments, expenses])
   const planned = plannedCheckoutOf(lease)
@@ -213,6 +218,20 @@ export function CheckoutModal({ open, onClose, lease, invoices, payments, expens
           {future.partial.length > 0 && <Row label="Tagihan DP sejak hari checkout → perlu keputusan" value={future.partial.length} />}
           <Row label="Sisa tagihan sebelum checkout tetap piutang" value={formatRupiah(rentCapacity)} strong />
         </div>
+        {onAddCharge && (
+          <Button
+            variant="secondary"
+            fullWidth
+            // the label wraps on a phone instead of running out of the button
+            className="h-auto min-h-10 py-2 text-center"
+            onClick={() => {
+              resumeRef.current = true
+              onAddCharge()
+            }}
+          >
+            Tambah biaya tambahan (late checkout, kerusakan)
+          </Button>
+        )}
         {needsAdmin && (
           <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="checkout-needs-admin">
             Ada tagihan untuk periode mulai hari checkout atau sesudahnya yang harus dibatalkan. Hanya pemilik/admin yang dapat membatalkan tagihan:

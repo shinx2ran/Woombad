@@ -51,9 +51,15 @@ const invoices = [
 const pay = (id: string): Payment => ({ id: `p-${id}`, ...ts, property_id: 'P1', invoice_id: id, lease_id: 'L1', amount: 1_500_000, paid_at: '2026-09-01', method: 'cash', kind: 'rent', notes: null, created_by: null })
 const payments = [pay('SEP'), pay('OCT')]
 
+/** four rent rows that move one day; movedInvoiceCount reads before/after */
+const MOVED_ROWS = [0, 1, 2, 3].map(() => ({
+  before: { period_start: '2026-08-17', period_end: '2026-09-16', due_date: '2026-08-17' },
+  after: { period_start: '2026-08-18', period_end: '2026-09-17', due_date: '2026-08-18' },
+}))
+
 function setup(opts: { leases?: Lease[]; redate?: LeaseActions['redateLease'] } = {}) {
   const onClose = vi.fn()
-  const redateLease = vi.fn(opts.redate ?? (async () => ({ lease: { start_date: '2026-08-18', end_date: '2026-11-17' }, patches: [{}, {}, {}, {}] }) as unknown as LeaseRedatePlan))
+  const redateLease = vi.fn(opts.redate ?? (async () => ({ lease: { start_date: '2026-08-18', end_date: '2026-11-17' }, patches: [{}, {}, {}, {}], invoices: MOVED_ROWS }) as unknown as LeaseRedatePlan))
   render(
     <ToastProvider>
       <RedateLeaseModal

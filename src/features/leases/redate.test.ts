@@ -562,7 +562,7 @@ describe('notes and the state preview', () => {
 
   it('leaseStateText covers due today, grace, unbilled and a paid-up stay ending soon', () => {
     const { lease, invoices } = ownerCase()
-    const summary = (over: object) => ({ leaseId: 'L', coveredThrough: '2026-11-30', paidThrough: null, outstanding: 1_500_000, nextDueDate: '2026-11-01', daysUntilDue: 0, state: 'due_soon' as const, ...over })
+    const summary = (over: object) => ({ leaseId: 'L', coveredThrough: '2026-11-30', paidThrough: null, outstanding: 1_500_000, chargesOutstanding: 0, nextDueDate: '2026-11-01', daysUntilDue: 0, state: 'due_soon' as const, ...over })
     expect(leaseStateText(lease, summary({}), '2026-11-01')).toBe('jatuh tempo hari ini · sisa Rp 1.500.000')
     expect(leaseStateText(lease, summary({ daysUntilDue: -2 }), '2026-11-03')).toBe('lewat 2 hari (tenggang) · sisa Rp 1.500.000')
     expect(leaseStateText(lease, summary({ outstanding: 0, coveredThrough: null, nextDueDate: '2026-12-01', daysUntilDue: 10, state: 'unbilled' }), '2026-11-21')).toBe(

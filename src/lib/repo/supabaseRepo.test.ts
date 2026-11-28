@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseRepo, translateDbError } from './supabaseRepo'
-import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, UPDATE_DENIED_MESSAGE } from './types'
+import { DELETE_DENIED_MESSAGE, IN_USE_MESSAGE, UPDATE_DENIED_MESSAGE, CHARGE_SHAPE_MESSAGE } from './types'
 
 type Result = { data: unknown; error: { message: string; code?: string; details?: string } | null }
 
@@ -46,6 +46,9 @@ describe('translateDbError', () => {
     expect(translateDbError(insertFk)).toBe(insertFk.message)
     expect(translateDbError({ code: '42501', message: 'new row violates row-level security policy for table "payments"' })).toBe('Anda tidak memiliki izin untuk tindakan ini.')
     expect(translateDbError({ code: '23505', message: 'duplicate key value violates unique constraint "invoices_org_id_invoice_number_key"' })).toBe('Nomor tagihan sudah dipakai. Coba lagi.')
+    // SPEC 7.31: a charge edited to Rp 0 or given rent
+    expect(translateDbError({ code: '23514', message: 'new row for relation "invoices" violates check constraint "invoices_charge_shape_check"' })).toBe(CHARGE_SHAPE_MESSAGE)
+    expect(translateDbError({ code: '23514', message: 'new row for relation "invoices" violates check constraint "invoices_invoice_type_check"' })).toBe(CHARGE_SHAPE_MESSAGE)
     expect(translateDbError('TypeError: Failed to fetch')).toBe('Tidak dapat terhubung ke server. Periksa koneksi internet.')
     expect(translateDbError({ code: 'P0001', message: 'Tagihan yang sudah ada pembayarannya tidak dapat dibatalkan.' })).toBe('Tagihan yang sudah ada pembayarannya tidak dapat dibatalkan.')
   })

@@ -16,6 +16,7 @@ import {
   PAYMENT_KIND_LABEL,
   PAYMENT_METHOD_LABEL,
   PERIOD_TYPE_LABEL,
+  INVOICE_TYPE_LABEL,
   PERIOD_UNIT_LABEL,
   ROOM_STATUS_LABEL,
   WAITLIST_STATUS_LABEL,
@@ -102,6 +103,7 @@ const COLUMN_LABEL: Record<string, string> = {
   payment_info: 'Info rekening',
   status: 'Status',
   period_type: 'Jenis sewa',
+  invoice_type: 'Jenis tagihan',
   method: 'Metode',
   kind: 'Jenis',
   category: 'Kategori',
@@ -169,6 +171,7 @@ const COLUMN_ORDER = [
   'payment_info',
   'status',
   'period_type',
+  'invoice_type',
   'method',
   'kind',
   'category',
@@ -191,6 +194,7 @@ const COLUMN_ORDER = [
 
 const ENUM_LABELS: Record<string, Record<string, string>> = {
   period_type: PERIOD_TYPE_LABEL,
+  invoice_type: INVOICE_TYPE_LABEL,
   method: PAYMENT_METHOD_LABEL,
   kind: PAYMENT_KIND_LABEL,
   category: EXPENSE_CATEGORY_LABEL,

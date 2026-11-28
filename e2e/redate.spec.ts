@@ -114,8 +114,13 @@ test.describe('Ubah tanggal mulai sewa (SPEC 7.6)', () => {
     await page.getByRole('menuitem', { name: /^Checkout/ }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Selesaikan checkout' }).click()
     await expect(page.getByText('Checkout dicatat. Sewa selesai.')).toBeVisible()
-    // an ended lease keeps its dates: no menu at all any more (no Ubah tanggal mulai)
-    await expect(page.getByRole('button', { name: 'Aksi sewa', exact: true })).toHaveCount(0)
+    // an ended lease keeps its dates: no Ubah tanggal mulai; only Biaya tambahan is left (SPEC 7.31: a late check-out fee
+    // is often added right after the check-out)
+    await page.getByRole('button', { name: 'Aksi sewa', exact: true }).click()
+    await expect(page.getByRole('menuitem')).toHaveCount(1)
+    await expect(page.getByRole('menuitem', { name: /^Biaya tambahan/ })).toBeVisible()
+    await expect(page.getByRole('menuitem', { name: /Ubah tanggal mulai/ })).toHaveCount(0)
+    await page.keyboard.press('Escape')
 
     await page.goto('/dashboard')
     await page.locator('[data-testid="board-tile"][data-room="102"]').click()
